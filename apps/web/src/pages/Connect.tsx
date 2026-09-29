@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { stepFor } from "../flow";
-import { agentName, useAI } from "../store/ai";
+import { agentName, agentOptions, useAI } from "../store/ai";
 import { useProject } from "../store/project";
 
 export function ConnectPage() {
@@ -10,12 +10,17 @@ export function ConnectPage() {
   const nav = useNavigate();
   const [custom, setCustom] = useState("");
   const [showMCP, setShowMCP] = useState(state?.connection?.mode === "mcp");
+  const [picked, setPicked] = useState<string | null>(null);
+  const [model, setModel] = useState("");
+  const [effort, setEffort] = useState("");
+  const chosen = state?.agents.find((a) => a.id === picked);
+  const pick = (id: string) => { setPicked(id); setModel(""); setEffort(""); };
 
   if (state?.ready) {
     return (
       <section className="card narrow center-text">
         <h1>✓ AI siap digunakan</h1>
-        <p>Agent: <strong>{agentName(state)}</strong></p>
+        <p>Agent: <strong>{agentName(state)}</strong>{agentOptions(state) && <span className="muted"> · {agentOptions(state)}</span>}</p>
         <div className="row center">
           <button className="primary big" onClick={() => nav(project ? stepFor(project.stage).path : "/")}>Mulai</button>
           <button className="ghost" onClick={disconnect}>Ganti AI</button>
@@ -37,10 +42,10 @@ export function ConnectPage() {
         {state?.agents.map((a) => (
           <button
             key={a.id}
-            className="agent"
+            className={`agent ${picked === a.id ? "on" : ""}`}
             disabled={!a.detected || !!connecting}
             title={a.detected ? a.path : `${a.binary} tidak ditemukan di PATH`}
-            onClick={() => connectAgent(a.id)}
+            onClick={() => pick(a.id)}
           >
             <strong>{a.name}</strong>
             <span className="small muted">
@@ -49,6 +54,27 @@ export function ConnectPage() {
           </button>
         ))}
       </div>
+
+      {chosen && (
+        <form className="agent-opts" onSubmit={(e) => {
+          e.preventDefault();
+          void connectAgent(chosen.id, undefined, { model: model.trim() || undefined, effort: effort || undefined });
+        }}>
+          <label className="small">Model
+            <input list="agent-models" value={model} onChange={(e) => setModel(e.target.value)} placeholder="default" size={18} />
+            <datalist id="agent-models">{chosen.models?.map((m) => <option key={m} value={m} />)}</datalist>
+          </label>
+          {!!chosen.efforts?.length && (
+            <label className="small">Effort
+              <select value={effort} onChange={(e) => setEffort(e.target.value)}>
+                <option value="">default</option>
+                {chosen.efforts.map((e) => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </label>
+          )}
+          <button type="submit" className="primary" disabled={!!connecting}>Hubungkan {chosen.name}</button>
+        </form>
+      )}
 
       <details className="custom">
         <summary className="muted small">Agent lain (perintah sendiri)</summary>

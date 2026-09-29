@@ -1,4 +1,4 @@
-import type { AIState, Browse, Command, DesignHandoff, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template } from "./types";
+import type { AgentOptions, AIState, Browse, Command, DesignHandoff, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -19,7 +19,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 export const api = {
   ai: () => call<AIState>("GET", "/ai"),
-  connectAgent: (agent_id: string, command?: string[]) => call("POST", "/ai/connect", { agent_id, command }),
+  connectAgent: (agent_id: string, command?: string[], opts?: AgentOptions) => call("POST", "/ai/connect", { agent_id, command, ...opts }),
   connectMCP: () => call("POST", "/ai/connect-mcp", {}),
   disconnect: () => call("POST", "/ai/disconnect", {}),
 

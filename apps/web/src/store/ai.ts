@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "../api";
-import type { AIState } from "../types";
+import type { AgentOptions, AIState } from "../types";
 
 interface AIStore {
   state: AIState | null;
@@ -8,7 +8,7 @@ interface AIStore {
   connecting: string | null;
   error: string | null;
   load: () => Promise<void>;
-  connectAgent: (id: string, command?: string[]) => Promise<boolean>;
+  connectAgent: (id: string, command?: string[], opts?: AgentOptions) => Promise<boolean>;
   connectMCP: () => Promise<void>;
   disconnect: () => Promise<void>;
 }
@@ -25,10 +25,10 @@ export const useAI = create<AIStore>((set, get) => ({
       set({ error: (e as Error).message, loading: false });
     }
   },
-  connectAgent: async (id, command) => {
+  connectAgent: async (id, command, opts) => {
     set({ connecting: id, error: null });
     try {
-      await api.connectAgent(id, command);
+      await api.connectAgent(id, command, opts);
       await get().load();
       return true;
     } catch (e) {
@@ -59,4 +59,10 @@ export function agentName(s: AIState | null): string {
   if (!s?.connection) return "";
   if (s.connection.mode === "mcp") return s.mcp?.client ? `${s.mcp.client} (MCP)` : "AI Host (MCP)";
   return s.agents.find((a) => a.id === s.connection?.agent_id)?.name ?? s.connection.agent_id ?? "Agent";
+}
+
+// Model and effort of the connected agent, e.g. "opus · high".
+export function agentOptions(s: AIState | null): string {
+  const c = s?.connection;
+  return c?.mode === "agent" ? [c.model, c.effort && `effort ${c.effort}`].filter(Boolean).join(" · ") : "";
 }

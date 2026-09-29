@@ -549,3 +549,6 @@ input:focus, textarea:focus { outline: 1px solid var(--accent); }
 .dw-ask-page-head { display: flex; justify-content: space-between; align-items: center; }
 .dw-ask-page-head button { padding: 0 .4rem; }
 .dw-ask select { background: var(--bg); color: var(--text); }
+.agent.on { border-color: var(--accent); }
+.agent-opts { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1rem; }
+.agent-opts label { display: flex; flex-direction: column; gap: .2rem; }

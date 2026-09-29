@@ -22,6 +22,8 @@ type Connection struct {
 	Mode    ConnectionMode `json:"mode"`
 	AgentID string         `json:"agent_id,omitempty"`
 	Command []string       `json:"command,omitempty"` // custom override of the preset command
+	Model   string         `json:"model,omitempty"`   // empty: the agent's default
+	Effort  string         `json:"effort,omitempty"`
 	Since   time.Time      `json:"since"`
 }
 

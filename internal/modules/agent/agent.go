@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -25,28 +27,70 @@ type Preset struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Binary string `json:"binary"`
+	// Models are suggestions only; any model name the CLI accepts works.
+	Models []string `json:"models"`
+	// Efforts lists the accepted effort levels; empty means the CLI has no
+	// effort flag.
+	Efforts []string `json:"efforts"`
 	// PromptArg: prompt is passed as the last argument instead of stdin.
 	PromptArg bool     `json:"-"`
-	think     []string // args after binary
+	sub       []string // subcommand, before the model/effort flags
+	think     []string // args after the model/effort flags
 	execute   []string
+	effortArg func(string) []string
 }
 
 var Presets = []Preset{
 	{ID: "claude", Name: "Claude Code", Binary: "claude",
-		think:   []string{"-p"},
-		execute: []string{"-p", "--permission-mode", "acceptEdits"}},
-	{ID: "codex", Name: "Codex", Binary: "codex",
-		think:   []string{"exec", "--skip-git-repo-check", "-s", "read-only"},
-		execute: []string{"exec", "--skip-git-repo-check", "-s", "workspace-write"}},
+		Models:    []string{"fable", "opus", "sonnet", "haiku"},
+		Efforts:   []string{"low", "medium", "high", "xhigh", "max"},
+		effortArg: func(e string) []string { return []string{"--effort", e} },
+		think:     []string{"-p"},
+		execute:   []string{"-p", "--permission-mode", "acceptEdits"}},
+	{ID: "codex", Name: "Codex", Binary: "codex", sub: []string{"exec"},
+		Efforts:   []string{"low", "medium", "high", "xhigh"},
+		effortArg: func(e string) []string { return []string{"-c", fmt.Sprintf("model_reasoning_effort=%q", e)} },
+		think:     []string{"--skip-git-repo-check", "-s", "read-only"},
+		execute:   []string{"--skip-git-repo-check", "-s", "workspace-write"}},
 	{ID: "qwen", Name: "Qwen Code", Binary: "qwen",
 		think:   []string{"--approval-mode", "plan"},
 		execute: []string{"--approval-mode", "auto-edit"}},
 	{ID: "grok", Name: "Grok", Binary: "grok", PromptArg: true,
-		think:   []string{"-p"},
-		execute: []string{"--always-approve", "-p"}},
+		Models:    []string{"grok-4.6", "grok-4.5"},
+		Efforts:   []string{"low", "medium", "high", "xhigh"},
+		effortArg: func(e string) []string { return []string{"--effort", e} },
+		think:     []string{"-p"},
+		execute:   []string{"--always-approve", "-p"}},
 	{ID: "gemini", Name: "Gemini", Binary: "gemini",
 		think:   []string{},
 		execute: []string{"--approval-mode", "auto_edit"}},
+}
+
+// Options picks the model and effort; empty values keep the CLI default.
+type Options struct {
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+}
+
+var modelName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@\[\]-]*$`)
+
+// args returns the model/effort flags, rejecting values the CLI would
+// misread (a model starting with "-" would become a flag).
+func (p Preset) args(o Options) ([]string, error) {
+	var out []string
+	if o.Model != "" {
+		if !modelName.MatchString(o.Model) || len(o.Model) > 100 {
+			return nil, fmt.Errorf("nama model %q tidak valid", o.Model)
+		}
+		out = append(out, "--model", o.Model)
+	}
+	if o.Effort != "" {
+		if !slices.Contains(p.Efforts, o.Effort) {
+			return nil, fmt.Errorf("%s tidak mendukung effort %q", p.Name, o.Effort)
+		}
+		out = append(out, p.effortArg(o.Effort)...)
+	}
+	return out, nil
 }
 
 func PresetByID(id string) (Preset, bool) {
@@ -75,7 +119,7 @@ type Runner struct {
 
 // NewRunner builds a runner from a preset id, or from a custom command when
 // custom is non-empty (prompt goes to stdin, same command for both modes).
-func NewRunner(id string, custom []string) (*Runner, error) {
+func NewRunner(id string, custom []string, opt Options) (*Runner, error) {
 	if len(custom) > 0 {
 		return &Runner{Name: id, argvThink: custom, argvExec: custom, Timeout: 30 * time.Minute}, nil
 	}
@@ -86,10 +130,15 @@ func NewRunner(id string, custom []string) (*Runner, error) {
 	if _, ok := p.Detected(); !ok {
 		return nil, fmt.Errorf("%s tidak ditemukan di PATH (%s)", p.Name, p.Binary)
 	}
+	opts, err := p.args(opt)
+	if err != nil {
+		return nil, err
+	}
+	head := append(append([]string{p.Binary}, p.sub...), opts...)
 	return &Runner{
 		Name:      p.Name,
-		argvThink: append([]string{p.Binary}, p.think...),
-		argvExec:  append([]string{p.Binary}, p.execute...),
+		argvThink: append(slices.Clone(head), p.think...),
+		argvExec:  append(slices.Clone(head), p.execute...),
 		promptArg: p.PromptArg,
 		Timeout:   30 * time.Minute,
 	}, nil

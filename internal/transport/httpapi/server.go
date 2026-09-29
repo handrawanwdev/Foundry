@@ -256,11 +256,13 @@ func ok(err error) (any, error) {
 // ---------- AI ----------
 
 type agentInfo struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Binary   string `json:"binary"`
-	Detected bool   `json:"detected"`
-	Path     string `json:"path,omitempty"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Binary   string   `json:"binary"`
+	Detected bool     `json:"detected"`
+	Path     string   `json:"path,omitempty"`
+	Models   []string `json:"models"`
+	Efforts  []string `json:"efforts"`
 }
 
 func (s *Server) getAI(r *http.Request) (any, error) {
@@ -271,7 +273,7 @@ func (s *Server) getAI(r *http.Request) (any, error) {
 	var agents []agentInfo
 	for _, p := range agent.Presets {
 		path, found := p.Detected()
-		agents = append(agents, agentInfo{ID: p.ID, Name: p.Name, Binary: p.Binary, Detected: found, Path: path})
+		agents = append(agents, agentInfo{ID: p.ID, Name: p.Name, Binary: p.Binary, Detected: found, Path: path, Models: p.Models, Efforts: p.Efforts})
 	}
 	dir, _ := os.Getwd()
 	if svc, err := s.service(); err == nil {
@@ -295,6 +297,7 @@ func (s *Server) connectAgent(r *http.Request) (any, error) {
 	var in struct {
 		AgentID string   `json:"agent_id"`
 		Command []string `json:"command"`
+		agent.Options
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
@@ -305,7 +308,11 @@ func (s *Server) connectAgent(r *http.Request) (any, error) {
 	if in.AgentID == "custom" && len(in.Command) == 0 {
 		return nil, badRequest("perintah agent custom wajib diisi")
 	}
-	runner, err := agent.NewRunner(in.AgentID, in.Command)
+	in.Model, in.Effort = strings.TrimSpace(in.Model), strings.TrimSpace(in.Effort)
+	if len(in.Command) > 0 {
+		in.Options = agent.Options{} // a custom command carries its own flags
+	}
+	runner, err := agent.NewRunner(in.AgentID, in.Command, in.Options)
 	if err != nil {
 		return nil, badRequest(err.Error())
 	}
@@ -319,7 +326,8 @@ func (s *Server) connectAgent(r *http.Request) (any, error) {
 		return nil, badRequest("Agent tidak merespons: " + err.Error())
 	}
 	c, err := config.Update(func(c *config.Config) {
-		c.Connection = &config.Connection{Mode: config.ModeAgent, AgentID: in.AgentID, Command: in.Command, Since: time.Now().UTC()}
+		c.Connection = &config.Connection{Mode: config.ModeAgent, AgentID: in.AgentID, Command: in.Command,
+			Model: in.Model, Effort: in.Effort, Since: time.Now().UTC()}
 	})
 	if err != nil {
 		return nil, err

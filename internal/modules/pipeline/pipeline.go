@@ -51,7 +51,8 @@ func (ConfigAI) Runner() (*agent.Runner, bool, error) {
 	if c.Connection.Mode == config.ModeMCP {
 		return nil, true, nil
 	}
-	r, err := agent.NewRunner(c.Connection.AgentID, c.Connection.Command)
+	r, err := agent.NewRunner(c.Connection.AgentID, c.Connection.Command,
+		agent.Options{Model: c.Connection.Model, Effort: c.Connection.Effort})
 	return r, false, err
 }
 

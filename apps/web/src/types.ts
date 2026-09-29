@@ -83,8 +83,9 @@ export interface Project {
   builds: BuildRun[] | null; verification?: Verification; job?: Job; events: Event[] | null; updated_at: string;
 }
 
-export interface AgentInfo { id: string; name: string; binary: string; detected: boolean; path?: string }
-export interface Connection { mode: "agent" | "mcp"; agent_id?: string; command?: string[]; since: string }
+export interface AgentInfo { id: string; name: string; binary: string; detected: boolean; path?: string; models: string[] | null; efforts: string[] | null }
+export interface AgentOptions { model?: string; effort?: string }
+export interface Connection { mode: "agent" | "mcp"; agent_id?: string; command?: string[]; model?: string; effort?: string; since: string }
 export interface AIState {
   connection: Connection | null; ready: boolean; mcp_alive: boolean;
   mcp: { client: string; dir: string; at: string } | null;

@@ -147,7 +147,7 @@ func (f fakeAI) Runner() (*agent.Runner, bool, error) {
 	if f.mcp {
 		return nil, true, nil
 	}
-	r, err := agent.NewRunner("fake", []string{os.Args[0]})
+	r, err := agent.NewRunner("fake", []string{os.Args[0]}, agent.Options{})
 	return r, false, err
 }
 
