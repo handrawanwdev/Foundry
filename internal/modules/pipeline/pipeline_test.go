@@ -46,10 +46,11 @@ const discoveryJSON = `Here you go:
 
 const designJSON = `{"pages": [
   {"id": "P1", "name": "Daftar Dokter", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "sub_feature_ids": ["FEAT-001.1"], "purpose": "Cari dokter",
-   "components": [{"type": "header", "label": "Dokter"}, {"type": "list", "label": "Dokter", "items": ["dr. A", "dr. B"]}, {"type": "button", "label": "Pilih", "target": "P2"}]},
+   "components": [{"type": "header", "label": "Dokter"}, {"type": "list", "label": "Dokter", "columns": ["x"], "items": ["dr. A", "dr. B"]}, {"type": "button", "label": "Pilih", "target": "P2"}]},
   {"id": "P2", "name": "Konfirmasi Janji", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "sub_feature_ids": ["FEAT-001.2"], "purpose": "Konfirmasi",
    "components": [{"type": "form", "label": "Janji", "items": ["Tanggal"]}, {"type": "button", "label": "Ke halaman hilang", "target": "P9"}]},
   {"id": "P3", "name": "Admin Jadwal", "platform": "web", "role": "Admin", "feature_id": "FEAT-002", "sub_feature_ids": ["FEAT-002.1"], "purpose": "Kelola jadwal",
+   "kind": "ADMIN", "density": "padat", "states": {},
    "components": [{"type": "table", "label": "Jadwal", "items": ["Senin"]}]}],
  "flows": [{"id": "FLOW-001", "page_ids": ["P1", "P2"]}]}`
 
@@ -501,6 +502,12 @@ func TestMCPHostFlow(t *testing.T) {
 	mustJob(t, load(t, s), work.KindDesign, core.JobWaiting) // chained
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
+	}
+	// Kind is normalized, unknown density and empty states are dropped,
+	// columns only stay on tables.
+	pg := load(t, s).Design.Pages
+	if pg[2].Kind != "admin" || pg[2].Density != "" || pg[2].States != nil || pg[0].Components[1].Columns != nil {
+		t.Fatalf("pages = %+v", pg)
 	}
 	if err := s.ApproveDesign(); err != nil {
 		t.Fatal(err)

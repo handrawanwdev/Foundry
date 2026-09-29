@@ -2,6 +2,7 @@ package work
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 var componentNames = map[string]string{
 	"header": "Judul", "nav": "Navigasi", "text": "Teks", "list": "Daftar", "table": "Tabel",
 	"form": "Form", "button": "Tombol", "card": "Kartu", "stat": "Angka", "input": "Isian",
+	"section": "Bagian", "steps": "Langkah",
 }
 
 func pageKey(pg core.Page) string {
@@ -81,6 +83,15 @@ func pageDetails(old, new core.Page, oldNames, newNames map[string]string) []str
 	if old.FeatureID != new.FeatureID {
 		d = append(d, "~ Fitur: "+new.FeatureID)
 	}
+	if old.Kind != new.Kind {
+		d = append(d, "~ Jenis halaman: "+new.Kind)
+	}
+	if old.Density != new.Density {
+		d = append(d, "~ Kepadatan: "+new.Density)
+	}
+	if !reflect.DeepEqual(old.States, new.States) {
+		d = append(d, "~ Kondisi kosong/error/berhasil")
+	}
 	oldComp := map[string]core.PageComponent{}
 	for _, c := range old.Components {
 		oldComp[componentKey(c)] = c
@@ -93,7 +104,7 @@ func pageDetails(old, new core.Page, oldNames, newNames map[string]string) []str
 		switch {
 		case !ok:
 			d = append(d, "+ "+componentName(c))
-		case !slices.Equal(prev.Items, c.Items) || oldNames[prev.Target] != newNames[c.Target]:
+		case !slices.Equal(prev.Items, c.Items) || !slices.Equal(prev.Columns, c.Columns) || oldNames[prev.Target] != newNames[c.Target]:
 			d = append(d, "~ "+componentName(c))
 		}
 	}

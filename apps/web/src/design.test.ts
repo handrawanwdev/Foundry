@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { featuresWithoutPage, groupPages, incoming, navTarget, pageOrder, requirementsOf } from "./design";
+import { cells, designChecks, featuresWithoutPage, formGroups, groupPages, incoming, navTarget, pageDensity, pageKind, pageOrder, requirementsOf, statParts } from "./design";
 import type { Flow, Page, Project } from "./types";
 
 const page = (id: string, name: string, role: string, extra: Partial<Page> = {}): Page => ({
@@ -41,5 +41,45 @@ describe("design", () => {
     } as unknown as Project;
     expect(featuresWithoutPage(project).map((f) => f.id)).toEqual(["FEAT-002"]);
     expect(requirementsOf(["P1", "P2"], project)).toEqual(["REQ-001"]);
+  });
+
+  it("infers page kind and density for designs without kind", () => {
+    expect(pageKind(page("A", "Masuk", "Pasien"))).toBe("auth");
+    expect(pageKind(page("B", "Jadwal", "Admin Klinik", { components: [{ type: "table", label: "J" }] }))).toBe("admin");
+    expect(pageKind(page("C", "Janji", "Pasien", { components: [{ type: "form", label: "F" }] }))).toBe("form");
+    expect(pageKind(page("D", "Masuk", "x", { kind: "status" }))).toBe("status");
+    expect(pageDensity(page("A", "Masuk", "Pasien"))).toBe("low");
+    expect(pageDensity(page("B", "Jadwal", "Admin", { components: [{ type: "table", label: "J" }] }))).toBe("high");
+  });
+
+  it("parses table rows, stats and form groups", () => {
+    expect(cells("Budi | Dr. Andi |Aktif")).toEqual(["Budi", "Dr. Andi", "Aktif"]);
+    expect(statParts("Janji hari ini: 12")).toEqual(["Janji hari ini", "12"]);
+    expect(statParts("Pasien")).toEqual(["Pasien", undefined]);
+    expect(formGroups(["Nama", "# Kontak", "Telepon"])).toEqual([{ fields: ["Nama"] }, { title: "Kontak", fields: ["Telepon"] }]);
+  });
+
+  it("flags one-template pages", () => {
+    const stats = Array.from({ length: 5 }, (_, i) => ({ type: "stat", label: `S${i}` }));
+    const same = [{ type: "header", label: "x" }, { type: "table", label: "t", columns: ["a"] }, { type: "button", label: "b" }];
+    const project = {
+      design: {
+        status: "draft", feedback: null, pages: [
+          page("P1", "Dashboard", "Admin", { kind: "dashboard", components: [{ type: "header", label: "Hai" }, ...stats] }),
+          page("P2", "Pasien", "Admin", { kind: "list", states: { empty: "Belum ada" }, components: same }),
+          page("P3", "Dokter", "Admin", { kind: "list", components: same }),
+          page("P4", "Form", "Admin", { kind: "form", components: [{ type: "form", label: "F", items: ["a", "b", "c", "d", "e", "f", "g"] }, { type: "nav", label: "n", items: ["Pasien", "Hilang"] }] }),
+        ],
+      },
+    } as unknown as Project;
+    const got = designChecks(project).map((f) => `${f.page?.id} ${f.text}`);
+    expect(got).toEqual([
+      "P1 terlalu banyak kartu/angka (5)",
+      "P1 dashboard hanya berisi angka/kartu, belum menampilkan pekerjaan user",
+      "P3 belum ada tampilan saat data kosong",
+      "P3 susunan sama persis dengan halaman “Pasien”",
+      "P4 form “F” punya 7 isian tanpa pengelompokan",
+      "P4 menu tidak menuju halaman: Hilang",
+    ]);
   });
 });

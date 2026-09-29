@@ -24,10 +24,16 @@ export interface Structure {
   mode: "existing" | "new"; components: Component[] | null; template?: string; layout?: string[];
   reason: string; commands: Command[] | null; approved: boolean; scaffolded: boolean;
 }
-export interface PageComponent { type: string; label: string; items?: string[]; target?: string }
+export interface PageComponent { type: string; label: string; items?: string[]; columns?: string[]; target?: string }
+export type PageKind =
+  | "auth" | "dashboard" | "list" | "detail" | "form" | "wizard" | "search"
+  | "settings" | "payment" | "profile" | "analytics" | "admin" | "status";
+export type Density = "low" | "medium" | "high";
+export interface PageStates { empty?: string; error?: string; success?: string }
 export interface Page {
   id: string; name: string; platform: string; role: string; feature_id: string;
   sub_feature_ids: string[] | null; purpose: string; components: PageComponent[] | null;
+  kind?: PageKind; density?: Density; states?: PageStates;
 }
 export interface DesignChange { kind: "added" | "changed" | "removed"; page_id?: string; page: string; details?: string[] }
 export interface DesignRevision { request: string; changes: DesignChange[] | null }

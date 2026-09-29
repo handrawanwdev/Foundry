@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { componentName, featuresWithoutPage, flowPages, incoming, navTarget, requirementsOf } from "../design";
+import { componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
 import type { Page, Project } from "../types";
@@ -37,6 +37,7 @@ export function Inspect({ project, page, selected, onSelect, onOpen }: InspectPr
         {!target && navLinks.length === 0 && <p className="muted small">Elemen ini tidak membuka halaman lain.</p>}
         <details className="tech"><summary>Detail teknis</summary>
           <div>tipe: {c.type}</div>{c.target && <div>target: {c.target}</div>}
+        {!!c.columns?.length && <div>kolom: {c.columns.join(", ")}</div>}
         </details>
       </div>
     );
@@ -52,6 +53,12 @@ export function Inspect({ project, page, selected, onSelect, onOpen }: InspectPr
       <h2>{page.name}</h2>
       {page.purpose && <p className="muted">{page.purpose}</p>}
       <dl>
+        <dt>Jenis</dt><dd>{KIND_LABEL[pageKind(page)]}{!page.kind && <span className="muted small"> (ditebak)</span>} · kepadatan {DENSITY_LABEL[pageDensity(page)]}</dd>
+        {page.states && <><dt>Kondisi</dt><dd>
+          {page.states.empty && <div><span className="muted small">Kosong:</span> {page.states.empty}</div>}
+          {page.states.error && <div><span className="muted small">Error:</span> {page.states.error}</div>}
+          {page.states.success && <div><span className="muted small">Berhasil:</span> {page.states.success}</div>}
+        </dd></>}
         {page.role && <><dt>Peran</dt><dd>{page.role}</dd></>}
         {feature && <><dt>Fitur</dt><dd>{feature.name}</dd></>}
         {reqs.length > 0 && <><dt>Kebutuhan</dt><dd>{reqs.map((r) => <div key={r!.id}>{r!.text}</div>)}</dd></>}
@@ -68,7 +75,7 @@ export function Inspect({ project, page, selected, onSelect, onOpen }: InspectPr
         </section>
       )}
       <details className="tech"><summary>Detail teknis</summary>
-        <div>halaman: {page.id}</div><div>fitur: {page.feature_id}</div><div>platform: {page.platform}</div>
+        <div>halaman: {page.id}</div><div>fitur: {page.feature_id}</div><div>platform: {page.platform}</div><div>kind: {page.kind ?? "—"}</div>
       </details>
     </div>
   );
@@ -77,7 +84,7 @@ export function Inspect({ project, page, selected, onSelect, onOpen }: InspectPr
 // ---------- Change preview ----------
 
 const SYMBOL = { added: "+", changed: "~", removed: "−" } as const;
-const KIND_LABEL = { added: "halaman baru", changed: "diubah", removed: "dihapus" } as const;
+const CHANGE_LABEL = { added: "halaman baru", changed: "diubah", removed: "dihapus" } as const;
 
 export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (pageId: string) => void }) {
   const { run, pending } = useProject();
@@ -107,7 +114,7 @@ export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (page
             <li key={i}>
               <span className={`sym ${c.kind}`}>{SYMBOL[c.kind]}</span>
               {c.page_id ? <button className="link" onClick={() => onOpen(c.page_id!)}>{c.page}</button> : <span>{c.page}</span>}
-              <span className="muted small"> {KIND_LABEL[c.kind]}</span>
+              <span className="muted small"> {CHANGE_LABEL[c.kind]}</span>
               {!!c.details?.length && <div className="small muted">{c.details.join(" · ")}</div>}
             </li>
           ))}
@@ -157,10 +164,12 @@ interface ReviewProps {
   onAsk: () => void;
   onTry: (flowId: string) => void;
   onInfo: (v: "platform") => void;
+  onOpen: (pageId: string) => void;
 }
 
-export function Review({ project, onAsk, onTry, onInfo }: ReviewProps) {
+export function Review({ project, onAsk, onTry, onInfo, onOpen }: ReviewProps) {
   const { run, pending } = useProject();
+  const findings = designChecks(project);
   const d = project.design!;
   const pages = d.pages;
   const flows = (project.flows ?? []).map((f) => ({ f, ps: flowPages(f, pages) })).filter((x) => x.ps.length > 0);
@@ -184,8 +193,28 @@ export function Review({ project, onAsk, onTry, onInfo }: ReviewProps) {
           {" · "}Struktur: {s?.mode === "existing" ? "project yang sudah ada" : s?.template ?? "—"}
           {!approved && <> <button className="link" onClick={() => onInfo("platform")}>Ubah</button></>}
         </li>
+        {findings.length ? <li className="warn">! Kualitas rancangan: {findings.length} temuan</li>
+          : <li className="ok">✓ Kualitas rancangan: tiap halaman punya layout sesuai jenisnya</li>}
         {d.revision && !approved && <li className="warn">! Perubahan terakhir belum disimpan. Menyetujui akan menyimpannya.</li>}
       </ul>
+
+      {findings.length > 0 && (
+        <section className="review-flows">
+          <h3>Temuan kualitas</h3>
+          <ul className="review-findings">
+            {findings.map((f, i) => (
+              <li key={i}>
+                {f.page && <><button className="link" onClick={() => onOpen(f.page!.id)}>{f.page.name}</button>: </>}
+                <span className="muted">{f.text}</span>
+              </li>
+            ))}
+          </ul>
+          {!approved && (
+            <button disabled={working || !!d.revision || pending === "revise"} title={d.revision ? "Simpan atau batalkan perubahan terakhir dulu" : undefined}
+              onClick={() => run("revise", () => api.reviseDesign(fixRequest(findings)))}>✦ Perbaiki otomatis</button>
+          )}
+        </section>
+      )}
 
       {flows.length > 0 && (
         <section className="review-flows">

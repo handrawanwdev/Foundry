@@ -17,8 +17,17 @@ type designOut struct {
 
 var componentTypes = map[string]bool{
 	"header": true, "nav": true, "text": true, "list": true, "table": true, "form": true,
-	"button": true, "card": true, "stat": true, "input": true,
+	"button": true, "card": true, "stat": true, "input": true, "section": true, "steps": true,
 }
+
+// pageKinds are the layouts the wireframe knows; unknown kinds are dropped
+// and the UI infers one from the components.
+var pageKinds = map[string]bool{
+	"auth": true, "dashboard": true, "list": true, "detail": true, "form": true, "wizard": true, "search": true,
+	"settings": true, "payment": true, "profile": true, "analytics": true, "admin": true, "status": true,
+}
+
+var densities = map[string]bool{"low": true, "medium": true, "high": true}
 
 func DesignPrompt(p *core.Project) string {
 	var b strings.Builder
@@ -37,16 +46,44 @@ Write labels in the same language as the features. Do not write code. Do not mod
 		b.WriteString("PREVIOUS DESIGN:\n" + mustJSON(p.Design.Pages) + "\n\n")
 		b.WriteString("USER REQUESTED CHANGES (apply all):\n- " + strings.Join(p.Design.Feedback, "\n- ") + "\n\n")
 	}
-	b.WriteString(`Component types: header, nav, text, list, table, form, button, card, stat, input.
+	b.WriteString(`Design every page for its job, not from one template. Components may repeat across pages; layouts should not.
+Per page answer: what is the main user action, what must be seen first, what is only needed on demand.
+
+"kind" picks the layout, one of:
+- auth: login/sign up. Brand, the form, one primary action, recovery link. No marketing, no promo cards.
+- dashboard: the user's work for today (e.g. today's schedule, items waiting). Use stat only for numbers that drive decisions, at most 3. Never a page of only stats and cards.
+- list: data to scan: a table with columns (or a list for short simple items), search/filter only when the data needs it, a create button.
+- detail: one record: header with name and status, then sections of information. Tabs only for really different groups.
+- form: grouped fields, then Cancel/Save. Simple create/edit belongs in a drawer on the list page, not its own page.
+- wizard: a complex multi-step create; a "steps" component then the current step. Only when a single form is too long.
+- search: search input, recent searches, results. No stats.
+- settings: sections (Account, Notifications, ...) separated by "section" components, fields in each.
+- payment: amount and what is paid for, payment method, total, one pay button with the amount.
+- profile: identity and account fields, save.
+- analytics: a headline number with change vs previous period, then only charts that answer a question.
+- admin: dense operational table with filters and bulk actions.
+- status: empty/error/success result page: what happened, concrete details, the next action.
+"density": low (auth, payment, status), medium (most app pages), high (admin, data-heavy lists).
+"states": copy for {"empty", "error", "success"} where the page can be in that state. Empty says why it is empty and what to do. Error says what failed and how to recover. Success states the concrete result. No "Oops", no "Congratulations", no emoji.
+
+Component types: header, nav, text, list, table, form, button, card, stat, input, section, steps.
+- table: "columns" are the column names; "items" are example rows with cells separated by " | " (e.g. "Budi Santoso | Dr. Andi | Aktif"). Use realistic example data.
+- stat: label "Name: value" (e.g. "Janji hari ini: 12").
+- form: "items" are field names; an item starting with "# " starts a field group (e.g. "# Kontak").
+- section: a separator heading that groups what follows.
+- steps: "items" are the step names of a wizard.
 Use "target" to link to another page id so the prototype is clickable: on button and card (open), on list and table (a row opens the detail page), on form (submit goes there).
-Name nav items exactly like the pages they open. list/table/nav/form use "items".
+Navigation uses the user's business words (Jadwal, Pasien, Laporan), not database tables. Name nav items exactly like the pages they open.
+Mobile pages are designed for mobile: short content, the main nav becomes a bottom nav with at most 5 items.
 Every UI feature needs at least one page. Every flow lists the pages it walks through, in order.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
   "pages": [{"id": "PAGE-001", "name": "", "platform": "web|android|ios|desktop", "role": "", "feature_id": "FEAT-001",
-             "sub_feature_ids": ["FEAT-001.1"], "purpose": "",
-             "components": [{"type": "header", "label": ""}, {"type": "button", "label": "", "target": "PAGE-002"}]}],
+             "sub_feature_ids": ["FEAT-001.1"], "purpose": "", "kind": "list", "density": "medium",
+             "states": {"empty": "", "error": ""},
+             "components": [{"type": "header", "label": ""}, {"type": "table", "label": "", "columns": [""], "items": [""], "target": "PAGE-002"},
+                            {"type": "button", "label": "", "target": "PAGE-003"}]}],
   "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002"]}]
 }`)
 	return b.String()
@@ -71,7 +108,16 @@ func ApplyDesign(p *core.Project, raw string) error {
 			continue // design must trace to a feature
 		}
 		np := core.Page{ID: idMap[pg.ID], Name: pg.Name, Platform: strings.ToLower(pg.Platform), Role: pg.Role,
-			FeatureID: pg.FeatureID, Purpose: pg.Purpose}
+			FeatureID: pg.FeatureID, Purpose: pg.Purpose, States: pg.States}
+		if k := strings.ToLower(pg.Kind); pageKinds[k] {
+			np.Kind = k
+		}
+		if d := strings.ToLower(pg.Density); densities[d] {
+			np.Density = d
+		}
+		if s := np.States; s != nil && *s == (core.PageStates{}) {
+			np.States = nil
+		}
 		f := p.Feature(pg.FeatureID)
 		for _, sid := range pg.SubFeatureIDs {
 			for _, s := range f.SubFeatures {
@@ -84,6 +130,9 @@ func ApplyDesign(p *core.Project, raw string) error {
 			c.Type = strings.ToLower(c.Type)
 			if !componentTypes[c.Type] {
 				c.Type = "text"
+			}
+			if c.Type != "table" {
+				c.Columns = nil
 			}
 			if c.Target != "" {
 				c.Target = idMap[c.Target] // unknown targets become "" (dead link removed)

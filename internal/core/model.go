@@ -184,23 +184,36 @@ type DesignChange struct {
 }
 
 type Page struct {
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	Platform      string          `json:"platform"`
-	Role          string          `json:"role"`
-	FeatureID     string          `json:"feature_id"`
-	SubFeatureIDs []string        `json:"sub_feature_ids"`
-	Purpose       string          `json:"purpose"`
-	Components    []PageComponent `json:"components"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Platform      string   `json:"platform"`
+	Role          string   `json:"role"`
+	FeatureID     string   `json:"feature_id"`
+	SubFeatureIDs []string `json:"sub_feature_ids"`
+	Purpose       string   `json:"purpose"`
+	// Kind picks the page layout (auth, list, form, ...); Density is
+	// low | medium | high. Both may be empty on older designs.
+	Kind       string          `json:"kind,omitempty"`
+	Density    string          `json:"density,omitempty"`
+	States     *PageStates     `json:"states,omitempty"`
+	Components []PageComponent `json:"components"`
+}
+
+// PageStates holds the copy shown when the page is empty, fails or succeeds.
+type PageStates struct {
+	Empty   string `json:"empty,omitempty"`
+	Error   string `json:"error,omitempty"`
+	Success string `json:"success,omitempty"`
 }
 
 // PageComponent is a wireframe element. Target links to another page for
 // prototype navigation.
 type PageComponent struct {
-	Type   string   `json:"type"` // header | nav | text | list | table | form | button | card | stat | input
-	Label  string   `json:"label"`
-	Items  []string `json:"items,omitempty"`
-	Target string   `json:"target,omitempty"`
+	Type    string   `json:"type"` // header | nav | text | list | table | form | button | card | stat | input | section | steps
+	Label   string   `json:"label"`
+	Items   []string `json:"items,omitempty"`
+	Columns []string `json:"columns,omitempty"` // table only
+	Target  string   `json:"target,omitempty"`
 }
 
 type Task struct {

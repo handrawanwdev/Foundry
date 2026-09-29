@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AskChange, ChangeBar, Inspect, Review } from "../components/DesignPanels";
-import { Wireframe } from "../components/Wireframe";
+import { Wireframe, type PageState } from "../components/Wireframe";
 import { DEVICES, defaultDevice, flowPages, groupPages, pageOrder, roleOf, type Device } from "../design";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
@@ -12,6 +12,9 @@ type Mode = "pratinjau" | "prototipe" | "tinjau";
 type Info = "fitur" | "platform" | "kebutuhan";
 
 const MODES: [Mode, string][] = [["pratinjau", "Pratinjau"], ["prototipe", "Prototipe"], ["tinjau", "Tinjau"]];
+const STATES: [PageState, string, "empty" | "error" | "success" | null][] = [
+  ["normal", "Normal", null], ["empty", "Kosong", "empty"], ["error", "Error", "error"], ["success", "Berhasil", "success"],
+];
 const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Struktur"], ["kebutuhan", "Kebutuhan"]];
 // Explorer deep links use ?tab=fitur|platform|ringkasan.
 const TAB_INFO: Record<string, Info> = { fitur: "fitur", platform: "platform", ringkasan: "kebutuhan" };
@@ -43,6 +46,7 @@ function Workspace({ project }: { project: Project }) {
   const [asking, setAsking] = useState(false);
   const [flowId, setFlowId] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
+  const [pstate, setPstate] = useState<PageState>("normal");
 
   useEffect(() => {
     const t = params.get("tab");
@@ -60,7 +64,7 @@ function Workspace({ project }: { project: Project }) {
   const working = isWorking(project);
   const changed = new Set((design.revision?.changes ?? []).map((c) => c.page_id).filter(Boolean));
 
-  const show = (id: string) => { setPageId(id); setSelected(null); setInfo(null); setSideOpen(false); };
+  const show = (id: string) => { setPageId(id); setPstate("normal"); setSelected(null); setInfo(null); setSideOpen(false); };
   const switchMode = (m: Mode) => { setMode(m); setInfo(null); setSelected(null); if (m === "prototipe") startFlow(currentFlow()?.id ?? null); };
 
   // ---- prototype ----
@@ -90,6 +94,7 @@ function Workspace({ project }: { project: Project }) {
     show(prev);
   };
 
+  const states = STATES.filter(([, , key]) => !key || !!page?.states?.[key]);
   const idx = order.findIndex((p) => p.id === page?.id);
   const showInspect = inspect && mode === "pratinjau" && !info && !!page;
 
@@ -149,10 +154,11 @@ function Workspace({ project }: { project: Project }) {
             : info === "kebutuhan" ? <Summary project={project} />
             : mode === "tinjau" ? (
               <Review project={project} onAsk={() => setAsking(true)} onInfo={setInfo}
+                onOpen={(id) => { setMode("pratinjau"); show(id); }}
                 onTry={(id) => { setMode("prototipe"); startFlow(id, true); }} />
             ) : page && (
               <div className={`dw-stage ${dev}`}>
-                <Wireframe page={page} pages={pages} device={dev} mode={mode === "prototipe" ? "run" : "select"}
+                <Wireframe page={page} pages={pages} device={dev} mode={mode === "prototipe" ? "run" : "select"} state={mode === "pratinjau" ? pstate : "normal"}
                   selected={selected} onSelect={(i) => { setSelected(i); if (i !== null) setInspect(true); }} onNavigate={go} />
               </div>
             )}
@@ -168,7 +174,14 @@ function Workspace({ project }: { project: Project }) {
       {!info && mode === "pratinjau" && page && (
         <footer className="dw-foot">
           <button className="ghost" disabled={idx <= 0} onClick={() => go(order[idx - 1].id)}>← Sebelumnya</button>
-          <span className="muted">{roleOf(page)} / <strong className="fg">{page.name}</strong></span>
+          <span className="inline">
+            <span className="muted">{roleOf(page)} / <strong className="fg">{page.name}</strong></span>
+            {states.length > 1 && (
+              <span className="seg subtle" title="Kondisi halaman">
+                {states.map(([k, l]) => <button key={k} className={pstate === k ? "on" : ""} onClick={() => setPstate(k)}>{l}</button>)}
+              </span>
+            )}
+          </span>
           <button className="ghost" disabled={idx >= order.length - 1} onClick={() => go(order[idx + 1].id)}>Berikutnya →</button>
         </footer>
       )}
