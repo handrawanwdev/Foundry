@@ -1,0 +1,5 @@
+bin/
+node_modules/
+apps/web/dist/*
+!apps/web/dist/.gitkeep
+.foundry/

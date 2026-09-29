@@ -1,0 +1,453 @@
+package pipeline_test
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/modules/agent"
+	"github.com/handrawanw/foundry/internal/modules/pipeline"
+	"github.com/handrawanw/foundry/internal/modules/work"
+)
+
+// The test binary doubles as a fake agent CLI: when FORGE_FAKE_AGENT=1 it
+// reads a prompt on stdin and answers like a real agent would.
+func TestMain(m *testing.M) {
+	if os.Getenv("FORGE_FAKE_AGENT") == "1" {
+		fakeAgent()
+		return
+	}
+	os.Exit(m.Run())
+}
+
+const discoveryJSON = `Here you go:
+` + "```json" + `
+{"name": "Klinik Sehat",
+ "discovery": {"summary": "Aplikasi klinik", "business": "Klinik pratama", "users": ["Pasien", "Admin"],
+   "roles": [{"name": "Pasien", "description": "membuat janji", "platform": "android"}, {"name": "Admin", "description": "kelola jadwal", "platform": "web"}],
+   "data": ["Appointment: id, pasien, dokter, waktu"], "integrations": [], "security": ["Login wajib"], "workflows": ["Pasien membuat janji"]},
+ "requirements": [{"id": "R1", "text": "Pasien dapat membuat janji temu", "priority": "MUST"},
+                  {"id": "R2", "text": "Admin dapat mengelola jadwal dokter", "priority": "MUST"}],
+ "features": [{"id": "F1", "name": "Janji Temu", "description": "Pasien membuat janji", "requirement_ids": ["R1"], "platforms": ["android", "backend"],
+               "sub_features": [{"id": "x", "name": "Cari dokter"}, {"id": "y", "name": "Buat janji"}]},
+              {"id": "F2", "name": "Jadwal Dokter", "description": "Admin kelola jadwal", "requirement_ids": ["R2"], "platforms": ["web", "backend"],
+               "sub_features": [{"id": "z", "name": "Tambah jadwal"}]}],
+ "flows": [{"id": "FL1", "name": "Buat janji", "feature_id": "F1", "role": "Pasien", "steps": ["Pilih dokter", "Pilih jadwal", "Konfirmasi"]}],
+ "platform": {"targets": [{"kind": "web", "audience": ["Admin"], "rationale": "dashboard"}, {"kind": "android", "audience": ["Pasien"], "rationale": "HP"},
+                          {"kind": "backend", "audience": [], "rationale": "API"}], "reason": "Pasien memakai HP, admin memakai web."}}
+` + "```"
+
+const designJSON = `{"pages": [
+  {"id": "P1", "name": "Daftar Dokter", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "sub_feature_ids": ["FEAT-001.1"], "purpose": "Cari dokter",
+   "components": [{"type": "header", "label": "Dokter"}, {"type": "list", "label": "Dokter", "items": ["dr. A", "dr. B"]}, {"type": "button", "label": "Pilih", "target": "P2"}]},
+  {"id": "P2", "name": "Konfirmasi Janji", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "sub_feature_ids": ["FEAT-001.2"], "purpose": "Konfirmasi",
+   "components": [{"type": "form", "label": "Janji", "items": ["Tanggal"]}, {"type": "button", "label": "Ke halaman hilang", "target": "P9"}]},
+  {"id": "P3", "name": "Admin Jadwal", "platform": "web", "role": "Admin", "feature_id": "FEAT-002", "sub_feature_ids": ["FEAT-002.1"], "purpose": "Kelola jadwal",
+   "components": [{"type": "table", "label": "Jadwal", "items": ["Senin"]}]}],
+ "flows": [{"id": "FLOW-001", "page_ids": ["P1", "P2"]}]}`
+
+// Plan deliberately omits tests for FEAT-002 so coverage filling is exercised.
+const planJSON = `{"tasks": [
+  {"id": "T1", "title": "Scaffold project", "description": "Buat go.mod", "area": "scaffold", "feature_id": "", "depends_on": [],
+   "acceptance_criteria": ["go build lulus"], "test_requirements": ["go test lulus"]},
+  {"id": "T2", "title": "API appointment", "description": "POST /appointments", "area": "api", "requirement_ids": ["REQ-001"], "feature_id": "FEAT-001",
+   "platform": "backend", "depends_on": ["T1"], "acceptance_criteria": ["Endpoint membuat janji", "Validasi jadwal bentrok"], "files": ["services/api"], "test_requirements": ["unit test"]},
+  {"id": "T3", "title": "Test appointment", "description": "Test API", "area": "test", "feature_id": "FEAT-001", "depends_on": ["T2"],
+   "acceptance_criteria": ["Test lulus"], "test_requirements": ["go test"]},
+  {"id": "T4", "title": "API jadwal", "description": "CRUD jadwal", "area": "api", "feature_id": "FEAT-002", "depends_on": ["T1"],
+   "acceptance_criteria": ["CRUD jadwal"], "test_requirements": ["unit test"]}]}`
+
+var taskIDRe = regexp.MustCompile(`TASK (TASK-\d+):`)
+
+func fakeAgent() {
+	in, _ := io.ReadAll(os.Stdin)
+	prompt := string(in)
+	mode := os.Getenv("FAKE_MODE")
+	switch {
+	case strings.HasPrefix(prompt, "Balas hanya"):
+		fmt.Println("OK")
+	case strings.Contains(prompt, "discovery analyst"):
+		if mode == "bad_json" {
+			fmt.Println("maaf, saya tidak bisa")
+			return
+		}
+		fmt.Println(discoveryJSON)
+	case strings.Contains(prompt, "product designer"):
+		fmt.Println(designJSON)
+	case strings.Contains(prompt, "tech lead"):
+		fmt.Println(planJSON)
+	case strings.Contains(prompt, "coding agent"):
+		if mode == "crash" {
+			fmt.Fprintln(os.Stderr, "agent crashed")
+			os.Exit(1)
+		}
+		m := taskIDRe.FindStringSubmatch(prompt)
+		id := strings.ToLower(strings.ReplaceAll(m[1], "-", "_"))
+		if _, err := os.Stat("go.mod"); err != nil {
+			os.WriteFile("go.mod", []byte("module example.com/klinik\n\ngo 1.22\n"), 0o644)
+		}
+		os.MkdirAll("app", 0o755)
+		os.WriteFile(filepath.Join("app", id+".go"), []byte("package app\n\nfunc F_"+id+"() int { return 1 }\n"), 0o644)
+		want := "1"
+		if mode == "fail_test" {
+			want = "2"
+		}
+		os.WriteFile(filepath.Join("app", id+"_test.go"), []byte("package app\n\nimport \"testing\"\n\nfunc Test_"+id+"(t *testing.T) {\n\tif F_"+id+"() != "+want+" {\n\t\tt.Fatal(\"salah\")\n\t}\n}\n"), 0o644)
+		fmt.Println("done")
+	case strings.Contains(prompt, "reviewer"):
+		met := mode != "reject"
+		var parts []string
+		for i := 1; i <= 10; i++ {
+			parts = append(parts, fmt.Sprintf(`{"index": %d, "met": %v, "evidence": "app/*.go"}`, i, met))
+		}
+		fmt.Printf("```json\n{\"criteria\": [%s]}\n```\n", strings.Join(parts, ","))
+	default:
+		fmt.Fprintln(os.Stderr, "unknown prompt")
+		os.Exit(3)
+	}
+}
+
+type fakeAI struct {
+	mcp  bool
+	none bool
+}
+
+func (f fakeAI) Runner() (*agent.Runner, bool, error) {
+	if f.none {
+		return nil, false, pipeline.ErrNoAI
+	}
+	if f.mcp {
+		return nil, true, nil
+	}
+	r, err := agent.NewRunner("fake", []string{os.Args[0]})
+	return r, false, err
+}
+
+func newService(t *testing.T, ai pipeline.AI, mode string) *pipeline.Service {
+	t.Helper()
+	t.Setenv("FORGE_FAKE_AGENT", "1")
+	t.Setenv("FAKE_MODE", mode)
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	st, err := core.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Init("test"); err != nil {
+		t.Fatal(err)
+	}
+	return pipeline.New(st, ai)
+}
+
+func load(t *testing.T, s *pipeline.Service) *core.Project {
+	t.Helper()
+	p, err := s.Store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func mustJob(t *testing.T, p *core.Project, kind string, st core.JobStatus) {
+	t.Helper()
+	if p.Job == nil || p.Job.Kind != kind || p.Job.Status != st {
+		t.Fatalf("job = %+v, want %s/%s", p.Job, kind, st)
+	}
+}
+
+// designReady drives Tell → Discovery → Design.
+func designReady(t *testing.T, s *pipeline.Service) *core.Project {
+	t.Helper()
+	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindDesign, core.JobDone)
+	return p
+}
+
+func TestEndToEndAgent(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	p := designReady(t, s)
+
+	if p.Stage != core.StageDesign || len(p.Requirements) != 2 || len(p.Features) != 2 {
+		t.Fatalf("discovery: stage=%s reqs=%d feats=%d", p.Stage, len(p.Requirements), len(p.Features))
+	}
+	if p.Features[0].SubFeatures[1].ID != "FEAT-001.2" {
+		t.Fatalf("sub-feature id renumber: %+v", p.Features[0].SubFeatures)
+	}
+	// Platform detection → monorepo suggested because mobile is needed.
+	if p.Structure.Mode != core.StructureNew || p.Structure.Template != "monorepo" {
+		t.Fatalf("structure = %+v", p.Structure)
+	}
+	// Design traces to features; dead link P9 removed; flow linked to pages.
+	if len(p.Design.Pages) != 3 || p.Design.Pages[1].Components[1].Target != "" {
+		t.Fatalf("design pages = %+v", p.Design.Pages)
+	}
+	if p.Design.Pages[0].Components[2].Target != "PAGE-002" {
+		t.Fatalf("prototype link = %q", p.Design.Pages[0].Components[2].Target)
+	}
+	if got := p.Flows[0].PageIDs; len(got) != 2 {
+		t.Fatalf("flow pages = %v", got)
+	}
+
+	// User override: template.
+	if _, err := s.SetTemplate("modular"); err != nil {
+		t.Fatal(err)
+	}
+	// Tasks must not exist before approval.
+	if len(load(t, s).Tasks) != 0 {
+		t.Fatal("tasks created before approval")
+	}
+	if err := s.ApproveDesign(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p = load(t, s)
+	mustJob(t, p, work.KindPlan, core.JobDone)
+	if p.Stage != core.StageBuild {
+		t.Fatalf("stage = %s", p.Stage)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "services", "api")); err != nil {
+		t.Fatalf("scaffold missing: %v", err)
+	}
+	// Coverage filler adds a test task for FEAT-002 and UI tasks for pages.
+	var feat2Test, uiTasks int
+	for _, tk := range p.Tasks {
+		if tk.FeatureID == "FEAT-002" && tk.Area == "test" {
+			feat2Test++
+		}
+		if tk.Area == "ui" {
+			uiTasks++
+		}
+		if len(tk.AcceptanceCriteria) == 0 {
+			t.Fatalf("%s has no acceptance criteria", tk.ID)
+		}
+	}
+	if feat2Test != 1 || uiTasks != 3 {
+		t.Fatalf("coverage: feat2Test=%d uiTasks=%d", feat2Test, uiTasks)
+	}
+	// DONE is gated.
+	if _, err := s.MoveTask("TASK-002", core.TaskDone); !errors.Is(err, pipeline.ErrGate) {
+		t.Fatalf("gate err = %v", err)
+	}
+
+	if err := s.StartBuild(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p = load(t, s)
+	for _, tk := range p.Tasks {
+		if tk.Status != core.TaskDone {
+			t.Fatalf("%s status %s notes %v", tk.ID, tk.Status, tk.Notes)
+		}
+	}
+	if p.Stage != core.StageReady || p.Verification == nil || !p.Verification.Ready {
+		t.Fatalf("stage=%s verification=%+v", p.Stage, p.Verification)
+	}
+	for _, tr := range p.Verification.Trace {
+		if !tr.Done || len(tr.TestTaskIDs) == 0 {
+			t.Fatalf("trace %+v", tr)
+		}
+	}
+}
+
+func TestNoAIConnected(t *testing.T) {
+	s := newService(t, fakeAI{none: true}, "")
+	if _, err := s.SubmitStory("Aplikasi laundry untuk pelanggan"); !errors.Is(err, pipeline.ErrNoAI) {
+		t.Fatalf("err = %v", err)
+	}
+	mustJob(t, load(t, s), work.KindDiscovery, core.JobFailed)
+}
+
+func TestInvalidDiscoveryOutput(t *testing.T) {
+	s := newService(t, fakeAI{}, "bad_json")
+	s.SubmitStory("Aplikasi keuangan pribadi")
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindDiscovery, core.JobFailed)
+	if p.Job.Error == "" {
+		t.Fatal("expected error message")
+	}
+}
+
+func TestDesignRevise(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	designReady(t, s)
+	if err := s.ReviseDesign("Tambahkan halaman profil"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	if p.Design.Status != core.DesignDraft || len(p.Design.Feedback) != 1 {
+		t.Fatalf("design = %+v", p.Design)
+	}
+}
+
+func approveAndPlan(t *testing.T, s *pipeline.Service) {
+	t.Helper()
+	designReady(t, s)
+	if err := s.ApproveDesign(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+}
+
+func TestFailingTestsBlockTasks(t *testing.T) {
+	s := newService(t, fakeAI{}, "fail_test")
+	approveAndPlan(t, s)
+	s.StartBuild()
+	s.Wait()
+	p := load(t, s)
+	scaffold := p.Task("TASK-001")
+	if scaffold.Status != core.TaskBlocked || scaffold.Attempts != pipeline.MaxAttempts {
+		t.Fatalf("scaffold = %s attempts %d", scaffold.Status, scaffold.Attempts)
+	}
+	if !strings.Contains(strings.Join(scaffold.Notes, "\n"), "test gagal") {
+		t.Fatalf("notes = %v", scaffold.Notes)
+	}
+	if p.Stage != core.StageVerify || p.Verification.Ready {
+		t.Fatalf("stage = %s", p.Stage)
+	}
+	kinds := map[string]bool{}
+	for _, is := range p.Verification.Issues {
+		kinds[is.Kind] = true
+	}
+	if !kinds["task_blocked"] || !kinds["task_open"] || !kinds["test_failed"] {
+		t.Fatalf("issues = %+v", p.Verification.Issues)
+	}
+	// Auto fix: blocked tasks reopen and a repair task is added.
+	n := len(p.Tasks)
+	os.Setenv("FAKE_MODE", "")
+	if err := s.Fix(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p = load(t, s)
+	if len(p.Tasks) <= n {
+		t.Fatal("fix added no task")
+	}
+	if p.Stage != core.StageReady {
+		for _, is := range p.Verification.Issues {
+			t.Log(is)
+		}
+		t.Fatalf("after fix stage = %s", p.Stage)
+	}
+}
+
+func TestReviewerRejects(t *testing.T) {
+	s := newService(t, fakeAI{}, "reject")
+	approveAndPlan(t, s)
+	s.StartBuild()
+	s.Wait()
+	tk := load(t, s).Task("TASK-001")
+	if tk.Status != core.TaskBlocked || !strings.Contains(tk.Notes[0], "Acceptance criteria") {
+		t.Fatalf("task = %s %v", tk.Status, tk.Notes)
+	}
+}
+
+func TestAgentCrashStopsBuild(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	approveAndPlan(t, s)
+	os.Setenv("FAKE_MODE", "crash")
+	s.StartBuild()
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, "build", core.JobFailed)
+	if !strings.Contains(p.Job.Error, "agent gagal") {
+		t.Fatalf("error = %s", p.Job.Error)
+	}
+}
+
+func TestExistingProjectKeepsStructure(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	dir := s.Store.Dir
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/x\n\ngo 1.22\n"), 0o644)
+	os.MkdirAll(filepath.Join(dir, "web"), 0o755)
+	os.WriteFile(filepath.Join(dir, "web", "package.json"), []byte(`{"dependencies": {"react": "18"}, "scripts": {"build": "vite build", "test": "vitest"}}`), 0o644)
+	p := designReady(t, s)
+	if p.Structure.Mode != core.StructureExisting {
+		t.Fatalf("mode = %s", p.Structure.Mode)
+	}
+	kinds := map[string]bool{}
+	for _, c := range p.Structure.Components {
+		kinds[c.Kind] = true
+	}
+	if !kinds["backend"] || !kinds["web"] {
+		t.Fatalf("components = %+v", p.Structure.Components)
+	}
+	var npmTest bool
+	for _, c := range p.Structure.Commands {
+		npmTest = npmTest || strings.Join(c.Argv, " ") == "npm run test"
+	}
+	if !npmTest {
+		t.Fatalf("commands = %+v", p.Structure.Commands)
+	}
+	if _, err := s.SetTemplate("simple"); err == nil {
+		t.Fatal("template must not replace existing structure")
+	}
+}
+
+func TestMCPHostFlow(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	mustJob(t, load(t, s), work.KindDiscovery, core.JobWaiting)
+
+	w, _ := s.NextWork()
+	if w.Kind != work.KindDiscovery || !strings.Contains(w.Prompt, "klinik") {
+		t.Fatalf("work = %+v", w)
+	}
+	if err := s.SubmitWork(work.KindDesign, designJSON); !errors.Is(err, pipeline.ErrWrongStage) {
+		t.Fatalf("wrong kind err = %v", err)
+	}
+	if err := s.SubmitWork(work.KindDiscovery, "bukan json"); err == nil {
+		t.Fatal("invalid json accepted")
+	}
+	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
+		t.Fatal(err)
+	}
+	mustJob(t, load(t, s), work.KindDesign, core.JobWaiting) // chained
+	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApproveDesign(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindPlan, planJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StartBuild(); err != nil {
+		t.Fatal(err)
+	}
+	w, _ = s.NextWork()
+	if w.Kind != work.KindTask || w.TaskID != "TASK-001" {
+		t.Fatalf("work = %+v", w)
+	}
+	// Host claims done without writing code: build fails (no go.mod) → TODO.
+	tk, b, err := s.SubmitTask("TASK-001", []work.Verdict{{Index: 1, Met: true, Evidence: "x"}})
+	if err != nil || b.Passed || tk.Status != core.TaskTodo {
+		t.Fatalf("task=%v build=%v err=%v", tk.Status, b.Passed, err)
+	}
+	// Host implements, but gives no evidence → not DONE.
+	w, _ = s.NextWork()
+	dir := s.Store.Dir
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/k\n\ngo 1.22\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)
+	tk, _, _ = s.SubmitTask(w.TaskID, []work.Verdict{{Index: 1, Met: true}})
+	if tk.Status == core.TaskDone {
+		t.Fatal("DONE without evidence")
+	}
+	w, _ = s.NextWork()
+	tk, b, _ = s.SubmitTask(w.TaskID, []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod dibuat"}})
+	if tk.Status != core.TaskDone || !b.Passed {
+		t.Fatalf("task = %s build %+v", tk.Status, b)
+	}
+}

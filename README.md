@@ -1,0 +1,65 @@
+# Foundry
+
+Satu pipeline dari ide sampai aplikasi siap diperiksa:
+
+```
+Hubungkan AI → Ceritakan → Rancang → Bangun → Siap
+   (connect)    (discovery)  (design+plan) (kanban+agent+build+test) (verify)
+```
+
+Foundry = orchestrator + source of truth. AI Agent = executor. MCP = bridge. User = decision maker.
+
+## Struktur (monorepo modular)
+
+```
+cmd/forge/                  entry: forge serve | forge mcp
+internal/core/              model Project (satu context) + Store (.foundry/project.json, lock lintas proses)
+internal/config/            koneksi AI + recent project (~/.foundry/foundry.json)
+internal/modules/
+  agent/                    runner CLI agent (Claude Code, Codex, Qwen Code, Grok, Gemini, custom)
+  scan/                     deteksi komponen + command build/test nyata
+  structure/                existing vs template baru (simple/modular/monorepo), scaffold
+  work/                     prompt + apply: discovery, design, plan, task, review (dipakai agent & MCP)
+  checks/                   jalankan command allowlist, catat hasil, deteksi file berubah
+  verify/                   traceability REQ→FEAT→PAGE→TASK→TEST→BUILD + dokumentasi
+  pipeline/                 orchestrator: job, kanban gate, build loop, verify, fix
+internal/transport/
+  httpapi/                  REST /api/v1 + SSE + SPA
+  mcp/                      MCP stdio server (JSON-RPC 2.0)
+apps/web/                   React + Vite + Zustand (embed ke binary)
+```
+
+## Jalankan
+
+```bash
+make build                         # build UI + binary bin/forge
+./bin/forge serve                  # halaman Start: Project Baru / Buka Project / terakhir
+./bin/forge serve ~/kerja/klinik   # langsung buka project itu
+```
+
+UI bergaya Visual Studio: menu bar (File: Project Baru, Buka Project, terakhir, Tutup Project), activity bar, Explorer (file project read-only, pipeline, kebutuhan, fitur, halaman, task), editor bertab, status bar (AI, tahap, job, task, verifikasi). Menutup project hanya melepasnya dari UI; state tetap di `.foundry/`. Project tidak bisa ditutup/diganti saat agent sedang berjalan.
+
+Dev: `make dev-api` + `make dev-web` (Vite :5173 proxy ke :8080).
+
+## MCP
+
+```bash
+./bin/forge mcp --print-config     # snippet config untuk AI Host
+```
+
+Loop host: `next_work` → kerjakan → `submit_work` / `submit_task`. Izin: `--allow READ|WRITE|MODIFY|EXECUTE|ALL` (default READ).
+
+## Aturan penting
+
+- Task `DONE` hanya jika build/test project lulus (exit code) **dan** semua acceptance criteria terpenuhi dengan bukti.
+- Command verifikasi hanya dari tooling project: Go → `go build/vet/test ./...`; Node → script `typecheck/lint/build/test` yang ada; Flutter → `flutter analyze/test` bila terpasang.
+- Project existing tidak pernah diganti template.
+- API hanya menerima request dari host/origin loopback.
+
+## Test
+
+```bash
+make test
+```
+
+E2E Go memakai test binary sebagai fake agent: happy path sampai READY, tanpa AI, output AI rusak, revisi desain, test gagal → BLOCKED → Perbaiki Otomatis, reviewer menolak, agent crash, project existing, alur MCP host.
