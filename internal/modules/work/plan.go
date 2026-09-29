@@ -25,28 +25,19 @@ Do not write code. Do not modify files.
 	b.WriteString("REQUIREMENTS:\n" + mustJSON(p.Requirements) + "\n\n")
 	b.WriteString("FEATURES:\n" + mustJSON(p.Features) + "\n\n")
 	b.WriteString("FLOWS:\n" + mustJSON(p.Flows) + "\n\n")
-	b.WriteString("PAGES:\n" + mustJSON(pageSummary(p)) + "\n\n")
+	b.WriteString("PAGES (build handoff per page):\n" + mustJSON(Handoffs(p)) + "\n\n")
 	b.WriteString("PLATFORMS:\n" + mustJSON(p.Platform.Targets) + "\n\n")
 	b.WriteString(structureBrief(p) + "\n")
 	b.WriteString(`Areas: scaffold, data, api, ui, test, integration. If the project is new, the first task (area "scaffold", feature_id "")
 must create the chosen layout with real build/test tooling (e.g. go.mod, package.json with build/test scripts) so Foundry can verify later tasks.
+UI tasks implement pages from their handoff: use its route, access, data/api, interactions, states and validation,
+and copy the handoff tests into test_requirements. API tasks cover every api call listed in the page handoffs.
 depends_on lists task ids that must be DONE first. files lists paths likely created or changed.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {"tasks": [{"id": "TASK-001", "title": "", "description": "", "area": "api", "requirement_ids": ["REQ-001"], "feature_id": "FEAT-001",
             "page_ids": [], "platform": "backend", "depends_on": [], "acceptance_criteria": [""], "files": [""], "test_requirements": [""]}]}`)
 	return b.String()
-}
-
-func pageSummary(p *core.Project) []map[string]any {
-	var out []map[string]any
-	if p.Design == nil {
-		return out
-	}
-	for _, pg := range p.Design.Pages {
-		out = append(out, map[string]any{"id": pg.ID, "name": pg.Name, "platform": pg.Platform, "feature_id": pg.FeatureID, "sub_feature_ids": pg.SubFeatureIDs, "purpose": pg.Purpose})
-	}
-	return out
 }
 
 func structureBrief(p *core.Project) string {
@@ -215,10 +206,12 @@ func FillCoverage(p *core.Project) int {
 		}
 	}
 	if p.Design != nil {
-		for _, pg := range p.Design.Pages {
+		handoffs := Handoffs(p)
+		for i, pg := range p.Design.Pages {
 			if pageCovered[pg.ID] {
 				continue
 			}
+			h := handoffs[i]
 			var dep []string
 			for _, t := range p.Tasks {
 				if t.FeatureID == pg.FeatureID && t.Area != "ui" && t.Area != "test" {
@@ -228,8 +221,8 @@ func FillCoverage(p *core.Project) int {
 			p.Tasks = append(p.Tasks, core.Task{ID: NextTaskID(p), Title: "UI " + pg.Name, Area: "ui",
 				Description: pg.Purpose, FeatureID: pg.FeatureID, PageIDs: []string{pg.ID}, Platform: pg.Platform,
 				RequirementIDs: featureReqs(p, pg.FeatureID), DependsOn: dep,
-				AcceptanceCriteria: []string{"Halaman " + pg.Name + " tampil sesuai rancangan " + pg.ID, "Navigasi ke halaman terkait berfungsi"},
-				TestRequirements:   []string{"Test render komponen halaman " + pg.Name},
+				AcceptanceCriteria: append([]string{"Halaman " + pg.Name + " tampil sesuai rancangan " + pg.ID}, h.Interactions...),
+				TestRequirements:   h.Tests,
 				Status:             core.TaskTodo})
 			added++
 		}

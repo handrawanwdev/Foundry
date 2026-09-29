@@ -1,5 +1,5 @@
 import { PLATFORM_LABEL } from "./flow";
-import type { Density, Flow, Page, PageComponent, PageKind, Project } from "./types";
+import type { Blocker, Density, Flow, Page, PageComponent, PageKind, Project } from "./types";
 
 // Pure helpers for the design workspace.
 
@@ -22,7 +22,8 @@ export const COMPONENT_LABEL: Record<string, string> = {
 };
 
 export function componentName(c: PageComponent): string {
-  return `${COMPONENT_LABEL[c.type] ?? c.type} “${c.label}”`;
+  const n = COMPONENT_LABEL[c.type] ?? c.type;
+  return c.label?.trim() ? `${n} “${c.label}”` : n;
 }
 
 export interface PageGroup {
@@ -171,7 +172,8 @@ export interface Finding { page?: Page; text: string }
 
 const signature = (p: Page) => (p.components ?? []).filter((c) => c.type !== "nav").map((c) => c.type).join(",");
 
-// Checks that can be measured on a wireframe. Visual rules (gradients,
+// Style warnings that can be measured on a wireframe; contract gaps that
+// block approval come from the server (Blocker). Visual rules (gradients,
 // illustrations) do not apply: the design has no visuals yet.
 export function designChecks(project: Project): Finding[] {
   const pages = project.design?.pages ?? [];
@@ -189,16 +191,13 @@ export function designChecks(project: Project): Finding[] {
     if (kind === "dashboard" && content.length > 0 && content.every((c) => c.type === "stat" || c.type === "card"))
       add("dashboard hanya berisi angka/kartu, belum menampilkan pekerjaan user");
     for (const c of comps) {
+      const form = c.label?.trim() ? `form “${c.label}”` : "form";
       const fields = (c.items ?? []).filter((it) => !it.startsWith("#"));
       if (c.type === "form" && fields.length > 6 && fields.length === (c.items ?? []).length)
-        add(`form “${c.label}” punya ${fields.length} isian tanpa pengelompokan`);
-      if (c.type === "table" && !c.columns?.length) add(`tabel “${c.label}” belum punya kolom`);
-      if (c.type === "nav") {
-        const dead = (c.items ?? []).filter((it) => !navTarget(it, p, pages));
-        if (dead.length) add(`menu tidak menuju halaman: ${dead.join(", ")}`);
-        if ((p.platform === "android" || p.platform === "ios") && (c.items?.length ?? 0) > 5)
-          add(`navigasi mobile punya ${c.items!.length} item (maks. 5)`);
-      }
+        add(`${form} punya ${fields.length} isian tanpa pengelompokan`);
+      if (c.type === "form" && !c.fields?.length) add(`${form} belum punya spesifikasi isian (tipe, wajib, validasi)`);
+      if (c.type === "nav" && (p.platform === "android" || p.platform === "ios") && (c.items?.length ?? 0) > 5)
+        add(`navigasi mobile punya ${c.items!.length} item (maks. 5)`);
     }
     // Detail pages list attributes of one record; only data views can be empty.
     if (["list", "admin", "dashboard", "search"].includes(kind) && count("list", "table") > 0 && !p.states?.empty)
@@ -211,8 +210,12 @@ export function designChecks(project: Project): Finding[] {
   return out;
 }
 
-// Change request that asks the designer to fix the findings.
-export function fixRequest(findings: Finding[]): string {
-  return "Perbaiki kualitas rancangan: tiap halaman pakai layout sesuai jenisnya, isi \"kind\", \"density\" dan \"states\".\n" +
-    findings.map((f) => `- ${f.page ? `Halaman "${f.page.name}": ` : ""}${f.text}`).join("\n");
+// Change request that asks the designer to fix blockers and findings.
+export function fixRequest(blockers: Blocker[], findings: Finding[]): string {
+  const lines = [
+    ...blockers.map((b) => `- ${b.page ? `Halaman "${b.page}": ` : ""}${b.text}`),
+    ...findings.map((f) => `- ${f.page ? `Halaman "${f.page.name}": ` : ""}${f.text}`),
+  ];
+  return "Lengkapi dan perbaiki rancangan: tiap halaman wajib punya \"route\", \"access\", \"primary_action\", \"data\", " +
+    "\"kind\", \"density\", \"states\", dan form punya \"fields\". Layout sesuai jenis halaman.\n" + lines.join("\n");
 }

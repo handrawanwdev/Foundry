@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { cells, formGroups, incoming, navTarget, pageDensity, pageKind, statParts, type Device } from "../design";
-import type { Page, PageComponent, PageKind } from "../types";
+import type { FormField, Page, PageComponent, PageKind } from "../types";
 
-export type PageState = "normal" | "empty" | "error" | "success";
+export type PageState = "normal" | "loading" | "empty" | "no_results" | "error" | "success";
 
 interface Props {
   page: Page;
@@ -39,12 +39,24 @@ export function Wireframe({ page, pages, device, mode, state = "normal", selecte
     </div>
   );
   const block = (x: Item) => wrap(x,
-    <Block c={x.c} kind={kind} run={run} empty={state === "empty" ? page.states?.empty : undefined} onNavigate={onNavigate} />,
+    <Block c={x.c} kind={kind} run={run} onNavigate={onNavigate}
+      empty={state === "empty" ? page.states?.empty : state === "no_results" ? page.states?.no_results : undefined} filtered={state === "no_results"} />,
     x.c.type === "button" ? "shrink" : "");
   const nav = (x: Item) => wrap(x, <Nav c={x.c} page={page} pages={pages} run={run} onNavigate={onNavigate} bottom={mobile} />);
 
   let content: ReactNode;
-  if (state === "error" || state === "success") {
+  if (state === "loading") {
+    const title = body.find((x) => x.c.type === "header");
+    content = (
+      <>
+        {title && block(title)}
+        <div className="wf-loading" aria-busy="true">
+          <span /><span /><span />
+          {page.states?.loading && <p>{page.states.loading}</p>}
+        </div>
+      </>
+    );
+  } else if (state === "error" || state === "success") {
     const title = body.find((x) => x.c.type === "header");
     content = (
       <>
@@ -134,9 +146,9 @@ function Nav({ c, page, pages, run, bottom, onNavigate }: NavProps) {
   );
 }
 
-interface BlockProps { c: PageComponent; kind: PageKind; run: boolean; empty?: string; onNavigate: (id: string) => void }
+interface BlockProps { c: PageComponent; kind: PageKind; run: boolean; empty?: string; filtered?: boolean; onNavigate: (id: string) => void }
 
-function Block({ c, kind, run, empty, onNavigate }: BlockProps) {
+function Block({ c, kind, run, empty, filtered, onNavigate }: BlockProps) {
   const open = run && c.target ? () => onNavigate(c.target!) : undefined;
   switch (c.type) {
     case "header":
@@ -160,7 +172,7 @@ function Block({ c, kind, run, empty, onNavigate }: BlockProps) {
         <div className="wf-table">
           {c.label && <div className="wf-label">{c.label}</div>}
           {!!c.columns?.length && <div className="wf-tr head">{c.columns.map((col) => <span key={col}>{col}</span>)}</div>}
-          {empty !== undefined ? <Empty text={empty} /> : (c.items ?? []).map((row, i) => (
+          {empty !== undefined ? <Empty text={empty} filtered={filtered} /> : (c.items ?? []).map((row, i) => (
             <div key={i} className={`wf-tr ${c.target ? "link" : ""}`} onClick={open}>
               {cells(row).map((cell, j) => <span key={j}>{cell}</span>)}
             </div>
@@ -171,7 +183,7 @@ function Block({ c, kind, run, empty, onNavigate }: BlockProps) {
       return (
         <div className="wf-list">
           {c.label && <div className="wf-label">{c.label}</div>}
-          {empty !== undefined ? <Empty text={empty} /> : (c.items ?? []).map((it, i) => {
+          {empty !== undefined ? <Empty text={empty} filtered={filtered} /> : (c.items ?? []).map((it, i) => {
             const [main, ...sub] = cells(it);
             return (
               <div key={i} className={`wf-row ${c.target ? "link" : ""}`} onClick={open}>
@@ -198,31 +210,70 @@ function Block({ c, kind, run, empty, onNavigate }: BlockProps) {
   }
 }
 
-function Empty({ text }: { text: string }) {
-  return <div className="wf-empty">{text || "Belum ada data."}</div>;
+function Empty({ text, filtered }: { text: string; filtered?: boolean }) {
+  return (
+    <div className="wf-empty">
+      {text || "Belum ada data."}
+      {filtered && <div><button type="button" className="wf-btn ghost">Hapus filter</button></div>}
+    </div>
+  );
 }
 
-function Field({ label }: { label: string }) {
-  return <label className="wf-field"><span>{label}</span><input placeholder={label} /></label>;
+function Field({ label, spec, error }: { label: string; spec?: FormField; error?: string }) {
+  const name = spec?.label ?? label;
+  const type = spec?.type ?? "text";
+  const input = type === "textarea" ? <textarea name={name} placeholder={name} rows={2} />
+    : type === "select" ? <select name={name} defaultValue=""><option value="">Pilih {name}</option></select>
+    : type === "checkbox" || type === "radio" ? <input name={name} type={type} />
+    : <input name={name} placeholder={name} inputMode={type === "currency" || type === "number" ? "decimal" : undefined}
+        type={["email", "password", "number", "tel", "date", "time"].includes(type) ? type : type === "datetime" ? "datetime-local" : "text"} />;
+  return (
+    <label className={`wf-field ${error ? "invalid" : ""}`}>
+      <span>{name}{spec?.required && <em aria-hidden> *</em>}</span>
+      {input}
+      {error && <small role="alert">{error}</small>}
+    </label>
+  );
+}
+
+// Groups for the form: from the field spec when present, else from items.
+function fieldGroups(c: PageComponent): { title?: string; fields: { label: string; spec?: FormField }[] }[] {
+  if (!c.fields?.length) return formGroups(c.items ?? []).map((g) => ({ title: g.title, fields: g.fields.map((label) => ({ label })) }));
+  const out: { title?: string; fields: { label: string; spec?: FormField }[] }[] = [];
+  for (const f of c.fields) {
+    const last = out[out.length - 1];
+    if (!last || last.title !== (f.group || undefined)) out.push({ title: f.group || undefined, fields: [] });
+    out[out.length - 1].fields.push({ label: f.label, spec: f });
+  }
+  return out;
 }
 
 interface FormProps { c: PageComponent; submit: string; cancel: boolean; run: boolean; onSubmit?: () => void }
 
 function Form({ c, submit, cancel, run, onSubmit }: FormProps) {
   const [sent, setSent] = useState(false);
-  useEffect(() => { if (!run) setSent(false); }, [run]);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  useEffect(() => { if (!run) { setSent(false); setErrors({}); } }, [run]);
   return (
-    <form className="wf-form" onSubmit={(e) => {
+    <form className="wf-form" noValidate onSubmit={(e) => {
       e.preventDefault();
       if (!run) return;
+      // Prototype validation: required fields from the spec must be filled.
+      const data = new FormData(e.currentTarget);
+      const errs: Record<string, string> = {};
+      for (const f of c.fields ?? []) {
+        if (f.required && !String(data.get(f.label) ?? "").trim()) errs[f.label] = f.error || `${f.label} wajib diisi`;
+      }
+      setErrors(errs);
+      if (Object.keys(errs).length) return;
       if (onSubmit) onSubmit();
       else setSent(true);
     }}>
       {c.label && <div className="wf-label">{c.label}</div>}
-      {formGroups(c.items ?? []).map((g, i) => (
+      {fieldGroups(c).map((g, i) => (
         <fieldset key={i} className="wf-group">
           {g.title && <legend>{g.title}</legend>}
-          {g.fields.map((it) => <Field key={it} label={it} />)}
+          {g.fields.map((f) => <Field key={f.label} label={f.label} spec={f.spec} error={errors[f.label]} />)}
         </fieldset>
       ))}
       <div className="wf-form-foot">

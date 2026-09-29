@@ -2,6 +2,7 @@ package work
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
@@ -28,6 +29,15 @@ var pageKinds = map[string]bool{
 }
 
 var densities = map[string]bool{"low": true, "medium": true, "high": true}
+
+var accessLevels = map[string]bool{"public": true, "auth": true}
+
+var fieldTypes = map[string]bool{
+	"text": true, "email": true, "password": true, "number": true, "tel": true, "date": true, "time": true,
+	"datetime": true, "select": true, "textarea": true, "checkbox": true, "radio": true, "file": true, "currency": true,
+}
+
+var apiCall = regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE) /\S*$`)
 
 func DesignPrompt(p *core.Project) string {
 	var b strings.Builder
@@ -64,12 +74,20 @@ Per page answer: what is the main user action, what must be seen first, what is 
 - admin: dense operational table with filters and bulk actions.
 - status: empty/error/success result page: what happened, concrete details, the next action.
 "density": low (auth, payment, status), medium (most app pages), high (admin, data-heavy lists).
-"states": copy for {"empty", "error", "success"} where the page can be in that state. Empty says why it is empty and what to do. Error says what failed and how to recover. Success states the concrete result. No "Oops", no "Congratulations", no emoji.
+"states": copy for {"loading", "empty", "no_results", "error", "success"} only where the page can be in that state. Empty says why it is empty and what to do. no_results is for search/filter matching nothing (e.g. "Tidak ada janji yang cocok dengan filter."). Error says what failed and how to recover. Success states the concrete result. No "Oops", no "Congratulations", no emoji, no generic "No data found".
+
+Every page is a build contract, all required:
+- "route": URL path (e.g. "/janji", "/janji/:id"); unique per platform. Mobile screens use a route too.
+- "access": "public" or "auth" (signed in). "role" is the role that uses the page.
+- "primary_action": the one main action {"label": "Buat janji", "target": "PAGE-003"}; a read-only page gives {"reason": "Halaman baca saja"} instead of a label. Never invent an action to fill space.
+- "data": {"required": [fields always shown], "optional": [], "dynamic": [values loaded or changing live], "api": ["GET /appointments"]}. api entries are "METHOD /path".
+- form components need "fields": [{"label": "Email", "type": "email", "required": true, "validation": "format email", "error": "Masukkan email yang valid", "group": "Kontak"}].
+  Field types: text, email, password, number, tel, date, time, datetime, select, textarea, checkbox, radio, file, currency.
 
 Component types: header, nav, text, list, table, form, button, card, stat, input, section, steps.
 - table: "columns" are the column names; "items" are example rows with cells separated by " | " (e.g. "Budi Santoso | Dr. Andi | Aktif"). Use realistic example data.
 - stat: label "Name: value" (e.g. "Janji hari ini: 12").
-- form: "items" are field names; an item starting with "# " starts a field group (e.g. "# Kontak").
+- form: "fields" as above ("group" groups fields); "items" is not needed when "fields" is given.
 - section: a separator heading that groups what follows.
 - steps: "items" are the step names of a wizard.
 Use "target" to link to another page id so the prototype is clickable: on button and card (open), on list and table (a row opens the detail page), on form (submit goes there).
@@ -81,9 +99,12 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
   "pages": [{"id": "PAGE-001", "name": "", "platform": "web|android|ios|desktop", "role": "", "feature_id": "FEAT-001",
              "sub_feature_ids": ["FEAT-001.1"], "purpose": "", "kind": "list", "density": "medium",
-             "states": {"empty": "", "error": ""},
+             "route": "/janji", "access": "auth", "primary_action": {"label": "", "target": "PAGE-003"},
+             "data": {"required": [""], "optional": [], "dynamic": [""], "api": ["GET /appointments"]},
+             "states": {"loading": "", "empty": "", "no_results": "", "error": ""},
              "components": [{"type": "header", "label": ""}, {"type": "table", "label": "", "columns": [""], "items": [""], "target": "PAGE-002"},
-                            {"type": "button", "label": "", "target": "PAGE-003"}]}],
+                            {"type": "button", "label": "", "target": "PAGE-003"},
+                            {"type": "form", "label": "", "fields": [{"label": "", "type": "text", "required": true, "validation": "", "error": "", "group": ""}]}]}],
   "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002"]}]
 }`)
 	return b.String()
@@ -108,7 +129,11 @@ func ApplyDesign(p *core.Project, raw string) error {
 			continue // design must trace to a feature
 		}
 		np := core.Page{ID: idMap[pg.ID], Name: pg.Name, Platform: strings.ToLower(pg.Platform), Role: pg.Role,
-			FeatureID: pg.FeatureID, Purpose: pg.Purpose, States: pg.States}
+			FeatureID: pg.FeatureID, Purpose: pg.Purpose, States: pg.States,
+			Route: normRoute(pg.Route), PrimaryAction: normAction(pg.PrimaryAction, idMap), Data: normData(pg.Data)}
+		if a := strings.ToLower(strings.TrimSpace(pg.Access)); accessLevels[a] {
+			np.Access = a
+		}
 		if k := strings.ToLower(pg.Kind); pageKinds[k] {
 			np.Kind = k
 		}
@@ -133,6 +158,14 @@ func ApplyDesign(p *core.Project, raw string) error {
 			}
 			if c.Type != "table" {
 				c.Columns = nil
+			}
+			if c.Type == "form" {
+				c.Fields = normFields(c.Fields)
+				if len(c.Fields) > 0 {
+					c.Items = fieldItems(c.Fields)
+				}
+			} else {
+				c.Fields = nil
 			}
 			if c.Target != "" {
 				c.Target = idMap[c.Target] // unknown targets become "" (dead link removed)
@@ -160,6 +193,9 @@ func ApplyDesign(p *core.Project, raw string) error {
 		valid[pg.ID] = true
 	}
 	for i := range pages {
+		if a := pages[i].PrimaryAction; a != nil && !valid[a.Target] {
+			a.Target = ""
+		}
 		for j := range pages[i].Components {
 			if !valid[pages[i].Components[j].Target] {
 				pages[i].Components[j].Target = ""
@@ -189,6 +225,94 @@ func ApplyDesign(p *core.Project, raw string) error {
 	p.Design = &core.Design{Pages: pages, Status: core.DesignDraft, Feedback: feedback, Revision: rev}
 	p.Tasks, p.Verification = nil, nil
 	return nil
+}
+
+func normRoute(r string) string {
+	r = strings.ToLower(strings.Join(strings.Fields(r), "-"))
+	if r != "" && !strings.HasPrefix(r, "/") {
+		r = "/" + r
+	}
+	return r
+}
+
+func normAction(a *core.PageAction, idMap map[string]string) *core.PageAction {
+	if a == nil {
+		return nil
+	}
+	out := core.PageAction{Label: strings.TrimSpace(a.Label), Reason: strings.TrimSpace(a.Reason)}
+	if a.Target != "" {
+		out.Target = idMap[a.Target]
+	}
+	if out.Label == "" && out.Reason == "" {
+		return nil
+	}
+	if out.Label == "" {
+		out.Target = ""
+	}
+	return &out
+}
+
+func normData(d *core.PageData) *core.PageData {
+	if d == nil {
+		return nil
+	}
+	out := core.PageData{Required: nonEmpty(d.Required), Optional: nonEmpty(d.Optional), Dynamic: nonEmpty(d.Dynamic)}
+	for _, a := range d.API {
+		f := strings.Fields(a)
+		if len(f) == 2 {
+			if c := strings.ToUpper(f[0]) + " " + f[1]; apiCall.MatchString(c) {
+				out.API = append(out.API, c)
+			}
+		}
+	}
+	if len(out.Required)+len(out.Optional)+len(out.Dynamic)+len(out.API) == 0 {
+		return nil
+	}
+	return &out
+}
+
+func nonEmpty(in []string) []string {
+	var out []string
+	for _, s := range in {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func normFields(in []core.FormField) []core.FormField {
+	var out []core.FormField
+	for _, f := range in {
+		f.Label = strings.TrimSpace(f.Label)
+		if f.Label == "" {
+			continue
+		}
+		f.Type = strings.ToLower(strings.TrimSpace(f.Type))
+		if !fieldTypes[f.Type] {
+			f.Type = "text"
+		}
+		f.Group = strings.TrimSpace(f.Group)
+		out = append(out, f)
+	}
+	return out
+}
+
+// fieldItems rebuilds the wireframe items ("# Group" then labels) from the
+// field spec so both never disagree.
+func fieldItems(fields []core.FormField) []string {
+	var items []string
+	group := ""
+	for _, f := range fields {
+		if f.Group != group {
+			group = f.Group
+			if group != "" {
+				items = append(items, "# "+group)
+			}
+		}
+		items = append(items, f.Label)
+	}
+	return items
 }
 
 // KeepRevision accepts the last change request.

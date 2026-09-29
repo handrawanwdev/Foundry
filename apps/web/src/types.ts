@@ -24,17 +24,30 @@ export interface Structure {
   mode: "existing" | "new"; components: Component[] | null; template?: string; layout?: string[];
   reason: string; commands: Command[] | null; approved: boolean; scaffolded: boolean;
 }
-export interface PageComponent { type: string; label: string; items?: string[]; columns?: string[]; target?: string }
+export interface FormField { label: string; type: string; required?: boolean; validation?: string; error?: string; group?: string }
+export interface PageComponent { type: string; label: string; items?: string[]; columns?: string[]; fields?: FormField[]; target?: string }
 export type PageKind =
   | "auth" | "dashboard" | "list" | "detail" | "form" | "wizard" | "search"
   | "settings" | "payment" | "profile" | "analytics" | "admin" | "status";
 export type Density = "low" | "medium" | "high";
-export interface PageStates { empty?: string; error?: string; success?: string }
+export interface PageStates { loading?: string; empty?: string; no_results?: string; error?: string; success?: string }
+export interface PageAction { label?: string; target?: string; reason?: string }
+export interface PageData { required?: string[]; optional?: string[]; dynamic?: string[]; api?: string[] }
 export interface Page {
   id: string; name: string; platform: string; role: string; feature_id: string;
   sub_feature_ids: string[] | null; purpose: string; components: PageComponent[] | null;
   kind?: PageKind; density?: Density; states?: PageStates;
+  route?: string; access?: "public" | "auth"; primary_action?: PageAction; data?: PageData;
 }
+// Build spec of one page, assembled by the server from the design.
+export interface PageHandoff {
+  page_id: string; name: string; route: string; platform: string; access: string; role: string; kind?: string;
+  purpose: string; primary_action: string; components: string[] | null; data?: PageData;
+  interactions: string[] | null; entry_points: string[] | null; states: string[] | null; validation: string[] | null;
+  tests: string[] | null; feature_id: string; sub_feature_ids?: string[]; requirement_ids: string[] | null; flow_ids: string[] | null;
+}
+export interface Blocker { page_id?: string; page?: string; text: string }
+export interface DesignHandoff { pages: PageHandoff[] | null; blockers: Blocker[] | null }
 export interface DesignChange { kind: "added" | "changed" | "removed"; page_id?: string; page: string; details?: string[] }
 export interface DesignRevision { request: string; changes: DesignChange[] | null }
 export interface Design {

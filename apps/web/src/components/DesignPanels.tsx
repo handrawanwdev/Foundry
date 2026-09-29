@@ -4,19 +4,23 @@ import { api } from "../api";
 import { componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
-import type { Page, Project } from "../types";
+import type { Blocker, Page, PageHandoff, Project } from "../types";
 
 // ---------- Inspect ----------
 
 interface InspectProps {
   project: Project;
   page: Page;
+  handoff?: PageHandoff;
   selected: number | null;
   onSelect: (i: number | null) => void;
   onOpen: (pageId: string) => void;
 }
 
-export function Inspect({ project, page, selected, onSelect, onOpen }: InspectProps) {
+const List = ({ title, items }: { title: string; items?: string[] | null }) =>
+  items?.length ? <><h5>{title}</h5><ul>{items.map((x) => <li key={x}>{x}</li>)}</ul></> : null;
+
+export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: InspectProps) {
   const pages = project.design?.pages ?? [];
   const c = selected !== null ? page.components?.[selected] : undefined;
   const PageLink = ({ p }: { p: Page }) => <button className="link" onClick={() => onOpen(p.id)}>→ {p.name}</button>;
@@ -38,6 +42,9 @@ export function Inspect({ project, page, selected, onSelect, onOpen }: InspectPr
         <details className="tech"><summary>Detail teknis</summary>
           <div>tipe: {c.type}</div>{c.target && <div>target: {c.target}</div>}
         {!!c.columns?.length && <div>kolom: {c.columns.join(", ")}</div>}
+          {(c.fields ?? []).map((f) => (
+            <div key={f.label}>{f.label}: {f.type}{f.required ? ", wajib" : ""}{f.validation ? `, ${f.validation}` : ""}{f.error ? ` — “${f.error}”` : ""}</div>
+          ))}
         </details>
       </div>
     );
@@ -48,16 +55,27 @@ export function Inspect({ project, page, selected, onSelect, onOpen }: InspectPr
   const flows = (project.flows ?? []).filter((f) => f.page_ids?.includes(page.id));
   const from = incoming(page, pages);
   const tasks = (project.tasks ?? []).filter((t) => t.page_ids?.includes(page.id));
+  const action = page.primary_action;
+  const actionTarget = pages.find((p) => p.id === action?.target);
+  const data = page.data;
   return (
     <div className="inspect">
       <h2>{page.name}</h2>
       {page.purpose && <p className="muted">{page.purpose}</p>}
       <dl>
+        <dt>Route</dt><dd>{page.route ? <code>{page.route}</code> : <span className="warn-text">belum ditentukan</span>}</dd>
+        <dt>Akses</dt><dd>{page.access === "auth" ? "Harus login" : page.access === "public" ? "Publik" : <span className="warn-text">belum ditentukan</span>}</dd>
+        <dt>Aksi utama</dt><dd>{action?.label ? <>{action.label}{actionTarget && <> <PageLink p={actionTarget} /></>}</>
+          : action?.reason ? <span className="muted">Tidak ada — {action.reason}</span> : <span className="warn-text">belum ditentukan</span>}</dd>
         <dt>Jenis</dt><dd>{KIND_LABEL[pageKind(page)]}{!page.kind && <span className="muted small"> (ditebak)</span>} · kepadatan {DENSITY_LABEL[pageDensity(page)]}</dd>
         {page.states && <><dt>Kondisi</dt><dd>
-          {page.states.empty && <div><span className="muted small">Kosong:</span> {page.states.empty}</div>}
-          {page.states.error && <div><span className="muted small">Error:</span> {page.states.error}</div>}
-          {page.states.success && <div><span className="muted small">Berhasil:</span> {page.states.success}</div>}
+          {STATE_LABEL.filter(([k]) => page.states?.[k]).map(([k, l]) => <div key={k}><span className="muted small">{l}:</span> {page.states![k]}</div>)}
+        </dd></>}
+        {data && <><dt>Data</dt><dd>
+          {!!data.required?.length && <div><span className="muted small">Wajib:</span> {data.required.join(", ")}</div>}
+          {!!data.optional?.length && <div><span className="muted small">Opsional:</span> {data.optional.join(", ")}</div>}
+          {!!data.dynamic?.length && <div><span className="muted small">Dinamis:</span> {data.dynamic.join(", ")}</div>}
+          {!!data.api?.length && <div><span className="muted small">API:</span> {data.api.map((a) => <code key={a} className="small"> {a}</code>)}</div>}
         </dd></>}
         {page.role && <><dt>Peran</dt><dd>{page.role}</dd></>}
         {feature && <><dt>Fitur</dt><dd>{feature.name}</dd></>}
@@ -74,12 +92,24 @@ export function Inspect({ project, page, selected, onSelect, onOpen }: InspectPr
           ))}
         </section>
       )}
+      {handoff && (
+        <details className="tech handoff"><summary>Handoff ke Build</summary>
+          <List title="Interaksi" items={handoff.interactions} />
+          <List title="Validasi" items={handoff.validation} />
+          <List title="Tes" items={handoff.tests} />
+          <List title="Kebutuhan" items={handoff.requirement_ids} />
+        </details>
+      )}
       <details className="tech"><summary>Detail teknis</summary>
         <div>halaman: {page.id}</div><div>fitur: {page.feature_id}</div><div>platform: {page.platform}</div><div>kind: {page.kind ?? "—"}</div>
       </details>
     </div>
   );
 }
+
+const STATE_LABEL: ["loading" | "empty" | "no_results" | "error" | "success", string][] = [
+  ["loading", "Memuat"], ["empty", "Kosong"], ["no_results", "Tanpa hasil"], ["error", "Error"], ["success", "Berhasil"],
+];
 
 // ---------- Change preview ----------
 
@@ -161,13 +191,14 @@ export function AskChange({ page, onClose }: { page?: Page; onClose: () => void 
 
 interface ReviewProps {
   project: Project;
+  blockers: Blocker[];
   onAsk: () => void;
   onTry: (flowId: string) => void;
   onInfo: (v: "platform") => void;
   onOpen: (pageId: string) => void;
 }
 
-export function Review({ project, onAsk, onTry, onInfo, onOpen }: ReviewProps) {
+export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: ReviewProps) {
   const { run, pending } = useProject();
   const findings = designChecks(project);
   const d = project.design!;
@@ -193,10 +224,26 @@ export function Review({ project, onAsk, onTry, onInfo, onOpen }: ReviewProps) {
           {" · "}Struktur: {s?.mode === "existing" ? "project yang sudah ada" : s?.template ?? "—"}
           {!approved && <> <button className="link" onClick={() => onInfo("platform")}>Ubah</button></>}
         </li>
+        {blockers.length ? <li className="warn">! Wajib dilengkapi: {blockers.length} hal (route, akses, aksi utama, kolom, menu)</li>
+          : <li className="ok">✓ Tiap halaman punya route, akses dan aksi utama</li>}
         {findings.length ? <li className="warn">! Kualitas rancangan: {findings.length} temuan</li>
           : <li className="ok">✓ Kualitas rancangan: tiap halaman punya layout sesuai jenisnya</li>}
         {d.revision && !approved && <li className="warn">! Perubahan terakhir belum disimpan. Menyetujui akan menyimpannya.</li>}
       </ul>
+
+      {!approved && blockers.length > 0 && (
+        <section className="review-flows">
+          <h3>Wajib dilengkapi sebelum disetujui</h3>
+          <ul className="review-findings review-blockers">
+            {blockers.map((b, i) => (
+              <li key={i}>
+                {b.page_id && <><button className="link" onClick={() => onOpen(b.page_id!)}>{b.page}</button>: </>}
+                <span>{b.text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {findings.length > 0 && (
         <section className="review-flows">
@@ -209,11 +256,12 @@ export function Review({ project, onAsk, onTry, onInfo, onOpen }: ReviewProps) {
               </li>
             ))}
           </ul>
-          {!approved && (
-            <button disabled={working || !!d.revision || pending === "revise"} title={d.revision ? "Simpan atau batalkan perubahan terakhir dulu" : undefined}
-              onClick={() => run("revise", () => api.reviseDesign(fixRequest(findings)))}>✦ Perbaiki otomatis</button>
-          )}
         </section>
+      )}
+
+      {!approved && (blockers.length > 0 || findings.length > 0) && (
+        <button className="review-fix" disabled={working || !!d.revision || pending === "revise"} title={d.revision ? "Simpan atau batalkan perubahan terakhir dulu" : undefined}
+          onClick={() => run("revise", () => api.reviseDesign(fixRequest(blockers, findings)))}>✦ Perbaiki otomatis</button>
       )}
 
       {flows.length > 0 && (
@@ -238,7 +286,8 @@ export function Review({ project, onAsk, onTry, onInfo, onOpen }: ReviewProps) {
           </>
         ) : (
           <>
-            <button className="primary" disabled={working || pending === "approve"} onClick={() => run("approve", api.approveDesign)}>Setujui Rancangan</button>
+            <button className="primary" disabled={working || pending === "approve" || blockers.length > 0}
+              title={blockers.length ? "Lengkapi dulu hal wajib di atas" : undefined} onClick={() => run("approve", api.approveDesign)}>Setujui Rancangan</button>
             <button disabled={working} onClick={onAsk}>Minta perubahan</button>
           </>
         )}

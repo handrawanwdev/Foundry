@@ -29,6 +29,7 @@ var (
 	ErrWrongStage  = errors.New("tahap project tidak sesuai")
 	ErrGate        = errors.New("task hanya boleh DONE setelah build/test lulus dan acceptance criteria terpenuhi")
 	ErrNothingToDo = errors.New("tidak ada pekerjaan untuk AI saat ini")
+	ErrIncomplete  = errors.New("rancangan belum lengkap")
 )
 
 // AI abstracts where AI work goes. Nil runner means MCP host mode.
@@ -209,6 +210,9 @@ func (s *Service) ApproveDesign() error {
 		}
 		if p.Design == nil || len(p.Design.Pages) == 0 || p.Platform == nil || p.Structure == nil {
 			return ErrWrongStage
+		}
+		if b := work.Blockers(p); len(b) > 0 {
+			return fmt.Errorf("%w: %d hal wajib dilengkapi", ErrIncomplete, len(b))
 		}
 		p.Design.Status = core.DesignApproved
 		p.Design.Revision = nil // approving keeps any pending change

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -46,12 +47,14 @@ const discoveryJSON = `Here you go:
 
 const designJSON = `{"pages": [
   {"id": "P1", "name": "Daftar Dokter", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "sub_feature_ids": ["FEAT-001.1"], "purpose": "Cari dokter",
+   "route": "Dokter", "access": "AUTH", "primary_action": {"label": "Pilih", "target": "P2"}, "data": {"required": ["Nama dokter"], "api": ["get /doctors", "ambil dokter"]},
    "components": [{"type": "header", "label": "Dokter"}, {"type": "list", "label": "Dokter", "columns": ["x"], "items": ["dr. A", "dr. B"]}, {"type": "button", "label": "Pilih", "target": "P2"}]},
   {"id": "P2", "name": "Konfirmasi Janji", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "sub_feature_ids": ["FEAT-001.2"], "purpose": "Konfirmasi",
-   "components": [{"type": "form", "label": "Janji", "items": ["Tanggal"]}, {"type": "button", "label": "Ke halaman hilang", "target": "P9"}]},
+   "route": "/janji/konfirmasi", "access": "auth", "primary_action": {"label": "Kirim", "target": "P9"},
+   "components": [{"type": "form", "label": "Janji", "items": ["x"], "fields": [{"label": "Tanggal", "type": "DATE", "required": true, "group": "Jadwal"}, {"label": " "}]}, {"type": "button", "label": "Ke halaman hilang", "target": "P9"}]},
   {"id": "P3", "name": "Admin Jadwal", "platform": "web", "role": "Admin", "feature_id": "FEAT-002", "sub_feature_ids": ["FEAT-002.1"], "purpose": "Kelola jadwal",
-   "kind": "ADMIN", "density": "padat", "states": {},
-   "components": [{"type": "table", "label": "Jadwal", "items": ["Senin"]}]}],
+   "kind": "ADMIN", "density": "padat", "states": {}, "route": "/jadwal", "access": "PUBLIC", "primary_action": {"reason": "Halaman baca saja"},
+   "components": [{"type": "table", "label": "Jadwal", "columns": ["Hari"], "items": ["Senin"]}]}],
  "flows": [{"id": "FLOW-001", "page_ids": ["P1", "P2"]}]}`
 
 // revisedDesignJSON adds a profile page and a column to the schedule table.
@@ -213,6 +216,26 @@ func TestEndToEndAgent(t *testing.T) {
 	if got := p.Flows[0].PageIDs; len(got) != 2 {
 		t.Fatalf("flow pages = %v", got)
 	}
+	// Contract fields are normalized: route gets a slash, access and field
+	// types are lowercased, invalid api calls and empty fields are dropped,
+	// form items follow the field spec, dead action targets are cleared.
+	pg := p.Design.Pages
+	if pg[0].Route != "/dokter" || pg[0].Access != "auth" || pg[2].Access != "public" ||
+		!slices.Equal(pg[0].Data.API, []string{"GET /doctors"}) || pg[0].PrimaryAction.Target != "PAGE-002" || pg[1].PrimaryAction.Target != "" {
+		t.Fatalf("contract = %+v", pg)
+	}
+	form := pg[1].Components[0]
+	if len(form.Fields) != 1 || form.Fields[0].Type != "date" || !slices.Equal(form.Items, []string{"# Jadwal", "Tanggal"}) {
+		t.Fatalf("form = %+v", form)
+	}
+	if b := work.Blockers(p); len(b) != 0 {
+		t.Fatalf("blockers = %+v", b)
+	}
+	h := work.Handoffs(p)[0]
+	if h.Route != "/dokter" || h.PrimaryAction != "Pilih → Konfirmasi Janji (/janji/konfirmasi)" ||
+		!slices.Contains(h.Tests, "Tanpa login diarahkan ke halaman masuk") || !slices.Contains(work.Handoffs(p)[1].Validation, "Tanggal: wajib, date") {
+		t.Fatalf("handoff = %+v", h)
+	}
 
 	// User override: template.
 	if _, err := s.SetTemplate("modular"); err != nil {
@@ -340,6 +363,10 @@ func TestDesignRevise(t *testing.T) {
 	p = load(t, s)
 	if len(p.Design.Pages) != 4 || len(p.Design.Feedback) != 1 || p.Design.Revision != nil {
 		t.Fatalf("after keep: %+v", p.Design)
+	}
+	// The new profile page has no route, access or primary action.
+	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrIncomplete) {
+		t.Fatalf("approve incomplete err = %v", err)
 	}
 }
 

@@ -5,15 +5,17 @@ import { Wireframe, type PageState } from "../components/Wireframe";
 import { DEVICES, defaultDevice, flowPages, groupPages, pageOrder, roleOf, type Device } from "../design";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
-import type { Project } from "../types";
+import { api } from "../api";
+import type { DesignHandoff, PageStates, Project } from "../types";
 import { Features, PlatformStructure, Summary } from "./DesignInfo";
 
 type Mode = "pratinjau" | "prototipe" | "tinjau";
 type Info = "fitur" | "platform" | "kebutuhan";
 
 const MODES: [Mode, string][] = [["pratinjau", "Pratinjau"], ["prototipe", "Prototipe"], ["tinjau", "Tinjau"]];
-const STATES: [PageState, string, "empty" | "error" | "success" | null][] = [
-  ["normal", "Normal", null], ["empty", "Kosong", "empty"], ["error", "Error", "error"], ["success", "Berhasil", "success"],
+const STATES: [PageState, string, keyof PageStates | null][] = [
+  ["normal", "Normal", null], ["loading", "Memuat", "loading"], ["empty", "Kosong", "empty"],
+  ["no_results", "Tanpa hasil", "no_results"], ["error", "Error", "error"], ["success", "Berhasil", "success"],
 ];
 const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Struktur"], ["kebutuhan", "Kebutuhan"]];
 // Explorer deep links use ?tab=fitur|platform|ringkasan.
@@ -47,6 +49,14 @@ function Workspace({ project }: { project: Project }) {
   const [flowId, setFlowId] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [pstate, setPstate] = useState<PageState>("normal");
+  const [handoff, setHandoff] = useState<DesignHandoff | null>(null);
+
+  // Handoff and blockers are derived by the server; refresh on every change.
+  useEffect(() => {
+    let live = true;
+    api.designHandoff().then((h) => live && setHandoff(h), () => live && setHandoff(null));
+    return () => { live = false; };
+  }, [project.updated_at]);
 
   useEffect(() => {
     const t = params.get("tab");
@@ -153,7 +163,7 @@ function Workspace({ project }: { project: Project }) {
             : info === "platform" ? <PlatformStructure project={project} />
             : info === "kebutuhan" ? <Summary project={project} />
             : mode === "tinjau" ? (
-              <Review project={project} onAsk={() => setAsking(true)} onInfo={setInfo}
+              <Review project={project} blockers={handoff?.blockers ?? []} onAsk={() => setAsking(true)} onInfo={setInfo}
                 onOpen={(id) => { setMode("pratinjau"); show(id); }}
                 onTry={(id) => { setMode("prototipe"); startFlow(id, true); }} />
             ) : page && (
@@ -166,7 +176,7 @@ function Workspace({ project }: { project: Project }) {
 
         {showInspect && (
           <aside className="dw-inspect">
-            <Inspect project={project} page={page!} selected={selected} onSelect={setSelected} onOpen={go} />
+            <Inspect project={project} page={page!} handoff={handoff?.pages?.find((h) => h.page_id === page!.id)} selected={selected} onSelect={setSelected} onOpen={go} />
           </aside>
         )}
       </div>

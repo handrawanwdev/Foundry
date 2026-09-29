@@ -193,27 +193,63 @@ type Page struct {
 	Purpose       string   `json:"purpose"`
 	// Kind picks the page layout (auth, list, form, ...); Density is
 	// low | medium | high. Both may be empty on older designs.
-	Kind       string          `json:"kind,omitempty"`
-	Density    string          `json:"density,omitempty"`
-	States     *PageStates     `json:"states,omitempty"`
-	Components []PageComponent `json:"components"`
+	Kind    string      `json:"kind,omitempty"`
+	Density string      `json:"density,omitempty"`
+	States  *PageStates `json:"states,omitempty"`
+	// Build contract: where the page lives, who may open it, what it is
+	// for and what data it needs. Required before the design is approved.
+	Route         string          `json:"route,omitempty"`
+	Access        string          `json:"access,omitempty"` // public | auth
+	PrimaryAction *PageAction     `json:"primary_action,omitempty"`
+	Data          *PageData       `json:"data,omitempty"`
+	Components    []PageComponent `json:"components"`
 }
 
-// PageStates holds the copy shown when the page is empty, fails or succeeds.
+// PageAction is the main thing the user does on a page. A read-only page has
+// no label and gives the reason instead.
+type PageAction struct {
+	Label  string `json:"label,omitempty"`
+	Target string `json:"target,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// PageData is the content a page needs; API lists "METHOD /path" calls.
+type PageData struct {
+	Required []string `json:"required,omitempty"`
+	Optional []string `json:"optional,omitempty"`
+	Dynamic  []string `json:"dynamic,omitempty"`
+	API      []string `json:"api,omitempty"`
+}
+
+// PageStates holds the copy shown per page state. NoResults is a search or
+// filter that matched nothing, as opposed to Empty (no data at all).
 type PageStates struct {
-	Empty   string `json:"empty,omitempty"`
-	Error   string `json:"error,omitempty"`
-	Success string `json:"success,omitempty"`
+	Loading   string `json:"loading,omitempty"`
+	Empty     string `json:"empty,omitempty"`
+	NoResults string `json:"no_results,omitempty"`
+	Error     string `json:"error,omitempty"`
+	Success   string `json:"success,omitempty"`
 }
 
 // PageComponent is a wireframe element. Target links to another page for
 // prototype navigation.
 type PageComponent struct {
-	Type    string   `json:"type"` // header | nav | text | list | table | form | button | card | stat | input | section | steps
-	Label   string   `json:"label"`
-	Items   []string `json:"items,omitempty"`
-	Columns []string `json:"columns,omitempty"` // table only
-	Target  string   `json:"target,omitempty"`
+	Type    string      `json:"type"` // header | nav | text | list | table | form | button | card | stat | input | section | steps
+	Label   string      `json:"label"`
+	Items   []string    `json:"items,omitempty"`
+	Columns []string    `json:"columns,omitempty"` // table only
+	Fields  []FormField `json:"fields,omitempty"`  // form only
+	Target  string      `json:"target,omitempty"`
+}
+
+// FormField specifies one form input for the build phase.
+type FormField struct {
+	Label      string `json:"label"`
+	Type       string `json:"type"`
+	Required   bool   `json:"required,omitempty"`
+	Validation string `json:"validation,omitempty"`
+	Error      string `json:"error,omitempty"`
+	Group      string `json:"group,omitempty"`
 }
 
 type Task struct {

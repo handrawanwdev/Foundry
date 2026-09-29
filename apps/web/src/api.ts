@@ -1,4 +1,4 @@
-import type { AIState, Browse, Command, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template } from "./types";
+import type { AIState, Browse, Command, DesignHandoff, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -37,6 +37,7 @@ export const api = {
   reviseDesign: (feedback: string) => call("POST", "/project/design/revise", { feedback }),
   keepDesign: () => call("POST", "/project/design/keep", {}),
   undoDesign: () => call("POST", "/project/design/undo", {}),
+  designHandoff: () => call<DesignHandoff>("GET", "/project/design/handoff"),
   approveDesign: () => call("POST", "/project/design/approve", {}),
   startBuild: () => call("POST", "/project/build/start", {}),
   stopBuild: () => call("POST", "/project/build/stop", {}),

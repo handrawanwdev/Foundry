@@ -31,6 +31,9 @@ func componentName(c core.PageComponent) string {
 	if n == "" {
 		n = c.Type
 	}
+	if strings.TrimSpace(c.Label) == "" {
+		return n
+	}
 	return fmt.Sprintf("%s “%s”", n, c.Label)
 }
 
@@ -90,7 +93,19 @@ func pageDetails(old, new core.Page, oldNames, newNames map[string]string) []str
 		d = append(d, "~ Kepadatan: "+new.Density)
 	}
 	if !reflect.DeepEqual(old.States, new.States) {
-		d = append(d, "~ Kondisi kosong/error/berhasil")
+		d = append(d, "~ Kondisi halaman")
+	}
+	if old.Route != new.Route {
+		d = append(d, "~ Route: "+new.Route)
+	}
+	if old.Access != new.Access {
+		d = append(d, "~ Akses: "+new.Access)
+	}
+	if !reflect.DeepEqual(old.PrimaryAction, new.PrimaryAction) {
+		d = append(d, "~ Aksi utama")
+	}
+	if !reflect.DeepEqual(old.Data, new.Data) {
+		d = append(d, "~ Data yang dibutuhkan")
 	}
 	oldComp := map[string]core.PageComponent{}
 	for _, c := range old.Components {
@@ -104,7 +119,7 @@ func pageDetails(old, new core.Page, oldNames, newNames map[string]string) []str
 		switch {
 		case !ok:
 			d = append(d, "+ "+componentName(c))
-		case !slices.Equal(prev.Items, c.Items) || !slices.Equal(prev.Columns, c.Columns) || oldNames[prev.Target] != newNames[c.Target]:
+		case !slices.Equal(prev.Items, c.Items) || !slices.Equal(prev.Columns, c.Columns) || !slices.Equal(prev.Fields, c.Fields) || oldNames[prev.Target] != newNames[c.Target]:
 			d = append(d, "~ "+componentName(c))
 		}
 	}

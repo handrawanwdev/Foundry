@@ -79,7 +79,7 @@ describe("design", () => {
       "P3 belum ada tampilan saat data kosong",
       "P3 susunan sama persis dengan halaman “Pasien”",
       "P4 form “F” punya 7 isian tanpa pengelompokan",
-      "P4 menu tidak menuju halaman: Hilang",
+      "P4 form “F” belum punya spesifikasi isian (tipe, wajib, validasi)",
     ]);
   });
 });
