@@ -162,6 +162,6 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 }
 
 func mustJSON(v any) string {
-	b, _ := json.MarshalIndent(v, "", "  ")
+	b, _ := json.Marshal(v) // compact: prompts are paid per token
 	return string(b)
 }

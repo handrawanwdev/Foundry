@@ -57,13 +57,15 @@ const designJSON = `{"pages": [
    "components": [{"type": "table", "label": "Jadwal", "columns": ["Hari"], "items": ["Senin"]}]}],
  "flows": [{"id": "FLOW-001", "page_ids": ["P1", "P2"]}]}`
 
-// revisedDesignJSON adds a profile page and a column to the schedule table.
-var revisedDesignJSON = strings.NewReplacer(
-	`"items": ["Senin"]}]}]`,
-	`"items": ["Senin", "Selasa"]}]},
-  {"id": "P4", "name": "Profil", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "purpose": "Data diri",
-   "components": [{"type": "form", "label": "Profil", "items": ["Nama"]}]}]`,
-).Replace(designJSON)
+// revisedDesignJSON is a change set: one changed page, one new page, a
+// longer flow. Pages not sent stay as they are.
+const revisedDesignJSON = `{"pages": [
+  {"id": "PAGE-003", "name": "Admin Jadwal", "platform": "web", "role": "Admin", "feature_id": "FEAT-002", "sub_feature_ids": ["FEAT-002.1"], "purpose": "Kelola jadwal",
+   "kind": "admin", "route": "/jadwal", "access": "public", "primary_action": {"reason": "Halaman baca saja"},
+   "components": [{"type": "table", "label": "Jadwal", "columns": ["Hari"], "items": ["Senin", "Selasa"]}]},
+  {"id": "NEW-1", "name": "Profil", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "purpose": "Data diri",
+   "components": [{"type": "form", "label": "Profil", "items": ["Nama"]}, {"type": "button", "label": "Dokter", "target": "PAGE-001"}]}],
+ "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002", "NEW-1"]}]}`
 
 // Plan deliberately omits tests for FEAT-002 so coverage filling is exercised.
 const planJSON = `{"tasks": [
@@ -338,6 +340,16 @@ func TestDesignRevise(t *testing.T) {
 	if c := rev.Changes[1]; c.Kind != "added" || c.Page != "Profil" || c.PageID != "PAGE-004" {
 		t.Fatalf("change 1 = %+v", c)
 	}
+	// Untouched pages keep id and content; the new page links to them.
+	if pg := findPage(p, "PAGE-002"); pg == nil || pg.Route != "/janji/konfirmasi" || len(pg.Components[0].Fields) != 1 {
+		t.Fatalf("untouched page = %+v", pg)
+	}
+	if got := findPage(p, "PAGE-004").Components[1].Target; got != "PAGE-001" {
+		t.Fatalf("new page target = %q", got)
+	}
+	if got := p.Flows[0].PageIDs; !slices.Equal(got, []string{"PAGE-001", "PAGE-002", "PAGE-004"}) {
+		t.Fatalf("flow pages = %v", got)
+	}
 
 	if err := s.UndoDesignChange(); err != nil {
 		t.Fatal(err)
@@ -368,6 +380,15 @@ func TestDesignRevise(t *testing.T) {
 	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrIncomplete) {
 		t.Fatalf("approve incomplete err = %v", err)
 	}
+}
+
+func findPage(p *core.Project, id string) *core.Page {
+	for i := range p.Design.Pages {
+		if p.Design.Pages[i].ID == id {
+			return &p.Design.Pages[i]
+		}
+	}
+	return nil
 }
 
 func approveAndPlan(t *testing.T, s *pipeline.Service) {

@@ -9,8 +9,9 @@ import (
 	"github.com/handrawanw/foundry/internal/core"
 )
 
-// Page ids are renumbered on every design run, so pages are matched by
-// platform + name, and link targets are compared by the target page's name.
+// A revision keeps page ids, so pages are matched by id (names repeat across
+// roles, e.g. one "Dashboard" per role). Link targets are compared by the
+// target page's name.
 
 var componentNames = map[string]string{
 	"header": "Judul", "nav": "Navigasi", "text": "Teks", "list": "Daftar", "table": "Tabel",
@@ -19,7 +20,7 @@ var componentNames = map[string]string{
 }
 
 func pageKey(pg core.Page) string {
-	return pg.Platform + "|" + strings.ToLower(strings.TrimSpace(pg.Name))
+	return pg.ID
 }
 
 func componentKey(c core.PageComponent) string {

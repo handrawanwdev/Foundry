@@ -3,14 +3,16 @@ package work
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
 )
 
 type designOut struct {
-	Pages []core.Page `json:"pages"`
-	Flows []struct {
+	Pages   []core.Page `json:"pages"`
+	Removed []string    `json:"removed"` // revision only: ids of deleted pages
+	Flows   []struct {
 		ID      string   `json:"id"`
 		PageIDs []string `json:"page_ids"`
 	} `json:"flows"`
@@ -39,6 +41,22 @@ var fieldTypes = map[string]bool{
 
 var apiCall = regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE) /\S*$`)
 
+const pageShape = `{"id": "PAGE-001", "name": "", "platform": "web|android|ios|desktop", "role": "", "feature_id": "FEAT-001",
+             "sub_feature_ids": ["FEAT-001.1"], "purpose": "", "kind": "list", "density": "medium",
+             "route": "/janji", "access": "auth", "primary_action": {"label": "", "target": "PAGE-003"},
+             "data": {"required": [""], "optional": [], "dynamic": [""], "api": ["GET /appointments"]},
+             "states": {"loading": "", "empty": "", "no_results": "", "error": ""},
+             "components": [{"type": "header", "label": ""}, {"type": "table", "label": "", "columns": [""], "items": [""], "target": "PAGE-002"},
+                            {"type": "button", "label": "", "target": "PAGE-003"},
+                            {"type": "form", "label": "", "fields": [{"label": "", "type": "text", "required": true, "validation": "", "error": "", "group": ""}]}]}`
+
+// isRevision reports a change request on an existing design: the AI then
+// returns only the pages that change.
+func isRevision(p *core.Project) bool {
+	d := p.Design
+	return d != nil && d.Status == core.DesignChanges && len(d.Pages) > 0 && len(d.Feedback) > 0
+}
+
 func DesignPrompt(p *core.Project) string {
 	var b strings.Builder
 	b.WriteString(`You are the product designer of Foundry. Create the UI pages for this product as simple wireframes.
@@ -52,9 +70,14 @@ Write labels in the same language as the features. Do not write code. Do not mod
 	if p.Discovery != nil {
 		b.WriteString("ROLES:\n" + mustJSON(p.Discovery.Roles) + "\n\n")
 	}
-	if p.Design != nil && len(p.Design.Feedback) > 0 {
-		b.WriteString("PREVIOUS DESIGN:\n" + mustJSON(p.Design.Pages) + "\n\n")
-		b.WriteString("USER REQUESTED CHANGES (apply all):\n- " + strings.Join(p.Design.Feedback, "\n- ") + "\n\n")
+	revise := isRevision(p)
+	if revise {
+		fb := p.Design.Feedback
+		b.WriteString("CURRENT DESIGN:\n" + mustJSON(p.Design.Pages) + "\n\n")
+		if len(fb) > 1 {
+			b.WriteString("EARLIER REQUESTS (already applied in the current design, do not redo):\n- " + strings.Join(fb[:len(fb)-1], "\n- ") + "\n\n")
+		}
+		b.WriteString("CHANGE REQUEST (apply now):\n" + fb[len(fb)-1] + "\n\n")
 	}
 	b.WriteString(`Design every page for its job, not from one template. Components may repeat across pages; layouts should not.
 Per page answer: what is the main user action, what must be seen first, what is only needed on demand.
@@ -95,16 +118,21 @@ Navigation uses the user's business words (Jadwal, Pasien, Laporan), not databas
 Mobile pages are designed for mobile: short content, the main nav becomes a bottom nav with at most 5 items.
 Every UI feature needs at least one page. Every flow lists the pages it walks through, in order.
 
+` + "\n\n")
+	if revise {
+		b.WriteString(`This is a change to the current design. Return ONLY what changes:
+- "pages": pages that change (keep their id, send the whole page) and new pages (id "NEW-1", "NEW-2", ...). Pages you do not send stay exactly as they are.
+- "removed": ids of pages to delete.
+- "flows": only flows whose page list changes, with the full new list.
+Every returned page follows all the rules above. Keep targets to unchanged pages as they are.
+
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
+{"pages": [` + pageShape + `], "removed": ["PAGE-009"], "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "NEW-1"]}]}`)
+		return b.String()
+	}
+	b.WriteString(`Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
-  "pages": [{"id": "PAGE-001", "name": "", "platform": "web|android|ios|desktop", "role": "", "feature_id": "FEAT-001",
-             "sub_feature_ids": ["FEAT-001.1"], "purpose": "", "kind": "list", "density": "medium",
-             "route": "/janji", "access": "auth", "primary_action": {"label": "", "target": "PAGE-003"},
-             "data": {"required": [""], "optional": [], "dynamic": [""], "api": ["GET /appointments"]},
-             "states": {"loading": "", "empty": "", "no_results": "", "error": ""},
-             "components": [{"type": "header", "label": ""}, {"type": "table", "label": "", "columns": [""], "items": [""], "target": "PAGE-002"},
-                            {"type": "button", "label": "", "target": "PAGE-003"},
-                            {"type": "form", "label": "", "fields": [{"label": "", "type": "text", "required": true, "validation": "", "error": "", "group": ""}]}]}],
+  "pages": [` + pageShape + `],
   "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002"]}]
 }`)
 	return b.String()
@@ -116,6 +144,9 @@ func ApplyDesign(p *core.Project, raw string) error {
 	if err := ExtractJSON(raw, &out); err != nil {
 		return err
 	}
+	if isRevision(p) {
+		return applyRevision(p, out)
+	}
 	if len(out.Pages) == 0 {
 		return fmt.Errorf("rancangan tidak berisi page")
 	}
@@ -125,69 +156,164 @@ func ApplyDesign(p *core.Project, raw string) error {
 	}
 	var pages []core.Page
 	for _, pg := range out.Pages {
-		if p.Feature(pg.FeatureID) == nil {
-			continue // design must trace to a feature
+		if np, ok := normPage(p, pg, idMap); ok {
+			pages = append(pages, np)
 		}
-		np := core.Page{ID: idMap[pg.ID], Name: pg.Name, Platform: strings.ToLower(pg.Platform), Role: pg.Role,
-			FeatureID: pg.FeatureID, Purpose: pg.Purpose, States: pg.States,
-			Route: normRoute(pg.Route), PrimaryAction: normAction(pg.PrimaryAction, idMap), Data: normData(pg.Data)}
-		if a := strings.ToLower(strings.TrimSpace(pg.Access)); accessLevels[a] {
-			np.Access = a
-		}
-		if k := strings.ToLower(pg.Kind); pageKinds[k] {
-			np.Kind = k
-		}
-		if d := strings.ToLower(pg.Density); densities[d] {
-			np.Density = d
-		}
-		if s := np.States; s != nil && *s == (core.PageStates{}) {
-			np.States = nil
-		}
-		f := p.Feature(pg.FeatureID)
-		for _, sid := range pg.SubFeatureIDs {
-			for _, s := range f.SubFeatures {
-				if s.ID == sid {
-					np.SubFeatureIDs = append(np.SubFeatureIDs, sid)
-				}
-			}
-		}
-		for _, c := range pg.Components {
-			c.Type = strings.ToLower(c.Type)
-			if !componentTypes[c.Type] {
-				c.Type = "text"
-			}
-			if c.Type != "table" {
-				c.Columns = nil
-			}
-			if c.Type == "form" {
-				c.Fields = normFields(c.Fields)
-				if len(c.Fields) > 0 {
-					c.Items = fieldItems(c.Fields)
-				}
-			} else {
-				c.Fields = nil
-			}
-			if c.Target != "" {
-				c.Target = idMap[c.Target] // unknown targets become "" (dead link removed)
-			}
-			np.Components = append(np.Components, c)
-		}
-		pages = append(pages, np)
 	}
 	if len(pages) == 0 {
 		return fmt.Errorf("tidak ada page yang terhubung ke feature")
 	}
-	// A revision (change request on an existing design) keeps the previous
-	// version so the user can undo it.
-	var rev *core.DesignRevision
-	if d := p.Design; d != nil && d.Status == core.DesignChanges && len(d.Pages) > 0 && len(d.Feedback) > 0 {
-		prevFlows := map[string][]string{}
-		for _, fl := range p.Flows {
-			prevFlows[fl.ID] = fl.PageIDs
+	valid := clearDangling(pages)
+	for i := range p.Flows {
+		p.Flows[i].PageIDs = nil
+		for _, fl := range out.Flows {
+			if fl.ID == p.Flows[i].ID {
+				p.Flows[i].PageIDs = mapIDs(fl.PageIDs, idMap, valid)
+			}
 		}
-		rev = &core.DesignRevision{Request: d.Feedback[len(d.Feedback)-1], PreviousPages: d.Pages, PreviousFlows: prevFlows}
 	}
-	// Pages that were dropped leave dangling targets; clear them.
+	var feedback []string
+	if p.Design != nil {
+		feedback = p.Design.Feedback
+	}
+	p.Design = &core.Design{Pages: pages, Status: core.DesignDraft, Feedback: feedback}
+	p.Tasks, p.Verification = nil, nil
+	return nil
+}
+
+// applyRevision merges a change set into the current design: returned pages
+// replace pages with the same id, NEW-* pages get the next free ids, removed
+// pages are dropped. Untouched pages keep their ids and content. The previous
+// version is kept so the user can undo it.
+func applyRevision(p *core.Project, out designOut) error {
+	d := p.Design
+	if len(out.Pages) == 0 && len(out.Removed) == 0 && len(out.Flows) == 0 {
+		return fmt.Errorf("rancangan tidak berubah")
+	}
+	prevFlows := map[string][]string{}
+	for _, fl := range p.Flows {
+		prevFlows[fl.ID] = fl.PageIDs
+	}
+	rev := &core.DesignRevision{Request: d.Feedback[len(d.Feedback)-1], PreviousPages: d.Pages, PreviousFlows: prevFlows}
+
+	idMap := map[string]string{}
+	next := 0
+	for _, pg := range d.Pages {
+		idMap[pg.ID] = pg.ID
+		var n int
+		if _, err := fmt.Sscanf(pg.ID, "PAGE-%d", &n); err == nil && n > next {
+			next = n
+		}
+	}
+	for _, id := range out.Removed {
+		delete(idMap, id)
+	}
+	var added []core.Page
+	for _, pg := range out.Pages {
+		if _, ok := idMap[pg.ID]; !ok && !slices.Contains(out.Removed, pg.ID) {
+			next++
+			idMap[pg.ID] = fmt.Sprintf("PAGE-%03d", next)
+			added = append(added, pg)
+		}
+	}
+	changed := map[string]core.Page{}
+	for _, pg := range out.Pages {
+		if np, ok := normPage(p, pg, idMap); ok {
+			changed[np.ID] = np
+		}
+	}
+	var pages []core.Page
+	for _, pg := range d.Pages {
+		if _, ok := idMap[pg.ID]; !ok {
+			continue // removed
+		}
+		if np, ok := changed[pg.ID]; ok {
+			pg = np
+		}
+		pages = append(pages, pg)
+	}
+	for _, pg := range added {
+		if np, ok := changed[idMap[pg.ID]]; ok {
+			pages = append(pages, np)
+		}
+	}
+	if len(pages) == 0 {
+		return fmt.Errorf("rancangan tidak boleh kosong")
+	}
+	valid := clearDangling(pages)
+	for i := range p.Flows {
+		ids := p.Flows[i].PageIDs
+		for _, fl := range out.Flows {
+			if fl.ID == p.Flows[i].ID {
+				ids = fl.PageIDs
+			}
+		}
+		p.Flows[i].PageIDs = mapIDs(ids, idMap, valid)
+	}
+	rev.Changes = DiffPages(rev.PreviousPages, pages)
+	p.Design = &core.Design{Pages: pages, Status: core.DesignDraft, Feedback: d.Feedback, Revision: rev}
+	p.Tasks, p.Verification = nil, nil
+	return nil
+}
+
+// normPage cleans one page from the AI; false when it traces to no feature.
+func normPage(p *core.Project, pg core.Page, idMap map[string]string) (core.Page, bool) {
+	f := p.Feature(pg.FeatureID)
+	if f == nil {
+		return core.Page{}, false // design must trace to a feature
+	}
+	np := core.Page{ID: idMap[pg.ID], Name: pg.Name, Platform: strings.ToLower(pg.Platform), Role: pg.Role,
+		FeatureID: pg.FeatureID, Purpose: pg.Purpose, States: pg.States,
+		Route: normRoute(pg.Route), PrimaryAction: normAction(pg.PrimaryAction, idMap), Data: normData(pg.Data)}
+	if np.ID == "" {
+		return core.Page{}, false
+	}
+	if a := strings.ToLower(strings.TrimSpace(pg.Access)); accessLevels[a] {
+		np.Access = a
+	}
+	if k := strings.ToLower(pg.Kind); pageKinds[k] {
+		np.Kind = k
+	}
+	if d := strings.ToLower(pg.Density); densities[d] {
+		np.Density = d
+	}
+	if s := np.States; s != nil && *s == (core.PageStates{}) {
+		np.States = nil
+	}
+	for _, sid := range pg.SubFeatureIDs {
+		for _, s := range f.SubFeatures {
+			if s.ID == sid {
+				np.SubFeatureIDs = append(np.SubFeatureIDs, sid)
+			}
+		}
+	}
+	for _, c := range pg.Components {
+		c.Type = strings.ToLower(c.Type)
+		if !componentTypes[c.Type] {
+			c.Type = "text"
+		}
+		if c.Type != "table" {
+			c.Columns = nil
+		}
+		if c.Type == "form" {
+			c.Fields = normFields(c.Fields)
+			if len(c.Fields) > 0 {
+				c.Items = fieldItems(c.Fields)
+			}
+		} else {
+			c.Fields = nil
+		}
+		if c.Target != "" {
+			c.Target = idMap[c.Target] // unknown targets become "" (dead link removed)
+		}
+		np.Components = append(np.Components, c)
+	}
+	return np, true
+}
+
+// clearDangling clears targets to pages that no longer exist and returns the
+// set of page ids.
+func clearDangling(pages []core.Page) map[string]bool {
 	valid := map[string]bool{}
 	for _, pg := range pages {
 		valid[pg.ID] = true
@@ -202,29 +328,17 @@ func ApplyDesign(p *core.Project, raw string) error {
 			}
 		}
 	}
-	for i := range p.Flows {
-		p.Flows[i].PageIDs = nil
-		for _, fl := range out.Flows {
-			if fl.ID != p.Flows[i].ID {
-				continue
-			}
-			for _, id := range fl.PageIDs {
-				if m := idMap[id]; valid[m] {
-					p.Flows[i].PageIDs = append(p.Flows[i].PageIDs, m)
-				}
-			}
+	return valid
+}
+
+func mapIDs(ids []string, idMap map[string]string, valid map[string]bool) []string {
+	var out []string
+	for _, id := range ids {
+		if m := idMap[id]; valid[m] {
+			out = append(out, m)
 		}
 	}
-	var feedback []string
-	if p.Design != nil {
-		feedback = p.Design.Feedback
-	}
-	if rev != nil {
-		rev.Changes = DiffPages(rev.PreviousPages, pages)
-	}
-	p.Design = &core.Design{Pages: pages, Status: core.DesignDraft, Feedback: feedback, Revision: rev}
-	p.Tasks, p.Verification = nil, nil
-	return nil
+	return out
 }
 
 func normRoute(r string) string {
