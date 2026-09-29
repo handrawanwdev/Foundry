@@ -219,3 +219,18 @@ export function fixRequest(blockers: Blocker[], findings: Finding[]): string {
   return "Lengkapi dan perbaiki rancangan: tiap halaman wajib punya \"route\", \"access\", \"primary_action\", \"data\", " +
     "\"kind\", \"density\", \"states\", dan form punya \"fields\". Layout sesuai jenis halaman.\n" + lines.join("\n");
 }
+
+export interface PageRequest { page: Page; text: string }
+
+// Change request for several pages at once: one AI run, one revision to keep
+// or undo. Page ids are included because names repeat across platforms.
+export function changeRequest(general: string, perPage: PageRequest[]): string {
+  const g = general.trim();
+  const items = perPage.map((r) => ({ page: r.page, text: r.text.trim() })).filter((r) => r.text);
+  const line = (r: PageRequest) => `Di halaman "${r.page.name}" (${r.page.id}): ${r.text}`;
+  if (!items.length) return g;
+  if (items.length === 1 && !g) return line(items[0]);
+  const lines = items.map((r) => "- " + line(r));
+  if (g) lines.push("- Umum: " + g);
+  return "Ubah beberapa halaman sekaligus:\n" + lines.join("\n");
+}

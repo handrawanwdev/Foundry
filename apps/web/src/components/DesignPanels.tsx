@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf } from "../design";
+import { changeRequest, componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf, type PageRequest } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
 import type { Blocker, Page, PageHandoff, Project } from "../types";
@@ -130,7 +130,7 @@ export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (page
         <div>
           <strong>Rancangan diperbarui</strong>
           <span className="muted"> · {changes.length ? `${changes.length} perubahan` : "tidak ada perubahan halaman"}</span>
-          <div className="small muted">“{rev.request}”</div>
+          <div className="small muted" style={{ whiteSpace: "pre-line" }}>“{rev.request}”</div>
         </div>
         <div className="inline">
           {changes.length > 0 && <button className="ghost" onClick={() => setOpen(!open)}>{open ? "Sembunyikan" : "Lihat"}</button>}
@@ -157,32 +157,50 @@ export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (page
 
 // ---------- Ask for change ----------
 
-export function AskChange({ page, onClose }: { page?: Page; onClose: () => void }) {
+export function AskChange({ page, pages, onClose }: { page?: Page; pages: Page[]; onClose: () => void }) {
   const { run, project } = useProject();
-  const [text, setText] = useState("");
-  const [scoped, setScoped] = useState(!!page);
+  const [general, setGeneral] = useState("");
+  const [items, setItems] = useState<PageRequest[]>(page ? [{ page, text: "" }] : []);
   const working = isWorking(project);
+  const feedback = changeRequest(general, items);
+  const free = pages.filter((p) => !items.some((r) => r.page.id === p.id));
+  const multi = new Set(pages.map((p) => p.platform)).size > 1;
+  const label = (p: Page) => multi ? `${p.name} · ${PLATFORM_LABEL[p.platform] ?? p.platform}` : p.name;
+  const setText = (id: string, text: string) => setItems(items.map((r) => r.page.id === id ? { ...r, text } : r));
+  const add = (id: string) => { const p = pages.find((x) => x.id === id); if (p) setItems([...items, { page: p, text: "" }]); };
   const send = async () => {
-    const t = text.trim();
-    if (!t || working) return;
-    const feedback = scoped && page ? `Di halaman "${page.name}": ${t}` : t;
+    if (!feedback || working) return;
     if (await run("revise", () => api.reviseDesign(feedback))) onClose();
   };
+  const keys = (e: KeyboardEvent) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void send(); };
   return (
     <div className="dw-ask" onKeyDown={(e) => e.key === "Escape" && onClose()}>
-      <textarea rows={3} autoFocus value={text} onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void send(); }}
-        placeholder="mis. Tambahkan filter dokter di halaman Janji Temu" />
+      {items.map((r, i) => (
+        <div key={r.page.id} className="dw-ask-page">
+          <div className="dw-ask-page-head">
+            <span className="small">{label(r.page)}</span>
+            <button className="ghost small" title="Hapus halaman ini" onClick={() => setItems(items.filter((x) => x.page.id !== r.page.id))}>×</button>
+          </div>
+          <textarea rows={2} autoFocus={i === 0} value={r.text} onChange={(e) => setText(r.page.id, e.target.value)} onKeyDown={keys}
+            placeholder="mis. Tambahkan filter dokter" />
+        </div>
+      ))}
+      {free.length > 0 && (
+        <select value="" onChange={(e) => add(e.target.value)}>
+          <option value="">+ Tambah halaman…</option>
+          {free.map((p) => <option key={p.id} value={p.id}>{label(p)}</option>)}
+        </select>
+      )}
+      <textarea rows={items.length ? 2 : 3} autoFocus={!items.length} value={general} onChange={(e) => setGeneral(e.target.value)} onKeyDown={keys}
+        placeholder={items.length ? "Perubahan umum (opsional)" : "mis. Tambahkan filter dokter di halaman Janji Temu"} />
       <div className="dw-ask-foot">
-        {page ? (
-          <label className="small muted"><input type="checkbox" checked={scoped} onChange={(e) => setScoped(e.target.checked)} /> Tentang halaman {page.name}</label>
-        ) : <span />}
+        <span className="small muted">{items.filter((r) => r.text.trim()).length > 1 ? `${items.filter((r) => r.text.trim()).length} halaman sekaligus` : ""}</span>
         <div className="inline">
           <button className="ghost" onClick={onClose}>Batal</button>
-          <button className="primary" disabled={!text.trim() || working} onClick={() => void send()}>Kirim</button>
+          <button className="primary" disabled={!feedback || working} onClick={() => void send()}>Kirim</button>
         </div>
       </div>
-      <div className="small muted">Perubahan hanya ke rancangan, belum ke kode. Kamu bisa menyimpan atau membatalkannya.</div>
+      <div className="small muted">Semua perubahan diproses sekali jalan, lalu bisa disimpan atau dibatalkan bersama. Perubahan hanya ke rancangan, belum ke kode.</div>
     </div>
   );
 }

@@ -144,7 +144,7 @@ function Workspace({ project }: { project: Project }) {
         </div>
       </header>
 
-      {asking && <AskChange page={mode !== "tinjau" && !info ? page : undefined} onClose={() => setAsking(false)} />}
+      {asking && <AskChange page={mode !== "tinjau" && !info ? page : undefined} pages={order} onClose={() => setAsking(false)} />}
       <ChangeBar project={project} onOpen={(id) => { setMode("pratinjau"); show(id); }} />
 
       <div className={`dw-main ${sideOpen ? "side-open" : ""}`}>

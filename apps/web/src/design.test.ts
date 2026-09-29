@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cells, designChecks, featuresWithoutPage, formGroups, groupPages, incoming, navTarget, pageDensity, pageKind, pageOrder, requirementsOf, statParts } from "./design";
+import { cells, changeRequest, designChecks, featuresWithoutPage, formGroups, groupPages, incoming, navTarget, pageDensity, pageKind, pageOrder, requirementsOf, statParts } from "./design";
 import type { Flow, Page, Project } from "./types";
 
 const page = (id: string, name: string, role: string, extra: Partial<Page> = {}): Page => ({
@@ -81,5 +81,13 @@ describe("design", () => {
       "P4 form “F” punya 7 isian tanpa pengelompokan",
       "P4 form “F” belum punya spesifikasi isian (tipe, wajib, validasi)",
     ]);
+  });
+
+  it("builds one change request for several pages", () => {
+    expect(changeRequest("  Warna lebih kontras ", [])).toBe("Warna lebih kontras");
+    expect(changeRequest("", [{ page: pages[1], text: "tambah filter" }])).toBe('Di halaman "Janji Temu" (P2): tambah filter');
+    expect(changeRequest("rapikan nav", [{ page: pages[0], text: "tambah lupa sandi" }, { page: pages[1], text: " " }, { page: pages[3], text: "hapus stat" }])).toBe(
+      'Ubah beberapa halaman sekaligus:\n- Di halaman "Login" (P1): tambah lupa sandi\n- Di halaman "Dashboard" (P4): hapus stat\n- Umum: rapikan nav');
+    expect(changeRequest("", [{ page: pages[0], text: "" }])).toBe("");
   });
 });
