@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/agent"
@@ -86,6 +87,9 @@ func fakeAgent() {
 		if mode == "crash" {
 			fmt.Fprintln(os.Stderr, "agent crashed")
 			os.Exit(1)
+		}
+		if mode == "hang" {
+			time.Sleep(time.Minute)
 		}
 		m := taskIDRe.FindStringSubmatch(prompt)
 		id := strings.ToLower(strings.ReplaceAll(m[1], "-", "_"))
@@ -362,6 +366,38 @@ func TestAgentCrashStopsBuild(t *testing.T) {
 	mustJob(t, p, "build", core.JobFailed)
 	if !strings.Contains(p.Job.Error, "agent gagal") {
 		t.Fatalf("error = %s", p.Job.Error)
+	}
+}
+
+func TestStopBuildReleasesTask(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	approveAndPlan(t, s)
+	os.Setenv("FAKE_MODE", "hang")
+	if err := s.StartBuild(); err != nil {
+		t.Fatal(err)
+	}
+	var running *core.Task
+	for deadline := time.Now().Add(10 * time.Second); running == nil; time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("no task started")
+		}
+		for i, tk := range load(t, s).Tasks {
+			if tk.Status == core.TaskInProgress {
+				running = &load(t, s).Tasks[i]
+			}
+		}
+	}
+	if err := s.StopBuild(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	tk := p.Task(running.ID)
+	if tk.Status != core.TaskTodo || tk.Attempts != 0 || len(tk.Notes) != 0 {
+		t.Fatalf("task = %s attempts %d notes %v", tk.Status, tk.Attempts, tk.Notes)
+	}
+	if p.Job.Message != "Build dihentikan" {
+		t.Fatalf("job = %+v", p.Job)
 	}
 }
 

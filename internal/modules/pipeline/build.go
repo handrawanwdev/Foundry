@@ -88,6 +88,9 @@ func (s *Service) buildLoop(ctx context.Context, runner *agent.Runner) {
 		}
 		t := ready[0]
 		if err := s.runTaskWithAgent(ctx, runner, t.ID); err != nil {
+			if ctx.Err() != nil {
+				continue // stopped by the user; handled at the top of the loop
+			}
 			if errors.Is(err, agent.ErrAgentFailed) {
 				agentFailures++
 				if agentFailures >= 2 {
@@ -139,6 +142,9 @@ func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, id
 	}
 	before := checks.Take(p.Dir)
 	if _, err := runner.Run(ctx, agent.Execute, p.Dir, work.TaskPrompt(p, t)); err != nil {
+		if ctx.Err() != nil {
+			return s.releaseTask(ctx, id)
+		}
 		s.rejectTask(id, "Agent gagal menjalankan task: "+err.Error())
 		return err
 	}
@@ -148,6 +154,9 @@ func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, id
 		return nil
 	}
 	build := s.runChecks(ctx, id)
+	if ctx.Err() != nil {
+		return s.releaseTask(ctx, id)
+	}
 	if !build.Passed {
 		s.rejectTask(id, "Verifikasi gagal: "+build.Reason+"\n"+lastOutput(build))
 		return nil
@@ -156,6 +165,9 @@ func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, id
 	p, _ = s.Store.Load()
 	out, err := runner.Run(ctx, agent.Think, p.Dir, work.ReviewPrompt(p, p.Task(id), checks.Excerpt(p.Dir, changed, 60000), &build))
 	if err != nil {
+		if ctx.Err() != nil {
+			return s.releaseTask(ctx, id)
+		}
 		s.rejectTask(id, "Review gagal: "+err.Error())
 		return err
 	}
@@ -198,6 +210,23 @@ func lastOutput(b core.BuildRun) string {
 		out = "…" + out[len(out)-1500:]
 	}
 	return out
+}
+
+// releaseTask returns a task interrupted by "Hentikan" to TODO. The attempt
+// is not counted and no failure note is added: the agent was stopped, it did
+// not fail.
+func (s *Service) releaseTask(ctx context.Context, id string) error {
+	s.Store.Update(func(p *core.Project) error {
+		if t := p.Task(id); t != nil {
+			t.Status = core.TaskTodo
+			if t.Attempts > 0 {
+				t.Attempts--
+			}
+			p.Log("system", id+" dihentikan, kembali ke TODO")
+		}
+		return nil
+	})
+	return ctx.Err()
 }
 
 // rejectTask sends a task back to TODO with feedback, or BLOCKED after
