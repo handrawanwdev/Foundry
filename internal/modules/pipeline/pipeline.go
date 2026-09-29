@@ -134,6 +134,33 @@ func (s *Service) ReviseDesign(feedback string) error {
 	return s.startAI(work.KindDesign)
 }
 
+// KeepDesignChange accepts the last design revision.
+func (s *Service) KeepDesignChange() error {
+	return s.reviseStep("Perubahan rancangan disimpan", work.KeepRevision)
+}
+
+// UndoDesignChange restores the design from before the last revision.
+func (s *Service) UndoDesignChange() error {
+	return s.reviseStep("Perubahan rancangan dibatalkan", work.UndoRevision)
+}
+
+func (s *Service) reviseStep(msg string, fn func(*core.Project) error) error {
+	_, err := s.Store.Update(func(p *core.Project) error {
+		if p.Busy() {
+			return ErrBusy
+		}
+		if p.Design == nil || p.Design.Status == core.DesignApproved {
+			return ErrWrongStage
+		}
+		if err := fn(p); err != nil {
+			return err
+		}
+		p.Log("ui", msg)
+		return nil
+	})
+	return err
+}
+
 // SetPlatform lets the user override the suggested platforms.
 func (s *Service) SetPlatform(targets []core.PlatformTarget) (*core.Project, error) {
 	return s.Store.Update(func(p *core.Project) error {
@@ -184,6 +211,7 @@ func (s *Service) ApproveDesign() error {
 			return ErrWrongStage
 		}
 		p.Design.Status = core.DesignApproved
+		p.Design.Revision = nil // approving keeps any pending change
 		p.Platform.Approved = true
 		p.Structure.Approved = true
 		if err := structure.Scaffold(p.Dir, p.Structure); err != nil {

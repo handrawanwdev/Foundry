@@ -38,7 +38,8 @@ Write labels in the same language as the features. Do not write code. Do not mod
 		b.WriteString("USER REQUESTED CHANGES (apply all):\n- " + strings.Join(p.Design.Feedback, "\n- ") + "\n\n")
 	}
 	b.WriteString(`Component types: header, nav, text, list, table, form, button, card, stat, input.
-Use "target" on button and card components to link to another page id so the prototype is clickable. list/table/nav/form use "items".
+Use "target" to link to another page id so the prototype is clickable: on button and card (open), on list and table (a row opens the detail page), on form (submit goes there).
+Name nav items exactly like the pages they open. list/table/nav/form use "items".
 Every UI feature needs at least one page. Every flow lists the pages it walks through, in order.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
@@ -94,6 +95,16 @@ func ApplyDesign(p *core.Project, raw string) error {
 	if len(pages) == 0 {
 		return fmt.Errorf("tidak ada page yang terhubung ke feature")
 	}
+	// A revision (change request on an existing design) keeps the previous
+	// version so the user can undo it.
+	var rev *core.DesignRevision
+	if d := p.Design; d != nil && d.Status == core.DesignChanges && len(d.Pages) > 0 && len(d.Feedback) > 0 {
+		prevFlows := map[string][]string{}
+		for _, fl := range p.Flows {
+			prevFlows[fl.ID] = fl.PageIDs
+		}
+		rev = &core.DesignRevision{Request: d.Feedback[len(d.Feedback)-1], PreviousPages: d.Pages, PreviousFlows: prevFlows}
+	}
 	// Pages that were dropped leave dangling targets; clear them.
 	valid := map[string]bool{}
 	for _, pg := range pages {
@@ -123,8 +134,39 @@ func ApplyDesign(p *core.Project, raw string) error {
 	if p.Design != nil {
 		feedback = p.Design.Feedback
 	}
-	p.Design = &core.Design{Pages: pages, Status: core.DesignDraft, Feedback: feedback}
+	if rev != nil {
+		rev.Changes = DiffPages(rev.PreviousPages, pages)
+	}
+	p.Design = &core.Design{Pages: pages, Status: core.DesignDraft, Feedback: feedback, Revision: rev}
 	p.Tasks, p.Verification = nil, nil
+	return nil
+}
+
+// KeepRevision accepts the last change request.
+func KeepRevision(p *core.Project) error {
+	if p.Design == nil || p.Design.Revision == nil {
+		return fmt.Errorf("tidak ada perubahan untuk ditinjau")
+	}
+	p.Design.Revision = nil
+	return nil
+}
+
+// UndoRevision restores the design from before the last change request and
+// drops that request so later revisions do not apply it again.
+func UndoRevision(p *core.Project) error {
+	if p.Design == nil || p.Design.Revision == nil {
+		return fmt.Errorf("tidak ada perubahan untuk dibatalkan")
+	}
+	rev := p.Design.Revision
+	p.Design.Pages = rev.PreviousPages
+	for i := range p.Flows {
+		p.Flows[i].PageIDs = rev.PreviousFlows[p.Flows[i].ID]
+	}
+	if n := len(p.Design.Feedback); n > 0 {
+		p.Design.Feedback = p.Design.Feedback[:n-1]
+	}
+	p.Design.Status = core.DesignDraft
+	p.Design.Revision = nil
 	return nil
 }
 

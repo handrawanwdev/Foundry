@@ -29,7 +29,12 @@ export interface Page {
   id: string; name: string; platform: string; role: string; feature_id: string;
   sub_feature_ids: string[] | null; purpose: string; components: PageComponent[] | null;
 }
-export interface Design { pages: Page[]; status: "draft" | "changes_requested" | "approved"; feedback: string[] | null }
+export interface DesignChange { kind: "added" | "changed" | "removed"; page_id?: string; page: string; details?: string[] }
+export interface DesignRevision { request: string; changes: DesignChange[] | null }
+export interface Design {
+  pages: Page[]; status: "draft" | "changes_requested" | "approved"; feedback: string[] | null;
+  revision?: DesignRevision;
+}
 export interface Criterion { text: string; met: boolean; evidence: string }
 export interface Task {
   id: string; title: string; description: string; area: string; requirement_ids: string[] | null;

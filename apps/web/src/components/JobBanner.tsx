@@ -1,11 +1,15 @@
+import { useLocation } from "react-router-dom";
 import { api } from "../api";
 import { useProject } from "../store/project";
 
 // Shows what Foundry is doing right now, for every step.
 export function JobBanner() {
   const { project, run, pending } = useProject();
+  const loc = useLocation();
   const job = project?.job;
   if (!job || job.status === "done") return null;
+  // The design workspace shows its own progress.
+  if (job.status === "running" && job.kind === "design" && loc.pathname === "/simple/rancang") return null;
 
   if (job.status === "failed") {
     return (

@@ -1,269 +1,248 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api } from "../api";
+import { AskChange, ChangeBar, Inspect, Review } from "../components/DesignPanels";
 import { Wireframe } from "../components/Wireframe";
-import { isWorking, PLATFORM_LABEL } from "../flow";
+import { DEVICES, defaultDevice, flowPages, groupPages, pageOrder, roleOf, type Device } from "../design";
+import { isWorking } from "../flow";
 import { useProject } from "../store/project";
-import type { PlatformKind, PlatformTarget, Project, Template } from "../types";
+import type { Project } from "../types";
+import { Features, PlatformStructure, Summary } from "./DesignInfo";
 
-type Tab = "rancangan" | "fitur" | "platform" | "ringkasan";
+type Mode = "pratinjau" | "prototipe" | "tinjau";
+type Info = "fitur" | "platform" | "kebutuhan";
+
+const MODES: [Mode, string][] = [["pratinjau", "Pratinjau"], ["prototipe", "Prototipe"], ["tinjau", "Tinjau"]];
+const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Struktur"], ["kebutuhan", "Kebutuhan"]];
+// Explorer deep links use ?tab=fitur|platform|ringkasan.
+const TAB_INFO: Record<string, Info> = { fitur: "fitur", platform: "platform", ringkasan: "kebutuhan" };
+
+const wide = () => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches;
 
 export function DesignPage() {
   const { project } = useProject();
-  const [params] = useSearchParams();
-  const [tab, setTab] = useState<Tab>("rancangan");
-  // Explorer deep links: ?tab=fitur, ?page=PAGE-001
-  useEffect(() => {
-    const t = params.get("tab") as Tab | null;
-    if (t) setTab(t);
-    else if (params.get("page")) setTab("rancangan");
-  }, [params]);
   if (!project) return null;
-
-  if (!project.design) {
-    return (
-      <section className="card narrow center-text">
-        {isWorking(project) ? (
-          <><h1><span className="spinner" /> Membuat rancangan aplikasi</h1><p className="muted">Halaman dibuat dari fitur dan alur pengguna.</p></>
-        ) : (
-          <><h1>Belum ada rancangan</h1><p><Link to="/simple/tell">Ceritakan idemu dulu</Link></p></>
-        )}
-      </section>
-    );
-  }
-
-  return (
-    <div className="design">
-      <div className="tabs">
-        {([
-          ["rancangan", "Rancangan"],
-          ["fitur", "Fitur & Alur"],
-          ["platform", "Platform & Struktur"],
-          ["ringkasan", "Kebutuhan"],
-        ] as [Tab, string][]).map(([k, l]) => (
-          <button key={k} className={`tab ${tab === k ? "active" : ""}`} onClick={() => setTab(k)}>{l}</button>
-        ))}
-      </div>
-      {tab === "rancangan" && <Prototype project={project} />}
-      {tab === "fitur" && <Features project={project} />}
-      {tab === "platform" && <PlatformStructure project={project} />}
-      {tab === "ringkasan" && <Summary project={project} />}
-      <ApproveBar project={project} />
-    </div>
-  );
+  if (!project.design?.pages.length) return <Designing project={project} />;
+  return <Workspace project={project} />;
 }
 
-function Prototype({ project }: { project: Project }) {
-  const pages = project.design?.pages ?? [];
+function Workspace({ project }: { project: Project }) {
   const [params] = useSearchParams();
-  const [current, setCurrent] = useState(params.get("page") ?? pages[0]?.id);
+  const design = project.design!;
+  const pages = design.pages;
+  const flows = project.flows ?? [];
+  const groups = useMemo(() => groupPages(pages, flows), [pages, flows]);
+  const order = useMemo(() => pageOrder(groups), [groups]);
+
+  const [mode, setMode] = useState<Mode>("pratinjau");
+  const [info, setInfo] = useState<Info | null>(null);
+  const [pageId, setPageId] = useState(params.get("page") ?? order[0]?.id);
+  const [device, setDevice] = useState<Device | null>(null); // null = follows the page platform
+  const [selected, setSelected] = useState<number | null>(null);
+  const [inspect, setInspect] = useState(wide);
+  const [sideOpen, setSideOpen] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [flowId, setFlowId] = useState<string | null>(null);
+  const [history, setHistory] = useState<string[]>([]);
+
   useEffect(() => {
+    const t = params.get("tab");
     const p = params.get("page");
-    if (p) setCurrent(p);
+    if (t && TAB_INFO[t]) setInfo(TAB_INFO[t]);
+    else if (p) { setPageId(p); setInfo(null); setMode("pratinjau"); }
   }, [params]);
   useEffect(() => {
-    if (!pages.find((p) => p.id === current)) setCurrent(pages[0]?.id);
-  }, [pages, current]);
-  const page = pages.find((p) => p.id === current);
-  const feature = project.features?.find((f) => f.id === page?.feature_id);
-  const byPlatform = useMemo(() => {
-    const m = new Map<string, typeof pages>();
-    for (const p of pages) m.set(p.platform, [...(m.get(p.platform) ?? []), p]);
-    return [...m.entries()];
-  }, [pages]);
+    if (!pages.some((p) => p.id === pageId)) setPageId(order[0]?.id);
+  }, [pages, pageId, order]);
+
+  const page = pages.find((p) => p.id === pageId) ?? order[0];
+  const dev = device ?? defaultDevice(page);
+  const approved = design.status === "approved";
+  const working = isWorking(project);
+  const changed = new Set((design.revision?.changes ?? []).map((c) => c.page_id).filter(Boolean));
+
+  const show = (id: string) => { setPageId(id); setSelected(null); setInfo(null); setSideOpen(false); };
+  const switchMode = (m: Mode) => { setMode(m); setInfo(null); setSelected(null); if (m === "prototipe") startFlow(currentFlow()?.id ?? null); };
+
+  // ---- prototype ----
+  const runnable = flows.filter((f) => flowPages(f, pages).length > 0);
+  const currentFlow = () => runnable.find((f) => f.page_ids?.includes(page?.id ?? "")) ?? runnable[0];
+  const flow = runnable.find((f) => f.id === flowId);
+  const steps = flow ? flowPages(flow, pages) : [];
+  const step = steps.findIndex((p) => p.id === page?.id);
+  // Starts a flow at its first page; keeps the current page when it is
+  // already part of the flow, unless restart is set.
+  const startFlow = (id: string | null, restart = false) => {
+    setFlowId(id);
+    setHistory([]);
+    const f = runnable.find((x) => x.id === id);
+    const first = f && flowPages(f, pages)[0];
+    if (first && (restart || !f.page_ids?.includes(page?.id ?? ""))) show(first.id);
+  };
+  const go = (id: string) => {
+    if (id === page?.id) return;
+    if (mode === "prototipe" && page) setHistory([...history, page.id]);
+    show(id);
+  };
+  const back = () => {
+    const prev = history[history.length - 1];
+    if (!prev) return;
+    setHistory(history.slice(0, -1));
+    show(prev);
+  };
+
+  const idx = order.findIndex((p) => p.id === page?.id);
+  const showInspect = inspect && mode === "pratinjau" && !info && !!page;
 
   return (
-    <div className="split">
-      <aside className="pages">
-        <h3>Pages</h3>
-        {byPlatform.map(([pl, ps]) => (
-          <div key={pl}>
-            <div className="small muted upper">{PLATFORM_LABEL[pl] ?? pl}</div>
-            {ps.map((p) => (
-              <button key={p.id} className={`page-item ${p.id === current ? "active" : ""}`} onClick={() => setCurrent(p.id)}>
-                {p.name}
-              </button>
-            ))}
-          </div>
-        ))}
-      </aside>
-      <div className="preview">
-        {page && (
-          <>
-            <div className="preview-meta">
-              <strong>{page.name}</strong> <span className="tag">{page.id}</span>
-              {feature && <span className="tag">{feature.id} {feature.name}</span>}
-              {page.role && <span className="tag">{page.role}</span>}
-              <div className="small muted">{page.purpose}</div>
-            </div>
-            <Wireframe page={page} onNavigate={setCurrent} />
-            <p className="small muted center-text">Klik tombol bertanda ↗ untuk mencoba alur prototype.</p>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Features({ project }: { project: Project }) {
-  const pages = project.design?.pages ?? [];
-  return (
-    <div className="grid">
-      {(project.features ?? []).map((f) => (
-        <div key={f.id} className="card">
-          <div className="row between">
-            <strong>{f.name}</strong>
-            <span className="tag">{f.id}</span>
-          </div>
-          <p className="small muted">{f.description}</p>
-          <div className="small">Sub-fitur:</div>
-          <ul className="small">{f.sub_features.map((s) => <li key={s.id}>{s.name}</li>)}</ul>
-          <div className="small">Halaman: {pages.filter((p) => p.feature_id === f.id).map((p) => p.name).join(", ") || "— (backend)"}</div>
-          <div className="small muted">Kebutuhan: {f.requirement_ids.join(", ")} · {f.platforms.map((p) => PLATFORM_LABEL[p]).join(", ")}</div>
-          {(project.flows ?? []).filter((fl) => fl.feature_id === f.id).map((fl) => (
-            <div key={fl.id} className="flow small">
-              <strong>Alur: {fl.name}</strong> ({fl.role})
-              <div>{fl.steps.join(" → ")}</div>
-            </div>
+    <div className="dw">
+      <header className="dw-head">
+        <button className="ghost dw-side-toggle" onClick={() => setSideOpen(!sideOpen)}>Halaman</button>
+        <div className="dw-title">
+          <strong>Rancangan</strong>
+          <Status project={project} />
+        </div>
+        <div className="seg">
+          {MODES.map(([k, l]) => (
+            <button key={k} className={mode === k && !info ? "on" : ""} onClick={() => switchMode(k)}>{l}</button>
           ))}
         </div>
-      ))}
-    </div>
-  );
-}
+        <div className="dw-actions">
+          {mode !== "tinjau" && !info && (
+            <div className="seg subtle">
+              {DEVICES.map((d) => <button key={d.key} className={dev === d.key ? "on" : ""} onClick={() => setDevice(d.key)}>{d.label}</button>)}
+            </div>
+          )}
+          {!approved && <button className="ask-btn" disabled={working} onClick={() => setAsking(!asking)}>✦ Minta perubahan</button>}
+          {mode === "pratinjau" && !info && (
+            <button className={`ghost ${inspect ? "on" : ""}`} title="Panel detail" onClick={() => setInspect(!inspect)}>Detail</button>
+          )}
+        </div>
+      </header>
 
-const KINDS: PlatformKind[] = ["web", "android", "ios", "desktop", "backend"];
+      {asking && <AskChange page={mode !== "tinjau" && !info ? page : undefined} onClose={() => setAsking(false)} />}
+      <ChangeBar project={project} onOpen={(id) => { setMode("pratinjau"); show(id); }} />
 
-function PlatformStructure({ project }: { project: Project }) {
-  const { run } = useProject();
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const locked = project.design?.status === "approved";
-  useEffect(() => { void api.templates().then(setTemplates); }, []);
-  const targets = project.platform?.targets ?? [];
-  const has = (k: PlatformKind) => targets.some((t) => t.kind === k);
-
-  const toggle = (k: PlatformKind) => {
-    const next: PlatformTarget[] = has(k)
-      ? targets.filter((t) => t.kind !== k)
-      : [...targets, { kind: k, audience: [], rationale: "Ditambahkan oleh user" }];
-    void run("platform", () => api.setPlatform(next));
-  };
-  const s = project.structure;
-
-  return (
-    <div className="grid two">
-      <div className="card">
-        <h3>Platform yang disarankan</h3>
-        {KINDS.map((k) => {
-          const t = targets.find((x) => x.kind === k);
-          return (
-            <label key={k} className="check">
-              <input type="checkbox" checked={!!t} disabled={locked} onChange={() => toggle(k)} />
-              <strong>{PLATFORM_LABEL[k]}</strong>
-              {t && t.audience.length > 0 && <span className="muted small"> — {t.audience.join(", ")}</span>}
-            </label>
-          );
-        })}
-        {project.platform?.reason && <p className="small"><strong>Alasan:</strong> {project.platform.reason}</p>}
-      </div>
-      <div className="card">
-        <h3>Struktur Project</h3>
-        {s?.mode === "existing" ? (
-          <>
-            {(s.components ?? []).map((c, i) => (
-              <div key={i} className="small">✓ {c.kind} ditemukan <code>{c.path}</code> {c.tech && <span className="muted">({c.tech})</span>}</div>
+      <div className={`dw-main ${sideOpen ? "side-open" : ""}`}>
+        <aside className="dw-side">
+          {groups.map((g) => (
+            <div key={g.role} className="dw-group">
+              <div className="dw-role">{g.role}</div>
+              {g.loose.map((p) => <PageItem key={p.id} name={p.name} active={!info && p.id === page?.id} changed={changed.has(p.id)} onClick={() => go(p.id)} />)}
+              {g.flows.map(({ flow: f, pages: ps }) => (
+                <div key={f.id} className="dw-flow">
+                  <div className="dw-flow-name">{f.name}</div>
+                  {ps.map((p) => <PageItem key={p.id} name={p.name} active={!info && p.id === page?.id} changed={changed.has(p.id)} onClick={() => go(p.id)} />)}
+                </div>
+              ))}
+            </div>
+          ))}
+          <div className="dw-side-foot">
+            {INFOS.map(([k, l]) => (
+              <button key={k} className={`dw-page ${info === k ? "active" : ""}`} onClick={() => { setInfo(k); setSideOpen(false); }}>{l}</button>
             ))}
-            <p className="small">{s.reason}</p>
-            {(s.commands ?? []).length > 0 && (
-              <details className="small"><summary>Command verifikasi</summary>
-                {(s.commands ?? []).map((c, i) => <div key={i}><code>{c.argv.join(" ")}</code> <span className="muted">di {c.dir}</span></div>)}
-              </details>
+          </div>
+        </aside>
+
+        <main className="dw-center">
+          {info === "fitur" ? <Features project={project} />
+            : info === "platform" ? <PlatformStructure project={project} />
+            : info === "kebutuhan" ? <Summary project={project} />
+            : mode === "tinjau" ? (
+              <Review project={project} onAsk={() => setAsking(true)} onInfo={setInfo}
+                onTry={(id) => { setMode("prototipe"); startFlow(id, true); }} />
+            ) : page && (
+              <div className={`dw-stage ${dev}`}>
+                <Wireframe page={page} pages={pages} device={dev} mode={mode === "prototipe" ? "run" : "select"}
+                  selected={selected} onSelect={(i) => { setSelected(i); if (i !== null) setInspect(true); }} onNavigate={go} />
+              </div>
             )}
-          </>
-        ) : s ? (
-          <>
-            {templates.map((t) => (
-              <label key={t.id} className="check">
-                <input type="radio" name="tpl" checked={s.template === t.id} disabled={locked}
-                  onChange={() => void run("template", () => api.setTemplate(t.id))} />
-                <strong>{t.name}</strong> <span className="muted small">{t.description}</span>
-              </label>
-            ))}
-            <pre className="code small">{(s.layout ?? []).join("\n")}</pre>
-            <p className="small">{s.reason}</p>
-          </>
-        ) : <p className="muted">Belum ditentukan</p>}
+        </main>
+
+        {showInspect && (
+          <aside className="dw-inspect">
+            <Inspect project={project} page={page!} selected={selected} onSelect={setSelected} onOpen={go} />
+          </aside>
+        )}
       </div>
+
+      {!info && mode === "pratinjau" && page && (
+        <footer className="dw-foot">
+          <button className="ghost" disabled={idx <= 0} onClick={() => go(order[idx - 1].id)}>← Sebelumnya</button>
+          <span className="muted">{roleOf(page)} / <strong className="fg">{page.name}</strong></span>
+          <button className="ghost" disabled={idx >= order.length - 1} onClick={() => go(order[idx + 1].id)}>Berikutnya →</button>
+        </footer>
+      )}
+      {!info && mode === "prototipe" && page && (
+        <footer className="dw-foot">
+          <button className="ghost" disabled={history.length === 0} onClick={back}>← Kembali</button>
+          <span className="inline">
+            {runnable.length > 0 ? (
+              <select value={flowId ?? ""} onChange={(e) => startFlow(e.target.value, true)}>
+                {runnable.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            ) : <span className="muted">Belum ada alur</span>}
+            {flow && <span className="muted">{step >= 0 ? `Langkah ${step + 1} dari ${steps.length}` : "Di luar alur"}</span>}
+          </span>
+          {flow && step >= 0 && step < steps.length - 1 ? (
+            <button className="ghost" onClick={() => go(steps[step + 1].id)}>Lanjut →</button>
+          ) : flow ? (
+            <button className="ghost" onClick={() => { setHistory([]); show(steps[0].id); }}>Ulangi</button>
+          ) : <span />}
+        </footer>
+      )}
     </div>
   );
 }
 
-function Summary({ project }: { project: Project }) {
-  const d = project.discovery;
+function PageItem({ name, active, changed, onClick }: { name: string; active: boolean; changed: boolean; onClick: () => void }) {
   return (
-    <div className="grid two">
-      <div className="card">
-        <h3>Pemahaman Foundry</h3>
-        <p>{d?.summary}</p>
-        <p className="small"><strong>Bisnis:</strong> {d?.business}</p>
-        <p className="small"><strong>Peran:</strong> {d?.roles.map((r) => `${r.name} (${PLATFORM_LABEL[r.platform] ?? r.platform})`).join(", ")}</p>
-        {!!d?.data.length && <p className="small"><strong>Data:</strong> {d.data.join("; ")}</p>}
-        {!!d?.integrations.length && <p className="small"><strong>Integrasi:</strong> {d.integrations.join(", ")}</p>}
-        {!!d?.security.length && <p className="small"><strong>Keamanan:</strong> {d.security.join(", ")}</p>}
-      </div>
-      <div className="card">
-        <h3>Kebutuhan</h3>
-        {(project.requirements ?? []).map((r) => (
-          <div key={r.id} className="small req"><span className="tag">{r.id}</span> <span className={`prio ${r.priority}`}>{r.priority}</span> {r.text}</div>
-        ))}
-      </div>
-    </div>
+    <button className={`dw-page ${active ? "active" : ""}`} onClick={onClick}>
+      <span>{name}</span>
+      {changed && <span className="dw-dot" title="Berubah di revisi terakhir" />}
+    </button>
   );
 }
 
-function ApproveBar({ project }: { project: Project }) {
-  const { run, pending } = useProject();
-  const [feedback, setFeedback] = useState("");
-  const [editing, setEditing] = useState(false);
+function Status({ project }: { project: Project }) {
   const d = project.design!;
-  const working = isWorking(project);
+  const job = project.job;
+  if (d.status === "approved") return <span className="dw-status ok">✓ Disetujui</span>;
+  if (isWorking(project) && job?.kind === "design") return <span className="dw-status"><span className="spinner" /> Memperbarui rancangan</span>;
+  if (isWorking(project) && job?.kind === "plan") return <span className="dw-status"><span className="spinner" /> Membuat task</span>;
+  if (d.revision) return <span className="dw-status warn">● Perubahan belum disimpan</span>;
+  return <span className="dw-status ok">✓ Siap ditinjau</span>;
+}
 
-  if (d.status === "approved") {
+// First design run: progress from the real pipeline state, no fake steps.
+function Designing({ project }: { project: Project }) {
+  const job = project.job;
+  const working = isWorking(project);
+  const failed = job?.status === "failed";
+  if (!working && !failed) {
     return (
-      <div className="approve-bar">
-        <span>✓ Rancangan disetujui.</span>
-        {(project.tasks?.length ?? 0) > 0 ? <Link className="button primary" to="/simple/bangun">Lihat Kanban</Link>
-          : working ? <span><span className="spinner" /> Membuat task…</span> : null}
+      <div className="dw-empty">
+        <h1>Belum ada rancangan</h1>
+        <p className="muted">Rancangan dibuat dari cerita dan kebutuhan aplikasimu.</p>
+        <Link className="button primary" to="/simple/tell">Ceritakan idemu</Link>
       </div>
     );
   }
-  const stat = (n: number, l: string) => <div className="stat"><strong>{n}</strong><span>{l}</span></div>;
+  const state = (kind: string, done: boolean) =>
+    done ? "done" : job?.kind === kind ? (failed ? "failed" : "active") : "todo";
+  const steps: [string, string][] = [
+    ["Cerita diterima", project.story ? "done" : "todo"],
+    ["Memahami kebutuhan", state("discovery", !!project.discovery)],
+    ["Membuat halaman dan alur", state("design", false)],
+    ["Siap ditinjau", "todo"],
+  ];
+  const mark: Record<string, string> = { done: "✓", active: "●", failed: "✕", todo: "○" };
   return (
-    <div className="approve-bar">
-      <div className="stats">
-        <span className="muted">Rancangan siap</span>
-        {stat(d.pages.length, "Pages")}
-        {stat(project.features?.length ?? 0, "Features")}
-        {stat(project.flows?.length ?? 0, "Flows")}
-        <div className="stat"><strong>{(project.platform?.targets ?? []).map((t) => PLATFORM_LABEL[t.kind]).join(" + ")}</strong><span>Platform</span></div>
-      </div>
-      {editing ? (
-        <form className="inline grow" onSubmit={async (e) => {
-          e.preventDefault();
-          if (await run("revise", () => api.reviseDesign(feedback))) { setFeedback(""); setEditing(false); }
-        }}>
-          <input className="grow" value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="mis. Tambahkan halaman riwayat pembayaran" autoFocus />
-          <button type="submit" disabled={!feedback.trim() || working}>Kirim</button>
-          <button type="button" className="ghost" onClick={() => setEditing(false)}>Batal</button>
-        </form>
-      ) : (
-        <div className="row">
-          <button disabled={working} onClick={() => setEditing(true)}>Ubah Rancangan</button>
-          <button className="primary" disabled={working || pending === "approve"} onClick={() => run("approve", api.approveDesign)}>
-            Setujui & Buat Task
-          </button>
-        </div>
-      )}
+    <div className="dw-empty">
+      <h1>Merancang aplikasimu</h1>
+      <p className="muted">Foundry mengubah kebutuhan menjadi halaman dan alur pengguna. Biasanya butuh beberapa saat.</p>
+      <ul className="dw-steps">
+        {steps.map(([l, s]) => <li key={l} className={s}><span>{s === "active" ? <span className="spinner" /> : mark[s]}</span>{l}</li>)}
+      </ul>
     </div>
   );
 }

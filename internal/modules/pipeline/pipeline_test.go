@@ -53,6 +53,14 @@ const designJSON = `{"pages": [
    "components": [{"type": "table", "label": "Jadwal", "items": ["Senin"]}]}],
  "flows": [{"id": "FLOW-001", "page_ids": ["P1", "P2"]}]}`
 
+// revisedDesignJSON adds a profile page and a column to the schedule table.
+var revisedDesignJSON = strings.NewReplacer(
+	`"items": ["Senin"]}]}]`,
+	`"items": ["Senin", "Selasa"]}]},
+  {"id": "P4", "name": "Profil", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "purpose": "Data diri",
+   "components": [{"type": "form", "label": "Profil", "items": ["Nama"]}]}]`,
+).Replace(designJSON)
+
 // Plan deliberately omits tests for FEAT-002 so coverage filling is exercised.
 const planJSON = `{"tasks": [
   {"id": "T1", "title": "Scaffold project", "description": "Buat go.mod", "area": "scaffold", "feature_id": "", "depends_on": [],
@@ -80,6 +88,10 @@ func fakeAgent() {
 		}
 		fmt.Println(discoveryJSON)
 	case strings.Contains(prompt, "product designer"):
+		if strings.Contains(prompt, "Tambahkan halaman profil") {
+			fmt.Println(revisedDesignJSON)
+			return
+		}
 		fmt.Println(designJSON)
 	case strings.Contains(prompt, "tech lead"):
 		fmt.Println(planJSON)
@@ -291,6 +303,42 @@ func TestDesignRevise(t *testing.T) {
 	p := load(t, s)
 	if p.Design.Status != core.DesignDraft || len(p.Design.Feedback) != 1 {
 		t.Fatalf("design = %+v", p.Design)
+	}
+	rev := p.Design.Revision
+	if rev == nil || rev.Request != "Tambahkan halaman profil" || len(rev.Changes) != 2 {
+		t.Fatalf("revision = %+v", rev)
+	}
+	if c := rev.Changes[0]; c.Kind != "changed" || c.Page != "Admin Jadwal" || len(c.Details) != 1 {
+		t.Fatalf("change 0 = %+v", c)
+	}
+	if c := rev.Changes[1]; c.Kind != "added" || c.Page != "Profil" || c.PageID != "PAGE-004" {
+		t.Fatalf("change 1 = %+v", c)
+	}
+
+	if err := s.UndoDesignChange(); err != nil {
+		t.Fatal(err)
+	}
+	p = load(t, s)
+	if len(p.Design.Pages) != 3 || len(p.Design.Feedback) != 0 || p.Design.Revision != nil {
+		t.Fatalf("after undo: %+v", p.Design)
+	}
+	if got := p.Flows[0].PageIDs; len(got) != 2 {
+		t.Fatalf("flow pages after undo = %v", got)
+	}
+	if err := s.KeepDesignChange(); err == nil {
+		t.Fatal("keep without a revision must fail")
+	}
+
+	if err := s.ReviseDesign("Tambahkan halaman profil"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	if err := s.KeepDesignChange(); err != nil {
+		t.Fatal(err)
+	}
+	p = load(t, s)
+	if len(p.Design.Pages) != 4 || len(p.Design.Feedback) != 1 || p.Design.Revision != nil {
+		t.Fatalf("after keep: %+v", p.Design)
 	}
 }
 

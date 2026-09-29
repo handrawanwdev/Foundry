@@ -161,6 +161,26 @@ type Design struct {
 	Pages    []Page       `json:"pages"`
 	Status   DesignStatus `json:"status"`
 	Feedback []string     `json:"feedback"`
+	// Revision is the last requested change, waiting for the user to keep or
+	// undo it. Nil when there is nothing to review.
+	Revision *DesignRevision `json:"revision,omitempty"`
+}
+
+// DesignRevision records what one change request did to the design and the
+// state needed to undo it.
+type DesignRevision struct {
+	Request       string              `json:"request"`
+	Changes       []DesignChange      `json:"changes"`
+	PreviousPages []Page              `json:"previous_pages"`
+	PreviousFlows map[string][]string `json:"previous_flows"` // flow id -> page ids
+}
+
+// DesignChange is one page-level difference between two design versions.
+type DesignChange struct {
+	Kind    string   `json:"kind"`              // added | changed | removed
+	PageID  string   `json:"page_id,omitempty"` // id in the new design; empty when removed
+	Page    string   `json:"page"`
+	Details []string `json:"details,omitempty"`
 }
 
 type Page struct {

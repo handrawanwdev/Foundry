@@ -1,0 +1,45 @@
+import { describe, expect, it } from "vitest";
+import { featuresWithoutPage, groupPages, incoming, navTarget, pageOrder, requirementsOf } from "./design";
+import type { Flow, Page, Project } from "./types";
+
+const page = (id: string, name: string, role: string, extra: Partial<Page> = {}): Page => ({
+  id, name, role, platform: "web", feature_id: "FEAT-001", sub_feature_ids: null, purpose: "", components: [], ...extra,
+});
+const flow = (id: string, page_ids: string[]): Flow => ({ id, name: id, feature_id: "FEAT-001", role: "", steps: [], page_ids });
+
+describe("design", () => {
+  const pages = [
+    page("P1", "Login", "Pasien"),
+    page("P2", "Janji Temu", "Pasien", { components: [{ type: "button", label: "Buat", target: "P3" }] }),
+    page("P3", "Konfirmasi", "Pasien"),
+    page("P4", "Dashboard", "Admin", { components: [{ type: "nav", label: "Menu", items: ["Janji Temu", "Tidak ada"] }] }),
+  ];
+
+  it("groups pages by role, then by flow, each page once", () => {
+    const groups = groupPages(pages, [flow("A", ["P2", "P3"]), flow("B", ["P3", "P9"])]);
+    expect(groups.map((g) => g.role)).toEqual(["Pasien", "Admin"]);
+    expect(groups[0].loose.map((p) => p.id)).toEqual(["P1"]);
+    expect(groups[0].flows.map((f) => f.pages.map((p) => p.id))).toEqual([["P2", "P3"]]);
+    expect(pageOrder(groups).map((p) => p.id)).toEqual(["P1", "P2", "P3", "P4"]);
+  });
+
+  it("links nav items to pages by name and finds incoming links", () => {
+    expect(navTarget("janji temu", pages[3], pages)?.id).toBe("P2");
+    expect(navTarget("Tidak ada", pages[3], pages)).toBeUndefined();
+    expect(incoming(pages[1], pages).map((p) => p.id)).toEqual(["P4"]);
+    expect(incoming(pages[2], pages).map((p) => p.id)).toEqual(["P2"]);
+  });
+
+  it("finds UI features without pages and requirements behind pages", () => {
+    const project = {
+      design: { pages, status: "draft", feedback: null },
+      features: [
+        { id: "FEAT-001", name: "Janji", description: "", requirement_ids: ["REQ-001"], platforms: ["web"], sub_features: [] },
+        { id: "FEAT-002", name: "Laporan", description: "", requirement_ids: ["REQ-002"], platforms: ["web", "backend"], sub_features: [] },
+        { id: "FEAT-003", name: "API", description: "", requirement_ids: [], platforms: ["backend"], sub_features: [] },
+      ],
+    } as unknown as Project;
+    expect(featuresWithoutPage(project).map((f) => f.id)).toEqual(["FEAT-002"]);
+    expect(requirementsOf(["P1", "P2"], project)).toEqual(["REQ-001"]);
+  });
+});

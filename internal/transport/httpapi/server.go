@@ -195,6 +195,8 @@ func (s *Server) Handler() http.Handler {
 		}
 		return ok(svc.ReviseDesign(in.Feedback))
 	}))
+	api("POST /api/v1/project/design/keep", s.action(func(svc *pipeline.Service) error { return svc.KeepDesignChange() }))
+	api("POST /api/v1/project/design/undo", s.action(func(svc *pipeline.Service) error { return svc.UndoDesignChange() }))
 	api("POST /api/v1/project/design/approve", s.action(func(svc *pipeline.Service) error { return svc.ApproveDesign() }))
 	api("POST /api/v1/project/build/start", s.action(func(svc *pipeline.Service) error { return svc.StartBuild() }))
 	api("POST /api/v1/project/build/stop", s.action(func(svc *pipeline.Service) error { return svc.StopBuild() }))
