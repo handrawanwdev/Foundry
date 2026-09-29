@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AskChange, ChangeBar, Inspect, Review } from "../components/DesignPanels";
 import { Wireframe, type PageState } from "../components/Wireframe";
 import { DEVICES, defaultDevice, flowPages, groupPages, pageOrder, roleOf, type Device } from "../design";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
+import { useWorkbench } from "../store/workbench";
 import { api } from "../api";
 import type { DesignHandoff, PageStates, Project } from "../types";
 import { Features, PlatformStructure, Summary } from "./DesignInfo";
@@ -21,7 +22,9 @@ const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platfo
 // Explorer deep links use ?tab=fitur|platform|ringkasan.
 const TAB_INFO: Record<string, Info> = { fitur: "fitur", platform: "platform", ringkasan: "kebutuhan" };
 
-const wide = () => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches;
+// Logical screen width per device; the frame is scaled down to fit.
+const SCREEN: Record<Device, number> = { desktop: 1280, tablet: 820, mobile: 390 };
+const MIN_SCALE = 0.65;
 
 export function DesignPage() {
   const { project } = useProject();
@@ -43,13 +46,20 @@ function Workspace({ project }: { project: Project }) {
   const [pageId, setPageId] = useState(params.get("page") ?? order[0]?.id);
   const [device, setDevice] = useState<Device | null>(null); // null = follows the page platform
   const [selected, setSelected] = useState<number | null>(null);
-  const [inspect, setInspect] = useState(wide);
+  const [inspect, setInspect] = useState(false);
   const [sideOpen, setSideOpen] = useState(false);
   const [asking, setAsking] = useState(false);
   const [flowId, setFlowId] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [pstate, setPstate] = useState<PageState>("normal");
   const [handoff, setHandoff] = useState<DesignHandoff | null>(null);
+
+  // The explorer takes canvas space; hide it here and restore it on leave.
+  useEffect(() => {
+    if (!useWorkbench.getState().sidebar) return;
+    useWorkbench.getState().toggleSidebar();
+    return () => { if (!useWorkbench.getState().sidebar) useWorkbench.getState().toggleSidebar(); };
+  }, []);
 
   // Handoff and blockers are derived by the server; refresh on every change.
   useEffect(() => {
@@ -168,8 +178,10 @@ function Workspace({ project }: { project: Project }) {
                 onTry={(id) => { setMode("prototipe"); startFlow(id, true); }} />
             ) : page && (
               <div className={`dw-stage ${dev}`}>
-                <Wireframe page={page} pages={pages} device={dev} mode={mode === "prototipe" ? "run" : "select"} state={mode === "pratinjau" ? pstate : "normal"}
+                <Fit width={SCREEN[dev]}>
+                <Wireframe app={project.name} page={page} pages={pages} device={dev} mode={mode === "prototipe" ? "run" : "select"} state={mode === "pratinjau" ? pstate : "normal"}
                   selected={selected} onSelect={(i) => { setSelected(i); if (i !== null) setInspect(true); }} onNavigate={go} />
+                </Fit>
               </div>
             )}
         </main>
@@ -266,6 +278,31 @@ function Designing({ project }: { project: Project }) {
       <ul className="dw-steps">
         {steps.map(([l, s]) => <li key={l} className={s}><span>{s === "active" ? <span className="spinner" /> : mark[s]}</span>{l}</li>)}
       </ul>
+    </div>
+  );
+}
+
+// Renders children at a device's logical width, scaled to the stage. Below
+// MIN_SCALE the logical width shrinks instead so text stays readable.
+function Fit({ width, children }: { width: number; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setBox({ w: e.contentRect.width, h: e.contentRect.height }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const scale = box.w ? Math.min(1, Math.max(MIN_SCALE, box.w / width)) : 1;
+  const w = Math.min(width, box.w / scale);
+  return (
+    <div ref={ref} className="dw-fit">
+      {box.w > 0 && (
+        <div className="dw-fit-inner" style={{ width: w, height: box.h / scale, transform: `translateX(-50%) scale(${scale})` }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
