@@ -1,5 +1,7 @@
 WEB := apps/web
-BIN := bin/forge
+# Binary suffix follows target OS (".exe" on Windows, empty elsewhere; respects GOOS).
+EXE := $(shell go env GOEXE)
+BIN := bin/forge$(EXE)
 
 .PHONY: all web build test check dev-api dev-web clean
 
