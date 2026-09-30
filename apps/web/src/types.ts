@@ -49,10 +49,16 @@ export interface PageHandoff {
 export interface Blocker { page_id?: string; page?: string; text: string }
 export interface DesignHandoff { pages: PageHandoff[] | null; blockers: Blocker[] | null }
 export interface DesignChange { kind: "added" | "changed" | "removed"; page_id?: string; page: string; details?: string[] }
-export interface DesignRevision { request: string; changes: DesignChange[] | null }
+export interface ScopePage { id: string; request?: string; components?: number[]; fields?: boolean; device?: string }
+// What a change request may touch; the server rejects a patch outside it.
+export interface ChangeScope { open?: boolean; fields?: boolean; general?: string; pages?: ScopePage[] }
+export interface QAShot { page_id: string; device: string; image: string; outline: string }
+export interface DesignQA { status: "running" | "pass" | "fixed" | "failed" | "skipped"; round: number; notes?: string; shots?: QAShot[] }
+export interface DesignRevision { request: string; changes: DesignChange[] | null; scope?: ChangeScope; patch?: string[]; qa?: DesignQA }
 export interface Design {
   pages: Page[]; status: "draft" | "changes_requested" | "approved"; feedback: string[] | null;
   revision?: DesignRevision;
+  rejected?: string; // why the last patch was refused
 }
 export interface Criterion { text: string; met: boolean; evidence: string }
 export interface Task {

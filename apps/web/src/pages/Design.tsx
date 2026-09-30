@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { Link, useSearchParams } from "react-router-dom";
 import { AskChange, ChangeBar, Inspect, Review } from "../components/DesignPanels";
 import { Wireframe, type PageState } from "../components/Wireframe";
-import { DEVICES, defaultDevice, flowPages, groupPages, pageOrder, roleOf, type Device } from "../design";
+import { DEVICES, defaultDevice, flowPages, groupPages, pageOrder, roleOf, SCREEN_WIDTH, type Device } from "../design";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
 import { useWorkbench } from "../store/workbench";
@@ -23,7 +23,6 @@ const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platfo
 const TAB_INFO: Record<string, Info> = { fitur: "fitur", platform: "platform", ringkasan: "kebutuhan" };
 
 // Logical screen width per device; the frame is scaled down to fit.
-const SCREEN: Record<Device, number> = { desktop: 1280, tablet: 820, mobile: 390 };
 const MIN_SCALE = 0.65;
 
 export function DesignPage() {
@@ -178,7 +177,7 @@ function Workspace({ project }: { project: Project }) {
                 onTry={(id) => { setMode("prototipe"); startFlow(id, true); }} />
             ) : page && (
               <div className={`dw-stage ${dev}`}>
-                <Fit width={SCREEN[dev]}>
+                <Fit width={SCREEN_WIDTH[dev]}>
                 <Wireframe app={project.name} page={page} pages={pages} device={dev} mode={mode === "prototipe" ? "run" : "select"} state={mode === "pratinjau" ? pstate : "normal"}
                   selected={selected} onSelect={(i) => { setSelected(i); if (i !== null) setInspect(true); }} onNavigate={go} />
                 </Fit>

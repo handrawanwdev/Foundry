@@ -1,6 +1,7 @@
 package pipeline_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -57,15 +58,20 @@ const designJSON = `{"pages": [
    "components": [{"type": "table", "label": "Jadwal", "columns": ["Hari"], "items": ["Senin"]}]}],
  "flows": [{"id": "FLOW-001", "page_ids": ["P1", "P2"]}]}`
 
-// revisedDesignJSON is a change set: one changed page, one new page, a
-// longer flow. Pages not sent stay as they are.
-const revisedDesignJSON = `{"pages": [
-  {"id": "PAGE-003", "name": "Admin Jadwal", "platform": "web", "role": "Admin", "feature_id": "FEAT-002", "sub_feature_ids": ["FEAT-002.1"], "purpose": "Kelola jadwal",
-   "kind": "admin", "route": "/jadwal", "access": "public", "primary_action": {"reason": "Halaman baca saja"},
-   "components": [{"type": "table", "label": "Jadwal", "columns": ["Hari"], "items": ["Senin", "Selasa"]}]},
+// revisedDesignJSON is a patch: one changed component, one new page, a
+// longer flow. Everything else stays as it is.
+const revisedDesignJSON = `{"patches": [{"page": "PAGE-003", "operations": [
+   {"op": "update", "target": 0, "component": {"type": "table", "label": "Jadwal", "columns": ["Hari"], "items": ["Senin", "Selasa"]}}]}],
+ "pages": [
   {"id": "NEW-1", "name": "Profil", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "purpose": "Data diri",
    "components": [{"type": "form", "label": "Profil", "items": ["Nama"]}, {"type": "button", "label": "Dokter", "target": "PAGE-001"}]}],
  "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002", "NEW-1"]}]}`
+
+// fullPageJSON sends an existing page whole: a revision must reject it.
+const fullPageJSON = `{"pages": [{"id": "PAGE-003", "name": "Admin Jadwal", "platform": "web", "role": "Admin", "feature_id": "FEAT-002",
+   "components": [{"type": "table", "label": "Jadwal"}]}]}`
+
+const movePatchJSON = `{"patches": [{"page": "PAGE-001", "operations": [{"op": "move", "target": 2, "after": -1}]}]}`
 
 // Plan deliberately omits tests for FEAT-002 so coverage filling is exercised.
 const planJSON = `{"tasks": [
@@ -98,7 +104,21 @@ func fakeAgent() {
 			fmt.Println(revisedDesignJSON)
 			return
 		}
+		if strings.Contains(prompt, "Pindahkan tombol") {
+			if mode == "reject_once" && !strings.Contains(prompt, "YOUR PREVIOUS PATCH WAS REJECTED") || mode == "reject_always" {
+				fmt.Println(fullPageJSON)
+				return
+			}
+			fmt.Println(movePatchJSON)
+			return
+		}
 		fmt.Println(designJSON)
+	case strings.Contains(prompt, "visual QA checker"):
+		if mode == "qa_fix" && strings.Contains(prompt, "-r1.png") {
+			fmt.Println(`{"status": "fix", "notes": "tombol terlalu atas", "patches": [{"page": "PAGE-001", "operations": [{"op": "move", "target": 0, "after": 1}]}]}`)
+			return
+		}
+		fmt.Println(`{"status": "pass"}`)
 	case strings.Contains(prompt, "tech lead"):
 		fmt.Println(planJSON)
 	case strings.Contains(prompt, "coding agent"):
@@ -322,7 +342,7 @@ func TestInvalidDiscoveryOutput(t *testing.T) {
 func TestDesignRevise(t *testing.T) {
 	s := newService(t, fakeAI{}, "")
 	designReady(t, s)
-	if err := s.ReviseDesign("Tambahkan halaman profil", nil); err != nil {
+	if err := s.ReviseDesign("Tambahkan halaman profil", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	s.Wait()
@@ -365,7 +385,7 @@ func TestDesignRevise(t *testing.T) {
 		t.Fatal("keep without a revision must fail")
 	}
 
-	if err := s.ReviseDesign("Tambahkan halaman profil", nil); err != nil {
+	if err := s.ReviseDesign("Tambahkan halaman profil", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	s.Wait()
@@ -588,5 +608,95 @@ func TestMCPHostFlow(t *testing.T) {
 	tk, b, _ = s.SubmitTask(w.TaskID, []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod dibuat"}})
 	if tk.Status != core.TaskDone || !b.Passed {
 		t.Fatalf("task = %s build %+v", tk.Status, b)
+	}
+}
+
+type fakeRender struct{ fail bool }
+
+func (f fakeRender) Shot(_ context.Context, _, pageID, device, out string) (string, error) {
+	if f.fail {
+		return "", errors.New("chrome tidak ada")
+	}
+	return "Tampilan " + device + ":\n[0] header: Judul", nil
+}
+
+func types(pg *core.Page) string {
+	var out []string
+	for _, c := range pg.Components {
+		out = append(out, c.Type)
+	}
+	return strings.Join(out, ",")
+}
+
+func scopePage1() *core.ChangeScope {
+	return &core.ChangeScope{Pages: []core.ScopePage{{ID: "PAGE-001", Request: "Pindahkan tombol ke atas", Components: []int{2}, Device: "mobile"}}}
+}
+
+func TestDesignPatchRejectedRetriesOnce(t *testing.T) {
+	s := newService(t, fakeAI{}, "reject_once")
+	designReady(t, s)
+	if err := s.ReviseDesign("Pindahkan tombol ke atas", nil, scopePage1()); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindDesign, core.JobDone)
+	if got := types(findPage(p, "PAGE-001")); got != "button,header,list" {
+		t.Fatalf("components = %s", got)
+	}
+	if !strings.Contains(p.Design.Rejected, "PATCH DITOLAK") && p.Design.Revision == nil {
+		t.Fatalf("design = %+v", p.Design)
+	}
+
+	s = newService(t, fakeAI{}, "reject_always")
+	designReady(t, s)
+	if err := s.ReviseDesign("Pindahkan tombol ke atas", nil, scopePage1()); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p = load(t, s)
+	mustJob(t, p, work.KindDesign, core.JobFailed)
+	if !strings.Contains(p.Job.Error, "PAGE-003 dikirim utuh") || p.Design.Revision != nil || types(findPage(p, "PAGE-001")) != "header,list,button" {
+		t.Fatalf("rejected patch applied: %+v / %s", p.Design, p.Job.Error)
+	}
+}
+
+func TestDesignVisualQA(t *testing.T) {
+	s := newService(t, fakeAI{}, "qa_fix")
+	s.Render = fakeRender{}
+	designReady(t, s)
+	if err := s.ReviseDesign("Pindahkan tombol ke atas", nil, scopePage1()); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindDesignQA, core.JobDone)
+	qa := p.Design.Revision.QA
+	if qa.Status != "fixed" || qa.Round != 2 || qa.Notes != "tombol terlalu atas" || len(qa.Shots) != 1 || qa.Shots[0].Device != "mobile" {
+		t.Fatalf("qa = %+v", qa)
+	}
+	if got := types(findPage(p, "PAGE-001")); got != "header,button,list" {
+		t.Fatalf("components after QA fix = %s", got)
+	}
+	if err := s.UndoDesignChange(); err != nil {
+		t.Fatal(err)
+	}
+	if got := types(findPage(load(t, s), "PAGE-001")); got != "header,list,button" {
+		t.Fatalf("undo must restore the design from before the request: %s", got)
+	}
+
+	s = newService(t, fakeAI{}, "")
+	s.Render = fakeRender{fail: true}
+	designReady(t, s)
+	if err := s.ReviseDesign("Pindahkan tombol ke atas", nil, scopePage1()); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p = load(t, s)
+	if qa := p.Design.Revision.QA; qa.Status != "skipped" || !strings.Contains(qa.Notes, "chrome tidak ada") {
+		t.Fatalf("qa = %+v", qa)
+	}
+	if types(findPage(p, "PAGE-001")) != "button,header,list" {
+		t.Fatal("a skipped check keeps the applied patch")
 	}
 }

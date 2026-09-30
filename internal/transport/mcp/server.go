@@ -182,8 +182,8 @@ var tools = []tool{
 	{Name: "get_task", perm: PermRead, Description: "One task with its full brief.", InputSchema: obj(map[string]any{"task_id": str}, "task_id")},
 	{Name: "get_verification", perm: PermRead, Description: "Latest verification: checks, issues, requirement traceability.", InputSchema: obj(nil)},
 	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, plan or a task). Claims a task when building.", InputSchema: obj(nil)},
-	{Name: "submit_work", perm: PermWrite, Description: "Hand back a discovery/design/plan result (the JSON object requested by next_work).",
-		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "plan"}}, "result": str}, "kind", "result")},
+	{Name: "submit_work", perm: PermWrite, Description: "Hand back a discovery/design/plan/design_qa result (the JSON object requested by next_work).",
+		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "plan", "design_qa"}}, "result": str}, "kind", "result")},
 	{Name: "submit_task", perm: PermExecute, Description: "Report a task as implemented. Foundry runs build/test; DONE only if checks pass and every acceptance criterion is met with evidence.",
 		InputSchema: obj(map[string]any{"task_id": str, "criteria": map[string]any{"type": "array", "items": obj(map[string]any{
 			"index": map[string]any{"type": "integer"}, "met": map[string]any{"type": "boolean"}, "evidence": str}, "index", "met", "evidence")}}, "task_id", "criteria")},

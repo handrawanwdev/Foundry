@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cells, changeRequest, designChecks, featuresWithoutPage, formGroups, groupPages, incoming, navTarget, pageDensity, pageKind, pageOrder, requirementsOf, statParts } from "./design";
+import { cells, changeRequest, changeScope, designChecks, featuresWithoutPage, formGroups, groupPages, incoming, navTarget, pageDensity, pageKind, pageOrder, requirementsOf, statParts } from "./design";
 import type { Flow, Page, Project } from "./types";
 
 const page = (id: string, name: string, role: string, extra: Partial<Page> = {}): Page => ({
@@ -90,5 +90,12 @@ describe("design", () => {
       'Ubah beberapa halaman sekaligus:\n- Di halaman "Login" (P1): tambah lupa sandi\n- Di halaman "Dashboard" (P4): hapus stat\n- Umum: rapikan nav');
     expect(changeRequest("", [{ page: pages[0], text: "" }])).toBe("");
     expect(changeRequest("", [{ page: pages[1], text: "hapus", component: 0 }])).toBe('Di halaman "Janji Temu" (P2), komponen [0] button "Buat": hapus');
+  });
+
+  it("locks the change scope", () => {
+    expect(changeScope("", [{ page: pages[1], text: " hapus ", component: 0 }, { page: pages[0], text: "" }], { P2: "mobile" })).toEqual(
+      { pages: [{ id: "P2", request: "hapus", components: [0], device: "mobile" }] });
+    expect(changeScope("rapikan", [{ page: pages[0], text: "ganti jenis", fields: true }])).toEqual(
+      { open: true, general: "rapikan", pages: [{ id: "P1", request: "ganti jenis", fields: true }] });
   });
 });

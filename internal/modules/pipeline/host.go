@@ -27,7 +27,7 @@ func (s *Service) NextWork() (*WorkItem, error) {
 		return &WorkItem{Kind: "none", Prompt: nothingMessage(p)}, nil
 	}
 	switch p.Job.Kind {
-	case work.KindDiscovery, work.KindDesign, work.KindPlan:
+	case work.KindDiscovery, work.KindDesign, work.KindPlan, work.KindDesignQA:
 		return &WorkItem{Kind: p.Job.Kind, Prompt: s.promptFor(p, p.Job.Kind),
 			Submit: fmt.Sprintf(`submit_work {"kind": %q, "result": "<the JSON object>"}`, p.Job.Kind)}, nil
 	case "build":
@@ -78,7 +78,9 @@ func (s *Service) SubmitWork(kind, result string) error {
 	if p.Job == nil || p.Job.Status != core.JobWaiting || p.Job.Kind != kind {
 		return fmt.Errorf("%w: Foundry tidak sedang menunggu %s", ErrWrongStage, kind)
 	}
-	return s.applyAI(kind, result, "mcp")
+	err = s.applyAI(kind, result, "mcp")
+	s.noteRejection(kind, err) // the host gets the error; next_work shows it too
+	return err
 }
 
 // SubmitTask is called by the MCP host after implementing a task. Foundry

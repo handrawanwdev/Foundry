@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, Command, DesignHandoff, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template } from "./types";
+import type { AgentOptions, AIState, Browse, ChangeScope, Command, DesignHandoff, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -35,7 +35,9 @@ export const api = {
   setPlatform: (targets: PlatformTarget[]) => call<Project>("PUT", "/project/platform", { targets }),
   setTemplate: (template: string) => call<Project>("PUT", "/project/structure", { template }),
   // screens: what the user sees on each page, so the designer AI sees it too.
-  reviseDesign: (feedback: string, screens: Record<string, string>) => call("POST", "/project/design/revise", { feedback, screens }),
+  // scope: what the change may touch; the server rejects a patch outside it.
+  reviseDesign: (feedback: string, screens: Record<string, string>, scope: ChangeScope) =>
+    call("POST", "/project/design/revise", { feedback, screens, scope }),
   keepDesign: () => call("POST", "/project/design/keep", {}),
   undoDesign: () => call("POST", "/project/design/undo", {}),
   designHandoff: () => call<DesignHandoff>("GET", "/project/design/handoff"),

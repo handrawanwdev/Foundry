@@ -15,7 +15,7 @@ export function JobBanner() {
     return (
       <div className="banner error">
         <div>
-          <strong>{job.message} gagal.</strong> <span>{job.error}</span>
+          <strong>{job.message} gagal.</strong> <span style={{ whiteSpace: "pre-line" }}>{job.error}</span>
         </div>
         <button disabled={pending === "retry"} onClick={() => run("retry", api.retry)}>Coba lagi</button>
       </div>

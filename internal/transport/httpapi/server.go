@@ -30,6 +30,8 @@ import (
 type Server struct {
 	UI     fs.FS // built SPA; may be nil
 	Binary string
+	// Render screenshots designed pages for the visual check; may be nil.
+	Render pipeline.Renderer
 
 	mu  sync.RWMutex
 	svc *pipeline.Service
@@ -64,6 +66,9 @@ func (s *Server) Open(dir, name string, create bool) (*core.Project, error) {
 		return nil, err
 	}
 	svc := pipeline.New(st, pipeline.ConfigAI{})
+	if s.Render != nil {
+		svc.Render = s.Render
+	}
 	svc.RecoverStale()
 	s.mu.Lock()
 	s.svc = svc
@@ -193,11 +198,12 @@ func (s *Server) Handler() http.Handler {
 		var in struct {
 			Feedback string
 			Screens  map[string]string
+			Scope    *core.ChangeScope
 		}
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		return ok(svc.ReviseDesign(in.Feedback, in.Screens))
+		return ok(svc.ReviseDesign(in.Feedback, in.Screens, in.Scope))
 	}))
 	api("POST /api/v1/project/design/keep", s.action(func(svc *pipeline.Service) error { return svc.KeepDesignChange() }))
 	api("POST /api/v1/project/design/undo", s.action(func(svc *pipeline.Service) error { return svc.UndoDesignChange() }))

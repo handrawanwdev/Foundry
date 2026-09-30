@@ -10,9 +10,9 @@ import (
 )
 
 type designOut struct {
-	Pages   []core.Page   `json:"pages"`
-	Removed []string      `json:"removed"` // revision only: ids of deleted pages
-	Ops     []componentOp `json:"ops"`     // revision only: edits to existing pages
+	Pages   []core.Page `json:"pages"`
+	Removed []string    `json:"removed"` // revision only: ids of deleted pages
+	Patches []pagePatch `json:"patches"` // revision only: edits to existing pages
 	Flows   []struct {
 		ID      string   `json:"id"`
 		PageIDs []string `json:"page_ids"`
@@ -77,36 +77,10 @@ func isRevision(p *core.Project) bool {
 	return d != nil && d.Status == core.DesignChanges && len(d.Pages) > 0 && len(d.Feedback) > 0
 }
 
-func DesignPrompt(p *core.Project) string {
-	var b strings.Builder
-	b.WriteString(`You are the product designer of Foundry. Create the UI pages for this product as simple wireframes.
-Pages MUST come from the features, sub-features and user flows below. Do not invent features. Backend-only features need no page.
-Write labels in the same language as the features. Do not write code. Do not modify files.
-
-`)
-	b.WriteString("PLATFORMS:\n" + mustJSON(p.Platform.Targets) + "\n\n")
-	b.WriteString("FEATURES:\n" + mustJSON(p.Features) + "\n\n")
-	b.WriteString("FLOWS:\n" + mustJSON(p.Flows) + "\n\n")
-	if p.Discovery != nil {
-		b.WriteString("ROLES:\n" + mustJSON(p.Discovery.Roles) + "\n\n")
-	}
-	revise := isRevision(p)
-	if revise {
-		fb := p.Design.Feedback
-		b.WriteString("CURRENT DESIGN:\n" + mustJSON(p.Design.Pages) + "\n\n")
-		if s := screenText(p.Design); s != "" {
-			b.WriteString("WHAT THE USER SEES NOW (read from the rendered wireframe; [n] type is components[n] of that page, (otomatis) is drawn by the wireframe, not a component). " +
-				"The change request describes this screen; map what it mentions to the components:\n" + s + "\n")
-		}
-		if len(fb) > 1 {
-			b.WriteString("EARLIER REQUESTS (already applied in the current design, do not redo):\n- " + strings.Join(fb[:len(fb)-1], "\n- ") + "\n\n")
-		}
-		b.WriteString("CHANGE REQUEST (apply now):\n" + fb[len(fb)-1] + "\n\n")
-	}
-	if revise {
-		b.WriteString("DESIGN RULES (only for new pages and for what you add or update; never a reason to change anything else):\n")
-	}
-	b.WriteString(`Design every page for its job, not from one template. Components may repeat across pages; layouts should not.
+// Prompt parts. The full design rules go only into a new design and into
+// revisions that may create pages; a scoped revision gets the component
+// format and how the wireframe renders, nothing else.
+const designRules = `Design every page for its job, not from one template. Components may repeat across pages; layouts should not.
 Per page answer: what is the main user action, what must be seen first, what is only needed on demand.
 
 "kind" picks the layout, one of:
@@ -134,7 +108,11 @@ Every page is a build contract, all required:
 - form components need "fields": [{"label": "Email", "type": "email", "required": true, "validation": "format email", "error": "Masukkan email yang valid", "group": "Kontak"}].
   Field types: text, email, password, number, tel, date, time, datetime, select, textarea, checkbox, radio, file, currency.
 
-Component types: header, nav, text, list, table, form, button, card, stat, input, section, steps.
+Mobile pages are designed for mobile: short content, the main nav becomes a bottom nav with at most 5 items.
+Every UI feature needs at least one page. Every flow lists the pages it walks through, in order.
+`
+
+const componentRules = `Component types: header, nav, text, list, table, form, button, card, stat, input, section, steps.
 - table: "columns" are the column names; "items" are example rows with cells separated by " | " (e.g. "Budi Santoso | Dr. Andi | Aktif"). Use realistic example data.
 - stat: label "Name: value" (e.g. "Janji hari ini: 12").
 - form: "fields" as above ("group" groups fields); "items" is not needed when "fields" is given.
@@ -143,54 +121,38 @@ Component types: header, nav, text, list, table, form, button, card, stat, input
 - form already renders its own buttons under the fields: submit (label = "primary_action" label on auth, form, payment, settings and profile pages; otherwise Masuk on auth, Bayar on payment, Cari on search, Lanjut on wizard, else Simpan) and Batal on form, settings and profile pages. Never add a "button" that submits or cancels the form: it would show twice.
 Use "target" to link to another page id so the prototype is clickable: on button and card (open), on list and table (a row opens the detail page), on form (submit goes there).
 Navigation uses the user's business words (Jadwal, Pasien, Laporan), not database tables. Name nav items exactly like the pages they open.
-How the wireframe renders a page (so you know what the user sees):
+`
+
+const renderRules = `How the wireframe renders a page (so you know what the user sees):
 - Components show top to bottom in array order; to move something, change its position in "components".
 - "nav" goes to the sidebar (desktop/tablet) or the bottom tab bar (mobile), not in the content.
 - list/admin pages on desktop: header and buttons share one toolbar row above the data.
 - consecutive "stat" components sit on one row.
 - Added automatically, never as components: the top bar with app name and avatar, the app brand above the auth card (hidden when a header has the app name), a back link on detail pages, the form buttons above.
-Mobile pages are designed for mobile: short content, the main nav becomes a bottom nav with at most 5 items.
-Every UI feature needs at least one page. Every flow lists the pages it walks through, in order.
+`
 
-` + "\n\n")
-	if revise {
-		b.WriteString(`This is a change to the current design. Return ONLY what changes, as small edits:
-- "ops": edits to existing pages, applied in order. "index" and "after" are component positions in CURRENT DESIGN, before any edit; earlier ops never shift them.
-  {"page": "PAGE-001", "op": "remove", "index": 2}
-  {"page": "PAGE-001", "op": "move", "index": 3, "after": 1}          after -1 = top, omit after = bottom
-  {"page": "PAGE-001", "op": "update", "index": 0, "component": {the whole new component}}
-  {"page": "PAGE-001", "op": "insert", "after": 1, "component": {...}}
-  {"page": "PAGE-001", "op": "page", "set": {"kind": "list"}}          only page fields that change: name, role, purpose, kind, density, route, access, primary_action, data, states, sub_feature_ids
-- "pages": new pages only (id "NEW-1", "NEW-2", ...), in full. Send an existing page in full only when the request asks to redesign that whole page; never send ops for it too.
-- "removed": ids of pages to delete.
-- "flows": only flows whose page list changes, with the full new list.
-
-Scope: everything not named in an edit stays exactly as it is. Do not touch a component, page field or page the request does not mention, even if it does not follow the rules above.
-The rules above apply only to new pages and to the components or fields you add or update.
-Change "kind" only when the request asks for it: it changes the whole layout.
-When the request talks about something visible (a duplicate button, a misplaced block), find which component or automatic element in WHAT THE USER SEES produces it and edit that.
-When the request names a component as [n], it is components[n] of that page.
-
-Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
-{"ops": [{"page": "PAGE-001", "op": "remove", "index": 2}], "pages": [` + pageShape + `], "removed": ["PAGE-009"], "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "NEW-1"]}]}`)
-		return b.String()
+func DesignPrompt(p *core.Project) string {
+	if isRevision(p) {
+		return revisionPrompt(p)
 	}
+	var b strings.Builder
+	b.WriteString(`You are the product designer of Foundry. Create the UI pages for this product as simple wireframes.
+Pages MUST come from the features, sub-features and user flows below. Do not invent features. Backend-only features need no page.
+Write labels in the same language as the features. Do not write code. Do not modify files.
+
+`)
+	b.WriteString("PLATFORMS:\n" + mustJSON(p.Platform.Targets) + "\n\n")
+	b.WriteString("FEATURES:\n" + mustJSON(p.Features) + "\n\n")
+	b.WriteString("FLOWS:\n" + mustJSON(p.Flows) + "\n\n")
+	if p.Discovery != nil {
+		b.WriteString("ROLES:\n" + mustJSON(p.Discovery.Roles) + "\n\n")
+	}
+	b.WriteString(designRules + "\n" + componentRules + renderRules + "\n")
 	b.WriteString(`Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
   "pages": [` + pageShape + `],
   "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002"]}]
 }`)
-	return b.String()
-}
-
-// screenText lists the user's screens in page order.
-func screenText(d *core.Design) string {
-	var b strings.Builder
-	for _, pg := range d.Pages {
-		if s := strings.TrimSpace(d.Screens[pg.ID]); s != "" {
-			b.WriteString(pg.ID + " \"" + pg.Name + "\"\n" + s + "\n\n")
-		}
-	}
 	return b.String()
 }
 
@@ -213,7 +175,7 @@ func ApplyDesign(p *core.Project, raw string) error {
 	var pages []core.Page
 	for _, pg := range out.Pages {
 		if np, ok := normPage(p, pg, idMap); ok {
-			pages = append(pages, np)
+			pages = append(pages, dropFormButtons(np))
 		}
 	}
 	if len(pages) == 0 {
@@ -237,24 +199,55 @@ func ApplyDesign(p *core.Project, raw string) error {
 	return nil
 }
 
-// applyRevision merges a change set into the current design: returned pages
-// replace pages with the same id, NEW-* pages get the next free ids, removed
-// pages are dropped. Untouched pages keep their ids and content. The previous
-// version is kept so the user can undo it.
+// applyRevision merges a patch into the current design: patches edit
+// existing pages, NEW-* pages get the next free ids, removed pages are
+// dropped. Untouched pages keep their ids and content. The previous version
+// is kept so the user can undo it.
 func applyRevision(p *core.Project, out designOut) error {
 	d := p.Design
-	if len(out.Pages) == 0 && len(out.Removed) == 0 && len(out.Flows) == 0 && len(out.Ops) == 0 {
+	if len(out.Pages) == 0 && len(out.Removed) == 0 && len(out.Flows) == 0 && len(out.Patches) == 0 {
 		return fmt.Errorf("rancangan tidak berubah")
 	}
 	prevFlows := map[string][]string{}
 	for _, fl := range p.Flows {
 		prevFlows[fl.ID] = fl.PageIDs
 	}
-	rev := &core.DesignRevision{Request: d.Feedback[len(d.Feedback)-1], PreviousPages: d.Pages, PreviousFlows: prevFlows}
+	pages, idMap, requested, scope, err := mergePatch(p, d.Pages, out, d.Scope)
+	if err != nil {
+		return err
+	}
+	valid := map[string]bool{}
+	for _, pg := range pages {
+		valid[pg.ID] = true
+	}
+	for i := range p.Flows {
+		ids := p.Flows[i].PageIDs
+		for _, fl := range out.Flows {
+			if fl.ID == p.Flows[i].ID {
+				ids = fl.PageIDs
+			}
+		}
+		p.Flows[i].PageIDs = mapIDs(ids, idMap, valid)
+	}
+	for _, pg := range out.Pages {
+		requested = append(requested, "ADD halaman "+pg.Name)
+	}
+	for _, id := range out.Removed {
+		requested = append(requested, "REMOVE halaman "+id)
+	}
+	rev := &core.DesignRevision{Request: d.Feedback[len(d.Feedback)-1], PreviousPages: d.Pages, PreviousFlows: prevFlows,
+		Scope: scope, Patch: requested}
+	rev.Changes = DiffPages(rev.PreviousPages, pages)
+	p.Design = &core.Design{Pages: pages, Status: core.DesignDraft, Feedback: d.Feedback, Revision: rev}
+	p.Tasks, p.Verification = nil, nil
+	return nil
+}
 
+// mergePatch builds the next page list from the current one and a patch.
+func mergePatch(p *core.Project, current []core.Page, out designOut, scope *core.ChangeScope) ([]core.Page, map[string]string, []string, *core.ChangeScope, error) {
 	idMap := map[string]string{}
 	next := 0
-	for _, pg := range d.Pages {
+	for _, pg := range current {
 		idMap[pg.ID] = pg.ID
 		var n int
 		if _, err := fmt.Sscanf(pg.ID, "PAGE-%d", &n); err == nil && n > next {
@@ -272,17 +265,12 @@ func applyRevision(p *core.Project, out designOut) error {
 			added = append(added, pg)
 		}
 	}
-	changed := map[string]core.Page{}
-	for _, pg := range out.Pages {
-		if np, ok := normPage(p, pg, idMap); ok {
-			changed[np.ID] = np
-		}
-	}
-	if err := applyPageOps(p, d.Pages, out, idMap, changed); err != nil {
-		return err
+	changed, requested, origins, err := patchPages(p, current, out, idMap, scope)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 	var pages []core.Page
-	for _, pg := range d.Pages {
+	for _, pg := range current {
 		if _, ok := idMap[pg.ID]; !ok {
 			continue // removed
 		}
@@ -292,60 +280,48 @@ func applyRevision(p *core.Project, out designOut) error {
 		pages = append(pages, pg)
 	}
 	for _, pg := range added {
-		if np, ok := changed[idMap[pg.ID]]; ok {
-			pages = append(pages, np)
+		if np, ok := normPage(p, pg, idMap); ok {
+			pages = append(pages, dropFormButtons(np))
 		}
 	}
 	if len(pages) == 0 {
-		return fmt.Errorf("rancangan tidak boleh kosong")
+		return nil, nil, nil, nil, fmt.Errorf("rancangan tidak boleh kosong")
 	}
-	valid := clearDangling(pages)
-	for i := range p.Flows {
-		ids := p.Flows[i].PageIDs
-		for _, fl := range out.Flows {
-			if fl.ID == p.Flows[i].ID {
-				ids = fl.PageIDs
-			}
-		}
-		p.Flows[i].PageIDs = mapIDs(ids, idMap, valid)
-	}
-	rev.Changes = DiffPages(rev.PreviousPages, pages)
-	p.Design = &core.Design{Pages: pages, Status: core.DesignDraft, Feedback: d.Feedback, Revision: rev}
-	p.Tasks, p.Verification = nil, nil
-	return nil
+	clearDangling(pages)
+	return pages, idMap, requested, remapScope(scope, origins), nil
 }
 
-// applyPageOps applies the component edits page by page, in the order the
-// AI sent them, and stores the results in changed.
-func applyPageOps(p *core.Project, current []core.Page, out designOut, idMap map[string]string, changed map[string]core.Page) error {
-	var order []string
-	byPage := map[string][]componentOp{}
-	for _, o := range out.Ops {
-		if _, ok := byPage[o.Page]; !ok {
-			order = append(order, o.Page)
-		}
-		byPage[o.Page] = append(byPage[o.Page], o)
+// ApplyQAFix applies the extra patch from a failed visual check to the
+// revision under review. Only patches are allowed, within the same scope;
+// undo still restores the design from before the request.
+func ApplyQAFix(p *core.Project, raw string) error {
+	d := p.Design
+	if d == nil || d.Revision == nil {
+		return fmt.Errorf("tidak ada perubahan untuk diperbaiki")
 	}
-	for _, id := range order {
-		i := slices.IndexFunc(current, func(pg core.Page) bool { return pg.ID == id })
-		switch {
-		case i < 0:
-			return fmt.Errorf("perubahan untuk halaman %s yang tidak ada", id)
-		case slices.Contains(out.Removed, id):
-			return fmt.Errorf("halaman %s dihapus sekaligus diubah", id)
-		case slices.ContainsFunc(out.Pages, func(pg core.Page) bool { return pg.ID == id }):
-			return fmt.Errorf("halaman %s dikirim utuh sekaligus diubah per komponen", id)
-		}
-		pg, err := applyOps(current[i], byPage[id])
-		if err != nil {
-			return err
-		}
-		np, ok := normPage(p, pg, idMap)
-		if !ok {
-			return fmt.Errorf("halaman %s tidak valid setelah diubah", id)
-		}
-		changed[id] = np
+	var out designOut
+	if err := ExtractJSON(raw, &out); err != nil {
+		return err
 	}
+	return applyFix(p, out)
+}
+
+func applyFix(p *core.Project, out designOut) error {
+	d := p.Design
+	if len(out.Pages) > 0 || len(out.Removed) > 0 || len(out.Flows) > 0 {
+		return &PatchRejected{Unexpected: []string{"perbaikan visual hanya boleh berupa patch, bukan halaman/alur"}}
+	}
+	if len(out.Patches) == 0 {
+		return fmt.Errorf("perbaikan visual tanpa patch")
+	}
+	pages, _, requested, scope, err := mergePatch(p, d.Pages, out, d.Revision.Scope)
+	if err != nil {
+		return err
+	}
+	d.Pages = pages
+	d.Revision.Scope = scope
+	d.Revision.Patch = append(d.Revision.Patch, requested...)
+	d.Revision.Changes = DiffPages(d.Revision.PreviousPages, pages)
 	return nil
 }
 
@@ -401,7 +377,7 @@ func normPage(p *core.Project, pg core.Page, idMap map[string]string) (core.Page
 		}
 		np.Components = append(np.Components, c)
 	}
-	return dropFormButtons(np), true
+	return np, true
 }
 
 // dropFormButtons removes buttons that repeat the submit button a form on the

@@ -59,6 +59,9 @@ func (ConfigAI) Runner() (*agent.Runner, bool, error) {
 type Service struct {
 	Store *core.Store
 	AI    AI
+	// Render takes browser screenshots for the visual check of a design
+	// revision; nil skips the check.
+	Render Renderer
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -112,9 +115,9 @@ func (s *Service) SubmitStory(story string) (*core.Project, error) {
 
 // ---------- Design ----------
 
-// ReviseDesign asks the AI for a change; screens are the page outlines the
-// user saw (may be nil).
-func (s *Service) ReviseDesign(feedback string, screens map[string]string) error {
+// ReviseDesign asks the AI for a change as a patch. screens are the page
+// outlines the user saw; scope is what the change may touch (nil: any page).
+func (s *Service) ReviseDesign(feedback string, screens map[string]string, scope *core.ChangeScope) error {
 	feedback = strings.TrimSpace(feedback)
 	if feedback == "" {
 		return errors.New("tuliskan perubahan yang diinginkan")
@@ -128,6 +131,8 @@ func (s *Service) ReviseDesign(feedback string, screens map[string]string) error
 		}
 		p.Design.Feedback = append(p.Design.Feedback, feedback)
 		p.Design.Screens = screens
+		p.Design.Scope = cleanScope(p, scope)
+		p.Design.Rejected = ""
 		p.Design.Status = core.DesignChanges
 		p.Stage = core.StageDesign
 		p.Log("ui", "Minta perubahan rancangan: "+feedback)
@@ -159,6 +164,9 @@ func (s *Service) reviseStep(msg string, fn func(*core.Project) error) error {
 		}
 		if err := fn(p); err != nil {
 			return err
+		}
+		if j := p.Job; j != nil && j.Kind == work.KindDesignQA && j.Status == core.JobWaiting {
+			j.Status, j.Message = core.JobDone, "Pemeriksaan visual dilewati"
 		}
 		p.Log("ui", msg)
 		return nil
@@ -245,6 +253,8 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 		return work.DesignPrompt(p)
 	case work.KindPlan:
 		return work.PlanPrompt(p)
+	case work.KindDesignQA:
+		return work.QAPrompt(p)
 	}
 	return ""
 }
@@ -266,8 +276,16 @@ func (s *Service) startAI(kind string) error {
 		p.Job = &core.Job{Kind: kind, Status: status, Message: msg, Started: time.Now().UTC()}
 		return nil
 	})
-	if err != nil || isMCP {
+	if err != nil {
 		return err
+	}
+	if kind == work.KindDesignQA {
+		if p, err = s.prepareQA(p); err != nil || p == nil {
+			return err // nil project: check skipped, job closed
+		}
+	}
+	if isMCP {
+		return nil
 	}
 	prompt := s.promptFor(p, kind)
 	s.wg.Add(1)
@@ -279,6 +297,10 @@ func (s *Service) startAI(kind string) error {
 			return
 		}
 		if err := s.applyAI(kind, out, "agent"); err != nil {
+			if s.noteRejection(kind, err) {
+				s.startAI(kind) // one retry with the rejection in the prompt
+				return
+			}
 			s.failJob(kind, err)
 		}
 	}()
@@ -297,6 +319,8 @@ func jobMessage(kind string) string {
 		return "AI Agent mengerjakan task"
 	case "verify":
 		return "Build, test, dan verifikasi"
+	case work.KindDesignQA:
+		return "Memeriksa hasil visual di browser"
 	}
 	return kind
 }
@@ -325,8 +349,13 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			p.Stage = core.StageDesign
 			next = work.KindDesign
 		case work.KindDesign:
+			revising := p.Design != nil && p.Design.Status == core.DesignChanges && len(p.Design.Pages) > 0
 			if err := work.ApplyDesign(p, raw); err != nil {
 				return err
+			}
+			if revising && s.Render != nil && p.Design.Revision != nil {
+				p.Design.Revision.QA = &core.DesignQA{Status: "running", Round: 1}
+				next = work.KindDesignQA
 			}
 			p.Stage = core.StageDesign
 		case work.KindPlan:
@@ -334,6 +363,14 @@ func (s *Service) applyAI(kind, raw, source string) error {
 				return err
 			}
 			p.Stage = core.StageBuild
+		case work.KindDesignQA:
+			again, err := work.ApplyQA(p, raw)
+			if err != nil {
+				return err
+			}
+			if again {
+				next = work.KindDesignQA
+			}
 		default:
 			return fmt.Errorf("jenis pekerjaan %q tidak dikenal", kind)
 		}
@@ -360,7 +397,7 @@ func (s *Service) RetryJob() error {
 		return ErrNothingToDo
 	}
 	switch p.Job.Kind {
-	case work.KindDiscovery, work.KindDesign, work.KindPlan:
+	case work.KindDiscovery, work.KindDesign, work.KindPlan, work.KindDesignQA:
 		return s.startAI(p.Job.Kind)
 	case "build":
 		return s.StartBuild()

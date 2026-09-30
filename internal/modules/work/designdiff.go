@@ -129,5 +129,29 @@ func pageDetails(old, new core.Page, oldNames, newNames map[string]string) []str
 			d = append(d, "− "+componentName(c))
 		}
 	}
+	// Same components in another order: a layout change too.
+	if !slices.Equal(commonOrder(old.Components, newKeys), commonOrder(new.Components, oldKeys(oldComp))) {
+		d = append(d, "~ Urutan komponen")
+	}
 	return d
+}
+
+func oldKeys(m map[string]core.PageComponent) map[string]bool {
+	out := map[string]bool{}
+	for k := range m {
+		out[k] = true
+	}
+	return out
+}
+
+// commonOrder lists the component keys present in the other version, in
+// this version's order.
+func commonOrder(cs []core.PageComponent, other map[string]bool) []string {
+	var out []string
+	for _, c := range cs {
+		if k := componentKey(c); other[k] {
+			out = append(out, k)
+		}
+	}
+	return out
 }

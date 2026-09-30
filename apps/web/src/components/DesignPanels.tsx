@@ -1,10 +1,10 @@
 import { useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { changeRequest, componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf, type PageRequest } from "../design";
+import { changeRequest, changeScope, componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf, type PageRequest } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
-import type { Blocker, Page, PageHandoff, Project } from "../types";
+import type { Blocker, DesignQA, Page, PageHandoff, Project } from "../types";
 import type { Device } from "../design";
 
 // ---------- Inspect ----------
@@ -117,6 +117,17 @@ const STATE_LABEL: ["loading" | "empty" | "no_results" | "error" | "success", st
 const SYMBOL = { added: "+", changed: "~", removed: "−" } as const;
 const CHANGE_LABEL = { added: "halaman baru", changed: "diubah", removed: "dihapus" } as const;
 
+function qaText(qa: DesignQA): string {
+  const where = qa.shots?.length ? ` (${[...new Set(qa.shots.map((s) => s.device))].join(", ")})` : "";
+  switch (qa.status) {
+    case "pass": return `✓ Lolos pemeriksaan visual di browser${where}`;
+    case "fixed": return `✓ Lolos pemeriksaan visual${where} setelah ${qa.round - 1} patch perbaikan${qa.notes ? `: ${qa.notes}` : ""}`;
+    case "failed": return `! Pemeriksaan visual belum lolos${where}: ${qa.notes ?? ""}`;
+    case "skipped": return `Pemeriksaan visual dilewati: ${qa.notes ?? ""}`;
+  }
+  return "Memeriksa hasil visual…";
+}
+
 export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (pageId: string) => void }) {
   const { run, pending } = useProject();
   const [open, setOpen] = useState(true);
@@ -132,6 +143,7 @@ export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (page
           <strong>Rancangan diperbarui</strong>
           <span className="muted"> · {changes.length ? `${changes.length} perubahan` : "tidak ada perubahan halaman"}</span>
           <div className="small muted" style={{ whiteSpace: "pre-line" }}>“{rev.request}”</div>
+          {rev.qa && <div className={`small ${rev.qa.status === "failed" ? "warn-text" : "muted"}`} style={{ whiteSpace: "pre-line" }}>{qaText(rev.qa)}</div>}
         </div>
         <div className="inline">
           {changes.length > 0 && <button className="ghost" onClick={() => setOpen(!open)}>{open ? "Sembunyikan" : "Lihat"}</button>}
@@ -150,6 +162,7 @@ export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (page
             </li>
           ))}
           {reqs.length > 0 && <li className="small muted">Kebutuhan terkait: {reqs.join(", ")}</li>}
+          {!!rev.patch?.length && <li className="small muted">Operasi: {rev.patch.join(" · ")}</li>}
         </ul>
       )}
     </div>
@@ -184,9 +197,11 @@ export function AskChange({ page, pages, component, device, onClose }: AskProps)
   const label = (p: Page) => multi ? `${p.name} · ${PLATFORM_LABEL[p.platform] ?? p.platform}` : p.name;
   const setText = (id: string, text: string) => setItems(items.map((r) => r.page.id === id ? { ...r, text } : r));
   const add = (id: string) => { const p = pages.find((x) => x.id === id); if (p) setItems([...items, { page: p, text: "" }]); };
+  const devices = page && device ? { [page.id]: device } : undefined;
   const send = async () => {
     if (!feedback || working) return;
-    if (await run("revise", async () => api.reviseDesign(feedback, await screensOf(pages, project?.name, page && device ? { [page.id]: device } : undefined)))) onClose();
+    const scope = changeScope(general, items, devices);
+    if (await run("revise", async () => api.reviseDesign(feedback, await screensOf(pages, project?.name, devices), scope))) onClose();
   };
   const keys = (e: KeyboardEvent) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void send(); };
   return (
@@ -204,7 +219,11 @@ export function AskChange({ page, pages, component, device, onClose }: AskProps)
             <button className="ghost small" title="Hapus halaman ini" onClick={() => setItems(items.filter((x) => x.page.id !== r.page.id))}>×</button>
           </div>
           <textarea rows={2} autoFocus={i === 0} value={r.text} onChange={(e) => setText(r.page.id, e.target.value)} onKeyDown={keys}
-            placeholder="mis. Tambahkan filter dokter" />
+            placeholder={r.component !== undefined ? "mis. Pindahkan ke bawah form" : "mis. Tambahkan filter dokter"} />
+          <label className="small muted dw-ask-fields">
+            <input type="checkbox" checked={!!r.fields} onChange={(e) => setItems(items.map((x) => x.page.id === r.page.id ? { ...x, fields: e.target.checked } : x))} />
+            Boleh ubah properti halaman (jenis, route, data, kondisi)
+          </label>
         </div>
       ))}
       {free.length > 0 && (
@@ -222,7 +241,7 @@ export function AskChange({ page, pages, component, device, onClose }: AskProps)
           <button className="primary" disabled={!feedback || working} onClick={() => void send()}>Kirim</button>
         </div>
       </div>
-      <div className="small muted">Semua perubahan diproses sekali jalan, lalu bisa disimpan atau dibatalkan bersama. Perubahan hanya ke rancangan, belum ke kode.</div>
+      <div className="small muted">AI hanya boleh mengubah halaman{items.some((r) => r.component !== undefined) ? " dan komponen" : ""} yang ditunjuk{general.trim() ? " (perubahan umum membuka semua halaman)" : ""}; patch di luar itu ditolak. Hasilnya diperiksa di browser, lalu bisa disimpan atau dibatalkan bersama.</div>
     </div>
   );
 }
@@ -301,7 +320,8 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
 
       {!approved && (blockers.length > 0 || findings.length > 0) && (
         <button className="review-fix" disabled={working || !!d.revision || pending === "revise"} title={d.revision ? "Simpan atau batalkan perubahan terakhir dulu" : undefined}
-          onClick={() => run("revise", async () => api.reviseDesign(fixRequest(blockers, findings), await screensOf(d.pages, project.name)))}>✦ Perbaiki otomatis</button>
+          onClick={() => run("revise", async () => api.reviseDesign(fixRequest(blockers, findings), await screensOf(d.pages, project.name),
+            { open: true, fields: true, general: fixRequest(blockers, findings) }))}>✦ Perbaiki otomatis</button>
       )}
 
       {flows.length > 0 && (

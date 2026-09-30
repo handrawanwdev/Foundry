@@ -168,6 +168,44 @@ type Design struct {
 	// the rendered wireframe) when asking for the last change, so the AI
 	// works from the same screen.
 	Screens map[string]string `json:"screens,omitempty"`
+	// Scope is what the last change request may touch; Foundry locks it and
+	// rejects a patch that goes outside it.
+	Scope *ChangeScope `json:"scope,omitempty"`
+	// Rejected is why the last patch was refused; the retry prompt shows it.
+	Rejected string `json:"rejected,omitempty"`
+}
+
+// ChangeScope limits a change request. Pages lists the pages the user asked
+// about; Open also allows every other page (a general request).
+type ChangeScope struct {
+	Open    bool        `json:"open,omitempty"`
+	Fields  bool        `json:"fields,omitempty"` // page fields may change on every page
+	General string      `json:"general,omitempty"`
+	Pages   []ScopePage `json:"pages,omitempty"`
+}
+
+type ScopePage struct {
+	ID      string `json:"id"`
+	Request string `json:"request,omitempty"`
+	// Components picked in the inspector: only these may be removed, moved
+	// or updated on this page. Empty means any component of the page.
+	Components []int `json:"components,omitempty"`
+	// Fields allows page fields (kind, route, access, data, states, ...).
+	Fields bool   `json:"fields,omitempty"`
+	Device string `json:"device,omitempty"` // desktop | tablet | mobile the user sees
+}
+
+// Page returns the scope entry of a page, or nil.
+func (s *ChangeScope) Page(id string) *ScopePage {
+	if s == nil {
+		return nil
+	}
+	for i := range s.Pages {
+		if s.Pages[i].ID == id {
+			return &s.Pages[i]
+		}
+	}
+	return nil
 }
 
 // DesignRevision records what one change request did to the design and the
@@ -177,6 +215,25 @@ type DesignRevision struct {
 	Changes       []DesignChange      `json:"changes"`
 	PreviousPages []Page              `json:"previous_pages"`
 	PreviousFlows map[string][]string `json:"previous_flows"` // flow id -> page ids
+	Scope         *ChangeScope        `json:"scope,omitempty"`
+	Patch         []string            `json:"patch,omitempty"` // operations applied, readable
+	QA            *DesignQA           `json:"qa,omitempty"`
+}
+
+// DesignQA is the visual check of a revision: the changed pages are
+// rendered in a browser at the user's viewport and reviewed by the AI.
+type DesignQA struct {
+	Status string   `json:"status"` // running | pass | fixed | failed | skipped
+	Round  int      `json:"round"`
+	Notes  string   `json:"notes,omitempty"`
+	Shots  []QAShot `json:"shots,omitempty"`
+}
+
+type QAShot struct {
+	PageID  string `json:"page_id"`
+	Device  string `json:"device"`
+	Image   string `json:"image"`   // screenshot path inside the project
+	Outline string `json:"outline"` // what the wireframe drew, as text
 }
 
 // DesignChange is one page-level difference between two design versions.

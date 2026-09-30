@@ -1,5 +1,5 @@
 import { PLATFORM_LABEL } from "./flow";
-import type { Blocker, Density, Flow, Page, PageComponent, PageKind, Project } from "./types";
+import type { Blocker, ChangeScope, Density, Flow, Page, PageComponent, PageKind, Project } from "./types";
 
 // Pure helpers for the design workspace.
 
@@ -10,6 +10,9 @@ export const DEVICES: { key: Device; label: string }[] = [
   { key: "tablet", label: "Tablet" },
   { key: "mobile", label: "Mobile" },
 ];
+
+// Screen width per device, shared by the workspace and the /render page.
+export const SCREEN_WIDTH: Record<Device, number> = { desktop: 1280, tablet: 820, mobile: 390 };
 
 export function defaultDevice(page?: Page): Device {
   return page && (page.platform === "android" || page.platform === "ios") ? "mobile" : "desktop";
@@ -232,8 +235,9 @@ export function fixRequest(blockers: Blocker[], findings: Finding[]): string {
     "\"kind\", \"density\", \"states\", dan form punya \"fields\". Layout sesuai jenis halaman.\n" + lines.join("\n");
 }
 
-// component: index of the component the user picked in the inspector.
-export interface PageRequest { page: Page; text: string; component?: number }
+// component: index of the component the user picked in the inspector;
+// fields: page fields (kind, route, data, states, ...) may change too.
+export interface PageRequest { page: Page; text: string; component?: number; fields?: boolean }
 
 // Change request for several pages at once: one AI run, one revision to keep
 // or undo. Page ids are included because names repeat across platforms.
@@ -250,4 +254,18 @@ export function changeRequest(general: string, perPage: PageRequest[]): string {
   const lines = items.map((r) => "- " + line(r));
   if (g) lines.push("- Umum: " + g);
   return "Ubah beberapa halaman sekaligus:\n" + lines.join("\n");
+}
+
+// Scope Foundry locks for a change request: the named pages, the picked
+// component and the device each page is seen on. A general text opens every
+// page, never their page fields.
+export function changeScope(general: string, perPage: PageRequest[], devices: Record<string, Device> = {}): ChangeScope {
+  const pages = perPage.filter((r) => r.text.trim()).map((r) => ({
+    id: r.page.id, request: r.text.trim(),
+    ...(r.component !== undefined ? { components: [r.component] } : {}),
+    ...(r.fields ? { fields: true } : {}),
+    ...(devices[r.page.id] ? { device: devices[r.page.id] } : {}),
+  }));
+  const g = general.trim();
+  return { ...(g || !pages.length ? { open: true } : {}), ...(g ? { general: g } : {}), pages };
 }
