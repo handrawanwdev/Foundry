@@ -5,10 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,8 +20,8 @@ import (
 
 // Models lists the models the agent offers right now, newest first, followed
 // by the preset suggestions. Sources, when available:
-//   - Claude Code: the Anthropic API (needs ANTHROPIC_API_KEY); without it the
-//     aliases (opus, sonnet, …) already resolve to the latest model.
+//   - Claude Code: the Anthropic API when ANTHROPIC_API_KEY is set, otherwise
+//     the model IDs the installed CLI knows (see claudeCLIModels).
 //   - Codex: `codex debug models`.
 //   - Grok: `grok models`.
 //
@@ -62,7 +66,75 @@ var modelCache = struct {
 	m map[string]cachedModels
 }{m: map[string]cachedModels{}}
 
-func anthropicModels(ctx context.Context, _ Preset) ([]string, error) {
+func claudeModels(ctx context.Context, p Preset) ([]string, error) {
+	if out, err := anthropicModels(ctx); err == nil {
+		return out, nil
+	}
+	return claudeCLIModels(ctx, p)
+}
+
+// claudeID matches a versioned Claude model ID such as claude-opus-5-5. The
+// trailing group rejects longer strings (dated, "-v1" Bedrock or partial IDs).
+var claudeID = regexp.MustCompile(`claude-(fable|opus|sonnet|haiku)-(\d{1,2})-(\d)([^0-9A-Za-z-])`)
+
+// claudeCLIModels reads the model IDs embedded in the installed Claude Code
+// CLI, so a CLI update brings its new models without a Foundry release. The
+// list can include retired models; connecting runs a probe that rejects them.
+func claudeCLIModels(ctx context.Context, p Preset) ([]string, error) {
+	path, err := exec.LookPath(p.Binary)
+	if err != nil {
+		return nil, err
+	}
+	if path, err = filepath.EvalSymlinks(path); err != nil {
+		return nil, err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	type version struct{ family, major, minor string }
+	seen := map[version]bool{}
+	buf := make([]byte, 4<<20)
+	carry := 0 // bytes kept from the previous chunk so IDs across a boundary match
+	for ctx.Err() == nil {
+		n, err := f.Read(buf[carry:])
+		chunk := buf[:carry+n]
+		for _, m := range claudeID.FindAllSubmatch(chunk, -1) {
+			seen[version{string(m[1]), string(m[2]), string(m[3])}] = true
+		}
+		if err != nil {
+			break
+		}
+		carry = min(64, len(chunk))
+		copy(buf, chunk[len(chunk)-carry:])
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	vs := make([]version, 0, len(seen))
+	for v := range seen {
+		vs = append(vs, v)
+	}
+	family := []string{"fable", "opus", "sonnet", "haiku"}
+	num := func(s string) int { n, _ := strconv.Atoi(s); return n }
+	slices.SortFunc(vs, func(a, b version) int {
+		if c := num(b.major) - num(a.major); c != 0 {
+			return c
+		}
+		if c := num(b.minor) - num(a.minor); c != 0 {
+			return c
+		}
+		return slices.Index(family, a.family) - slices.Index(family, b.family)
+	})
+	var out []string
+	for _, v := range vs {
+		out = append(out, fmt.Sprintf("claude-%s-%s-%s", v.family, v.major, v.minor))
+	}
+	return valid(out)
+}
+
+func anthropicModels(ctx context.Context) ([]string, error) {
 	key := os.Getenv("ANTHROPIC_API_KEY")
 	if key == "" {
 		return nil, errNoSource

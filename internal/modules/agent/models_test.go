@@ -48,3 +48,13 @@ func TestListModelsMergesSuggestionsAndFallsBack(t *testing.T) {
 		t.Fatalf("fallback got %v", got)
 	}
 }
+
+func TestClaudeCLIModelsReadsVersionedIDs(t *testing.T) {
+	p := fakeCLI(t, "claude-test", "")
+	os.WriteFile(p.Binary, []byte(`x"claude-opus-4-8" "claude-opus-5-5"; claude-sonnet-5-5,`+
+		`"claude-haiku-4-5-20251001" "claude-opus-4-6-v1" claude-haiku-3-55 "claude-opus-5" "claude-opus-5-5"`), 0o755)
+	got, err := claudeCLIModels(context.Background(), p)
+	if err != nil || !slices.Equal(got, []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-4-8"}) {
+		t.Fatalf("got %v %v", got, err)
+	}
+}

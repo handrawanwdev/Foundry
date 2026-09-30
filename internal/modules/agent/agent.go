@@ -45,7 +45,7 @@ type Preset struct {
 var Presets = []Preset{
 	{ID: "claude", Name: "Claude Code", Binary: "claude",
 		Models:     []string{"fable", "opus", "sonnet", "haiku"},
-		listModels: anthropicModels,
+		listModels: claudeModels,
 		Efforts:    []string{"low", "medium", "high", "xhigh", "max"},
 		effortArg:  func(e string) []string { return []string{"--effort", e} },
 		think:      []string{"-p"},
