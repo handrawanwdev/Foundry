@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { cells, formGroups, incoming, navTarget, pageDensity, pageKind, statParts, type Device } from "../design";
+import { cells, formGroups, formSubmit, incoming, navTarget, pageDensity, pageKind, statParts, type Device } from "../design";
 import type { FormField, Page, PageComponent, PageKind } from "../types";
 
 export type PageState = "normal" | "loading" | "empty" | "no_results" | "error" | "success";
@@ -20,8 +20,6 @@ interface Props {
 
 type Item = { c: PageComponent; i: number };
 
-const SUBMIT: Partial<Record<PageKind, string>> = { auth: "Masuk", payment: "Bayar", search: "Cari", wizard: "Lanjut" };
-
 // Interactive wireframe of one designed page. The layout follows the page
 // kind, so a login, a data list and a settings page do not look alike.
 export function Wireframe({ page, pages, device, mode, state = "normal", selected, onSelect, onNavigate, app = "Aplikasi" }: Props) {
@@ -40,7 +38,7 @@ export function Wireframe({ page, pages, device, mode, state = "normal", selecte
     </div>
   );
   const block = (x: Item) => wrap(x,
-    <Block c={x.c} kind={kind} run={run} onNavigate={onNavigate}
+    <Block c={x.c} kind={kind} submit={formSubmit(page)} run={run} onNavigate={onNavigate}
       empty={state === "empty" ? page.states?.empty : state === "no_results" ? page.states?.no_results : undefined} filtered={state === "no_results"} />,
     x.c.type === "button" ? "shrink" : "");
   const nav = (x: Item) => wrap(x, <Nav c={x.c} page={page} pages={pages} run={run} onNavigate={onNavigate} variant={mobile ? "tabs" : "side"} />);
@@ -225,9 +223,9 @@ function Cell({ text, column }: { text: string; column?: string }) {
   return <span>{text}</span>;
 }
 
-interface BlockProps { c: PageComponent; kind: PageKind; run: boolean; empty?: string; filtered?: boolean; onNavigate: (id: string) => void }
+interface BlockProps { c: PageComponent; kind: PageKind; submit: string; run: boolean; empty?: string; filtered?: boolean; onNavigate: (id: string) => void }
 
-function Block({ c, kind, run, empty, filtered, onNavigate }: BlockProps) {
+function Block({ c, kind, submit, run, empty, filtered, onNavigate }: BlockProps) {
   const open = run && c.target ? () => onNavigate(c.target!) : undefined;
   switch (c.type) {
     case "header":
@@ -247,7 +245,7 @@ function Block({ c, kind, run, empty, filtered, onNavigate }: BlockProps) {
         ? <label className="wf-search"><Icon name="cari" /><input placeholder={c.label + "…"} tabIndex={run ? 0 : -1} /></label>
         : <Field label={c.label} />;
     case "form":
-      return <Form c={c} submit={SUBMIT[kind] ?? "Simpan"} cancel={kind === "form" || kind === "settings" || kind === "profile"} run={run} onSubmit={open} />;
+      return <Form c={c} submit={submit} cancel={kind === "form" || kind === "settings" || kind === "profile"} run={run} onSubmit={open} />;
     case "table":
       return (
         <div className="wf-table">

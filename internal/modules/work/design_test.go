@@ -49,3 +49,23 @@ func TestApplyRevisionRemove(t *testing.T) {
 		t.Fatal("empty change set must fail")
 	}
 }
+
+func TestFormButtonsNotDuplicated(t *testing.T) {
+	p := revisionProject()
+	raw := "```json\n{\"pages\": [{\"id\": \"PAGE-002\", \"name\": \"Masuk\", \"feature_id\": \"FEAT-001\", \"kind\": \"auth\"," +
+		"\"primary_action\": {\"label\": \"Masuk\"}, \"components\": [{\"type\": \"form\", \"fields\": [{\"label\": \"Email\"}]}," +
+		"{\"type\": \"button\", \"label\": \"masuk\"}, {\"type\": \"button\", \"label\": \"Daftar akun\"}]}]}\n```"
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	var labels []string
+	for _, c := range p.Design.Pages[1].Components {
+		labels = append(labels, c.Type+":"+c.Label)
+	}
+	if got := strings.Join(labels, ","); got != "form:,button:Daftar akun" {
+		t.Fatalf("components = %s", got)
+	}
+	if !strings.Contains(DesignPrompt(revisionProject()), "Never add a \"button\" that submits") {
+		t.Error("prompt must explain the form's own buttons")
+	}
+}

@@ -39,6 +39,25 @@ var fieldTypes = map[string]bool{
 	"datetime": true, "select": true, "textarea": true, "checkbox": true, "radio": true, "file": true, "currency": true,
 }
 
+// kindSubmit is the submit label a form gets from the page kind; the
+// wireframe renders it (apps/web Wireframe.tsx), so it never needs a button.
+var kindSubmit = map[string]string{"auth": "Masuk", "payment": "Bayar", "search": "Cari", "wizard": "Lanjut"}
+
+// primarySubmit: kinds where the form is the page's main action, so its
+// submit button carries the primary_action label.
+var primarySubmit = map[string]bool{"auth": true, "form": true, "payment": true, "settings": true, "profile": true}
+
+// FormSubmit is the label of the submit button a form renders on this page.
+func FormSubmit(pg core.Page) string {
+	if a := pg.PrimaryAction; a != nil && a.Label != "" && primarySubmit[pg.Kind] {
+		return a.Label
+	}
+	if l := kindSubmit[pg.Kind]; l != "" {
+		return l
+	}
+	return "Simpan"
+}
+
 var apiCall = regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE) /\S*$`)
 
 const pageShape = `{"id": "PAGE-001", "name": "", "platform": "web|android|ios|desktop", "role": "", "feature_id": "FEAT-001",
@@ -113,8 +132,15 @@ Component types: header, nav, text, list, table, form, button, card, stat, input
 - form: "fields" as above ("group" groups fields); "items" is not needed when "fields" is given.
 - section: a separator heading that groups what follows.
 - steps: "items" are the step names of a wizard.
+- form already renders its own buttons under the fields: submit (label = "primary_action" label on auth, form, payment, settings and profile pages; otherwise Masuk on auth, Bayar on payment, Cari on search, Lanjut on wizard, else Simpan) and Batal on form, settings and profile pages. Never add a "button" that submits or cancels the form: it would show twice.
 Use "target" to link to another page id so the prototype is clickable: on button and card (open), on list and table (a row opens the detail page), on form (submit goes there).
 Navigation uses the user's business words (Jadwal, Pasien, Laporan), not database tables. Name nav items exactly like the pages they open.
+How the wireframe renders a page (so you know what the user sees):
+- Components show top to bottom in array order; to move something, change its position in "components".
+- "nav" goes to the sidebar (desktop/tablet) or the bottom tab bar (mobile), not in the content.
+- list/admin pages on desktop: header and buttons share one toolbar row above the data.
+- consecutive "stat" components sit on one row.
+- Added automatically, never as components: the top bar with app name and avatar, the app brand above the auth card (hidden when a header has the app name), a back link on detail pages, the form buttons above.
 Mobile pages are designed for mobile: short content, the main nav becomes a bottom nav with at most 5 items.
 Every UI feature needs at least one page. Every flow lists the pages it walks through, in order.
 
@@ -125,6 +151,8 @@ Every UI feature needs at least one page. Every flow lists the pages it walks th
 - "removed": ids of pages to delete.
 - "flows": only flows whose page list changes, with the full new list.
 Every returned page follows all the rules above. Keep targets to unchanged pages as they are.
+Change only what the request asks. In a changed page keep every other component, its order, labels and data exactly as they are.
+When the request talks about something visible (a duplicate button, a misplaced block), find which component or automatic element above produces it and change the JSON so the screen matches the request.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {"pages": [` + pageShape + `], "removed": ["PAGE-009"], "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "NEW-1"]}]}`)
@@ -308,7 +336,22 @@ func normPage(p *core.Project, pg core.Page, idMap map[string]string) (core.Page
 		}
 		np.Components = append(np.Components, c)
 	}
-	return np, true
+	return dropFormButtons(np), true
+}
+
+// dropFormButtons removes buttons that repeat the submit button a form on the
+// same page already renders (e.g. a second "Masuk" on a login page).
+func dropFormButtons(pg core.Page) core.Page {
+	if !slices.ContainsFunc(pg.Components, func(c core.PageComponent) bool { return c.Type == "form" }) {
+		return pg
+	}
+	submit := FormSubmit(pg)
+	cancel := pg.Kind == "form" || pg.Kind == "settings" || pg.Kind == "profile"
+	pg.Components = slices.DeleteFunc(pg.Components, func(c core.PageComponent) bool {
+		l := strings.TrimSpace(c.Label)
+		return c.Type == "button" && (strings.EqualFold(l, submit) || cancel && strings.EqualFold(l, "Batal"))
+	})
+	return pg
 }
 
 // clearDangling clears targets to pages that no longer exist and returns the

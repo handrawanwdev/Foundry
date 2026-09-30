@@ -142,6 +142,18 @@ export function pageDensity(p: Page): Density {
   return "medium";
 }
 
+const KIND_SUBMIT: Partial<Record<PageKind, string>> = { auth: "Masuk", payment: "Bayar", search: "Cari", wizard: "Lanjut" };
+const PRIMARY_SUBMIT: PageKind[] = ["auth", "form", "payment", "settings", "profile"];
+
+// Label of the submit button a form renders; same rule as work.FormSubmit
+// on the server, which also tells the designer AI about it.
+export function formSubmit(p: Page): string {
+  const kind = pageKind(p);
+  const label = p.primary_action?.label?.trim();
+  if (label && PRIMARY_SUBMIT.includes(kind)) return label;
+  return KIND_SUBMIT[kind] ?? "Simpan";
+}
+
 // "Budi | Dr. Andi | Aktif" → cells.
 export function cells(row: string): string[] {
   return row.split("|").map((c) => c.trim());
