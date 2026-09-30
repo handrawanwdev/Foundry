@@ -134,6 +134,7 @@ func (s *Server) Handler() http.Handler {
 
 	// AI connection
 	api("GET /api/v1/ai", s.getAI)
+	api("GET /api/v1/ai/models", s.listModels)
 	api("POST /api/v1/ai/connect", s.connectAgent)
 	api("POST /api/v1/ai/connect-mcp", s.connectMCP)
 	api("POST /api/v1/ai/disconnect", func(r *http.Request) (any, error) {
@@ -318,6 +319,18 @@ func (s *Server) getAI(r *http.Request) (any, error) {
 		"agents":     agents,
 		"mcp_config": mcp.ClientConfig(s.Binary, dir),
 	}, nil
+}
+
+// listModels asks the agent CLI for its current models (?agent=id).
+func (s *Server) listModels(r *http.Request) (any, error) {
+	p, ok := agent.PresetByID(r.URL.Query().Get("agent"))
+	if !ok {
+		return nil, badRequest("agent tidak dikenal")
+	}
+	if _, found := p.Detected(); !found {
+		return map[string]any{"models": p.Models}, nil
+	}
+	return map[string]any{"models": p.ListModels(r.Context())}, nil
 }
 
 func (s *Server) connectAgent(r *http.Request) (any, error) {

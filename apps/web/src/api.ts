@@ -19,6 +19,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 export const api = {
   ai: () => call<AIState>("GET", "/ai"),
+  models: (agent: string) => call<{ models: string[] }>("GET", `/ai/models?agent=${encodeURIComponent(agent)}`),
   connectAgent: (agent_id: string, command?: string[], opts?: AgentOptions) => call("POST", "/ai/connect", { agent_id, command, ...opts }),
   connectMCP: () => call("POST", "/ai/connect-mcp", {}),
   disconnect: () => call("POST", "/ai/disconnect", {}),

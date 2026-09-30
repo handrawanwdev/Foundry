@@ -38,29 +38,34 @@ type Preset struct {
 	think     []string // args after the model/effort flags
 	execute   []string
 	effortArg func(string) []string
+	// listModels asks the CLI (or its API) which models exist; see ListModels.
+	listModels func(context.Context, Preset) ([]string, error)
 }
 
 var Presets = []Preset{
 	{ID: "claude", Name: "Claude Code", Binary: "claude",
-		Models:    []string{"fable", "opus", "sonnet", "haiku"},
-		Efforts:   []string{"low", "medium", "high", "xhigh", "max"},
-		effortArg: func(e string) []string { return []string{"--effort", e} },
-		think:     []string{"-p"},
-		execute:   []string{"-p", "--permission-mode", "acceptEdits"}},
+		Models:     []string{"fable", "opus", "sonnet", "haiku"},
+		listModels: anthropicModels,
+		Efforts:    []string{"low", "medium", "high", "xhigh", "max"},
+		effortArg:  func(e string) []string { return []string{"--effort", e} },
+		think:      []string{"-p"},
+		execute:    []string{"-p", "--permission-mode", "acceptEdits"}},
 	{ID: "codex", Name: "Codex", Binary: "codex", sub: []string{"exec"},
-		Efforts:   []string{"low", "medium", "high", "xhigh"},
-		effortArg: func(e string) []string { return []string{"-c", fmt.Sprintf("model_reasoning_effort=%q", e)} },
-		think:     []string{"--skip-git-repo-check", "-s", "read-only"},
-		execute:   []string{"--skip-git-repo-check", "-s", "workspace-write"}},
+		listModels: codexModels,
+		Efforts:    []string{"low", "medium", "high", "xhigh"},
+		effortArg:  func(e string) []string { return []string{"-c", fmt.Sprintf("model_reasoning_effort=%q", e)} },
+		think:      []string{"--skip-git-repo-check", "-s", "read-only"},
+		execute:    []string{"--skip-git-repo-check", "-s", "workspace-write"}},
 	{ID: "qwen", Name: "Qwen Code", Binary: "qwen",
 		think:   []string{"--approval-mode", "plan"},
 		execute: []string{"--approval-mode", "auto-edit"}},
 	{ID: "grok", Name: "Grok", Binary: "grok", PromptArg: true,
-		Models:    []string{"grok-4.6", "grok-4.5"},
-		Efforts:   []string{"low", "medium", "high", "xhigh"},
-		effortArg: func(e string) []string { return []string{"--effort", e} },
-		think:     []string{"-p"},
-		execute:   []string{"--always-approve", "-p"}},
+		Models:     []string{"grok-4.6", "grok-4.5"},
+		listModels: grokModels,
+		Efforts:    []string{"low", "medium", "high", "xhigh"},
+		effortArg:  func(e string) []string { return []string{"--effort", e} },
+		think:      []string{"-p"},
+		execute:    []string{"--always-approve", "-p"}},
 	{ID: "gemini", Name: "Gemini", Binary: "gemini",
 		think:   []string{},
 		execute: []string{"--approval-mode", "auto_edit"}},

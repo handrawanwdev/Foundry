@@ -426,4 +426,3 @@ func normRoles(p *core.Project, in []core.RoleAccess) []core.RoleAccess {
 	}
 	return out
 }
-
