@@ -157,6 +157,16 @@ export function formSubmit(p: Page): string {
   return KIND_SUBMIT[kind] ?? "Simpan";
 }
 
+// Index of the button drawn as the page's primary CTA, at most one per page:
+// the button carrying the primary action label. Older designs without a
+// primary action fall back to the first button that opens a page.
+export function primaryButton(p: Page): number {
+  const comps = p.components ?? [];
+  if (!p.primary_action) return comps.findIndex((c) => c.type === "button" && !!c.target);
+  const label = p.primary_action.label?.trim().toLowerCase();
+  return label ? comps.findIndex((c) => c.type === "button" && c.label.trim().toLowerCase() === label) : -1;
+}
+
 // "Budi | Dr. Andi | Aktif" → cells.
 export function cells(row: string): string[] {
   return row.split("|").map((c) => c.trim());
@@ -231,8 +241,9 @@ export function fixRequest(blockers: Blocker[], findings: Finding[]): string {
     ...blockers.map((b) => `- ${b.page ? `Halaman "${b.page}": ` : ""}${b.text}`),
     ...findings.map((f) => `- ${f.page ? `Halaman "${f.page.name}": ` : ""}${f.text}`),
   ];
-  return "Lengkapi dan perbaiki rancangan: tiap halaman wajib punya \"route\", \"access\", \"primary_action\", \"data\", " +
-    "\"kind\", \"density\", \"states\", dan form punya \"fields\". Layout sesuai jenis halaman.\n" + lines.join("\n");
+  return "Lengkapi dan perbaiki rancangan: design system (\"system\") wajib ada; tiap halaman wajib punya \"route\", \"access\", " +
+    "\"primary_action\" (satu), \"hierarchy\", \"data\", \"kind\", \"density\", \"states\", dan form punya \"fields\". " +
+    "Tidak ada aksi yang tampil dua kali. Layout sesuai jenis halaman.\n" + lines.join("\n");
 }
 
 // component: index of the component the user picked in the inspector;

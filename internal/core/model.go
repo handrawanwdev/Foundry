@@ -158,9 +158,11 @@ const (
 )
 
 type Design struct {
-	Pages    []Page       `json:"pages"`
-	Status   DesignStatus `json:"status"`
-	Feedback []string     `json:"feedback"`
+	// System is the design system every page and the build follow.
+	System   *DesignSystem `json:"system,omitempty"`
+	Pages    []Page        `json:"pages"`
+	Status   DesignStatus  `json:"status"`
+	Feedback []string      `json:"feedback"`
 	// Revision is the last requested change, waiting for the user to keep or
 	// undo it. Nil when there is nothing to review.
 	Revision *DesignRevision `json:"revision,omitempty"`
@@ -173,6 +175,25 @@ type Design struct {
 	Scope *ChangeScope `json:"scope,omitempty"`
 	// Rejected is why the last patch was refused; the retry prompt shows it.
 	Rejected string `json:"rejected,omitempty"`
+}
+
+// DesignSystem holds the design tokens: the build maps them onto the
+// project's styling instead of arbitrary values.
+type DesignSystem struct {
+	Colors      []Token `json:"colors"`
+	Typography  []Token `json:"typography"`
+	Spacing     []Token `json:"spacing"`
+	Radius      []Token `json:"radius,omitempty"`
+	Shadow      []Token `json:"shadow,omitempty"`
+	Breakpoints []Token `json:"breakpoints,omitempty"`
+	// Components: component name → how it is used (variants, rules).
+	Components []Token `json:"components,omitempty"`
+}
+
+type Token struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	Use   string `json:"use,omitempty"`
 }
 
 // ChangeScope limits a change request. Pages lists the pages the user asked
@@ -215,18 +236,31 @@ type DesignRevision struct {
 	Changes       []DesignChange      `json:"changes"`
 	PreviousPages []Page              `json:"previous_pages"`
 	PreviousFlows map[string][]string `json:"previous_flows"` // flow id -> page ids
-	Scope         *ChangeScope        `json:"scope,omitempty"`
-	Patch         []string            `json:"patch,omitempty"` // operations applied, readable
-	QA            *DesignQA           `json:"qa,omitempty"`
+	// PreviousSystem is the design system before the request; undo restores it.
+	PreviousSystem *DesignSystem `json:"previous_system,omitempty"`
+	Scope          *ChangeScope  `json:"scope,omitempty"`
+	Patch          []string      `json:"patch,omitempty"` // operations applied, readable
+	QA             *DesignQA     `json:"qa,omitempty"`
 }
 
 // DesignQA is the visual check of a revision: the changed pages are
 // rendered in a browser at the user's viewport and reviewed by the AI.
 type DesignQA struct {
-	Status string   `json:"status"` // running | pass | fixed | failed | skipped
-	Round  int      `json:"round"`
-	Notes  string   `json:"notes,omitempty"`
-	Shots  []QAShot `json:"shots,omitempty"`
+	Status string    `json:"status"` // running | pass | fixed | failed | skipped
+	Round  int       `json:"round"`
+	Notes  string    `json:"notes,omitempty"`
+	Issues []QAIssue `json:"issues,omitempty"`
+	Shots  []QAShot  `json:"shots,omitempty"`
+}
+
+// QAIssue is one problem the visual critic saw on a screenshot.
+type QAIssue struct {
+	PageID   string `json:"page_id,omitempty"`
+	Severity string `json:"severity"` // critical | major | minor
+	Problem  string `json:"problem"`
+	Why      string `json:"why,omitempty"`
+	Impact   string `json:"impact,omitempty"`
+	Fix      string `json:"fix,omitempty"`
 }
 
 type QAShot struct {
@@ -252,6 +286,12 @@ type Page struct {
 	FeatureID     string   `json:"feature_id"`
 	SubFeatureIDs []string `json:"sub_feature_ids"`
 	Purpose       string   `json:"purpose"`
+	// Screen intent: what the user must see first (most important first),
+	// the lower-weight actions besides the primary one, and how the layout
+	// adapts on tablet and mobile.
+	Hierarchy        []string `json:"hierarchy,omitempty"`
+	SecondaryActions []string `json:"secondary_actions,omitempty"`
+	Responsive       string   `json:"responsive,omitempty"`
 	// Kind picks the page layout (auth, list, form, ...); Density is
 	// low | medium | high. Both may be empty on older designs.
 	Kind    string      `json:"kind,omitempty"`

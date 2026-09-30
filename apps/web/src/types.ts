@@ -37,12 +37,14 @@ export interface Page {
   id: string; name: string; platform: string; role: string; feature_id: string;
   sub_feature_ids: string[] | null; purpose: string; components: PageComponent[] | null;
   kind?: PageKind; density?: Density; states?: PageStates;
+  hierarchy?: string[]; secondary_actions?: string[]; responsive?: string;
   route?: string; access?: "public" | "auth"; primary_action?: PageAction; data?: PageData;
 }
 // Build spec of one page, assembled by the server from the design.
 export interface PageHandoff {
   page_id: string; name: string; route: string; platform: string; access: string; role: string; kind?: string;
-  purpose: string; primary_action: string; components: string[] | null; data?: PageData;
+  purpose: string; hierarchy?: string[]; primary_action: string; secondary_actions?: string[]; responsive?: string;
+  components: string[] | null; data?: PageData;
   interactions: string[] | null; entry_points: string[] | null; states: string[] | null; validation: string[] | null;
   tests: string[] | null; feature_id: string; sub_feature_ids?: string[]; requirement_ids: string[] | null; flow_ids: string[] | null;
 }
@@ -53,9 +55,16 @@ export interface ScopePage { id: string; request?: string; components?: number[]
 // What a change request may touch; the server rejects a patch outside it.
 export interface ChangeScope { open?: boolean; fields?: boolean; general?: string; pages?: ScopePage[] }
 export interface QAShot { page_id: string; device: string; image: string; outline: string }
-export interface DesignQA { status: "running" | "pass" | "fixed" | "failed" | "skipped"; round: number; notes?: string; shots?: QAShot[] }
+export interface QAIssue { page_id?: string; severity: "critical" | "major" | "minor"; problem: string; why?: string; impact?: string; fix?: string }
+export interface DesignQA { status: "running" | "pass" | "fixed" | "failed" | "skipped"; round: number; notes?: string; issues?: QAIssue[]; shots?: QAShot[] }
 export interface DesignRevision { request: string; changes: DesignChange[] | null; scope?: ChangeScope; patch?: string[]; qa?: DesignQA }
+export interface Token { name: string; value: string; use?: string }
+export interface DesignSystem {
+  colors: Token[]; typography: Token[]; spacing: Token[]; radius?: Token[]; shadow?: Token[];
+  breakpoints?: Token[]; components?: Token[];
+}
 export interface Design {
+  system?: DesignSystem;
   pages: Page[]; status: "draft" | "changes_requested" | "approved"; feedback: string[] | null;
   revision?: DesignRevision;
   rejected?: string; // why the last patch was refused

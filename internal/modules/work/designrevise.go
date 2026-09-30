@@ -21,9 +21,10 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
  "pages": [], "removed": [], "flows": []}
 - "target" and "after" are the [n] indexes of CURRENT PAGE, before the patch; earlier operations never shift them. "after": -1 = top, no "after" = bottom.
 - One patch per page, with all its operations.
-- "update" with "page_fields" (no target) only where PRESERVE allows page fields. Allowed page fields: name, role, purpose, kind, density, route, access, primary_action, data, states, sub_feature_ids.
+- "update" with "page_fields" (no target) only where PRESERVE allows page fields. Allowed page fields: name, role, purpose, hierarchy, secondary_actions, responsive, kind, density, route, access, primary_action, data, states, sub_feature_ids.
 - "pages": only brand-new pages (id "NEW-1", "NEW-2", ...) in full. Never send an existing page.
 - "removed": ids of pages to delete; "flows": only flows whose page list changes, with the full new list.
+- "system": only when the request changes the design system and it is listed above as changeable; then the whole new system.
 Foundry applies the patch and compares before/after. Any change outside the targets, or a target outside the scope, rejects the whole patch.`
 
 // revisionPrompt asks for a patch: per requested page the current
@@ -88,6 +89,9 @@ Write labels in the same language as the design. Do not write code. Do not modif
 		b.WriteString("DESIGN RULES (only for new pages and for components or fields you add or update):\n" + designRules + "\n")
 		b.WriteString("FEATURES:\n" + mustJSON(p.Features) + "\n\nFLOWS:\n" + mustJSON(p.Flows) + "\n\n")
 		b.WriteString("A new page has this shape:\n" + pageShape + "\n\n")
+		b.WriteString("DESIGN SYSTEM (changeable, same shape):\n" + mustJSON(d.System) + "\n\n")
+	} else if d.System != nil {
+		b.WriteString("DESIGN SYSTEM (use its tokens and component rules; not changeable in this request):\n" + mustJSON(d.System) + "\n\n")
 	}
 	b.WriteString(patchFormat)
 	return b.String()

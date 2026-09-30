@@ -4,7 +4,7 @@ import { api } from "../api";
 import { changeRequest, changeScope, componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf, type PageRequest } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
-import type { Blocker, DesignQA, Page, PageHandoff, Project } from "../types";
+import type { Blocker, DesignQA, DesignSystem, Page, PageHandoff, Project, QAIssue, Token } from "../types";
 import type { Device } from "../design";
 
 // ---------- Inspect ----------
@@ -68,6 +68,10 @@ export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: 
         <dt>Akses</dt><dd>{page.access === "auth" ? "Harus login" : page.access === "public" ? "Publik" : <span className="warn-text">belum ditentukan</span>}</dd>
         <dt>Aksi utama</dt><dd>{action?.label ? <>{action.label}{actionTarget && <> <PageLink p={actionTarget} /></>}</>
           : action?.reason ? <span className="muted">Tidak ada — {action.reason}</span> : <span className="warn-text">belum ditentukan</span>}</dd>
+        {!!page.secondary_actions?.length && <><dt>Aksi lain</dt><dd>{page.secondary_actions.join(", ")}</dd></>}
+        <dt>Urutan informasi</dt><dd>{page.hierarchy?.length
+          ? <ol className="plain-ol">{page.hierarchy.map((h) => <li key={h}>{h}</li>)}</ol> : <span className="warn-text">belum ditentukan</span>}</dd>
+        {page.responsive && <><dt>Responsif</dt><dd>{page.responsive}</dd></>}
         <dt>Jenis</dt><dd>{KIND_LABEL[pageKind(page)]}{!page.kind && <span className="muted small"> (ditebak)</span>} · kepadatan {DENSITY_LABEL[pageDensity(page)]}</dd>
         {page.states && <><dt>Kondisi</dt><dd>
           {STATE_LABEL.filter(([k]) => page.states?.[k]).map(([k, l]) => <div key={k}><span className="muted small">{l}:</span> {page.states![k]}</div>)}
@@ -128,6 +132,34 @@ function qaText(qa: DesignQA): string {
   return "Memeriksa hasil visual…";
 }
 
+const SEVERITY_LABEL = { critical: "kritis", major: "besar", minor: "kecil" } as const;
+
+// Problems the visual critic saw on the screenshots; minor ones do not
+// block, they are kept for the next change.
+function QAIssues({ issues, pages, onOpen }: { issues: QAIssue[]; pages: Page[]; onOpen: (pageId: string) => void }) {
+  return (
+    <details className="small qa-issues"><summary>{issues.length} temuan visual</summary>
+      <ul>
+        {issues.map((it, i) => {
+          const pg = pages.find((p) => p.id === it.page_id);
+          return (
+            <li key={i}>
+              <span className={`sev ${it.severity}`}>{SEVERITY_LABEL[it.severity]}</span>{" "}
+              {pg && <><button className="link" onClick={() => onOpen(pg.id)}>{pg.name}</button>: </>}
+              {it.problem}
+              {(it.why || it.impact || it.fix) && (
+                <div className="muted">
+                  {it.why && <>Mengapa: {it.why}. </>}{it.impact && <>Dampak: {it.impact}. </>}{it.fix && <>Perbaikan: {it.fix}</>}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
 export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (pageId: string) => void }) {
   const { run, pending } = useProject();
   const [open, setOpen] = useState(true);
@@ -144,6 +176,7 @@ export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (page
           <span className="muted"> · {changes.length ? `${changes.length} perubahan` : "tidak ada perubahan halaman"}</span>
           <div className="small muted" style={{ whiteSpace: "pre-line" }}>“{rev.request}”</div>
           {rev.qa && <div className={`small ${rev.qa.status === "failed" ? "warn-text" : "muted"}`} style={{ whiteSpace: "pre-line" }}>{qaText(rev.qa)}</div>}
+          {!!rev.qa?.issues?.length && <QAIssues issues={rev.qa.issues} pages={project.design?.pages ?? []} onOpen={onOpen} />}
         </div>
         <div className="inline">
           {changes.length > 0 && <button className="ghost" onClick={() => setOpen(!open)}>{open ? "Sembunyikan" : "Lihat"}</button>}
@@ -283,8 +316,8 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
           {" · "}Struktur: {s?.mode === "existing" ? "project yang sudah ada" : s?.template ?? "—"}
           {!approved && <> <button className="link" onClick={() => onInfo("platform")}>Ubah</button></>}
         </li>
-        {blockers.length ? <li className="warn">! Wajib dilengkapi: {blockers.length} hal (route, akses, aksi utama, kolom, menu)</li>
-          : <li className="ok">✓ Tiap halaman punya route, akses dan aksi utama</li>}
+        {blockers.length ? <li className="warn">! Wajib dilengkapi: {blockers.length} hal (design system, route, akses, aksi, urutan informasi, kondisi, menu)</li>
+          : <li className="ok">✓ Design system ada; tiap halaman punya route, akses, satu aksi utama, urutan informasi dan kondisi data</li>}
         {findings.length ? <li className="warn">! Kualitas rancangan: {findings.length} temuan</li>
           : <li className="ok">✓ Kualitas rancangan: tiap halaman punya layout sesuai jenisnya</li>}
         {d.revision && !approved && <li className="warn">! Perubahan terakhir belum disimpan. Menyetujui akan menyimpannya.</li>}
@@ -324,6 +357,8 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
             { open: true, fields: true, general: fixRequest(blockers, findings) }))}>✦ Perbaiki otomatis</button>
       )}
 
+      {d.system && <SystemView system={d.system} />}
+
       {flows.length > 0 && (
         <section className="review-flows">
           <h3>Alur</h3>
@@ -353,5 +388,42 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
         )}
       </div>
     </div>
+  );
+}
+
+// ---------- Design system ----------
+
+const COLOR = /^(#[0-9a-f]{3,8}|rgba?\(|hsla?\()/i;
+
+function TokenRows({ title, tokens }: { title: string; tokens?: Token[] }) {
+  if (!tokens?.length) return null;
+  return (
+    <>
+      <h4>{title}</h4>
+      <ul className="ds-tokens">
+        {tokens.map((t) => (
+          <li key={t.name}>
+            {COLOR.test(t.value) && <span className="ds-swatch" style={{ background: t.value }} aria-hidden="true" />}
+            <code>{t.name}</code> <span>{t.value}</span>{t.use && <span className="muted"> — {t.use}</span>}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+// The tokens every page and the build use.
+function SystemView({ system }: { system: DesignSystem }) {
+  return (
+    <section className="review-flows ds">
+      <h3>Design system</h3>
+      <TokenRows title="Warna" tokens={system.colors} />
+      <TokenRows title="Tipografi" tokens={system.typography} />
+      <TokenRows title="Spacing" tokens={system.spacing} />
+      <TokenRows title="Radius" tokens={system.radius} />
+      <TokenRows title="Shadow" tokens={system.shadow} />
+      <TokenRows title="Breakpoint" tokens={system.breakpoints} />
+      <TokenRows title="Komponen" tokens={system.components} />
+    </section>
   );
 }
