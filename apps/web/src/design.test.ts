@@ -89,5 +89,6 @@ describe("design", () => {
     expect(changeRequest("rapikan nav", [{ page: pages[0], text: "tambah lupa sandi" }, { page: pages[1], text: " " }, { page: pages[3], text: "hapus stat" }])).toBe(
       'Ubah beberapa halaman sekaligus:\n- Di halaman "Login" (P1): tambah lupa sandi\n- Di halaman "Dashboard" (P4): hapus stat\n- Umum: rapikan nav');
     expect(changeRequest("", [{ page: pages[0], text: "" }])).toBe("");
+    expect(changeRequest("", [{ page: pages[1], text: "hapus", component: 0 }])).toBe('Di halaman "Janji Temu" (P2), komponen [0] button "Buat": hapus');
   });
 });

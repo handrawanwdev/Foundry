@@ -10,8 +10,9 @@ import (
 )
 
 type designOut struct {
-	Pages   []core.Page `json:"pages"`
-	Removed []string    `json:"removed"` // revision only: ids of deleted pages
+	Pages   []core.Page   `json:"pages"`
+	Removed []string      `json:"removed"` // revision only: ids of deleted pages
+	Ops     []componentOp `json:"ops"`     // revision only: edits to existing pages
 	Flows   []struct {
 		ID      string   `json:"id"`
 		PageIDs []string `json:"page_ids"`
@@ -102,6 +103,9 @@ Write labels in the same language as the features. Do not write code. Do not mod
 		}
 		b.WriteString("CHANGE REQUEST (apply now):\n" + fb[len(fb)-1] + "\n\n")
 	}
+	if revise {
+		b.WriteString("DESIGN RULES (only for new pages and for what you add or update; never a reason to change anything else):\n")
+	}
 	b.WriteString(`Design every page for its job, not from one template. Components may repeat across pages; layouts should not.
 Per page answer: what is the main user action, what must be seen first, what is only needed on demand.
 
@@ -150,16 +154,25 @@ Every UI feature needs at least one page. Every flow lists the pages it walks th
 
 ` + "\n\n")
 	if revise {
-		b.WriteString(`This is a change to the current design. Return ONLY what changes:
-- "pages": pages that change (keep their id, send the whole page) and new pages (id "NEW-1", "NEW-2", ...). Pages you do not send stay exactly as they are.
+		b.WriteString(`This is a change to the current design. Return ONLY what changes, as small edits:
+- "ops": edits to existing pages, applied in order. "index" and "after" are component positions in CURRENT DESIGN, before any edit; earlier ops never shift them.
+  {"page": "PAGE-001", "op": "remove", "index": 2}
+  {"page": "PAGE-001", "op": "move", "index": 3, "after": 1}          after -1 = top, omit after = bottom
+  {"page": "PAGE-001", "op": "update", "index": 0, "component": {the whole new component}}
+  {"page": "PAGE-001", "op": "insert", "after": 1, "component": {...}}
+  {"page": "PAGE-001", "op": "page", "set": {"kind": "list"}}          only page fields that change: name, role, purpose, kind, density, route, access, primary_action, data, states, sub_feature_ids
+- "pages": new pages only (id "NEW-1", "NEW-2", ...), in full. Send an existing page in full only when the request asks to redesign that whole page; never send ops for it too.
 - "removed": ids of pages to delete.
 - "flows": only flows whose page list changes, with the full new list.
-Every returned page follows all the rules above. Keep targets to unchanged pages as they are.
-Change only what the request asks. In a changed page keep every other component, its order, labels and data exactly as they are.
-When the request talks about something visible (a duplicate button, a misplaced block), find which component or automatic element above produces it and change the JSON so the screen matches the request.
+
+Scope: everything not named in an edit stays exactly as it is. Do not touch a component, page field or page the request does not mention, even if it does not follow the rules above.
+The rules above apply only to new pages and to the components or fields you add or update.
+Change "kind" only when the request asks for it: it changes the whole layout.
+When the request talks about something visible (a duplicate button, a misplaced block), find which component or automatic element in WHAT THE USER SEES produces it and edit that.
+When the request names a component as [n], it is components[n] of that page.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
-{"pages": [` + pageShape + `], "removed": ["PAGE-009"], "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "NEW-1"]}]}`)
+{"ops": [{"page": "PAGE-001", "op": "remove", "index": 2}], "pages": [` + pageShape + `], "removed": ["PAGE-009"], "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "NEW-1"]}]}`)
 		return b.String()
 	}
 	b.WriteString(`Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
@@ -230,7 +243,7 @@ func ApplyDesign(p *core.Project, raw string) error {
 // version is kept so the user can undo it.
 func applyRevision(p *core.Project, out designOut) error {
 	d := p.Design
-	if len(out.Pages) == 0 && len(out.Removed) == 0 && len(out.Flows) == 0 {
+	if len(out.Pages) == 0 && len(out.Removed) == 0 && len(out.Flows) == 0 && len(out.Ops) == 0 {
 		return fmt.Errorf("rancangan tidak berubah")
 	}
 	prevFlows := map[string][]string{}
@@ -265,6 +278,9 @@ func applyRevision(p *core.Project, out designOut) error {
 			changed[np.ID] = np
 		}
 	}
+	if err := applyPageOps(p, d.Pages, out, idMap, changed); err != nil {
+		return err
+	}
 	var pages []core.Page
 	for _, pg := range d.Pages {
 		if _, ok := idMap[pg.ID]; !ok {
@@ -296,6 +312,40 @@ func applyRevision(p *core.Project, out designOut) error {
 	rev.Changes = DiffPages(rev.PreviousPages, pages)
 	p.Design = &core.Design{Pages: pages, Status: core.DesignDraft, Feedback: d.Feedback, Revision: rev}
 	p.Tasks, p.Verification = nil, nil
+	return nil
+}
+
+// applyPageOps applies the component edits page by page, in the order the
+// AI sent them, and stores the results in changed.
+func applyPageOps(p *core.Project, current []core.Page, out designOut, idMap map[string]string, changed map[string]core.Page) error {
+	var order []string
+	byPage := map[string][]componentOp{}
+	for _, o := range out.Ops {
+		if _, ok := byPage[o.Page]; !ok {
+			order = append(order, o.Page)
+		}
+		byPage[o.Page] = append(byPage[o.Page], o)
+	}
+	for _, id := range order {
+		i := slices.IndexFunc(current, func(pg core.Page) bool { return pg.ID == id })
+		switch {
+		case i < 0:
+			return fmt.Errorf("perubahan untuk halaman %s yang tidak ada", id)
+		case slices.Contains(out.Removed, id):
+			return fmt.Errorf("halaman %s dihapus sekaligus diubah", id)
+		case slices.ContainsFunc(out.Pages, func(pg core.Page) bool { return pg.ID == id }):
+			return fmt.Errorf("halaman %s dikirim utuh sekaligus diubah per komponen", id)
+		}
+		pg, err := applyOps(current[i], byPage[id])
+		if err != nil {
+			return err
+		}
+		np, ok := normPage(p, pg, idMap)
+		if !ok {
+			return fmt.Errorf("halaman %s tidak valid setelah diubah", id)
+		}
+		changed[id] = np
+	}
 	return nil
 }
 

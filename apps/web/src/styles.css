@@ -548,6 +548,7 @@ input:focus, textarea:focus { outline: 1px solid var(--accent); }
 .dw-ask-page { display: flex; flex-direction: column; gap: .25rem; }
 .dw-ask-page-head { display: flex; justify-content: space-between; align-items: center; }
 .dw-ask-page-head button { padding: 0 .4rem; }
+.dw-ask-comp { margin: 0 auto 0 .5rem; padding: 0 0 0 .4rem; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); display: inline-flex; align-items: center; }
 .dw-ask select { background: var(--bg); color: var(--text); }
 .agent.on { border-color: var(--accent); }
 .agent-opts { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1rem; }

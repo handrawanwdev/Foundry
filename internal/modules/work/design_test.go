@@ -81,3 +81,67 @@ func TestFormButtonsNotDuplicated(t *testing.T) {
 		t.Error("prompt must explain the form's own buttons")
 	}
 }
+
+func opsProject() *core.Project {
+	p := revisionProject()
+	p.Design.Pages[0].Kind = "list"
+	p.Design.Pages[0].States = &core.PageStates{Empty: "Belum ada janji."}
+	p.Design.Pages[0].Components = []core.PageComponent{
+		{Type: "header", Label: "Janji"}, {Type: "button", Label: "Buka", Target: "PAGE-002"},
+		{Type: "text", Label: "Catatan"}, {Type: "table", Label: "Daftar", Columns: []string{"Pasien"}, Items: []string{"Budi"}},
+	}
+	return p
+}
+
+func labels(pg core.Page) string {
+	var out []string
+	for _, c := range pg.Components {
+		out = append(out, c.Label)
+	}
+	return strings.Join(out, ",")
+}
+
+func TestApplyRevisionOps(t *testing.T) {
+	p := opsProject()
+	before := p.Design.Pages[1]
+	raw := "```json\n{\"ops\": [" +
+		"{\"page\": \"PAGE-001\", \"op\": \"remove\", \"index\": 2}," +
+		"{\"page\": \"PAGE-001\", \"op\": \"move\", \"index\": 3, \"after\": 0}," +
+		"{\"page\": \"PAGE-001\", \"op\": \"insert\", \"after\": -1, \"component\": {\"type\": \"text\", \"label\": \"Info\"}}," +
+		"{\"page\": \"PAGE-001\", \"op\": \"update\", \"index\": 0, \"component\": {\"type\": \"header\", \"label\": \"Janji Temu\"}}," +
+		"{\"page\": \"PAGE-001\", \"op\": \"page\", \"set\": {\"density\": \"high\"}}]}\n```"
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	pg := p.Design.Pages[0]
+	if got := labels(pg); got != "Info,Janji Temu,Daftar,Buka" {
+		t.Fatalf("components = %s", got)
+	}
+	if pg.Kind != "list" || pg.Density != "high" || pg.States == nil || pg.States.Empty != "Belum ada janji." || pg.Components[3].Target != "PAGE-002" {
+		t.Fatalf("untouched fields changed: %+v", pg)
+	}
+	if got := p.Design.Pages[1]; got.Name != before.Name || len(got.Components) != len(before.Components) {
+		t.Fatalf("other page changed: %+v", got)
+	}
+	if prev := p.Design.Revision.PreviousPages[0]; labels(prev) != "Janji,Buka,Catatan,Daftar" || prev.Density != "" {
+		t.Fatalf("previous version changed: %+v", prev)
+	}
+}
+
+func TestApplyRevisionOpsErrors(t *testing.T) {
+	for _, ops := range []string{
+		`{"page": "PAGE-009", "op": "remove", "index": 0}`,
+		`{"page": "PAGE-001", "op": "remove", "index": 7}`,
+		`{"page": "PAGE-001", "op": "remove", "index": 1}, {"page": "PAGE-001", "op": "update", "index": 1, "component": {"type": "text"}}`,
+		`{"page": "PAGE-001", "op": "page", "set": {"id": "PAGE-005"}}`,
+		`{"page": "PAGE-001", "op": "shuffle"}`,
+	} {
+		p := opsProject()
+		if err := ApplyDesign(p, "```json\n{\"ops\": ["+ops+"]}\n```"); err == nil {
+			t.Errorf("ops %s must fail", ops)
+		}
+		if labels(p.Design.Pages[0]) != "Janji,Buka,Catatan,Daftar" {
+			t.Errorf("failed ops must not change the design")
+		}
+	}
+}

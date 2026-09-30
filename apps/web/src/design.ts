@@ -232,14 +232,19 @@ export function fixRequest(blockers: Blocker[], findings: Finding[]): string {
     "\"kind\", \"density\", \"states\", dan form punya \"fields\". Layout sesuai jenis halaman.\n" + lines.join("\n");
 }
 
-export interface PageRequest { page: Page; text: string }
+// component: index of the component the user picked in the inspector.
+export interface PageRequest { page: Page; text: string; component?: number }
 
 // Change request for several pages at once: one AI run, one revision to keep
 // or undo. Page ids are included because names repeat across platforms.
 export function changeRequest(general: string, perPage: PageRequest[]): string {
   const g = general.trim();
-  const items = perPage.map((r) => ({ page: r.page, text: r.text.trim() })).filter((r) => r.text);
-  const line = (r: PageRequest) => `Di halaman "${r.page.name}" (${r.page.id}): ${r.text}`;
+  const items = perPage.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text);
+  const line = (r: PageRequest) => {
+    const c = r.component !== undefined ? r.page.components?.[r.component] : undefined;
+    const at = c ? `, komponen [${r.component}] ${c.type}${c.label?.trim() ? ` "${c.label.trim()}"` : ""}` : "";
+    return `Di halaman "${r.page.name}" (${r.page.id})${at}: ${r.text}`;
+  };
   if (!items.length) return g;
   if (items.length === 1 && !g) return line(items[0]);
   const lines = items.map((r) => "- " + line(r));

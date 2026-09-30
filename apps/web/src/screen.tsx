@@ -90,6 +90,8 @@ export function screenOutline(page: Page, pages: Page[], app: string, device: De
 }
 
 // Outline of every page, keyed by page id, sent with a change request.
-export function screens(pages: Page[], app: string): Record<string, string> {
-  return Object.fromEntries(pages.map((p) => [p.id, screenOutline(p, pages, app)]));
+// devices: the device the user is looking at a page on; others use the
+// page platform's default.
+export function screens(pages: Page[], app: string, devices: Record<string, Device> = {}): Record<string, string> {
+  return Object.fromEntries(pages.map((p) => [p.id, screenOutline(p, pages, app, devices[p.id])]));
 }

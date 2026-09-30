@@ -5,6 +5,7 @@ import { changeRequest, componentName, DENSITY_LABEL, designChecks, featuresWith
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
 import type { Blocker, Page, PageHandoff, Project } from "../types";
+import type { Device } from "../design";
 
 // ---------- Inspect ----------
 
@@ -159,14 +160,23 @@ export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (page
 
 // What the user sees on each page; loaded on demand (it pulls in the React
 // server renderer).
-async function screensOf(pages: Page[], app = "Aplikasi") {
-  return (await import("../screen")).screens(pages, app);
+async function screensOf(pages: Page[], app = "Aplikasi", devices?: Record<string, Device>) {
+  return (await import("../screen")).screens(pages, app, devices);
 }
 
-export function AskChange({ page, pages, onClose }: { page?: Page; pages: Page[]; onClose: () => void }) {
+interface AskProps {
+  page?: Page;
+  pages: Page[];
+  component?: number | null; // picked in the inspector
+  device?: Device; // the page is shown on this device
+  onClose: () => void;
+}
+
+export function AskChange({ page, pages, component, device, onClose }: AskProps) {
   const { run, project } = useProject();
   const [general, setGeneral] = useState("");
-  const [items, setItems] = useState<PageRequest[]>(page ? [{ page, text: "" }] : []);
+  const [items, setItems] = useState<PageRequest[]>(page
+    ? [{ page, text: "", component: component != null && page.components?.[component] ? component : undefined }] : []);
   const working = isWorking(project);
   const feedback = changeRequest(general, items);
   const free = pages.filter((p) => !items.some((r) => r.page.id === p.id));
@@ -176,7 +186,7 @@ export function AskChange({ page, pages, onClose }: { page?: Page; pages: Page[]
   const add = (id: string) => { const p = pages.find((x) => x.id === id); if (p) setItems([...items, { page: p, text: "" }]); };
   const send = async () => {
     if (!feedback || working) return;
-    if (await run("revise", async () => api.reviseDesign(feedback, await screensOf(pages, project?.name)))) onClose();
+    if (await run("revise", async () => api.reviseDesign(feedback, await screensOf(pages, project?.name, page && device ? { [page.id]: device } : undefined)))) onClose();
   };
   const keys = (e: KeyboardEvent) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void send(); };
   return (
@@ -185,6 +195,12 @@ export function AskChange({ page, pages, onClose }: { page?: Page; pages: Page[]
         <div key={r.page.id} className="dw-ask-page">
           <div className="dw-ask-page-head">
             <span className="small">{label(r.page)}</span>
+            {r.component !== undefined && r.page.components?.[r.component] && (
+              <span className="dw-ask-comp small" title="Komponen yang dipilih di panel inspect">
+                [{r.component}] {componentName(r.page.components[r.component])}
+                <button className="ghost small" title="Jangan tunjuk komponen" onClick={() => setItems(items.map((x) => x.page.id === r.page.id ? { ...x, component: undefined } : x))}>×</button>
+              </span>
+            )}
             <button className="ghost small" title="Hapus halaman ini" onClick={() => setItems(items.filter((x) => x.page.id !== r.page.id))}>×</button>
           </div>
           <textarea rows={2} autoFocus={i === 0} value={r.text} onChange={(e) => setText(r.page.id, e.target.value)} onKeyDown={keys}
