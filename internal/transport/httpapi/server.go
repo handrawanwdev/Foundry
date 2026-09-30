@@ -236,6 +236,24 @@ func (s *Server) Handler() http.Handler {
 		return map[string]any{"markdown": verify.Markdown(p), "run": scan.Scan(p.Dir).Run}, nil
 	}))
 
+	// Technical Support Assistant
+	api("POST /api/v1/project/support/ask", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Question string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.AskSupport(in.Question))
+	}))
+	api("POST /api/v1/project/support/retry", s.action(func(svc *pipeline.Service) error { return svc.RetrySupport() }))
+	api("POST /api/v1/project/support/clear", s.action(func(svc *pipeline.Service) error { return svc.ClearSupport() }))
+	api("POST /api/v1/project/support/escalate", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in core.Escalation
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.Escalate(in)
+	}))
+
 	mux.HandleFunc("GET /api/v1/events", s.events)
 	mux.HandleFunc("/", s.spa)
 	return guard(mux)
@@ -481,6 +499,8 @@ func statusFor(err error) int {
 	case errors.As(err, &he):
 		return he.code
 	case errors.Is(err, pipeline.ErrBusy):
+		return http.StatusConflict
+	case errors.Is(err, work.ErrSupportBusy), errors.Is(err, work.ErrNoSupportIntel):
 		return http.StatusConflict
 	case errors.Is(err, pipeline.ErrGate), errors.Is(err, pipeline.ErrWrongStage), errors.Is(err, pipeline.ErrNothingToDo), errors.Is(err, pipeline.ErrIncomplete):
 		return http.StatusConflict

@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, ChangeScope, Command, DesignHandoff, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template } from "./types";
+import type { AgentOptions, AIState, Browse, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -49,5 +49,9 @@ export const api = {
   fix: () => call("POST", "/project/fix", {}),
   files: (path = "") => call<FileEntry[]>("GET", `/project/files?path=${encodeURIComponent(path)}`),
   file: (path: string) => call<FileContent>("GET", `/project/file?path=${encodeURIComponent(path)}`),
+  askSupport: (question: string) => call("POST", "/project/support/ask", { question }),
+  retrySupport: () => call("POST", "/project/support/retry", {}),
+  clearSupport: () => call("POST", "/project/support/clear", {}),
+  escalate: (e: Omit<Escalation, "id" | "at">) => call<Escalation>("POST", "/project/support/escalate", e),
   docs: () => call<{ markdown: string; run: Command[] | null }>("GET", "/project/docs"),
 };

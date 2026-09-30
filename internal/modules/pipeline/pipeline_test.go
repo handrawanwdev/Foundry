@@ -87,6 +87,10 @@ const planJSON = `{"tasks": [
   {"id": "T4", "title": "API jadwal", "description": "CRUD jadwal", "area": "api", "feature_id": "FEAT-002", "depends_on": ["T1"],
    "acceptance_criteria": ["CRUD jadwal"], "test_requirements": ["unit test"]}]}`
 
+const supportJSON = `{"kind": "flow", "summary": "Pasien memilih dokter lalu mengonfirmasi janji.",
+ "flow": {"flow_id": "FLOW-001", "name": "Buat janji", "steps": [{"name": "Pilih dokter"}, {"name": "Pilih jadwal"}, {"name": "Konfirmasi"}]},
+ "sources": ["FLOW-001", "FEAT-404"]}`
+
 var taskIDRe = regexp.MustCompile(`TASK (TASK-\d+):`)
 
 func fakeAgent() {
@@ -96,6 +100,12 @@ func fakeAgent() {
 	switch {
 	case strings.HasPrefix(prompt, "Balas hanya"):
 		fmt.Println("OK")
+	case strings.Contains(prompt, "Technical Support Assistant"):
+		if mode == "support_fail" {
+			fmt.Println("tidak tahu")
+			return
+		}
+		fmt.Println(supportJSON)
 	case strings.Contains(prompt, "discovery analyst"):
 		if mode == "bad_json" {
 			fmt.Println("maaf, saya tidak bisa")
@@ -705,5 +715,73 @@ func TestDesignVisualQA(t *testing.T) {
 	}
 	if types(findPage(p, "PAGE-001")) != "button,header,list" {
 		t.Fatal("a skipped check keeps the applied patch")
+	}
+}
+
+func TestSupportAgent(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	if err := s.AskSupport("Bagaimana alur janji?"); !errors.Is(err, work.ErrNoSupportIntel) {
+		t.Fatalf("before discovery err = %v", err)
+	}
+	designReady(t, s)
+	if err := s.AskSupport("Bagaimana alur janji?"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	m := p.Support.Messages[1]
+	if m.Status != core.SupportDone || m.Answer.Flow.FlowID != "FLOW-001" || len(m.Answer.Flow.Steps) != 3 ||
+		!slices.Equal(m.Answer.Sources, []string{"FLOW-001"}) {
+		t.Fatalf("answer = %+v", m)
+	}
+	mustJob(t, p, work.KindDesign, core.JobDone) // the pipeline job is untouched
+	if err := s.ClearSupport(); err != nil || len(load(t, s).Support.Messages) != 0 {
+		t.Fatalf("clear err = %v", err)
+	}
+}
+
+func TestSupportAgentFailsAndRetries(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	designReady(t, s)
+	t.Setenv("FAKE_MODE", "support_fail")
+	s.AskSupport("Siapa yang bisa mengubah jadwal?")
+	s.Wait()
+	if m := load(t, s).Support.Messages[1]; m.Status != core.SupportFailed || m.Error == "" {
+		t.Fatalf("message = %+v", m)
+	}
+	t.Setenv("FAKE_MODE", "")
+	if err := s.RetrySupport(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	if m := load(t, s).Support.Messages[1]; m.Status != core.SupportDone {
+		t.Fatalf("retried = %+v", m)
+	}
+}
+
+func TestSupportMCPHost(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	s.SubmitStory("Aplikasi klinik untuk janji temu pasien")
+	s.SubmitWork(work.KindDiscovery, discoveryJSON)
+	if err := s.AskSupport("Bagaimana alur janji?"); err != nil {
+		t.Fatal(err)
+	}
+	// A waiting pipeline job goes first; the question follows.
+	if w, _ := s.NextWork(); w.Kind != work.KindDesign {
+		t.Fatalf("work = %+v", w)
+	}
+	s.SubmitWork(work.KindDesign, designJSON)
+	w, _ := s.NextWork()
+	if w.Kind != work.KindSupport || !strings.Contains(w.Prompt, "Bagaimana alur janji?") {
+		t.Fatalf("work = %+v", w)
+	}
+	if err := s.SubmitWork(work.KindSupport, supportJSON); err != nil {
+		t.Fatal(err)
+	}
+	if m := load(t, s).Support.Messages[1]; m.Status != core.SupportDone {
+		t.Fatalf("answer = %+v", m)
+	}
+	if w, _ := s.NextWork(); w.Kind != "none" {
+		t.Fatalf("work after answer = %+v", w)
 	}
 }

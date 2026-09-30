@@ -8,6 +8,7 @@ import { DesignPage } from "./pages/Design";
 import { ReadyPage } from "./pages/Ready";
 import { EmptyEditor, StartPage } from "./pages/Start";
 import { FileViewer } from "./pages/FileViewer";
+import { SupportPage } from "./pages/Support";
 import { TellPage } from "./pages/Tell";
 import { useAI } from "./store/ai";
 import { useProject } from "./store/project";
@@ -83,6 +84,7 @@ export default function App() {
         <Route path="/simple/rancang" element={guard(<DesignPage />)} />
         <Route path="/simple/bangun" element={guard(<BuildPage />)} />
         <Route path="/simple/siap" element={guard(<ReadyPage />)} />
+        <Route path="/simple/support" element={guard(<SupportPage />)} />
         <Route path="/files/*" element={project ? <FileViewer /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

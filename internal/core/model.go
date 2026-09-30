@@ -46,6 +46,7 @@ type Project struct {
 	Builds       []BuildRun    `json:"builds"`
 	Verification *Verification `json:"verification,omitempty"`
 	Job          *Job          `json:"job,omitempty"`
+	Support      *Support      `json:"support,omitempty"`
 	Events       []Event       `json:"events"`
 	UpdatedAt    time.Time     `json:"updated_at"`
 }
@@ -443,6 +444,97 @@ type Job struct {
 	Error   string    `json:"error,omitempty"`
 	TaskID  string    `json:"task_id,omitempty"`
 	Started time.Time `json:"started"`
+}
+
+// Support is the Technical Support Assistant: a conversation about the system
+// being built, answered only from the project context and its files.
+type Support struct {
+	Messages    []SupportMessage `json:"messages"`
+	Escalations []Escalation     `json:"escalations,omitempty"`
+}
+
+// Support message statuses (assistant messages only).
+const (
+	SupportRunning = "running" // the agent is answering
+	SupportWaiting = "waiting" // waiting for the MCP host
+	SupportDone    = "done"
+	SupportFailed  = "failed"
+)
+
+type SupportMessage struct {
+	ID     string         `json:"id"`
+	Role   string         `json:"role"` // user | assistant
+	Text   string         `json:"text"` // the question (user)
+	Status string         `json:"status,omitempty"`
+	Error  string         `json:"error,omitempty"`
+	Answer *SupportAnswer `json:"answer,omitempty"`
+	At     time.Time      `json:"at"`
+}
+
+// SupportAnswer is one grounded answer. Sources are project ids (FLOW-001,
+// PAGE-002, ...) or project files; unknown references are dropped.
+type SupportAnswer struct {
+	Kind      string        `json:"kind"` // explain | flow | troubleshoot | roles | unknown
+	Summary   string        `json:"summary"`
+	Flow      *SupportFlow  `json:"flow,omitempty"`
+	Trouble   *Troubleshoot `json:"trouble,omitempty"`
+	Roles     []RoleAccess  `json:"roles,omitempty"`
+	Missing   []string      `json:"missing,omitempty"` // what the system does not define
+	Sources   []string      `json:"sources,omitempty"`
+	FollowUps []string      `json:"follow_ups,omitempty"`
+	Escalate  bool          `json:"escalate,omitempty"` // the assistant cannot resolve it
+}
+
+type SupportFlow struct {
+	FlowID string     `json:"flow_id,omitempty"`
+	Name   string     `json:"name"`
+	Steps  []FlowStep `json:"steps"`
+}
+
+type FlowStep struct {
+	Name    string `json:"name"`
+	Detail  string `json:"detail,omitempty"`
+	Role    string `json:"role,omitempty"`
+	Module  string `json:"module,omitempty"`
+	PageID  string `json:"page_id,omitempty"`
+	API     string `json:"api,omitempty"`
+	Current bool   `json:"current,omitempty"` // where the reported problem is
+}
+
+type Troubleshoot struct {
+	Problem string   `json:"problem"`
+	Status  string   `json:"status"`
+	Module  string   `json:"module,omitempty"`
+	Step    string   `json:"step,omitempty"`
+	Causes  []Cause  `json:"causes,omitempty"`
+	Actions []string `json:"actions,omitempty"`
+}
+
+// Cause is confirmed only with evidence; otherwise it is a possibility.
+type Cause struct {
+	Text      string `json:"text"`
+	Evidence  string `json:"evidence,omitempty"`
+	Confirmed bool   `json:"confirmed,omitempty"`
+}
+
+type RoleAccess struct {
+	Role   string `json:"role"`
+	Access string `json:"access"`
+	Source string `json:"source,omitempty"`
+}
+
+// Escalation is a problem handed to the technical team, as confirmed by the
+// user from the conversation.
+type Escalation struct {
+	ID            string    `json:"id"`
+	Issue         string    `json:"issue"`
+	Module        string    `json:"module,omitempty"`
+	Flow          string    `json:"flow,omitempty"`
+	Status        string    `json:"status,omitempty"`
+	Evidence      []string  `json:"evidence,omitempty"`
+	Causes        []string  `json:"causes,omitempty"`
+	Investigation []string  `json:"investigation,omitempty"`
+	At            time.Time `json:"at"`
 }
 
 type Event struct {

@@ -89,13 +89,33 @@ export interface Job {
   kind: string; status: "running" | "done" | "failed" | "waiting_host";
   message: string; error?: string; task_id?: string; started: string;
 }
+export interface FlowStep { name: string; detail?: string; role?: string; module?: string; page_id?: string; api?: string; current?: boolean }
+export interface SupportFlow { flow_id?: string; name: string; steps: FlowStep[] }
+// A cause is confirmed only with evidence; otherwise it is a possibility.
+export interface Cause { text: string; evidence?: string; confirmed?: boolean }
+export interface Troubleshoot { problem: string; status: string; module?: string; step?: string; causes?: Cause[]; actions?: string[] }
+export interface RoleAccess { role: string; access: string; source?: string }
+export interface SupportAnswer {
+  kind: "explain" | "flow" | "troubleshoot" | "roles" | "unknown"; summary: string;
+  flow?: SupportFlow; trouble?: Troubleshoot; roles?: RoleAccess[];
+  missing?: string[]; sources?: string[]; follow_ups?: string[]; escalate?: boolean;
+}
+export interface SupportMessage {
+  id: string; role: "user" | "assistant"; text: string;
+  status?: "running" | "waiting" | "done" | "failed"; error?: string; answer?: SupportAnswer; at: string;
+}
+export interface Escalation {
+  id: string; issue: string; module?: string; flow?: string; status?: string;
+  evidence?: string[]; causes?: string[]; investigation?: string[]; at: string;
+}
+export interface Support { messages: SupportMessage[] | null; escalations?: Escalation[] }
 export interface Event { at: string; source: string; message: string }
 
 export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string;
   discovery?: Discovery; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
   platform?: PlatformPlan; structure?: Structure; design?: Design; tasks: Task[] | null;
-  builds: BuildRun[] | null; verification?: Verification; job?: Job; events: Event[] | null; updated_at: string;
+  builds: BuildRun[] | null; verification?: Verification; job?: Job; support?: Support; events: Event[] | null; updated_at: string;
 }
 
 export interface AgentInfo { id: string; name: string; binary: string; detected: boolean; path?: string; models: string[] | null; efforts: string[] | null }
