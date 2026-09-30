@@ -157,6 +157,12 @@ export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (page
 
 // ---------- Ask for change ----------
 
+// What the user sees on each page; loaded on demand (it pulls in the React
+// server renderer).
+async function screensOf(pages: Page[], app = "Aplikasi") {
+  return (await import("../screen")).screens(pages, app);
+}
+
 export function AskChange({ page, pages, onClose }: { page?: Page; pages: Page[]; onClose: () => void }) {
   const { run, project } = useProject();
   const [general, setGeneral] = useState("");
@@ -170,7 +176,7 @@ export function AskChange({ page, pages, onClose }: { page?: Page; pages: Page[]
   const add = (id: string) => { const p = pages.find((x) => x.id === id); if (p) setItems([...items, { page: p, text: "" }]); };
   const send = async () => {
     if (!feedback || working) return;
-    if (await run("revise", () => api.reviseDesign(feedback))) onClose();
+    if (await run("revise", async () => api.reviseDesign(feedback, await screensOf(pages, project?.name)))) onClose();
   };
   const keys = (e: KeyboardEvent) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void send(); };
   return (
@@ -279,7 +285,7 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
 
       {!approved && (blockers.length > 0 || findings.length > 0) && (
         <button className="review-fix" disabled={working || !!d.revision || pending === "revise"} title={d.revision ? "Simpan atau batalkan perubahan terakhir dulu" : undefined}
-          onClick={() => run("revise", () => api.reviseDesign(fixRequest(blockers, findings)))}>✦ Perbaiki otomatis</button>
+          onClick={() => run("revise", async () => api.reviseDesign(fixRequest(blockers, findings), await screensOf(d.pages, project.name)))}>✦ Perbaiki otomatis</button>
       )}
 
       {flows.length > 0 && (

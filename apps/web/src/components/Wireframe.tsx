@@ -32,7 +32,7 @@ export function Wireframe({ page, pages, device, mode, state = "normal", selecte
   const back = kind === "detail" ? incoming(page, pages)[0] : undefined;
 
   const wrap = (x: Item, node: ReactNode, cls = "") => (
-    <div key={x.i} className={`wf-block ${cls} ${mode === "select" ? "pickable" : ""} ${selected === x.i ? "selected" : ""}`}
+    <div key={x.i} data-c={x.i} data-type={x.c.type} className={`wf-block ${cls} ${mode === "select" ? "pickable" : ""} ${selected === x.i ? "selected" : ""}`}
       onClick={mode === "select" ? (e) => { e.stopPropagation(); onSelect?.(x.i); } : undefined}>
       {node}
     </div>

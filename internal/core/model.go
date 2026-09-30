@@ -164,6 +164,10 @@ type Design struct {
 	// Revision is the last requested change, waiting for the user to keep or
 	// undo it. Nil when there is nothing to review.
 	Revision *DesignRevision `json:"revision,omitempty"`
+	// Screens is what the user saw on each page (page id → outline read from
+	// the rendered wireframe) when asking for the last change, so the AI
+	// works from the same screen.
+	Screens map[string]string `json:"screens,omitempty"`
 }
 
 // DesignRevision records what one change request did to the design and the

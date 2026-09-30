@@ -112,7 +112,9 @@ func (s *Service) SubmitStory(story string) (*core.Project, error) {
 
 // ---------- Design ----------
 
-func (s *Service) ReviseDesign(feedback string) error {
+// ReviseDesign asks the AI for a change; screens are the page outlines the
+// user saw (may be nil).
+func (s *Service) ReviseDesign(feedback string, screens map[string]string) error {
 	feedback = strings.TrimSpace(feedback)
 	if feedback == "" {
 		return errors.New("tuliskan perubahan yang diinginkan")
@@ -125,6 +127,7 @@ func (s *Service) ReviseDesign(feedback string) error {
 			return ErrWrongStage
 		}
 		p.Design.Feedback = append(p.Design.Feedback, feedback)
+		p.Design.Screens = screens
 		p.Design.Status = core.DesignChanges
 		p.Stage = core.StageDesign
 		p.Log("ui", "Minta perubahan rancangan: "+feedback)

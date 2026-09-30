@@ -34,7 +34,8 @@ export const api = {
   retry: () => call("POST", "/project/retry", {}),
   setPlatform: (targets: PlatformTarget[]) => call<Project>("PUT", "/project/platform", { targets }),
   setTemplate: (template: string) => call<Project>("PUT", "/project/structure", { template }),
-  reviseDesign: (feedback: string) => call("POST", "/project/design/revise", { feedback }),
+  // screens: what the user sees on each page, so the designer AI sees it too.
+  reviseDesign: (feedback: string, screens: Record<string, string>) => call("POST", "/project/design/revise", { feedback, screens }),
   keepDesign: () => call("POST", "/project/design/keep", {}),
   undoDesign: () => call("POST", "/project/design/undo", {}),
   designHandoff: () => call<DesignHandoff>("GET", "/project/design/handoff"),

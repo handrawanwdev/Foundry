@@ -31,6 +31,18 @@ func TestDesignPromptRevision(t *testing.T) {
 	}
 }
 
+func TestDesignPromptScreens(t *testing.T) {
+	p := revisionProject()
+	p.Design.Screens = map[string]string{"PAGE-001": "Tampilan desktop:\n[0] Tombol \"Buka\" (utama)"}
+	got := DesignPrompt(p)
+	if !strings.Contains(got, "WHAT THE USER SEES NOW") || !strings.Contains(got, "PAGE-001 \"Daftar\"\nTampilan desktop:\n[0] Tombol") {
+		t.Fatalf("prompt missing screens:\n%s", got)
+	}
+	if err := ApplyDesign(p, "```json\n{\"removed\": [\"PAGE-002\"]}\n```"); err != nil || p.Design.Screens != nil {
+		t.Fatalf("screens must be dropped after a revision: %v %v", err, p.Design.Screens)
+	}
+}
+
 func TestApplyRevisionRemove(t *testing.T) {
 	p := revisionProject()
 	if err := ApplyDesign(p, "```json\n{\"removed\": [\"PAGE-002\"]}\n```"); err != nil {

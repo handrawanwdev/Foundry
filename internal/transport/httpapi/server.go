@@ -190,11 +190,14 @@ func (s *Server) Handler() http.Handler {
 		return svc.SetTemplate(in.Template)
 	}))
 	api("POST /api/v1/project/design/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct{ Feedback string }
+		var in struct {
+			Feedback string
+			Screens  map[string]string
+		}
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		return ok(svc.ReviseDesign(in.Feedback))
+		return ok(svc.ReviseDesign(in.Feedback, in.Screens))
 	}))
 	api("POST /api/v1/project/design/keep", s.action(func(svc *pipeline.Service) error { return svc.KeepDesignChange() }))
 	api("POST /api/v1/project/design/undo", s.action(func(svc *pipeline.Service) error { return svc.UndoDesignChange() }))

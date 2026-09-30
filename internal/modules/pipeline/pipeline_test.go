@@ -322,7 +322,7 @@ func TestInvalidDiscoveryOutput(t *testing.T) {
 func TestDesignRevise(t *testing.T) {
 	s := newService(t, fakeAI{}, "")
 	designReady(t, s)
-	if err := s.ReviseDesign("Tambahkan halaman profil"); err != nil {
+	if err := s.ReviseDesign("Tambahkan halaman profil", nil); err != nil {
 		t.Fatal(err)
 	}
 	s.Wait()
@@ -365,7 +365,7 @@ func TestDesignRevise(t *testing.T) {
 		t.Fatal("keep without a revision must fail")
 	}
 
-	if err := s.ReviseDesign("Tambahkan halaman profil"); err != nil {
+	if err := s.ReviseDesign("Tambahkan halaman profil", nil); err != nil {
 		t.Fatal(err)
 	}
 	s.Wait()

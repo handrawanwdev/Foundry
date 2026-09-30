@@ -93,6 +93,10 @@ Write labels in the same language as the features. Do not write code. Do not mod
 	if revise {
 		fb := p.Design.Feedback
 		b.WriteString("CURRENT DESIGN:\n" + mustJSON(p.Design.Pages) + "\n\n")
+		if s := screenText(p.Design); s != "" {
+			b.WriteString("WHAT THE USER SEES NOW (read from the rendered wireframe; [n] type is components[n] of that page, (otomatis) is drawn by the wireframe, not a component). " +
+				"The change request describes this screen; map what it mentions to the components:\n" + s + "\n")
+		}
 		if len(fb) > 1 {
 			b.WriteString("EARLIER REQUESTS (already applied in the current design, do not redo):\n- " + strings.Join(fb[:len(fb)-1], "\n- ") + "\n\n")
 		}
@@ -163,6 +167,17 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
   "pages": [` + pageShape + `],
   "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002"]}]
 }`)
+	return b.String()
+}
+
+// screenText lists the user's screens in page order.
+func screenText(d *core.Design) string {
+	var b strings.Builder
+	for _, pg := range d.Pages {
+		if s := strings.TrimSpace(d.Screens[pg.ID]); s != "" {
+			b.WriteString(pg.ID + " \"" + pg.Name + "\"\n" + s + "\n\n")
+		}
+	}
 	return b.String()
 }
 
@@ -497,6 +512,7 @@ func UndoRevision(p *core.Project) error {
 	}
 	p.Design.Status = core.DesignDraft
 	p.Design.Revision = nil
+	p.Design.Screens = nil
 	return nil
 }
 
