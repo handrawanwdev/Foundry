@@ -11,7 +11,7 @@ import (
 
 func TestGuardAndFlow(t *testing.T) {
 	t.Setenv("FOUNDRY_HOME", t.TempDir())
-	s := New(nil, "/bin/forge")
+	s := New(nil, "/bin/foundry")
 	if _, err := s.Open(t.TempDir(), "demo", false); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestGuardAndFlow(t *testing.T) {
 
 func TestOpenCloseBrowse(t *testing.T) {
 	t.Setenv("FOUNDRY_HOME", t.TempDir())
-	s := New(nil, "/bin/forge")
+	s := New(nil, "/bin/foundry")
 	h := s.Handler()
 	do := func(method, path, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -88,7 +88,7 @@ func TestFileExplorer(t *testing.T) {
 	os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("x"), 0o644)
 	os.Symlink(outside, filepath.Join(root, "escape"))
 
-	s := New(nil, "/bin/forge")
+	s := New(nil, "/bin/foundry")
 	if _, err := s.Open(root, "", false); err != nil {
 		t.Fatal(err)
 	}

@@ -12,7 +12,7 @@ Foundry = orchestrator + source of truth. AI Agent = executor. MCP = bridge. Use
 ## Struktur (monorepo modular)
 
 ```
-cmd/forge/                  entry: forge serve | forge mcp
+cmd/foundry/                  entry: foundry serve | foundry mcp
 internal/core/              model Project (satu context) + Store (.foundry/project.json, lock lintas proses)
 internal/config/            koneksi AI + recent project (~/.foundry/foundry.json)
 internal/modules/
@@ -32,9 +32,9 @@ apps/web/                   React + Vite + Zustand (embed ke binary)
 ## Jalankan
 
 ```bash
-make build                         # build UI + binary bin/forge
-./bin/forge serve                  # halaman Start: Project Baru / Buka Project / terakhir
-./bin/forge serve ~/kerja/klinik   # langsung buka project itu
+make build                         # build UI + binary bin/foundry
+./bin/foundry serve                  # halaman Start: Project Baru / Buka Project / terakhir
+./bin/foundry serve ~/kerja/klinik   # langsung buka project itu
 ```
 
 UI bergaya Visual Studio: menu bar (File: Project Baru, Buka Project, terakhir, Tutup Project), activity bar, Explorer (file project read-only, pipeline, kebutuhan, fitur, halaman, task), editor bertab, status bar (AI, tahap, job, task, verifikasi). Menutup project hanya melepasnya dari UI; state tetap di `.foundry/`. Project tidak bisa ditutup/diganti saat agent sedang berjalan.
@@ -44,7 +44,7 @@ Dev: `make dev-api` + `make dev-web` (Vite :5173 proxy ke :8080).
 ## MCP
 
 ```bash
-./bin/forge mcp --print-config     # snippet config untuk AI Host
+./bin/foundry mcp --print-config     # snippet config untuk AI Host
 ```
 
 Loop host: `next_work` → kerjakan → `submit_work` / `submit_task`. Izin: `--allow READ|WRITE|MODIFY|EXECUTE|ALL` (default READ).

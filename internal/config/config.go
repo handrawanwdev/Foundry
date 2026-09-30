@@ -98,7 +98,7 @@ func (c *Config) AddRecent(dir string) {
 	c.Recent = out
 }
 
-// MCPAlive reports whether an AI host talked to `forge mcp` recently.
+// MCPAlive reports whether an AI host talked to `foundry mcp` recently.
 func (c *Config) MCPAlive() bool {
 	return c.MCP != nil && time.Since(c.MCP.At) < 10*time.Minute
 }

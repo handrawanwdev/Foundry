@@ -1,4 +1,4 @@
-// Package web embeds the built React UI (apps/web/dist) into the forge binary.
+// Package web embeds the built React UI (apps/web/dist) into the foundry binary.
 package web
 
 import (

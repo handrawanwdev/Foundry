@@ -1,4 +1,4 @@
-// Command forge runs Foundry: `forge serve` for the UI + API, `forge mcp`
+// Command foundry runs Foundry: `foundry serve` for the UI + API, `foundry mcp`
 // for AI hosts.
 package main
 
@@ -24,14 +24,14 @@ var version = "dev"
 
 const usage = `Foundry — ide sampai aplikasi siap diperiksa
 
-  forge serve [--addr 127.0.0.1:8080] [folder-project]
+  foundry serve [--addr 127.0.0.1:8080] [folder-project]
       Buka UI: Hubungkan AI → Ceritakan → Rancang → Bangun → Siap
       Tanpa folder: halaman Start untuk Open/New/Close Project
 
-  forge mcp [--allow READ,WRITE,MODIFY,EXECUTE|ALL] [--project folder] [--print-config]
+  foundry mcp [--allow READ,WRITE,MODIFY,EXECUTE|ALL] [--project folder] [--print-config]
       Server MCP (stdio) untuk AI Host: Claude, Codex, Qwen, Grok, Gemini, dll.
 
-  forge version
+  foundry version
 `
 
 func main() {
@@ -92,7 +92,7 @@ func runMCP(args []string) {
 	allow := fs.String("allow", "READ", "READ, WRITE, MODIFY, EXECUTE atau ALL")
 	dir := fs.String("project", "", "folder project (default: folder saat ini)")
 	printCfg := fs.Bool("print-config", false, "cetak konfigurasi MCP client")
-	uiURL := fs.String("ui-url", "http://127.0.0.1:8080", "URL UI Foundry (forge serve) untuk render pemeriksaan visual")
+	uiURL := fs.String("ui-url", "http://127.0.0.1:8080", "URL UI Foundry (foundry serve) untuk render pemeriksaan visual")
 	fs.Parse(args)
 	if *dir == "" {
 		*dir, _ = os.Getwd()

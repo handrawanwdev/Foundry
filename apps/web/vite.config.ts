@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Dev: `forge serve` runs the API on 127.0.0.1:8080, Vite proxies /api to it.
+// Dev: `foundry serve` runs the API on 127.0.0.1:8080, Vite proxies /api to it.
 export default defineConfig({
   plugins: [react()],
   server: {

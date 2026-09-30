@@ -204,7 +204,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("tool %q tidak ada", name)
 	}
 	if !s.Allow[t.perm] {
-		return nil, fmt.Errorf("izin %s belum diberikan. Jalankan `forge mcp --allow %s`", t.perm, t.perm)
+		return nil, fmt.Errorf("izin %s belum diberikan. Jalankan `foundry mcp --allow %s`", t.perm, t.perm)
 	}
 	if t.perm == PermExecute && !s.Allow[PermModify] {
 		return nil, fmt.Errorf("submit_task butuh izin MODIFY dan EXECUTE")

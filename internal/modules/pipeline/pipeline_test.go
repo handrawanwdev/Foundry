@@ -19,10 +19,10 @@ import (
 	"github.com/handrawanw/foundry/internal/modules/work"
 )
 
-// The test binary doubles as a fake agent CLI: when FORGE_FAKE_AGENT=1 it
+// The test binary doubles as a fake agent CLI: when FOUNDRY_FAKE_AGENT=1 it
 // reads a prompt on stdin and answers like a real agent would.
 func TestMain(m *testing.M) {
-	if os.Getenv("FORGE_FAKE_AGENT") == "1" {
+	if os.Getenv("FOUNDRY_FAKE_AGENT") == "1" {
 		fakeAgent()
 		return
 	}
@@ -173,7 +173,7 @@ func (f fakeAI) Runner() (*agent.Runner, bool, error) {
 
 func newService(t *testing.T, ai pipeline.AI, mode string) *pipeline.Service {
 	t.Helper()
-	t.Setenv("FORGE_FAKE_AGENT", "1")
+	t.Setenv("FOUNDRY_FAKE_AGENT", "1")
 	t.Setenv("FAKE_MODE", mode)
 	t.Setenv("FOUNDRY_HOME", t.TempDir())
 	st, err := core.NewStore(t.TempDir())

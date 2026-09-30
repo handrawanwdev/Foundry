@@ -1,7 +1,7 @@
 WEB := apps/web
 # Binary suffix follows target OS (".exe" on Windows, empty elsewhere; respects GOOS).
 EXE := $(shell go env GOEXE)
-BIN := bin/forge$(EXE)
+BIN := bin/foundry$(EXE)
 
 ifeq ($(OS),Windows_NT)
 # Force cmd.exe so recipes behave the same whether or not sh.exe is on PATH.
@@ -21,11 +21,11 @@ else
 endif
 
 build: web
-	go build -o $(BIN) ./cmd/forge
+	go build -o $(BIN) ./cmd/foundry
 
-# Installs forge to $GOBIN (default $GOPATH/bin) so it runs from any folder.
+# Installs foundry to $GOBIN (default $GOPATH/bin) so it runs from any folder.
 install: web
-	go install ./cmd/forge
+	go install ./cmd/foundry
 
 test:
 	go vet ./...
@@ -36,7 +36,7 @@ check: test build
 
 # Development: API on :8080, Vite on :5173 (proxies /api).
 dev-api:
-	go run ./cmd/forge serve
+	go run ./cmd/foundry serve
 
 dev-web:
 	cd $(WEB) && npm run dev
