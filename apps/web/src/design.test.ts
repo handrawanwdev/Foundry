@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cells, changeRequest, changeScope, designChecks, featuresWithoutPage, formGroups, groupPages, incoming, navTarget, pageDensity, pageKind, pageOrder, primaryButton, requirementsOf, statParts } from "./design";
+import { cells, changeRequest, changeScope, designChecks, featuresWithoutPage, formGroups, groupPages, incoming, navTarget, pageDensity, pageKind, pageOrder, requirementsOf, statParts } from "./design";
 import type { Flow, Page, Project } from "./types";
 
 const page = (id: string, name: string, role: string, extra: Partial<Page> = {}): Page => ({
@@ -21,13 +21,6 @@ describe("design", () => {
     expect(groups[0].loose.map((p) => p.id)).toEqual(["P1"]);
     expect(groups[0].flows.map((f) => f.pages.map((p) => p.id))).toEqual([["P2", "P3"]]);
     expect(pageOrder(groups).map((p) => p.id)).toEqual(["P1", "P2", "P3", "P4"]);
-  });
-
-  it("draws at most one primary button: the primary action", () => {
-    const comps = [{ type: "button", label: "Filter", target: "P3" }, { type: "button", label: "Buat janji ", target: "P3" }] as Page["components"];
-    expect(primaryButton(page("X", "X", "", { components: comps, primary_action: { label: "buat janji" } }))).toBe(1);
-    expect(primaryButton(page("X", "X", "", { components: comps, primary_action: { reason: "baca saja" } }))).toBe(-1);
-    expect(primaryButton(page("X", "X", "", { components: comps }))).toBe(0);
   });
 
   it("links nav items to pages by name and finds incoming links", () => {
@@ -55,8 +48,8 @@ describe("design", () => {
     expect(pageKind(page("B", "Jadwal", "Admin Klinik", { components: [{ type: "table", label: "J" }] }))).toBe("admin");
     expect(pageKind(page("C", "Janji", "Pasien", { components: [{ type: "form", label: "F" }] }))).toBe("form");
     expect(pageKind(page("D", "Masuk", "x", { kind: "status" }))).toBe("status");
-    expect(pageDensity(page("A", "Masuk", "Pasien"))).toBe("low");
-    expect(pageDensity(page("B", "Jadwal", "Admin", { components: [{ type: "table", label: "J" }] }))).toBe("high");
+    expect(pageDensity(page("A", "Masuk", "Pasien"))).toBe("spacious");
+    expect(pageDensity(page("B", "Jadwal", "Admin", { components: [{ type: "table", label: "J" }] }))).toBe("compact");
   });
 
   it("parses table rows, stats and form groups", () => {

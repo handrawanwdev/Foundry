@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { cells, formGroups, formSubmit, incoming, navTarget, pageDensity, pageKind, primaryButton, statParts, type Device } from "../design";
-import type { FormField, Page, PageComponent, PageKind } from "../types";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { cells, formGroups, formSubmit, navTarget, pageDensity, pageKind, statParts, type Device } from "../design";
+import { leaves, nodeStyle, resolveLayout, tokenVars, validateIR } from "../ir";
+import type { DesignSystem, FormField, LayoutChild, Page, PageComponent } from "../types";
 
 export type PageState = "normal" | "loading" | "empty" | "no_results" | "error" | "success";
 
@@ -16,145 +17,147 @@ interface Props {
   onSelect?: (index: number | null) => void;
   onNavigate: (pageId: string) => void;
   app?: string; // product name shown in the app shell
+  system?: DesignSystem; // resolves the semantic tokens
 }
 
 type Item = { c: PageComponent; i: number };
 
-// Interactive wireframe of one designed page. The layout follows the page
-// kind, so a login, a data list and a settings page do not look alike.
-export function Wireframe({ page, pages, device, mode, state = "normal", selected, onSelect, onNavigate, app = "Aplikasi" }: Props) {
-  const kind = pageKind(page);
-  const run = mode === "run";
-  const items: Item[] = (page.components ?? []).map((c, i) => ({ c, i }));
-  const navs = items.filter((x) => x.c.type === "nav");
-  const body = items.filter((x) => x.c.type !== "nav");
+// Deterministic renderer of one page's Design IR. It draws the frame, the
+// component tree and the device changes exactly as page.layout says; it
+// never picks a layout, groups components or adds UI of its own. An invalid
+// IR is not drawn: the errors are shown instead.
+export function Wireframe({ page, pages, device, mode, state = "normal", selected, onSelect, onNavigate, app = "Aplikasi", system }: Props) {
+  const errors = validateIR(page, new Set(pages.map((p) => p.id)));
   const mobile = device === "mobile";
-  const back = kind === "detail" ? incoming(page, pages)[0] : undefined;
-  const primary = primaryButton(page);
+  const bar = (
+    <div className="wf-bar">
+      {mobile ? <><span className="wf-time">9:41</span><span className="wf-notch" /><span className="wf-sig" /></>
+        : <><span className="wf-dots"><i /><i /><i /></span><span className="wf-url">{host(app)}{page.route ?? ""}</span></>}
+    </div>
+  );
+  if (errors.length > 0 || !page.layout) {
+    return (
+      <div className={`wf-screen ${device}`}>
+        {bar}
+        <div className="wf-invalid" role="alert">
+          <strong>DESIGN_IR_INVALID</strong>
+          <p>Halaman ini tidak dirender karena Design IR-nya tidak valid:</p>
+          <ul>{errors.map((e) => <li key={e}>{e}</li>)}</ul>
+        </div>
+      </div>
+    );
+  }
+
+  const r = resolveLayout(page.layout, device);
+  const run = mode === "run";
+  const kind = pageKind(page);
+  const comps = page.components ?? [];
+  const byId = new Map<string, Item>(comps.map((c, i) => [c.id ?? "", { c, i }]));
+  const navs: Item[] = comps.map((c, i) => ({ c, i })).filter((x) => x.c.type === "nav");
+  const back = r.back ? pages.find((p) => p.id === r.back) : undefined;
 
   const wrap = (x: Item, node: ReactNode, cls = "") => (
-    <div key={x.i} data-c={x.i} data-type={x.c.type} className={`wf-block ${cls} ${mode === "select" ? "pickable" : ""} ${selected === x.i ? "selected" : ""}`}
+    <div key={x.i} data-c={x.i} data-id={x.c.id} data-type={x.c.type} className={`wf-block ${cls} ${mode === "select" ? "pickable" : ""} ${selected === x.i ? "selected" : ""}`}
       onClick={mode === "select" ? (e) => { e.stopPropagation(); onSelect?.(x.i); } : undefined}>
       {node}
     </div>
   );
-  const block = (x: Item) => wrap(x,
-    <Block c={x.c} kind={kind} submit={formSubmit(page)} primary={x.i === primary} run={run} onNavigate={onNavigate}
-      empty={state === "empty" ? page.states?.empty : state === "no_results" ? page.states?.no_results : undefined} filtered={state === "no_results"} />,
-    x.c.type === "button" ? "shrink" : "");
-  const nav = (x: Item) => wrap(x, <Nav c={x.c} page={page} pages={pages} run={run} onNavigate={onNavigate} variant={mobile ? "tabs" : "side"} />);
+  const block = (x: Item) => {
+    const c = r.swap[x.c.id ?? ""] ? { ...x.c, type: r.swap[x.c.id ?? ""] } : x.c;
+    return wrap(x,
+      <Block c={c} cancel={kind === "form" || kind === "settings" || kind === "profile"} submit={formSubmit(page)} run={run} onNavigate={onNavigate}
+        empty={state === "empty" ? page.states?.empty : state === "no_results" ? page.states?.no_results : undefined} filtered={state === "no_results"} />,
+      c.type === "button" ? "shrink" : "");
+  };
+  const nav = (x: Item, variant: NavVariant) => wrap(x, <Nav c={x.c} page={page} pages={pages} run={run} onNavigate={onNavigate} variant={variant} />);
+
+  // One layout node or component leaf, exactly as the tree says.
+  const draw = (n: LayoutChild, k: number | string): ReactNode => {
+    if (typeof n === "string") {
+      const x = byId.get(n);
+      return x ? block(x) : null;
+    }
+    const cls = `wf-n wf-n-${n.type}${n.surface ? " wf-" + n.surface.replace(".", "-") : ""}${n.elevation ? " wf-" + n.elevation.replace(".", "-") : ""}${n.placement ? " " + n.placement : ""}`;
+    const el = (
+      <div key={k} className={cls} data-node={n.id ?? ""} data-node-type={n.type} style={nodeStyle(n) as CSSProperties}>
+        {(n.children ?? []).map((c, i) => draw(c, typeof c === "string" ? c : c.id ?? i))}
+      </div>
+    );
+    return n.type === "overlay" ? <div key={k} className="wf-backdrop">{el}</div> : el;
+  };
 
   let content: ReactNode;
-  if (state === "loading") {
-    const title = body.find((x) => x.c.type === "header");
+  if (state === "loading" || state === "error" || state === "success") {
+    // A state replaces the content; the page header stays for orientation.
+    const titles = leaves(r.root).map((id) => byId.get(id)).filter((x): x is Item => !!x && x.c.type === "header");
     content = (
-      <>
-        {title && block(title)}
-        <div className="wf-loading" aria-busy="true">
-          <span /><span /><span />
-          {page.states?.loading && <p>{page.states.loading}</p>}
-        </div>
-      </>
-    );
-  } else if (state === "error" || state === "success") {
-    const title = body.find((x) => x.c.type === "header");
-    content = (
-      <>
-        {title && block(title)}
-        <StateBox kind={state} text={(state === "error" ? page.states?.error : page.states?.success) ?? ""} />
-      </>
-    );
-  } else if ((kind === "list" || kind === "admin") && !mobile) {
-    // Toolbar: title and actions on one row, data below.
-    const bar = body.filter((x) => x.c.type === "header" || x.c.type === "button");
-    const rest = body.filter((x) => !bar.includes(x));
-    content = (
-      <>
-        {bar.length > 0 && <div className="wf-toolbar">{bar.map(block)}</div>}
-        {rows(rest, block)}
-      </>
-    );
-  } else if (kind === "settings" && !mobile && body.some((x) => x.c.type === "section")) {
-    const sections = body.filter((x) => x.c.type === "section");
-    content = (
-      <div className="wf-settings">
-        <div className="wf-subnav">{sections.map((x) => <span key={x.i}>{x.c.label}</span>)}</div>
-        <div className="wf-settings-body">{rows(body, block)}</div>
+      <div className="wf-n wf-n-stack">
+        {titles.map(block)}
+        {state === "loading" ? (
+          <div className="wf-loading" aria-busy="true">
+            <span /><span /><span />
+            {page.states?.loading && <p>{page.states.loading}</p>}
+          </div>
+        ) : <StateBox kind={state} text={(state === "error" ? page.states?.error : page.states?.success) ?? ""} />}
       </div>
     );
   } else {
-    content = rows(body, block);
+    content = draw(r.root, "root");
   }
 
   const layout = (
-    <div className="wf-layout">
+    <div className={`wf-layout w-${r.width}`}>
       {back && (
         <button type="button" className="wf-back" onClick={run ? () => onNavigate(back.id) : undefined} tabIndex={run ? 0 : -1}>← {back.name}</button>
       )}
       {content}
-      {body.length === 0 && <p className="wf-text">Halaman ini belum punya isi.</p>}
+      {comps.every((c) => c.type === "nav") && <p className="wf-text">Halaman ini belum punya isi.</p>}
     </div>
   );
-  const titled = body.some((x) => x.c.type === "header" && x.c.label.trim().toLowerCase() === app.trim().toLowerCase());
   const brand = <div className="wf-brand"><span>{app.trim().charAt(0).toUpperCase() || "A"}</span>{app}</div>;
+  const body = <div className="wf-body" key={page.id + state}>{layout}</div>;
 
-  // Shell per page kind: sign-in is a centered card, app pages get a sidebar
-  // (desktop, tablet) or a bottom tab bar (mobile).
-  let shell: ReactNode;
-  if (kind === "auth") {
-    shell = (
+  let frame: ReactNode;
+  if (r.frame === "center") {
+    frame = (
       <div className="wf-body wf-center" key={page.id + state}>
-        <div className="wf-authcard">{!titled && brand}{layout}</div>
+        <div className={`wf-centerpanel w-${r.width}`}>{r.brand && brand}{layout}</div>
       </div>
     );
-  } else if (mobile) {
-    shell = (
-      <>
-        <div className="wf-body" key={page.id + state}>{layout}</div>
-        {navs.length > 0 && <div className="wf-bottom">{navs.map(nav)}</div>}
-      </>
-    );
+  } else if (r.frame === "full") {
+    frame = <div className="wf-body wf-full" key={page.id + state}>{layout}</div>;
   } else {
-    shell = (
+    const side = r.nav === "side" || r.nav === "rail";
+    const top = !mobile && (
+      <header className="wf-header">
+        {side ? <span className="wf-crumb">{page.name}</span> : brand}
+        {r.nav === "top" && <div className="wf-topnav">{navs.map((x) => nav(x, "top"))}</div>}
+        <span className="wf-avatar" title={page.role}>{page.role.trim().charAt(0).toUpperCase() || "U"}</span>
+      </header>
+    );
+    frame = (
       <div className="wf-app">
-        {navs.length > 0 && <aside className="wf-sidenav">{brand}{navs.map(nav)}</aside>}
+        {side && <aside className={`wf-sidenav ${r.nav}`}>{r.nav === "side" && brand}{navs.map((x) => nav(x, r.nav as NavVariant))}</aside>}
         <div className="wf-main">
-          <header className="wf-header">
-            {navs.length === 0 ? brand : <span className="wf-crumb">{page.name}</span>}
-            <span className="wf-avatar" title={page.role}>{page.role.trim().charAt(0).toUpperCase() || "U"}</span>
-          </header>
-          <div className="wf-body" key={page.id + state}>{layout}</div>
+          {top}
+          {mobile && r.nav === "top" && <div className="wf-topnav">{navs.map((x) => nav(x, "top"))}</div>}
+          {body}
+          {r.nav === "bottom" && <div className="wf-bottom">{navs.map((x) => nav(x, "tabs"))}</div>}
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`wf-screen ${device} k-${kind} d-${pageDensity(page)}`} onClick={() => mode === "select" && onSelect?.(null)}>
-      <div className="wf-bar">
-        {mobile ? <><span className="wf-time">9:41</span><span className="wf-notch" /><span className="wf-sig" /></>
-          : <><span className="wf-dots"><i /><i /><i /></span><span className="wf-url">{host(app)}{page.route ?? ""}</span></>}
-      </div>
-      {shell}
+    <div className={`wf-screen ${device} d-${pageDensity(page)}`} style={tokenVars(system) as CSSProperties} onClick={() => mode === "select" && onSelect?.(null)}>
+      {bar}
+      {frame}
     </div>
   );
 }
 
 function host(app: string): string {
   return (app.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "app") + ".app";
-}
-
-// Consecutive stats sit on one row.
-function rows(items: Item[], block: (x: Item) => ReactNode): ReactNode[] {
-  const out: ReactNode[] = [];
-  for (let k = 0; k < items.length; k++) {
-    if (items[k].c.type !== "stat") { out.push(block(items[k])); continue; }
-    const run: Item[] = [];
-    while (k < items.length && items[k].c.type === "stat") run.push(items[k++]);
-    k--;
-    out.push(<div key={`s${run[0].i}`} className="wf-stats">{run.map(block)}</div>);
-  }
-  return out;
 }
 
 function StateBox({ kind, text }: { kind: "error" | "success"; text: string }) {
@@ -168,18 +171,19 @@ function StateBox({ kind, text }: { kind: "error" | "success"; text: string }) {
   );
 }
 
-interface NavProps { c: PageComponent; page: Page; pages: Page[]; run: boolean; variant: "side" | "tabs"; onNavigate: (id: string) => void }
+type NavVariant = "side" | "rail" | "top" | "tabs";
+interface NavProps { c: PageComponent; page: Page; pages: Page[]; run: boolean; variant: NavVariant; onNavigate: (id: string) => void }
 
 function Nav({ c, page, pages, run, variant, onNavigate }: NavProps) {
   const items = c.items?.length ? c.items : [c.label];
   return (
-    <nav className={variant === "tabs" ? "wf-tabbar" : "wf-nav"}>
-      {(variant === "tabs" ? items.slice(0, 5) : items).map((it) => {
+    <nav className={`wf-nav ${variant}`}>
+      {items.map((it) => {
         const to = navTarget(it, page, pages);
         return (
-          <button key={it} type="button" className={`wf-nav-item ${to?.id === page.id ? "current" : ""}`}
+          <button key={it} type="button" className={`wf-nav-item ${to?.id === page.id ? "current" : ""}`} title={it}
             onClick={run && to ? () => onNavigate(to.id) : undefined} tabIndex={run ? 0 : -1}>
-            <Icon name={it} />{it}
+            <Icon name={it} /><span className="wf-nav-label">{it}</span>
           </button>
         );
       })}
@@ -224,15 +228,19 @@ function Cell({ text, column }: { text: string; column?: string }) {
   return <span>{text}</span>;
 }
 
-interface BlockProps { c: PageComponent; kind: PageKind; submit: string; primary: boolean; run: boolean; empty?: string; filtered?: boolean; onNavigate: (id: string) => void }
+interface BlockProps { c: PageComponent; submit: string; cancel: boolean; run: boolean; empty?: string; filtered?: boolean; onNavigate: (id: string) => void }
 
-function Block({ c, kind, submit, primary, run, empty, filtered, onNavigate }: BlockProps) {
+// Emphasis and tone tokens as classes; nothing is styled from the label.
+const emphasisClass = (e?: string) => ({ "action.primary": "primary", "action.ghost": "ghost", "action.danger": "danger" } as Record<string, string>)[e ?? ""] ?? "";
+const toneClass = (t?: string) => (t ? " tone-" + t.replace(".", "-") : "");
+
+function Block({ c, submit, cancel, run, empty, filtered, onNavigate }: BlockProps) {
   const open = run && c.target ? () => onNavigate(c.target!) : undefined;
   switch (c.type) {
     case "header":
       return <h2 className="wf-title">{c.label}</h2>;
     case "section":
-      return <h3 className="wf-section">{c.label}</h3>;
+      return <h3 className={"wf-section" + toneClass(c.tone)}>{c.label}</h3>;
     case "steps":
       return (
         <ol className="wf-steps">
@@ -240,13 +248,13 @@ function Block({ c, kind, submit, primary, run, empty, filtered, onNavigate }: B
         </ol>
       );
     case "button":
-      return <button type="button" className={`wf-btn ${primary ? "primary" : ""}`} onClick={open} tabIndex={run ? 0 : -1}>{c.label}</button>;
+      return <button type="button" className={`wf-btn ${emphasisClass(c.emphasis)}`} onClick={open} tabIndex={run ? 0 : -1}>{c.label}</button>;
     case "input":
       return /^(cari|search)/i.test(c.label)
         ? <label className="wf-search"><Icon name="cari" /><input placeholder={c.label + "…"} tabIndex={run ? 0 : -1} /></label>
         : <Field label={c.label} />;
     case "form":
-      return <Form c={c} submit={submit} cancel={kind === "form" || kind === "settings" || kind === "profile"} run={run} onSubmit={open} />;
+      return <Form c={c} submit={submit} cancel={cancel} run={run} onSubmit={open} />;
     case "table":
       return (
         <div className="wf-table">
@@ -284,17 +292,17 @@ function Block({ c, kind, submit, primary, run, empty, filtered, onNavigate }: B
       );
     case "stat": {
       const [name, value] = statParts(c.label);
-      return <div className="wf-stat"><span>{name}</span><strong>{value ?? "—"}</strong></div>;
+      return <div className={"wf-stat" + toneClass(c.tone)}><span>{name}</span><strong>{value ?? "—"}</strong></div>;
     }
     case "card":
       return (
-        <div className={`wf-card ${c.target ? "link" : ""}`} onClick={open}>
+        <div className={`wf-card ${c.target ? "link" : ""} ${emphasisClass(c.emphasis)}${toneClass(c.tone)}`} onClick={open}>
           <strong>{c.label}</strong>
           {(c.items ?? []).map((it) => <span key={it}>{it}</span>)}
         </div>
       );
     default:
-      return <p className="wf-text">{c.label}</p>;
+      return <p className={"wf-text" + toneClass(c.tone)}>{c.label}</p>;
   }
 }
 

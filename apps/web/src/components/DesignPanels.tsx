@@ -145,6 +145,7 @@ function QAIssues({ issues, pages, onOpen }: { issues: QAIssue[]; pages: Page[];
           return (
             <li key={i}>
               <span className={`sev ${it.severity}`}>{SEVERITY_LABEL[it.severity]}</span>{" "}
+              {(it.category || it.component) && <span className="muted">[{[it.category, it.component && "#" + it.component].filter(Boolean).join(" · ")}] </span>}
               {pg && <><button className="link" onClick={() => onOpen(pg.id)}>{pg.name}</button>: </>}
               {it.problem}
               {(it.why || it.impact || it.fix) && (
@@ -417,6 +418,7 @@ function SystemView({ system }: { system: DesignSystem }) {
   return (
     <section className="review-flows ds">
       <h3>Design system</h3>
+      {system.direction && <p className="muted">Arah visual: {system.direction}</p>}
       <TokenRows title="Warna" tokens={system.colors} />
       <TokenRows title="Tipografi" tokens={system.typography} />
       <TokenRows title="Spacing" tokens={system.spacing} />

@@ -48,17 +48,21 @@ func cleanScope(p *core.Project, sc *core.ChangeScope) *core.ChangeScope {
 	return out
 }
 
-// noteRejection stores why a design patch was refused so the next prompt
-// shows it. It reports whether an automatic retry should run: only once.
+// noteRejection stores why a design or patch was refused (out of scope or
+// invalid Design IR) so the next prompt shows it. It reports whether an
+// automatic retry should run: only once.
 func (s *Service) noteRejection(kind string, err error) bool {
 	var rej *work.PatchRejected
-	if kind != work.KindDesign || !errors.As(err, &rej) {
+	var invalid *core.IRInvalid
+	if kind != work.KindDesign || !errors.As(err, &rej) && !errors.As(err, &invalid) {
 		return false
 	}
 	retry := false
 	s.Store.Update(func(p *core.Project) error {
 		if p.Design == nil {
-			return nil
+			// A first design that failed the IR check: keep the reason for
+			// the retry prompt; the next valid design replaces this.
+			p.Design = &core.Design{Status: core.DesignDraft}
 		}
 		retry = p.Design.Rejected == ""
 		p.Design.Rejected = err.Error()

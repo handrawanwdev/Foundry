@@ -181,6 +181,9 @@ type Design struct {
 // DesignSystem holds the design tokens: the build maps them onto the
 // project's styling instead of arbitrary values.
 type DesignSystem struct {
+	// Direction is the one visual direction the tokens follow
+	// (e.g. "Operations: dense, restrained, semantic color only").
+	Direction   string  `json:"direction,omitempty"`
 	Colors      []Token `json:"colors"`
 	Typography  []Token `json:"typography"`
 	Spacing     []Token `json:"spacing"`
@@ -262,6 +265,10 @@ type QAIssue struct {
 	Why      string `json:"why,omitempty"`
 	Impact   string `json:"impact,omitempty"`
 	Fix      string `json:"fix,omitempty"`
+	// Category is the kind of problem (hierarchy, spacing, ...); Component
+	// the id of the component it is about.
+	Category  string `json:"category,omitempty"`
+	Component string `json:"component,omitempty"`
 }
 
 type QAShot struct {
@@ -293,18 +300,21 @@ type Page struct {
 	Hierarchy        []string `json:"hierarchy,omitempty"`
 	SecondaryActions []string `json:"secondary_actions,omitempty"`
 	Responsive       string   `json:"responsive,omitempty"`
-	// Kind picks the page layout (auth, list, form, ...); Density is
-	// low | medium | high. Both may be empty on older designs.
+	// Kind is the page's job (auth, list, form, ...); Density is
+	// compact | comfortable | spacious. Kind may be empty on older designs.
 	Kind    string      `json:"kind,omitempty"`
 	Density string      `json:"density,omitempty"`
 	States  *PageStates `json:"states,omitempty"`
 	// Build contract: where the page lives, who may open it, what it is
 	// for and what data it needs. Required before the design is approved.
-	Route         string          `json:"route,omitempty"`
-	Access        string          `json:"access,omitempty"` // public | auth
-	PrimaryAction *PageAction     `json:"primary_action,omitempty"`
-	Data          *PageData       `json:"data,omitempty"`
-	Components    []PageComponent `json:"components"`
+	Route         string      `json:"route,omitempty"`
+	Access        string      `json:"access,omitempty"` // public | auth
+	PrimaryAction *PageAction `json:"primary_action,omitempty"`
+	Data          *PageData   `json:"data,omitempty"`
+	// Layout is the explicit composition (Design IR): frame, component
+	// tree and per-device changes. The renderer draws only this.
+	Layout     *PageLayout     `json:"layout,omitempty"`
+	Components []PageComponent `json:"components"`
 }
 
 // PageAction is the main thing the user does on a page. A read-only page has
@@ -333,15 +343,19 @@ type PageStates struct {
 	Success   string `json:"success,omitempty"`
 }
 
-// PageComponent is a wireframe element. Target links to another page for
-// prototype navigation.
+// PageComponent is a wireframe element. ID is what the layout places.
+// Target links to another page for prototype navigation. Emphasis and Tone
+// are semantic tokens (action.*, text.* / status.*), never raw values.
 type PageComponent struct {
-	Type    string      `json:"type"` // header | nav | text | list | table | form | button | card | stat | input | section | steps
-	Label   string      `json:"label"`
-	Items   []string    `json:"items,omitempty"`
-	Columns []string    `json:"columns,omitempty"` // table only
-	Fields  []FormField `json:"fields,omitempty"`  // form only
-	Target  string      `json:"target,omitempty"`
+	ID       string      `json:"id,omitempty"`
+	Type     string      `json:"type"` // header | nav | text | list | table | form | button | card | stat | input | section | steps
+	Emphasis string      `json:"emphasis,omitempty"`
+	Tone     string      `json:"tone,omitempty"`
+	Label    string      `json:"label"`
+	Items    []string    `json:"items,omitempty"`
+	Columns  []string    `json:"columns,omitempty"` // table only
+	Fields   []FormField `json:"fields,omitempty"`  // form only
+	Target   string      `json:"target,omitempty"`
 }
 
 // FormField specifies one form input for the build phase.

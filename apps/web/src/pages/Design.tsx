@@ -179,7 +179,8 @@ function Workspace({ project }: { project: Project }) {
               <div className={`dw-stage ${dev}`}>
                 <Fit width={SCREEN_WIDTH[dev]}>
                 <Wireframe app={project.name} page={page} pages={pages} device={dev} mode={mode === "prototipe" ? "run" : "select"} state={mode === "pratinjau" ? pstate : "normal"}
-                  selected={selected} onSelect={(i) => { setSelected(i); if (i !== null) setInspect(true); }} onNavigate={go} />
+                  selected={selected} onSelect={(i) => { setSelected(i); if (i !== null) setInspect(true); }} onNavigate={go}
+                  system={project.design?.system} />
                 </Fit>
               </div>
             )}

@@ -25,11 +25,28 @@ export interface Structure {
   reason: string; commands: Command[] | null; approved: boolean; scaffolded: boolean;
 }
 export interface FormField { label: string; type: string; required?: boolean; validation?: string; error?: string; group?: string }
-export interface PageComponent { type: string; label: string; items?: string[]; columns?: string[]; fields?: FormField[]; target?: string }
+// id: what the layout places. emphasis/tone: semantic tokens (action.*, text.* / status.*).
+export interface PageComponent {
+  id?: string; type: string; label: string; items?: string[]; columns?: string[]; fields?: FormField[]; target?: string;
+  emphasis?: string; tone?: string;
+}
+// Design IR layout (internal/core/designir.go). A child is a component id or a node.
+export interface LayoutNode {
+  id?: string; type: string; children?: LayoutChild[]; columns?: number; ratio?: string; side?: string; placement?: string;
+  gap?: string; align?: string; surface?: string; elevation?: string;
+}
+export type LayoutChild = string | LayoutNode;
+export interface NodeChange { type?: string; columns?: number; order?: string[] }
+export interface DeviceLayout {
+  frame?: string; nav?: string; width?: string; hide?: string[]; nodes?: Record<string, NodeChange>; swap?: Record<string, string>;
+}
+export interface PageLayout {
+  frame: string; nav?: string; width?: string; brand?: boolean; back?: string; root: LayoutNode; devices?: Record<string, DeviceLayout>;
+}
 export type PageKind =
   | "auth" | "dashboard" | "list" | "detail" | "form" | "wizard" | "search"
   | "settings" | "payment" | "profile" | "analytics" | "admin" | "status";
-export type Density = "low" | "medium" | "high";
+export type Density = "compact" | "comfortable" | "spacious";
 export interface PageStates { loading?: string; empty?: string; no_results?: string; error?: string; success?: string }
 export interface PageAction { label?: string; target?: string; reason?: string }
 export interface PageData { required?: string[]; optional?: string[]; dynamic?: string[]; api?: string[] }
@@ -39,12 +56,13 @@ export interface Page {
   kind?: PageKind; density?: Density; states?: PageStates;
   hierarchy?: string[]; secondary_actions?: string[]; responsive?: string;
   route?: string; access?: "public" | "auth"; primary_action?: PageAction; data?: PageData;
+  layout?: PageLayout;
 }
 // Build spec of one page, assembled by the server from the design.
 export interface PageHandoff {
   page_id: string; name: string; route: string; platform: string; access: string; role: string; kind?: string;
   purpose: string; hierarchy?: string[]; primary_action: string; secondary_actions?: string[]; responsive?: string;
-  components: string[] | null; data?: PageData;
+  density?: string; layout?: PageLayout; components: string[] | null; data?: PageData;
   interactions: string[] | null; entry_points: string[] | null; states: string[] | null; validation: string[] | null;
   tests: string[] | null; feature_id: string; sub_feature_ids?: string[]; requirement_ids: string[] | null; flow_ids: string[] | null;
 }
@@ -55,12 +73,15 @@ export interface ScopePage { id: string; request?: string; components?: number[]
 // What a change request may touch; the server rejects a patch outside it.
 export interface ChangeScope { open?: boolean; fields?: boolean; general?: string; pages?: ScopePage[] }
 export interface QAShot { page_id: string; device: string; image: string; outline: string }
-export interface QAIssue { page_id?: string; severity: "critical" | "major" | "minor"; problem: string; why?: string; impact?: string; fix?: string }
+export interface QAIssue {
+  page_id?: string; severity: "critical" | "major" | "minor"; problem: string; why?: string; impact?: string; fix?: string;
+  category?: string; component?: string;
+}
 export interface DesignQA { status: "running" | "pass" | "fixed" | "failed" | "skipped"; round: number; notes?: string; issues?: QAIssue[]; shots?: QAShot[] }
 export interface DesignRevision { request: string; changes: DesignChange[] | null; scope?: ChangeScope; patch?: string[]; qa?: DesignQA }
 export interface Token { name: string; value: string; use?: string }
 export interface DesignSystem {
-  colors: Token[]; typography: Token[]; spacing: Token[]; radius?: Token[]; shadow?: Token[];
+  direction?: string; colors: Token[]; typography: Token[]; spacing: Token[]; radius?: Token[]; shadow?: Token[];
   breakpoints?: Token[]; components?: Token[];
 }
 export interface Design {

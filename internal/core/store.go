@@ -67,6 +67,13 @@ func (s *Store) Load() (*Project, error) {
 		return nil, fmt.Errorf("state rusak: %w", err)
 	}
 	p.Dir = s.Dir
+	if d := p.Design; d != nil {
+		// Designs saved before the Design IR get their layout here, once.
+		EnsureIR(d.Pages, p.Name)
+		if d.Revision != nil {
+			EnsureIR(d.Revision.PreviousPages, p.Name)
+		}
+	}
 	return &p, nil
 }
 

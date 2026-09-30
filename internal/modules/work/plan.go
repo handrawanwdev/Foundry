@@ -33,7 +33,7 @@ Do not write code. Do not modify files.
 	b.WriteString(structureBrief(p) + "\n")
 	b.WriteString(`Areas: scaffold, data, api, ui, test, integration. If the project is new, the first task (area "scaffold", feature_id "")
 must create the chosen layout with real build/test tooling (e.g. go.mod, package.json with build/test scripts) so Foundry can verify later tasks.
-UI tasks implement pages from their handoff: use its route, access, data/api, hierarchy, primary and secondary actions,
+UI tasks implement pages from their handoff: use its route, access, layout (Design IR), data/api, hierarchy, primary and secondary actions,
 interactions, states, validation and responsive behavior, and copy the handoff tests into test_requirements.
 UI acceptance criteria also cover: design system tokens used (no arbitrary values), one primary action, every state shown,
 no horizontal overflow on mobile, labeled inputs and keyboard focus. API tasks cover every api call listed in the page handoffs.

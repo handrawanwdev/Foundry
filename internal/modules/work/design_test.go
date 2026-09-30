@@ -105,8 +105,13 @@ func TestApplyRevisionPatch(t *testing.T) {
 	if got := labels(pg); got != "Info,Janji Temu,Daftar,Buka" {
 		t.Fatalf("components = %s", got)
 	}
-	if pg.Kind != "list" || pg.Density != "high" || pg.States == nil || pg.States.Empty != "Belum ada janji." || pg.Components[3].Target != "PAGE-002" {
+	if pg.Kind != "list" || pg.Density != "compact" || pg.States == nil || pg.States.Empty != "Belum ada janji." || pg.Components[3].Target != "PAGE-002" {
 		t.Fatalf("untouched fields changed: %+v", pg)
+	}
+	// The layout follows the operations: the removed text leaves, the moved
+	// table goes right after the header in its node, the added text on top.
+	if got := mustJSON(pg.Layout.Root); got != `{"id":"main","type":"stack","children":["text-4",{"id":"toolbar","type":"row","children":["header-1","table-4","button-2"],"align":"between"}]}` {
+		t.Fatalf("layout = %s", got)
 	}
 	if got := p.Design.Pages[1]; got.Name != before.Name || len(got.Components) != len(before.Components) {
 		t.Fatalf("other page changed: %+v", got)
@@ -195,5 +200,62 @@ func TestApplyQAFix(t *testing.T) {
 	}
 	if err := ApplyQAFix(p, "```json\n{\"patches\": [{\"page\": \"PAGE-002\", \"operations\": [{\"op\": \"add\", \"component\": {\"type\": \"text\"}}]}]}\n```"); err == nil {
 		t.Fatal("QA fix outside the scope must be rejected")
+	}
+}
+
+func irProject() *core.Project {
+	return &core.Project{Name: "Tiket", Platform: &core.PlatformPlan{}, Features: []core.Feature{{ID: "FEAT-001", Name: "Tiket"}}}
+}
+
+const irDesign = "```json\n" + `{"system": null, "pages": [{"id": "P1", "name": "Antrian", "platform": "web", "feature_id": "FEAT-001", "kind": "admin", "density": "compact",
+ "layout": {"frame": "app", "nav": "side", "width": "full",
+   "root": {"id": "main", "type": "stack", "children": [{"id": "bar", "type": "row", "align": "between", "children": ["title", "new"]}, "queue"]},
+   "devices": {"mobile": {"nav": "bottom", "nodes": {"bar": {"type": "stack"}}, "swap": {"queue": "list"}}}},
+ "components": [{"id": "menu", "type": "nav", "items": ["Antrian"]}, {"id": "title", "type": "header", "label": "Antrian"},
+   {"id": "new", "type": "button", "label": "Buat tiket", "emphasis": "Action.Primary"}, {"id": "queue", "type": "table", "columns": ["ID"]}]}]}` + "\n```"
+
+func TestApplyDesignIR(t *testing.T) {
+	p := irProject()
+	if err := ApplyDesign(p, irDesign); err != nil {
+		t.Fatal(err)
+	}
+	pg := p.Design.Pages[0]
+	if pg.Layout == nil || pg.Layout.Devices["mobile"].Swap["queue"] != "list" || pg.Components[2].Emphasis != "action.primary" {
+		t.Fatalf("page = %+v", pg)
+	}
+	if h := handoff(p, pg, p.Design.Pages); h.Layout != pg.Layout || h.Components[2] != "#new Tombol “Buat tiket” (action.primary)" {
+		t.Fatalf("handoff = %+v", h)
+	}
+}
+
+func TestApplyDesignRejectsInvalidIR(t *testing.T) {
+	p := irProject()
+	bad := strings.Replace(irDesign, `"queue"]}`, `"queue", "ghost"]}`, 1)
+	err := ApplyDesign(p, bad)
+	var invalid *core.IRInvalid
+	if !errors.As(err, &invalid) || !strings.Contains(err.Error(), `PAGE-001 "Antrian": layout menempatkan komponen "ghost" yang tidak ada`) {
+		t.Fatalf("err = %v", err)
+	}
+	if p.Design != nil {
+		t.Fatal("invalid design must not be applied")
+	}
+	p.Design = &core.Design{Rejected: err.Error()}
+	if !strings.Contains(DesignPrompt(p), "YOUR PREVIOUS DESIGN WAS REJECTED") {
+		t.Fatal("retry prompt must show the rejection")
+	}
+}
+
+func TestApplyQACategories(t *testing.T) {
+	p := opsProject()
+	core.EnsureIR(p.Design.Pages, "")
+	p.Design.Revision = &core.DesignRevision{QA: &core.DesignQA{Status: "running", Round: 1}}
+	raw := "```json\n" + `{"status": "pass", "issues": [{"page": "PAGE-001", "severity": "minor", "category": "Hierarchy", "component": "button-2", "problem": "a"},
+ {"page": "PAGE-001", "severity": "minor", "category": "vibes", "component": "nope", "problem": "b"}]}` + "\n```"
+	if _, err := ApplyQA(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	is := p.Design.Revision.QA.Issues
+	if is[0].Category != "hierarchy" || is[0].Component != "button-2" || is[1].Category != "other" || is[1].Component != "" {
+		t.Fatalf("issues = %+v", is)
 	}
 }

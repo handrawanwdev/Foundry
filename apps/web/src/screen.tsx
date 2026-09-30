@@ -1,17 +1,17 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { Wireframe } from "./components/Wireframe";
 import { defaultDevice, type Device } from "./design";
-import type { Page } from "./types";
+import type { DesignSystem, Page } from "./types";
 
 // Text outline of a page exactly as the wireframe draws it, for the designer
 // AI: it is read from the rendered markup, so it cannot drift from what the
-// user sees. "[n] type" is components[n] in the design JSON; "(otomatis)" is drawn
-// by the wireframe itself, not by a component.
+// user sees. "[n] type #id" is components[n] in the design JSON; "(layout)" is
+// a node of page.layout; "(otomatis)" is drawn by the frame, not by a component.
 
 const CONTAINERS: [string, string][] = [
-  ["wf-sidenav", "Sidebar kiri"], ["wf-bottom", "Tab bar bawah"], ["wf-header", "Top bar"],
-  ["wf-authcard", "Kartu di tengah layar"], ["wf-toolbar", "Toolbar (satu baris)"], ["wf-stats", "Baris angka (berdampingan)"],
-  ["wf-form-foot", "Tombol bawaan form"], ["wf-subnav", "Sub-menu pengaturan (kiri)"], ["wf-settings-body", "Isi pengaturan"],
+  ["wf-sidenav", "Sidebar kiri"], ["wf-bottom", "Tab bar bawah"], ["wf-header", "Top bar"], ["wf-topnav", "Menu atas"],
+  ["wf-centerpanel", "Panel di tengah layar"], ["wf-form-foot", "Tombol bawaan form"], ["wf-backdrop", "Lapisan overlay"],
+  ["wf-invalid", "DESIGN_IR_INVALID"],
 ];
 
 const text = (el: Element) => (el.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -49,12 +49,21 @@ function leaf(el: Element): string | null {
   if (has(el, "wf-tr")) return "Baris: " + [...el.children].map(text).join(" | ");
   if (has(el, "wf-row")) return "Baris: " + [...el.querySelectorAll(".wf-row-main, .wf-badge")].map(text).join(" | ");
   if (has(el, "wf-sent")) return null;
+  if (tag === "li" && el.closest(".wf-invalid")) return `Galat "${text(el)}"`;
   return null;
 }
 
 function walk(el: Element, depth: number, inComponent: boolean, out: string[]) {
-  const c = el.getAttribute("data-c") !== null ? `${el.getAttribute("data-c")}] ${el.getAttribute("data-type")}` : null;
+  const id = el.getAttribute("data-id");
+  const c = el.getAttribute("data-c") !== null ? `${el.getAttribute("data-c")}] ${el.getAttribute("data-type")}${id ? " #" + id : ""}` : null;
   const pad = "  ".repeat(depth);
+  const node = el.getAttribute("data-node-type");
+  if (node !== null) {
+    const name = el.getAttribute("data-node");
+    out.push(`${pad}(layout) ${node}${name ? ` "${name}"` : ""}:`);
+    for (const k of el.children) walk(k, depth + 1, inComponent, out);
+    return;
+  }
   if (c !== null) {
     const line = leaf(el.firstElementChild ?? el);
     const kids = el.firstElementChild;
@@ -81,8 +90,8 @@ function walk(el: Element, depth: number, inComponent: boolean, out: string[]) {
   if (rows.length > 3) out.push(`${"  ".repeat(box ? depth + 1 : depth)}… ${rows.length - 3} baris lagi`);
 }
 
-export function screenOutline(page: Page, pages: Page[], app: string, device: Device = defaultDevice(page)): string {
-  const html = renderToStaticMarkup(<Wireframe page={page} pages={pages} device={device} mode="select" onNavigate={() => {}} app={app} />);
+export function screenOutline(page: Page, pages: Page[], app: string, device: Device = defaultDevice(page), system?: DesignSystem): string {
+  const html = renderToStaticMarkup(<Wireframe page={page} pages={pages} device={device} mode="select" onNavigate={() => {}} app={app} system={system} />);
   const root = new DOMParser().parseFromString(html, "text/html").body;
   const out: string[] = [];
   for (const k of root.children) walk(k, 0, false, out);

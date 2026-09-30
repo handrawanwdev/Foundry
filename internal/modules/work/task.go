@@ -66,7 +66,8 @@ const uiRules = `UI RULES:
 - Reuse existing components (Button, Input, FormField, Card, Table, Modal, Tabs, Badge, Alert, EmptyState, LoadingState, ErrorState, PageHeader). Create one only when none fits, and make it reusable.
 - Visual hierarchy follows the handoff "hierarchy", first item most prominent. At most one primary CTA per context (the primary action); secondary actions are visually lower. Never render the same action twice.
 - Implement every state in the handoff: loading keeps the layout (skeleton, no jump), empty says what happened, why and what to do, error says what failed and how to recover.
-- Responsive as the handoff "responsive" says, on desktop, tablet and mobile: no horizontal page overflow on mobile, touch targets at least 44px, important information not hidden.
+- Layout as the handoff "layout" (Design IR) says: the same frame, nav placement, content width, component tree (stack, row, grid, split, sidebar, center, full, overlay) and per-device changes (hide, order, type, columns, swap); component "#id"s map to the tree. Resolve its semantic tokens (space.*, surface.*, action.*, text.*, status.*) from the design system. Do not invent another layout.
+- Responsive as the handoff "responsive" and "layout.devices" say, on desktop, tablet and mobile: no horizontal page overflow on mobile, touch targets at least 44px, important information not hidden.
 - Accessibility: semantic HTML, a label for every input, visible focus state, keyboard navigation, WCAG AA contrast, form errors tied to their field, accessible names on icon buttons.
 - Do not change APIs or business logic for visuals, add routes beyond the handoff, use mock data where real data exists, or remove existing functionality. No extra features, animations or decoration.
 `

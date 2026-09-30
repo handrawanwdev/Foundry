@@ -108,7 +108,7 @@ export const KIND_LABEL: Record<PageKind, string> = {
   profile: "Profil", analytics: "Analitik", admin: "Operasional (padat)", status: "Hasil / status",
 };
 
-export const DENSITY_LABEL: Record<Density, string> = { low: "rendah", medium: "sedang", high: "tinggi" };
+export const DENSITY_LABEL: Record<Density, string> = { compact: "padat", comfortable: "sedang", spacious: "lega" };
 
 const NAME_KINDS: [RegExp, PageKind][] = [
   [/login|masuk|sign ?in|sign ?up|registrasi|daftar akun|lupa (kata sandi|password)/, "auth"],
@@ -137,12 +137,14 @@ export function pageKind(p: Page): PageKind {
   return "detail";
 }
 
+// Density set by the designer; the server maps older names on load. Pages
+// without one use the kind's usual density.
 export function pageDensity(p: Page): Density {
   if (p.density) return p.density;
   const k = pageKind(p);
-  if (k === "auth" || k === "payment" || k === "status") return "low";
-  if (k === "admin") return "high";
-  return "medium";
+  if (k === "auth" || k === "payment" || k === "status") return "spacious";
+  if (k === "admin") return "compact";
+  return "comfortable";
 }
 
 const KIND_SUBMIT: Partial<Record<PageKind, string>> = { auth: "Masuk", payment: "Bayar", search: "Cari", wizard: "Lanjut" };
@@ -155,16 +157,6 @@ export function formSubmit(p: Page): string {
   const label = p.primary_action?.label?.trim();
   if (label && PRIMARY_SUBMIT.includes(kind)) return label;
   return KIND_SUBMIT[kind] ?? "Simpan";
-}
-
-// Index of the button drawn as the page's primary CTA, at most one per page:
-// the button carrying the primary action label. Older designs without a
-// primary action fall back to the first button that opens a page.
-export function primaryButton(p: Page): number {
-  const comps = p.components ?? [];
-  if (!p.primary_action) return comps.findIndex((c) => c.type === "button" && !!c.target);
-  const label = p.primary_action.label?.trim().toLowerCase();
-  return label ? comps.findIndex((c) => c.type === "button" && c.label.trim().toLowerCase() === label) : -1;
 }
 
 // "Budi | Dr. Andi | Aktif" → cells.

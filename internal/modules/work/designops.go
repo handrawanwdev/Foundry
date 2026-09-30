@@ -36,7 +36,7 @@ type patchOp struct {
 var pageFields = map[string]bool{
 	"name": true, "role": true, "purpose": true, "kind": true, "density": true, "states": true, "route": true,
 	"access": true, "primary_action": true, "data": true, "sub_feature_ids": true,
-	"hierarchy": true, "secondary_actions": true, "responsive": true,
+	"hierarchy": true, "secondary_actions": true, "responsive": true, "layout": true,
 }
 
 // PatchRejected is a patch that went outside the requested scope. Nothing of
@@ -107,8 +107,11 @@ type opEntry struct {
 }
 
 // applyOps edits one page. origins[i] is where result component i was
-// before the patch (-1 when added).
+// before the patch (-1 when added). The layout tree follows the operations:
+// an added or moved component goes right after "after" in that component's
+// layout node, a removed one leaves the tree.
 func applyOps(pg core.Page, ops []patchOp) (core.Page, []int, error) {
+	pg.Layout = pg.Layout.Clone()
 	list := make([]opEntry, len(pg.Components))
 	for i, c := range pg.Components {
 		list[i] = opEntry{i, c}
@@ -132,6 +135,24 @@ func applyOps(pg core.Page, ops []patchOp) (core.Page, []int, error) {
 		}
 		return k + 1, nil
 	}
+	// place puts component id in the tree where the operation says.
+	place := func(id string, o patchOp) {
+		if pg.Layout == nil {
+			return
+		}
+		anchor := ""
+		if o.After != nil && *o.After >= 0 {
+			if k := find(*o.After); k >= 0 {
+				anchor = list[k].c.ID
+			}
+		}
+		pg.Layout.Place(id, anchor, o.After != nil && *o.After == -1)
+	}
+	detach := func(c core.PageComponent) {
+		if pg.Layout != nil && c.ID != "" {
+			pg.Layout.Detach(c.ID)
+		}
+	}
 	target := func(o patchOp) (int, error) {
 		if o.Target == nil {
 			return 0, fail(o, "target kosong")
@@ -149,6 +170,7 @@ func applyOps(pg core.Page, ops []patchOp) (core.Page, []int, error) {
 			if err != nil {
 				return pg, nil, err
 			}
+			detach(list[k].c)
 			list = slices.Delete(list, k, k+1)
 		case "update":
 			if o.Target == nil {
@@ -166,7 +188,15 @@ func applyOps(pg core.Page, ops []patchOp) (core.Page, []int, error) {
 			if o.Component == nil {
 				return pg, nil, fail(o, "component kosong")
 			}
-			list[k].c = *o.Component
+			old, c := list[k].c, *o.Component
+			c.ID = old.ID // ids are stable; the layout refers to them
+			switch {
+			case old.Type != "nav" && c.Type == "nav":
+				detach(old)
+			case old.Type == "nav" && c.Type != "nav" && pg.Layout != nil && c.ID != "":
+				pg.Layout.Place(c.ID, "", false)
+			}
+			list[k].c = c
 		case "move":
 			k, err := target(o)
 			if err != nil {
@@ -179,6 +209,10 @@ func applyOps(pg core.Page, ops []patchOp) (core.Page, []int, error) {
 				return pg, nil, err
 			}
 			list = slices.Insert(list, at, e)
+			if e.c.Type != "nav" && e.c.ID != "" {
+				detach(e.c)
+				place(e.c.ID, o)
+			}
 		case "add":
 			if o.Component == nil {
 				return pg, nil, fail(o, "component kosong")
@@ -187,7 +221,12 @@ func applyOps(pg core.Page, ops []patchOp) (core.Page, []int, error) {
 			if err != nil {
 				return pg, nil, err
 			}
-			list = slices.Insert(list, at, opEntry{-1, *o.Component})
+			c := *o.Component
+			c.ID = newID(list, c)
+			if c.Type != "nav" {
+				place(c.ID, o)
+			}
+			list = slices.Insert(list, at, opEntry{-1, c})
 		default:
 			return pg, nil, fail(o, "operasi tidak dikenal (add, remove, move, update)")
 		}
@@ -198,6 +237,19 @@ func applyOps(pg core.Page, ops []patchOp) (core.Page, []int, error) {
 		pg.Components[i], origins[i] = e.c, e.orig
 	}
 	return pg, origins, nil
+}
+
+// newID keeps the id an added component brings when it is free, else gives
+// it the next free "<type>-<n>".
+func newID(list []opEntry, c core.PageComponent) string {
+	taken := func(id string) bool {
+		return slices.ContainsFunc(list, func(e opEntry) bool { return e.c.ID == id })
+	}
+	id := strings.TrimSpace(c.ID)
+	for n := len(list) + 1; id == "" || taken(id); n++ {
+		id = fmt.Sprintf("%s-%d", strings.ToLower(c.Type), n)
+	}
+	return id
 }
 
 // setPageFields replaces the given top-level page fields; the page is
@@ -364,10 +416,15 @@ func checkPatch(prev, next core.Page, origins []int, ops []patchOp, scope *core.
 			content[t], place[t] = true, true
 		}
 	}
-	for _, k := range changedKeys(prev, next, "components", "id") {
+	// The layout follows the component operations; set as a page field it
+	// needs the page-field scope like any other.
+	for _, k := range changedKeys(prev, next, "components", "id", "layout") {
 		if !allowed[k] {
 			out = append(out, fmt.Sprintf("%s %s berubah", id, k))
 		}
+	}
+	if ok, set := allowed["layout"]; set && !ok {
+		out = append(out, id+" layout berubah")
 	}
 	last := -1
 	kept := map[int]bool{}

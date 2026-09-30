@@ -63,7 +63,11 @@ func Markdown(p *core.Project) string {
 		}
 		b.WriteString("\n")
 		if s := p.Design.System; s != nil {
-			b.WriteString("## Design system\n\n| Grup | Token | Nilai | Pemakaian |\n|---|---|---|---|\n")
+			b.WriteString("## Design system\n\n")
+			if s.Direction != "" {
+				b.WriteString("Arah visual: " + s.Direction + "\n\n")
+			}
+			b.WriteString("| Grup | Token | Nilai | Pemakaian |\n|---|---|---|---|\n")
 			for _, g := range []struct {
 				name   string
 				tokens []core.Token

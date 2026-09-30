@@ -125,6 +125,10 @@ func fakeAgent() {
 			fmt.Println(movePatchJSON)
 			return
 		}
+		if mode == "ir_invalid_once" && !strings.Contains(prompt, "YOUR PREVIOUS DESIGN WAS REJECTED") {
+			fmt.Println(strings.Replace(designJSON, `"kind": "ADMIN",`, `"kind": "ADMIN", "layout": {"frame": "app", "root": {"type": "stack", "children": ["ghost"]}},`, 1))
+			return
+		}
 		fmt.Println(designJSON)
 	case strings.Contains(prompt, "visual QA checker"):
 		if mode == "qa_fix" && strings.Contains(prompt, "-r1.png") {
@@ -676,6 +680,32 @@ func TestDesignPatchRejectedRetriesOnce(t *testing.T) {
 	if !strings.Contains(p.Job.Error, "PAGE-003 dikirim utuh") || p.Design.Revision != nil || types(findPage(p, "PAGE-001")) != "header,list,button" {
 		t.Fatalf("rejected patch applied: %+v / %s", p.Design, p.Job.Error)
 	}
+}
+
+// An invalid Design IR is rejected, not rendered; the designer gets the
+// errors and one retry.
+func TestDesignIRInvalidRetriesOnce(t *testing.T) {
+	s := newService(t, fakeAI{}, "ir_invalid_once")
+	p := designReady(t, s)
+	if len(p.Design.Pages) != 3 || p.Design.Rejected != "" {
+		t.Fatalf("design = %+v", p.Design)
+	}
+	for _, pg := range p.Design.Pages {
+		if pg.Layout == nil {
+			t.Fatalf("page %s without layout", pg.ID)
+		}
+	}
+	if !strings.Contains(strings.Join(logTexts(p), "\n"), "DESIGN_IR_INVALID") {
+		t.Fatal("rejection not logged")
+	}
+}
+
+func logTexts(p *core.Project) []string {
+	var out []string
+	for _, e := range p.Events {
+		out = append(out, e.Message)
+	}
+	return out
 }
 
 func TestDesignVisualQA(t *testing.T) {
