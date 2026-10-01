@@ -1,0 +1,48 @@
+{
+  "id": "trading-terminal",
+  "name": "Trading Terminal",
+  "category": "trading",
+  "intent": "Memantau pasar dan mengeksekusi order dengan cepat: harga, chart, order book dan aksi selalu terlihat.",
+  "characteristics": [
+    "high density",
+    "real-time",
+    "professional"
+  ],
+  "suitable_for": {
+    "domains": [
+      "trading"
+    ],
+    "roles": [
+      "trader",
+      "investor"
+    ],
+    "tasks": [
+      "monitor",
+      "compare",
+      "process"
+    ],
+    "frequency": "high",
+    "density": "high",
+    "page_kinds": [
+      "workspace",
+      "monitoring",
+      "dashboard",
+      "table"
+    ],
+    "keywords": [
+      "trading",
+      "saham",
+      "order book",
+      "orderbook",
+      "chart",
+      "candlestick",
+      "bursa",
+      "kripto",
+      "crypto",
+      "forex",
+      "watchlist",
+      "pasar",
+      "market"
+    ]
+  }
+}

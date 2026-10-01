@@ -1,0 +1,40 @@
+{
+  "examples": [
+    {
+      "domain": "finance",
+      "product": "Dompet digital",
+      "regions": {
+        "nav": "Menu",
+        "act": "Transfer",
+        "assets": "Akun & aset",
+        "transactions": "Transaksi terbaru",
+        "insights": "Insight bulan ini"
+      },
+      "items": {
+        "nav": [
+          "Ringkasan",
+          "Transaksi",
+          "Anggaran"
+        ],
+        "balance": [
+          "Saldo Rp 12.450.000"
+        ],
+        "assets": [
+          "Tabungan · Rp 8,2 jt",
+          "Reksa dana · Rp 3,1 jt",
+          "Emas · Rp 1,1 jt"
+        ],
+        "transactions": [
+          "Tanggal",
+          "Keterangan",
+          "Kategori",
+          "Jumlah"
+        ],
+        "insights": [
+          "Pengeluaran makan naik 12%",
+          "Anggaran hiburan tersisa Rp 300 rb"
+        ]
+      }
+    }
+  ]
+}

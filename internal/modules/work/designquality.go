@@ -21,7 +21,7 @@ var QualityDimensions = []string{"hierarchy", "composition", "spacing", "density
 // dimensionOf maps a finding category onto a dimension; the rest count as
 // composition.
 var dimensionOf = map[string]string{"hierarchy": "hierarchy", "duplicate_action": "hierarchy", "spacing": "spacing", "density": "density",
-	"responsive": "responsive", "overflow": "responsive", "navigation": "navigation", "ai_slop": "ai_slop", "theme": "theme", "reference": "reference"}
+	"responsive": "responsive", "overflow": "responsive", "navigation": "navigation", "ai_slop": "ai_slop", "theme": "theme", "reference": "reference", "template": "composition"}
 
 var penalty = map[string]int{"critical": 40, "major": 25, "minor": 10}
 
@@ -122,12 +122,12 @@ func overall(d map[string]int) int {
 
 // measure scores the pages from their rule findings, their consistency
 // with the theme (nil: none) and the critic's findings.
-func measure(pages []core.Page, domain string, theme *core.Theme, critic []core.QAIssue) *core.DesignQuality {
+func measure(pages []core.Page, c designCtx, critic []core.QAIssue) *core.DesignQuality {
 	q := &core.DesignQuality{Dimensions: map[string]int{}}
 	sums := map[string]int{}
 	total := 0
 	for _, pg := range pages {
-		issues := slices.Concat(LintPage(pg, domain), ThemeLint(pg, theme), ReferenceLint(pg, theme))
+		issues := pageIssues(pg, c)
 		for _, is := range critic {
 			if is.PageID == pg.ID {
 				issues = append(issues, is)
@@ -165,7 +165,11 @@ func measure(pages []core.Page, domain string, theme *core.Theme, critic []core.
 
 // ScorePages is the rule score of one design version.
 func ScorePages(pages []core.Page, domain string, theme *core.Theme) core.QualityScore {
-	q := measure(pages, domain, theme, nil)
+	return scorePages(pages, designCtx{domain: domain, theme: theme})
+}
+
+func scorePages(pages []core.Page, c designCtx) core.QualityScore {
+	q := measure(pages, c, nil)
 	return core.QualityScore{Overall: q.Overall, Dimensions: q.Dimensions, Blockers: len(q.Reasons)}
 }
 
@@ -206,10 +210,13 @@ func MeasureDesign(p *core.Project) *core.DesignQuality {
 			}
 		}
 	}
-	theme := currentTheme(p)
-	q := measure(d.Pages, d.Domain, theme, critic)
-	if is := themeDrift(d, theme); is != nil {
+	c := lintCtx(p)
+	q := measure(d.Pages, c, critic)
+	if is := themeDrift(d, c.theme); is != nil {
 		q.Findings = append(q.Findings, *is) // about the whole design: listed, not scored
+	}
+	if is := templateUnused(p); is != nil {
+		q.Findings = append(q.Findings, *is)
 	}
 	planned := !slices.ContainsFunc(d.Pages, func(pg core.Page) bool { return pg.Intent == nil || pg.Plan == nil })
 	switch {
@@ -253,8 +260,8 @@ func qualityVerdict(before, after core.QualityScore) string {
 // records it on the active check. A patch that lowers the score or adds a
 // blocker is rejected.
 func comparePatch(p *core.Project, after []core.Page) error {
-	theme := currentTheme(p)
-	c := core.QualityComparison{Before: ScorePages(p.Design.Pages, p.Design.Domain, theme), After: ScorePages(after, p.Design.Domain, theme)}
+	lc := lintCtx(p)
+	c := core.QualityComparison{Before: scorePages(p.Design.Pages, lc), After: scorePages(after, lc)}
 	c.Verdict = qualityVerdict(c.Before, c.After)
 	c.Rejected = c.Verdict == "degraded"
 	if qa, _ := ActiveQA(p.Design); qa != nil {

@@ -1,0 +1,39 @@
+{
+  "id": "master-detail",
+  "name": "Master Detail",
+  "category": "workspace",
+  "intent": "Memilih satu record dari daftar lalu membaca dan mengubahnya, daftar tetap terlihat di desktop.",
+  "characteristics": [
+    "list and detail together",
+    "record focused"
+  ],
+  "suitable_for": {
+    "roles": [
+      "sales",
+      "account manager",
+      "agent"
+    ],
+    "tasks": [
+      "process",
+      "inspect"
+    ],
+    "frequency": "medium",
+    "density": "medium",
+    "page_kinds": [
+      "master-detail",
+      "detail",
+      "list"
+    ],
+    "keywords": [
+      "crm",
+      "pelanggan",
+      "customer",
+      "lead",
+      "prospek",
+      "kontak",
+      "contact",
+      "deal",
+      "record"
+    ]
+  }
+}

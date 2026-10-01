@@ -1,0 +1,44 @@
+{
+  "layout_pattern": {
+    "strategies": [
+      "focused"
+    ],
+    "navigation": "none",
+    "density": "spacious",
+    "structure": "Logo / form / aksi utama / tautan sekunder, satu kolom sempit di tengah"
+  },
+  "information_hierarchy": [
+    "identitas produk (logo)",
+    "form",
+    "aksi utama (submit form)",
+    "tautan sekunder (lupa sandi, daftar)"
+  ],
+  "component_composition": [
+    {
+      "region": "title",
+      "role": "supporting",
+      "type": "header",
+      "area": "main",
+      "purpose": "Judul singkat: apa yang dimasuki"
+    },
+    {
+      "region": "form",
+      "role": "primary",
+      "type": "form",
+      "area": "main",
+      "purpose": "Field minimal; submit form adalah satu-satunya aksi utama"
+    },
+    {
+      "region": "alt",
+      "role": "supporting",
+      "type": "button",
+      "area": "main",
+      "purpose": "Tautan sekunder: lupa kata sandi atau daftar"
+    }
+  ],
+  "responsive_strategy": {
+    "strategy": "same",
+    "desktop": "Panel sempit di tengah layar",
+    "mobile": "Panel yang sama selebar layar"
+  }
+}

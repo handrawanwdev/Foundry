@@ -109,7 +109,7 @@ export interface CanvasOp {
   fields?: Partial<Record<"name" | "purpose" | "kind" | "density" | "frame" | "nav" | "width", string>>;
 }
 export interface VersionSummary { id: number; source: string; note?: string; quality?: number; pages: number; theme?: string; at: string; current?: boolean }
-export interface VersionComparison { from: number; to: number; changes: DesignChange[] | null; system_changed?: boolean; theme?: [string, string]; flows_changed?: string[] }
+export interface VersionComparison { from: number; to: number; changes: DesignChange[] | null; system_changed?: boolean; theme?: [string, string]; template?: [string, string]; flows_changed?: string[] }
 export interface ProtoLink { to: string; via: string; kind: "target" | "nav" | "back" | "primary" }
 export interface ProtoPage { id: string; name: string; role?: string; platform?: string; route?: string; entry?: boolean; links: ProtoLink[] }
 export interface ProtoFlow { id: string; name: string; steps: string[]; gaps?: string[] }
@@ -129,6 +129,23 @@ export interface Design {
   qa?: DesignQA; // visual critic of a newly generated design
   quality?: DesignQuality;
   theme?: ThemeContext; // nil on designs made before themes
+  template?: TemplateChoice; // nil on designs made before templates or when none fits
+}
+// A design template: a proven UX pattern (structure), never a page to copy.
+export interface TemplateRegion { region: string; role: "primary" | "secondary" | "supporting" | "action" | "navigation"; type: string; area: string; purpose: string }
+export interface DesignTemplate {
+  id: string; name: string; category: string; intent: string; characteristics: string[];
+  suitable_for: { domains?: string[]; roles?: string[]; tasks?: string[]; frequency?: string; density?: string; page_kinds: string[]; keywords?: string[] };
+  layout_pattern: { strategies: string[]; navigation: string; density: string; structure: string };
+  information_hierarchy: string[];
+  component_composition: TemplateRegion[];
+  responsive_strategy: { strategy: string; desktop: string; mobile: string };
+  quality_rules: { expected_behavior: string[]; avoid: string[]; quality_checks?: string[] };
+}
+export interface TemplateChoice { id: string; name: string; secondary?: string; source: "ai" | "auto"; reasons?: string[] }
+export interface TemplateGallery {
+  templates: DesignTemplate[] | null; previews: Record<string, Page>; domain?: string;
+  system?: DesignSystem; theme?: ThemeContext; recommended?: TemplateChoice; invalid?: ThemeProblem[] | null;
 }
 // The theme a design follows, as the renderer reads it.
 export interface ThemeContext {

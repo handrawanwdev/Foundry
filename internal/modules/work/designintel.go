@@ -157,6 +157,19 @@ var domainSignals = map[string]*regexp.Regexp{
 
 // DetectDomain picks the domain the product text names most; "" when none.
 func DetectDomain(p *core.Project) string {
+	text := productText(p)
+	best, n := "", 0
+	for _, dom := range Domains {
+		if c := len(domainSignals[dom].FindAllString(text, -1)); c > n {
+			best, n = dom, c
+		}
+	}
+	return best
+}
+
+// productText is what the product is about: the story, the discovery and
+// the features.
+func productText(p *core.Project) string {
 	var b strings.Builder
 	b.WriteString(p.Story)
 	if d := p.Discovery; d != nil {
@@ -165,14 +178,7 @@ func DetectDomain(p *core.Project) string {
 	for _, f := range p.Features {
 		b.WriteString(" " + f.Name + " " + f.Description)
 	}
-	text := b.String()
-	best, n := "", 0
-	for _, dom := range Domains {
-		if c := len(domainSignals[dom].FindAllString(text, -1)); c > n {
-			best, n = dom, c
-		}
-	}
-	return best
+	return b.String()
 }
 
 // domainProfiles are constraints and preferences, never a fixed layout.
@@ -339,15 +345,29 @@ func LintDesign(p *core.Project, ids []string) []core.QAIssue {
 		return nil
 	}
 	var out []core.QAIssue
-	theme := currentTheme(p)
+	c := lintCtx(p)
 	for _, pg := range p.Design.Pages {
 		if len(ids) == 0 || slices.Contains(ids, pg.ID) {
-			out = append(out, LintPage(pg, p.Design.Domain)...)
-			out = append(out, ThemeLint(pg, theme)...)
-			out = append(out, ReferenceLint(pg, theme)...)
+			out = append(out, pageIssues(pg, c)...)
 		}
 	}
 	return out
+}
+
+// designCtx is what a page is checked against besides the design rules.
+type designCtx struct {
+	domain    string
+	theme     *core.Theme
+	templates []*core.DesignTemplate
+}
+
+func lintCtx(p *core.Project) designCtx {
+	return designCtx{domain: p.Design.Domain, theme: currentTheme(p), templates: currentTemplates(p)}
+}
+
+// pageIssues: the design rules, the theme, the reference and the template.
+func pageIssues(pg core.Page, c designCtx) []core.QAIssue {
+	return slices.Concat(LintPage(pg, c.domain), ThemeLint(pg, c.theme), ReferenceLint(pg, c.theme), TemplateLint(pg, c.templates))
 }
 
 // LintPage lists where one page's IR breaks the design rules. Findings are

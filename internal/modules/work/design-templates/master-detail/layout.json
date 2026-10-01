@@ -1,0 +1,58 @@
+{
+  "layout_pattern": {
+    "strategies": [
+      "master-detail",
+      "list"
+    ],
+    "navigation": "side",
+    "density": "comfortable",
+    "structure": "Daftar item | detail item terpilih"
+  },
+  "information_hierarchy": [
+    "detail record terpilih",
+    "daftar record",
+    "aksi pada record"
+  ],
+  "component_composition": [
+    {
+      "region": "nav",
+      "role": "navigation",
+      "type": "nav",
+      "area": "side",
+      "purpose": "Navigasi antar data"
+    },
+    {
+      "region": "title",
+      "role": "supporting",
+      "type": "header",
+      "area": "top",
+      "purpose": "Nama data"
+    },
+    {
+      "region": "master",
+      "role": "secondary",
+      "type": "list",
+      "area": "side",
+      "purpose": "Daftar record dengan status"
+    },
+    {
+      "region": "detail",
+      "role": "primary",
+      "type": "section",
+      "area": "main",
+      "purpose": "Record terpilih"
+    },
+    {
+      "region": "act",
+      "role": "action",
+      "type": "button",
+      "area": "main",
+      "purpose": "Aksi utama pada record"
+    }
+  ],
+  "responsive_strategy": {
+    "strategy": "list_then_detail",
+    "desktop": "Daftar + detail berdampingan",
+    "mobile": "Daftar, lalu detail di halaman sendiri"
+  }
+}

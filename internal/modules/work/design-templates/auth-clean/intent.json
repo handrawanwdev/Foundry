@@ -1,0 +1,36 @@
+{
+  "id": "auth-clean",
+  "name": "Auth Clean",
+  "category": "auth",
+  "intent": "Masuk, daftar atau pulihkan akun dengan satu tugas dan gangguan minimal.",
+  "characteristics": [
+    "focused",
+    "minimal",
+    "single action",
+    "low distraction"
+  ],
+  "suitable_for": {
+    "roles": [],
+    "tasks": [
+      "authenticate"
+    ],
+    "frequency": "low",
+    "density": "low",
+    "page_kinds": [
+      "auth"
+    ],
+    "keywords": [
+      "login",
+      "masuk",
+      "sign in",
+      "sign up",
+      "register",
+      "registrasi",
+      "daftar akun",
+      "lupa password",
+      "lupa kata sandi",
+      "reset password",
+      "otp"
+    ]
+  }
+}

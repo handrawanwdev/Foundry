@@ -1,0 +1,68 @@
+{
+  "examples": [
+    {
+      "domain": "ticketing",
+      "product": "Helpdesk tiket",
+      "regions": {
+        "nav": "Menu",
+        "toolbar": "Tiket saya",
+        "queue": "Antrean tiket",
+        "detail": "Percakapan tiket #1042",
+        "act": "Balas",
+        "context": "Pelanggan & SLA"
+      },
+      "items": {
+        "nav": [
+          "Tiket",
+          "Pelanggan",
+          "Laporan"
+        ],
+        "queue": [
+          "#1042 Gagal bayar · SLA 2j",
+          "#1041 Akun terkunci · SLA 5j",
+          "#1039 Refund · SLA 1h"
+        ],
+        "detail": [
+          "Budi: pembayaran gagal tiga kali",
+          "Agen: sedang kami cek"
+        ],
+        "context": [
+          "Budi Santoso · Premium",
+          "SLA tersisa 2 jam"
+        ]
+      }
+    },
+    {
+      "domain": "admin_operations",
+      "product": "Antrean persetujuan",
+      "regions": {
+        "nav": "Menu",
+        "toolbar": "Persetujuan masuk",
+        "queue": "Permintaan menunggu",
+        "detail": "Permintaan PO-2210",
+        "act": "Setujui",
+        "context": "Riwayat pemohon"
+      },
+      "items": {
+        "nav": [
+          "Persetujuan",
+          "Pemasok",
+          "Laporan"
+        ],
+        "queue": [
+          "PO-2210 Laptop · Rp 48 jt",
+          "PO-2209 Kursi · Rp 6 jt",
+          "PO-2207 Lisensi · Rp 12 jt"
+        ],
+        "detail": [
+          "10 laptop untuk tim data",
+          "Anggaran Q4 tersisa Rp 120 jt"
+        ],
+        "context": [
+          "Rina · Divisi Data",
+          "4 permintaan disetujui tahun ini"
+        ]
+      }
+    }
+  ]
+}

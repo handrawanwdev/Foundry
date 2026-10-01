@@ -1,0 +1,19 @@
+{
+  "quality_rules": {
+    "expected_behavior": [
+      "hierarki resource selalu terlihat di desktop",
+      "editor mendapat ruang terbesar",
+      "log dekat dengan yang dihasilkannya"
+    ],
+    "avoid": [
+      "hero_section",
+      "marketing_section",
+      "large_cards",
+      "decorative_chart"
+    ],
+    "quality_checks": [
+      "Teks teknis memakai font monospace",
+      "Status deploy jelas"
+    ]
+  }
+}

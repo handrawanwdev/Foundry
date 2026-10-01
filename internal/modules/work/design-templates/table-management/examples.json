@@ -1,0 +1,55 @@
+{
+  "examples": [
+    {
+      "domain": "admin_operations",
+      "product": "Inventori gudang",
+      "regions": {
+        "nav": "Menu",
+        "toolbar": "Stok barang",
+        "create": "Tambah barang",
+        "filters": "Cari SKU atau nama",
+        "records": "Daftar barang",
+        "pages": "1–20 dari 312"
+      },
+      "items": {
+        "nav": [
+          "Barang",
+          "Gudang",
+          "Mutasi"
+        ],
+        "records": [
+          "SKU",
+          "Nama",
+          "Gudang",
+          "Stok",
+          "Status"
+        ]
+      }
+    },
+    {
+      "domain": "",
+      "product": "Data pengguna",
+      "regions": {
+        "nav": "Menu",
+        "toolbar": "Pengguna",
+        "create": "Undang pengguna",
+        "filters": "Cari nama atau email",
+        "records": "Daftar pengguna",
+        "pages": "1–20 dari 86"
+      },
+      "items": {
+        "nav": [
+          "Pengguna",
+          "Peran",
+          "Audit"
+        ],
+        "records": [
+          "Nama",
+          "Email",
+          "Peran",
+          "Status"
+        ]
+      }
+    }
+  ]
+}

@@ -214,6 +214,16 @@ func (s *Server) Handler() http.Handler {
 		themes, invalid := work.Themes(dir)
 		return map[string]any{"themes": themes, "invalid": invalid}, nil
 	})
+	// Design templates: the library with previews for one domain and theme
+	// (default: the open project's).
+	api("GET /api/v1/design-templates", func(r *http.Request) (any, error) {
+		var p *core.Project
+		if svc, err := s.service(); err == nil {
+			p, _ = svc.Store.Load()
+		}
+		q := r.URL.Query()
+		return work.Gallery(p, q.Get("theme"), q.Get("domain")), nil
+	})
 	api("PUT /api/v1/project/theme", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct{ Theme string }
 		if err := decode(r, &in); err != nil {

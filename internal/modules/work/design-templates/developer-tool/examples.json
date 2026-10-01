@@ -1,0 +1,39 @@
+{
+  "examples": [
+    {
+      "domain": "developer_tools",
+      "product": "Manajemen API",
+      "regions": {
+        "nav": "Menu",
+        "title": "payments-api · production",
+        "act": "Deploy",
+        "tree": "Resource",
+        "editor": "Konfigurasi POST /charges",
+        "logs": "Log"
+      },
+      "items": {
+        "nav": [
+          "Proyek",
+          "Deploy",
+          "Pengaturan"
+        ],
+        "tree": [
+          "endpoints/",
+          "POST /charges",
+          "GET /charges/:id",
+          "config/"
+        ],
+        "editor": [
+          "timeout: 30s",
+          "retry: 3",
+          "auth: api_key"
+        ],
+        "logs": [
+          "12:01 200 POST /charges 84ms",
+          "12:01 402 POST /charges 61ms",
+          "12:00 200 GET /charges/ch_19 12ms"
+        ]
+      }
+    }
+  ]
+}

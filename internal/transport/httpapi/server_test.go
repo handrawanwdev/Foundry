@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -150,5 +151,26 @@ func TestDesignVersionRoutes(t *testing.T) {
 	}
 	if w := do("POST", "/api/v1/project/design/versions/1/restore", ""); w.Code != http.StatusConflict {
 		t.Fatalf("restore without design: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestDesignTemplateRoute(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	h := New(nil, "/bin/foundry").Handler()
+	r := httptest.NewRequest("GET", "/api/v1/design-templates?theme=sakura-light&domain=ticketing", nil)
+	r.Host = "127.0.0.1:8080"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	var g struct {
+		Templates []struct{ ID string }
+		Previews  map[string]struct{ Name string }
+		Theme     struct{ ID string }
+		Domain    string
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &g); w.Code != 200 || err != nil {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if len(g.Templates) != 8 || g.Theme.ID != "sakura-light" || g.Domain != "ticketing" || g.Previews["workspace-agent"].Name != "Helpdesk tiket" {
+		t.Fatalf("gallery = %+v", g)
 	}
 }

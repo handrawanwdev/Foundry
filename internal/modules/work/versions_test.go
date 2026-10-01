@@ -59,7 +59,7 @@ func TestVersionsCapped(t *testing.T) {
 	p := canvasProject()
 	p.Dir = t.TempDir()
 	for i := range MaxDesignVersions + 3 {
-		p.Design.Pages[1].Purpose = string(rune('a' + i%26)) + string(rune('a'+i/26))
+		p.Design.Pages[1].Purpose = string(rune('a'+i%26)) + string(rune('a'+i/26))
 		if _, err := RecordVersion(p, "canvas", ""); err != nil {
 			t.Fatal(err)
 		}

@@ -36,12 +36,13 @@ type VersionSummary struct {
 
 // VersionComparison is what changed from one version to another.
 type VersionComparison struct {
-	From    int                 `json:"from"`
-	To      int                 `json:"to"` // 0 = the current design
-	Changes []core.DesignChange `json:"changes"`
-	System  bool                `json:"system_changed,omitempty"`
-	Theme   [2]string           `json:"theme,omitempty"` // before, after; empty when unchanged
-	Flows   []string            `json:"flows_changed,omitempty"`
+	From     int                 `json:"from"`
+	To       int                 `json:"to"` // 0 = the current design
+	Changes  []core.DesignChange `json:"changes"`
+	System   bool                `json:"system_changed,omitempty"`
+	Theme    [2]string           `json:"theme,omitempty"` // before, after; empty when unchanged
+	Template [2]string           `json:"template,omitempty"`
+	Flows    []string            `json:"flows_changed,omitempty"`
 }
 
 func versionsPath(dir string) string {
@@ -83,7 +84,7 @@ func saveVersions(dir string, vs []core.DesignVersion) error {
 // snapshot is the current design as a version (no id yet).
 func snapshot(p *core.Project) core.DesignVersion {
 	d := p.Design
-	v := core.DesignVersion{Pages: d.Pages, System: d.System, Theme: d.Theme, Flows: map[string][]string{}}
+	v := core.DesignVersion{Pages: d.Pages, System: d.System, Theme: d.Theme, Template: d.Template, Flows: map[string][]string{}}
 	for _, fl := range p.Flows {
 		v.Flows[fl.ID] = fl.PageIDs
 	}
@@ -98,13 +99,28 @@ func snapshot(p *core.Project) core.DesignVersion {
 // same hash whatever its source.
 func versionHash(v core.DesignVersion) string {
 	b, _ := json.Marshal(struct {
-		Pages  []core.Page
-		System *core.DesignSystem
-		Theme  string
-		Flows  map[string][]string
-	}{v.Pages, v.System, themeID(v.Theme), v.Flows})
+		Pages    []core.Page
+		System   *core.DesignSystem
+		Theme    string
+		Flows    map[string][]string
+		Template string `json:",omitempty"`
+	}{v.Pages, v.System, themeID(v.Theme), v.Flows, templateID(v.Template)})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
+}
+
+func templateID(t *core.TemplateChoice) string {
+	if t == nil {
+		return ""
+	}
+	return t.ID
+}
+
+func templateName(t *core.TemplateChoice) string {
+	if t == nil {
+		return ""
+	}
+	return t.Name
 }
 
 func themeID(t *core.ThemeContext) string {
@@ -197,6 +213,9 @@ func CompareVersions(a, b core.DesignVersion) VersionComparison {
 	if themeID(a.Theme) != themeID(b.Theme) {
 		out.Theme = [2]string{themeName(a.Theme), themeName(b.Theme)}
 	}
+	if templateID(a.Template) != templateID(b.Template) {
+		out.Template = [2]string{templateName(a.Template), templateName(b.Template)}
+	}
 	for id, ids := range b.Flows {
 		if fmt.Sprint(a.Flows[id]) != fmt.Sprint(ids) {
 			out.Flows = append(out.Flows, id)
@@ -227,7 +246,7 @@ func RestoreVersion(p *core.Project, v core.DesignVersion) error {
 	if err := core.ValidateDesign(pages, pages); err != nil {
 		return err
 	}
-	d.Pages, d.System, d.Theme = pages, v.System, v.Theme
+	d.Pages, d.System, d.Theme, d.Template = pages, v.System, v.Theme, v.Template
 	d.Status, d.Screens, d.Scope, d.Rejected, d.QA = core.DesignDraft, nil, nil, "", nil
 	for i := range p.Flows {
 		p.Flows[i].PageIDs = v.Flows[p.Flows[i].ID]

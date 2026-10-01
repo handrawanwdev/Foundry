@@ -1,0 +1,52 @@
+{
+  "id": "workspace-agent",
+  "name": "Workspace Agent",
+  "category": "workspace",
+  "intent": "Ruang kerja untuk memproses item dari antrean berulang kali dengan konteks di samping, tanpa pindah halaman.",
+  "characteristics": [
+    "high frequency",
+    "task focused",
+    "dense"
+  ],
+  "suitable_for": {
+    "domains": [
+      "ticketing",
+      "admin_operations"
+    ],
+    "roles": [
+      "agent",
+      "agen",
+      "support",
+      "cs",
+      "customer service",
+      "operator",
+      "staf"
+    ],
+    "tasks": [
+      "process",
+      "monitor"
+    ],
+    "frequency": "high",
+    "density": "high",
+    "page_kinds": [
+      "workspace",
+      "master-detail",
+      "list",
+      "monitoring"
+    ],
+    "keywords": [
+      "agent",
+      "agen",
+      "antrean",
+      "queue",
+      "tiket",
+      "ticket",
+      "support",
+      "helpdesk",
+      "inbox",
+      "percakapan",
+      "sla",
+      "operasional"
+    ]
+  }
+}

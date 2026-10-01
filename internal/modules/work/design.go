@@ -15,7 +15,9 @@ type designOut struct {
 	Removed []string           `json:"removed"` // revision only: ids of deleted pages
 	Patches []pagePatch        `json:"patches"` // revision only: edits to existing pages
 	Domain  string             `json:"domain"`
-	Flows   []struct {
+	// Template: the designer's template decision (new designs only).
+	Template *templateOut `json:"template"`
+	Flows    []struct {
 		ID      string   `json:"id"`
 		PageIDs []string `json:"page_ids"`
 	} `json:"flows"`
@@ -230,7 +232,7 @@ Write labels in the same language as the features. Do not write code. Do not mod
 		b.WriteString("ROLES:\n" + mustJSON(p.Discovery.Roles) + "\n\n")
 	}
 	theme, _ := ResolveTheme(p)
-	b.WriteString(designRules + "\n" + designKnowledge(DetectDomain(p)) + "\n" + themeKnowledge(theme) + "\n" + designProcess + "\n" + componentRules + renderRules + "\n")
+	b.WriteString(designRules + "\n" + designKnowledge(DetectDomain(p)) + "\n" + themeKnowledge(theme) + "\n" + templateKnowledge(p) + "\n" + designProcess + "\n" + componentRules + renderRules + "\n")
 	system := systemShape
 	if theme != nil {
 		system = themedSystemShape
@@ -238,6 +240,7 @@ Write labels in the same language as the features. Do not write code. Do not mod
 	b.WriteString(`Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
   "domain": "` + strings.Join(Domains, "|") + `|" (the product domain; empty when none fits),
+  "template": {"primary": "template id", "secondary": "template id or empty", "reason": "why it fits: user, task, frequency, density"},
   "system": ` + system + `,
   "pages": [` + pageShape + `],
   "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002"]}]
@@ -296,6 +299,7 @@ func ApplyDesign(p *core.Project, raw string) error {
 		p.Design.System = out.System // the theme gives the tokens; the designer's notes are kept
 		ApplyTheme(p.Design, t, ctx)
 	}
+	p.Design.Template = ChooseTemplate(p, out.Template)
 	p.Tasks, p.Verification = nil, nil
 	return nil
 }

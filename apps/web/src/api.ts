@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, CanvasOp, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, Prototype, TaskStatus, Template, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
+import type { AgentOptions, AIState, Browse, CanvasOp, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, Prototype, TaskStatus, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -30,6 +30,9 @@ export const api = {
   closeProject: () => call("POST", "/projects/close", {}),
   browse: (path?: string) => call<Browse>("GET", `/fs${path ? `?path=${encodeURIComponent(path)}` : ""}`),
   templates: () => call<Template[]>("GET", "/templates"),
+  // Design templates with previews; theme/domain "" = the open project's.
+  designTemplates: (theme = "", domain = "") =>
+    call<TemplateGallery>("GET", `/design-templates?theme=${encodeURIComponent(theme)}&domain=${encodeURIComponent(domain)}`),
   themes: () => call<{ themes: Theme[] | null; invalid: ThemeProblem[] | null }>("GET", "/themes"),
 
   project: () => call<Project>("GET", "/project"),

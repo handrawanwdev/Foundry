@@ -1,0 +1,16 @@
+{
+  "quality_rules": {
+    "expected_behavior": [
+      "record terpilih jelas",
+      "daftar tetap terlihat di desktop",
+      "detail lengkap tanpa pindah halaman"
+    ],
+    "avoid": [
+      "large_cards",
+      "hero_section"
+    ],
+    "quality_checks": [
+      "Mobile tidak menampilkan dua panel sekaligus"
+    ]
+  }
+}

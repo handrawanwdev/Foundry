@@ -1,0 +1,66 @@
+{
+  "layout_pattern": {
+    "strategies": [
+      "workspace",
+      "master-detail"
+    ],
+    "navigation": "side",
+    "density": "compact",
+    "structure": "Navigasi | daftar kerja | detail + konteks"
+  },
+  "information_hierarchy": [
+    "item terpilih (detail kerja)",
+    "antrean item",
+    "konteks pendukung",
+    "aksi cepat"
+  ],
+  "component_composition": [
+    {
+      "region": "nav",
+      "role": "navigation",
+      "type": "nav",
+      "area": "side",
+      "purpose": "Navigasi area kerja"
+    },
+    {
+      "region": "toolbar",
+      "role": "supporting",
+      "type": "header",
+      "area": "top",
+      "purpose": "Judul antrean dan status singkat"
+    },
+    {
+      "region": "queue",
+      "role": "secondary",
+      "type": "list",
+      "area": "side",
+      "purpose": "Antrean: prioritas dan status terbaca sekilas"
+    },
+    {
+      "region": "detail",
+      "role": "primary",
+      "type": "section",
+      "area": "main",
+      "purpose": "Item terpilih: area kerja utama"
+    },
+    {
+      "region": "act",
+      "role": "action",
+      "type": "button",
+      "area": "main",
+      "purpose": "Aksi cepat pada item terpilih"
+    },
+    {
+      "region": "context",
+      "role": "supporting",
+      "type": "card",
+      "area": "aside",
+      "purpose": "Konteks pendukung: profil, riwayat, status"
+    }
+  ],
+  "responsive_strategy": {
+    "strategy": "list_then_detail",
+    "desktop": "Daftar, detail dan konteks berdampingan",
+    "mobile": "Daftar membuka detail; konteks di bawah detail"
+  }
+}

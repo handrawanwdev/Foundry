@@ -9,18 +9,19 @@ import { useWorkbench } from "../store/workbench";
 import { api } from "../api";
 import type { DesignHandoff, PageStates, Project } from "../types";
 import { ThemeGallery } from "../components/ThemeGallery";
+import { TemplateLibrary } from "../components/TemplateGallery";
 import { Features, PlatformStructure, Summary } from "./DesignInfo";
 import { CanvasComponent, CanvasPage, PrototypeMap, Versions } from "../components/Canvas";
 
 type Mode = "pratinjau" | "prototipe" | "tinjau";
-type Info = "fitur" | "platform" | "kebutuhan" | "tema" | "peta" | "versi";
+type Info = "fitur" | "platform" | "kebutuhan" | "tema" | "template" | "peta" | "versi";
 
 const MODES: [Mode, string][] = [["pratinjau", "Pratinjau"], ["prototipe", "Prototipe"], ["tinjau", "Tinjau"]];
 const STATES: [PageState, string, keyof PageStates | null][] = [
   ["normal", "Normal", null], ["loading", "Memuat", "loading"], ["empty", "Kosong", "empty"],
   ["no_results", "Tanpa hasil", "no_results"], ["error", "Error", "error"], ["success", "Berhasil", "success"],
 ];
-const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Struktur"], ["kebutuhan", "Kebutuhan"], ["tema", "Theme"], ["peta", "Peta Prototipe"], ["versi", "Versi"]];
+const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Struktur"], ["kebutuhan", "Kebutuhan"], ["tema", "Theme"], ["template", "Template"], ["peta", "Peta Prototipe"], ["versi", "Versi"]];
 // Explorer deep links use ?tab=fitur|platform|ringkasan.
 const TAB_INFO: Record<string, Info> = { fitur: "fitur", platform: "platform", ringkasan: "kebutuhan" };
 
@@ -174,6 +175,7 @@ function Workspace({ project }: { project: Project }) {
             : info === "platform" ? <PlatformStructure project={project} />
             : info === "kebutuhan" ? <Summary project={project} />
             : info === "tema" ? <div className="info"><h1>Theme</h1><ThemeGallery project={project} /></div>
+            : info === "template" ? <TemplateLibrary project={project} />
             : info === "peta" ? <PrototypeMap project={project} onOpen={(id) => { setMode("pratinjau"); show(id); }} onTry={(id) => { setMode("prototipe"); setInfo(null); startFlow(id, true); }} />
             : info === "versi" ? <Versions project={project} onOpen={(id) => { setMode("pratinjau"); show(id); }} />
             : mode === "tinjau" ? (

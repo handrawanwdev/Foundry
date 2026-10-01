@@ -1,0 +1,18 @@
+{
+  "quality_rules": {
+    "expected_behavior": [
+      "area kerja utama selalu terlihat",
+      "konteks tersedia tanpa pindah halaman",
+      "aksi cepat mudah dijangkau"
+    ],
+    "avoid": [
+      "hero_section",
+      "marketing_section",
+      "large_cards"
+    ],
+    "quality_checks": [
+      "Item terpilih jelas di daftar",
+      "Status dan prioritas terbaca tanpa membuka item"
+    ]
+  }
+}

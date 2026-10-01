@@ -198,6 +198,9 @@ type Design struct {
 	// Theme is the theme the design follows: System holds its tokens, the
 	// renderer reads its style. Nil on designs made before themes.
 	Theme *ThemeContext `json:"theme,omitempty"`
+	// Template is the UX pattern the pages are structured on. Nil on
+	// designs made before templates or when none fits.
+	Template *TemplateChoice `json:"template,omitempty"`
 }
 
 // DesignQuality is the measured quality of the current design.
@@ -742,16 +745,17 @@ func (p *Project) Busy() bool {
 // .foundry/design-versions.json, apart from project.json; restoring one is
 // a design change like any other.
 type DesignVersion struct {
-	ID      int                 `json:"id"`
-	Source  string              `json:"source"` // generate | revision | qa | reference | theme | canvas | keep | undo | restore
-	Note    string              `json:"note,omitempty"`
-	Hash    string              `json:"hash"`
-	Quality int                 `json:"quality,omitempty"`
-	At      time.Time           `json:"at"`
-	Pages   []Page              `json:"pages"`
-	System  *DesignSystem       `json:"system,omitempty"`
-	Theme   *ThemeContext       `json:"theme,omitempty"`
-	Flows   map[string][]string `json:"flows,omitempty"`
+	ID       int                 `json:"id"`
+	Source   string              `json:"source"` // generate | revision | qa | reference | theme | canvas | keep | undo | restore
+	Note     string              `json:"note,omitempty"`
+	Hash     string              `json:"hash"`
+	Quality  int                 `json:"quality,omitempty"`
+	At       time.Time           `json:"at"`
+	Pages    []Page              `json:"pages"`
+	System   *DesignSystem       `json:"system,omitempty"`
+	Theme    *ThemeContext       `json:"theme,omitempty"`
+	Flows    map[string][]string `json:"flows,omitempty"`
+	Template *TemplateChoice     `json:"template,omitempty"`
 }
 
 // LockAll is held by a task that may touch anything in the project.

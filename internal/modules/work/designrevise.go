@@ -88,6 +88,9 @@ Write labels in the same language as the design. Do not write code. Do not modif
 	if open {
 		// A general request may add pages or fill page contracts.
 		b.WriteString("DESIGN RULES (only for new pages and for components or fields you add or update):\n" + designRules + "\n" + designKnowledge(d.Domain) + "\n" + themeKnowledge(currentTheme(p)) + "\n")
+		for _, t := range currentTemplates(p) {
+			b.WriteString("DESIGN TEMPLATE the pages follow (structure new pages of its kinds with it):\n" + templateDetail(*t, d.Domain))
+		}
 		b.WriteString("FEATURES:\n" + mustJSON(p.Features) + "\n\nFLOWS:\n" + mustJSON(p.Flows) + "\n\n")
 		b.WriteString("A new page has this shape:\n" + pageShape + "\n\n")
 		b.WriteString("DESIGN SYSTEM (changeable, same shape):\n" + mustJSON(d.System) + "\n\n")

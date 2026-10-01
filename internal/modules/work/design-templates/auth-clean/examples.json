@@ -1,0 +1,19 @@
+{
+  "examples": [
+    {
+      "domain": "",
+      "product": "Aplikasi apa pun",
+      "regions": {
+        "title": "Masuk ke akun",
+        "form": "Masuk",
+        "alt": "Lupa kata sandi?"
+      },
+      "items": {
+        "form": [
+          "Email",
+          "Kata sandi"
+        ]
+      }
+    }
+  ]
+}

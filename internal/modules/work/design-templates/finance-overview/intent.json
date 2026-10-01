@@ -1,0 +1,50 @@
+{
+  "id": "finance-overview",
+  "name": "Finance Overview",
+  "category": "finance",
+  "intent": "Posisi keuangan yang dapat dipercaya: saldo dulu, lalu aset, transaksi dan insight.",
+  "characteristics": [
+    "trust",
+    "clarity",
+    "progress"
+  ],
+  "suitable_for": {
+    "domains": [
+      "finance"
+    ],
+    "roles": [
+      "nasabah",
+      "akuntan",
+      "accountant",
+      "investor",
+      "bendahara"
+    ],
+    "tasks": [
+      "overview",
+      "analyze",
+      "browse"
+    ],
+    "frequency": "medium",
+    "density": "medium",
+    "page_kinds": [
+      "dashboard",
+      "analytics",
+      "report",
+      "list"
+    ],
+    "keywords": [
+      "saldo",
+      "balance",
+      "wallet",
+      "dompet",
+      "rekening",
+      "akuntansi",
+      "accounting",
+      "investasi",
+      "investment",
+      "transaksi",
+      "keuangan",
+      "anggaran"
+    ]
+  }
+}

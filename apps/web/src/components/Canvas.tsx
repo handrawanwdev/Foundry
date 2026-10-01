@@ -134,8 +134,9 @@ export function Versions({ project, onOpen }: { project: Project; onOpen: (pageI
       {cmp && (
         <section className="version-compare">
           <h4>v{cmp.from} → sekarang</h4>
-          {!cmp.changes?.length && !cmp.system_changed && !cmp.theme && !cmp.flows_changed?.length && <p className="muted small">Tidak ada perbedaan halaman.</p>}
+          {!cmp.changes?.length && !cmp.system_changed && !cmp.theme && !cmp.template && !cmp.flows_changed?.length && <p className="muted small">Tidak ada perbedaan halaman.</p>}
           {cmp.theme && <p className="small">Theme: {cmp.theme[0] || "—"} → {cmp.theme[1] || "—"}</p>}
+          {cmp.template && <p className="small">Template: {cmp.template[0] || "—"} → {cmp.template[1] || "—"}</p>}
           {cmp.system_changed && <p className="small">Design system berubah</p>}
           {!!cmp.flows_changed?.length && <p className="small">Alur berubah: {cmp.flows_changed.join(", ")}</p>}
           <ul className="plain">

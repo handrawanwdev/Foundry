@@ -1,0 +1,19 @@
+{
+  "quality_rules": {
+    "expected_behavior": [
+      "ringkasan sebelum detail",
+      "maksimal 3 metrik yang mendorong keputusan",
+      "setiap angka punya pembanding"
+    ],
+    "avoid": [
+      "excessive_stats",
+      "decorative_chart",
+      "large_cards",
+      "hero_section"
+    ],
+    "quality_checks": [
+      "Tiap metrik menjawab: naik atau turun dibanding apa",
+      "Chart hanya bila menjawab pertanyaan"
+    ]
+  }
+}

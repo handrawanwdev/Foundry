@@ -775,3 +775,16 @@ button.danger { color: var(--bad); }
 .version-compare, .proto-map section { margin-top: 1rem; }
 .proto-flow { padding: .4rem 0; border-bottom: 1px solid var(--line); }
 .proto-map .link, .version-compare .link { margin-right: .4rem; }
+
+/* Template library */
+.tpl-filters { display: flex; flex-wrap: wrap; gap: .8rem; margin: .6rem 0; }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .7rem; }
+.tpl-card { cursor: pointer; display: flex; flex-direction: column; align-items: flex-start; gap: .35rem; text-align: left; padding: .6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); min-width: 0; }
+.tpl-card:hover { border-color: var(--muted); }
+.tpl-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.tpl-thumb { display: block; position: relative; width: 320px; max-width: 100%; height: 190px; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; pointer-events: none; }
+.tpl-thumb-inner { position: absolute; top: 0; left: 0; width: 1280px; height: 760px; transform-origin: top left; }
+.tpl-detail { margin-top: 1rem; padding: .8rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.tpl-detail dt { font-weight: 600; margin-top: .5rem; }
+.tpl-detail dd { margin: .15rem 0 0; }
+.tpl-detail ul { margin: 0; padding-left: 1.1rem; }

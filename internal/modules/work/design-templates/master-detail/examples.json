@@ -1,0 +1,32 @@
+{
+  "examples": [
+    {
+      "domain": "",
+      "product": "CRM pelanggan",
+      "regions": {
+        "nav": "Menu",
+        "title": "Pelanggan",
+        "master": "Daftar pelanggan",
+        "detail": "PT Maju Jaya",
+        "act": "Catat aktivitas"
+      },
+      "items": {
+        "nav": [
+          "Pelanggan",
+          "Deal",
+          "Aktivitas"
+        ],
+        "master": [
+          "PT Maju Jaya · Aktif",
+          "CV Sinar · Prospek",
+          "PT Lestari · Tidak aktif"
+        ],
+        "detail": [
+          "Kontak: Andi (Pengadaan)",
+          "Deal berjalan: Rp 240 jt",
+          "Terakhir dihubungi 3 hari lalu"
+        ]
+      }
+    }
+  ]
+}
