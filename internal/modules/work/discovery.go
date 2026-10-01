@@ -23,6 +23,7 @@ const (
 type discoveryOut struct {
 	Name         string             `json:"name"`
 	Discovery    core.Discovery     `json:"discovery"`
+	Blueprint    *core.Blueprint    `json:"blueprint"`
 	Requirements []core.Requirement `json:"requirements"`
 	Features     []core.Feature     `json:"features"`
 	Flows        []core.Flow        `json:"flows"`
@@ -31,9 +32,16 @@ type discoveryOut struct {
 
 func DiscoveryPrompt(p *core.Project) string {
 	var b strings.Builder
-	b.WriteString(`You are the discovery analyst of Foundry. Understand the product idea below BEFORE anything is built.
-Analyze: business, users, roles, features, sub-features, workflows, data, integrations, security, platform and device needs.
-Write every human-readable text in the same language as the story. Do not write code. Do not modify files.
+	b.WriteString(`You are the discovery analyst of Foundry, acting as an Enterprise Solution Architect.
+Understand the product idea below BEFORE anything is built. Do not write application code. Do not modify files.
+Produce a production-grade architecture blueprint that a developer or AI coding agent can follow:
+clear domain modules, data, auth, file storage, workers, performance, and coding rules.
+The system must stay fast, safe, and readable as data and files grow. Do not design a toy that merely runs.
+
+Analyze: business goal, problem, users, roles, workflows, core features, main data, external integrations,
+platform/device, offline, realtime, files, background jobs, read-heavy reports, security.
+
+Write every human-readable text in the same language as the story.
 
 STORY:
 `)
@@ -51,8 +59,18 @@ STORY:
 	}
 	b.WriteString(`Platform kinds allowed: web, android, ios, desktop, backend. Choose them from who uses the product and on which device.
 tech_needs lists only the technical needs the product really has, from: realtime, offline, seo, ai, high_concurrency,
-flexible_schema, transactions, independent_scaling, enterprise. Foundry picks the technology stack from them.
+flexible_schema, transactions, independent_scaling, enterprise, files. Foundry picks the technology stack from them;
+do not choose frameworks, languages, or databases in the blueprint (Foundry decides those).
 Every requirement must be covered by at least one feature. Every feature needs 2-6 concrete sub-features.
+
+Blueprint rules:
+- modules/ are domain boundaries (identity, the core business, files, audit, …), never folders of file types (controllers/, services/).
+- each module owns data, exposes a public interface, and may depend on other modules without cycles.
+- do not put large files in the database; describe object storage when the product has uploads, attachments, exports, or media.
+- processes that are slow (email, reports, export, image, scan, sync, cron) are workers, not API request work.
+- dashboards and reports read summary/read-model, not heavy queries on the transaction tables.
+- authn + RBAC with permission names resource:action.
+- keep the blueprint specific to THIS product; omit unused areas (empty realtime if none, storage.strategy "none" if no files).
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
@@ -60,6 +78,22 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
   "discovery": {"summary": "", "business": "", "users": [""], "roles": [{"name": "", "description": "", "platform": "web"}],
                 "data": ["entity: key fields"], "integrations": [""], "security": [""], "workflows": [""],
                 "tech_needs": ["transactions"]},
+  "blueprint": {
+    "overview": {"goal": "", "users": [""], "capabilities": [""], "core_domain": ""},
+    "platform": {"reason": "", "devices": ["web"], "offline": "none|partial|required", "realtime": "none|needed|critical", "deployment": ""},
+    "architecture": {"pattern": "", "reason": "", "tradeoff": "", "evolve_when": [""], "scale": ""},
+    "modules": [{"id": "identity", "responsibility": "", "data": ["User"], "interface": ["POST /auth/login"], "depends_on": []}],
+    "database": {"entities": [{"name": "User", "fields": ["id","email"], "module": "identity", "relates": []}],
+                 "transactions": "", "indexing": [""]},
+    "storage": {"strategy": "none|object", "types": [""], "security": [""], "processing": [""]},
+    "auth": {"method": "", "hashing": "", "tokens": "", "session": "", "refresh": ""},
+    "authz": {"model": "RBAC", "convention": "resource:action", "permissions": ["appointment:create"]},
+    "realtime": {"needed": false, "events": ["appointment.created"], "retry": ""},
+    "workers": [{"name": "email", "trigger": "queue|cron|event", "job": ""}],
+    "aggregation": {"needed": false, "approach": "", "reads": [""]},
+    "performance": {"pagination": "", "caching": "", "avoid": [""], "indexing": ""},
+    "coding": {"backend": [""], "frontend": [""], "api": {"style": "REST", "versioning": "/api/v1", "errors": "", "pagination": ""}}
+  },
   "requirements": [{"id": "REQ-001", "text": "", "priority": "MUST|SHOULD|COULD"}],
   "features": [{"id": "FEAT-001", "name": "", "description": "", "requirement_ids": ["REQ-001"], "platforms": ["web","backend"],
                 "sub_features": [{"id": "FEAT-001.1", "name": ""}]}],
@@ -158,6 +192,7 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	}
 	d := out.Discovery
 	p.Discovery = &d
+	p.Blueprint = NormalizeBlueprint(out.Blueprint)
 	p.Requirements, p.Features, p.Flows = reqs, feats, flows
 	p.Platform = &core.PlatformPlan{Targets: targets, Reason: out.Platform.Reason}
 	p.Design, p.Tasks, p.Verification = nil, nil, nil

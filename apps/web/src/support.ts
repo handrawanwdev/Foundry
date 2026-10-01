@@ -12,7 +12,7 @@ export function coverage(p: Project): { area: string; count: number }[] {
     { area: "Role", count: p.discovery?.roles?.length ?? 0 },
     { area: "Permission (akses halaman)", count: pages.filter((pg) => pg.access && pg.role).length },
     { area: "Business rules", count: p.requirements?.length ?? 0 },
-    { area: "Module & arsitektur", count: p.structure?.components?.length ?? 0 },
+    { area: "Module & arsitektur", count: p.blueprint?.modules?.length || p.structure?.components?.length || 0 },
     { area: "API", count: pages.filter((pg) => (pg.data?.api ?? []).length > 0).length },
   ];
 }

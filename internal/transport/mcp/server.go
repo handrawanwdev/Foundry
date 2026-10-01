@@ -175,8 +175,9 @@ func obj(props map[string]any, required ...string) map[string]any {
 var str = map[string]any{"type": "string"}
 
 var tools = []tool{
-	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, discovery, platform, structure, technology stack, job, counts.", InputSchema: obj(nil)},
+	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, discovery, architecture blueprint, platform, structure, technology stack, job, counts.", InputSchema: obj(nil)},
 	{Name: "get_requirements", perm: PermRead, Description: "Requirements, features, sub-features and user flows.", InputSchema: obj(nil)},
+	{Name: "get_blueprint", perm: PermRead, Description: "Production architecture blueprint: modules, data, auth, storage, workers, performance, coding rules. Source of truth for implementation.", InputSchema: obj(nil)},
 	{Name: "get_design", perm: PermRead, Description: "Design pages with wireframe components and status.", InputSchema: obj(nil)},
 	{Name: "get_tasks", perm: PermRead, Description: "All tasks (Kanban), optionally filtered by status. Each TODO includes queue: independent (can run now in parallel), queued (file/page held by another task), or waiting_deps.",
 		InputSchema: obj(map[string]any{"status": map[string]any{"type": "string", "enum": []string{"TODO", "IN_PROGRESS", "REVIEW", "DONE", "BLOCKED"}}})},
@@ -235,11 +236,14 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 	switch name {
 	case "get_project":
 		return map[string]any{"name": p.Name, "stage": p.Stage, "story": p.Story, "discovery": p.Discovery,
-			"platform": p.Platform, "structure": p.Structure, "stack": p.Stack, "job": p.Job,
+			"blueprint": p.Blueprint,
+			"platform":  p.Platform, "structure": p.Structure, "stack": p.Stack, "job": p.Job,
 			"schedule": p.Schedule(),
 			"counts":   map[string]int{"requirements": len(p.Requirements), "features": len(p.Features), "tasks": len(p.Tasks)}}, nil
 	case "get_requirements":
 		return map[string]any{"requirements": p.Requirements, "features": p.Features, "flows": p.Flows}, nil
+	case "get_blueprint":
+		return map[string]any{"blueprint": p.Blueprint, "brief": work.ArchitectureBrief(p)}, nil
 	case "get_design":
 		return p.Design, nil
 	case "get_tasks":

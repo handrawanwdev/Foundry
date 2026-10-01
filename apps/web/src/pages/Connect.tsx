@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useNavigate } from "react-router-dom";
+import { AgentsField } from "../components/AgentsField";
 import { ModelPicker } from "../components/ModelPicker";
 import { stepFor } from "../flow";
 import { agentName, agentOptions, useAI } from "../store/ai";
 import { useProject } from "../store/project";
 
 export function ConnectPage() {
-  const { state, connecting, error, connectAgent, connectMCP, disconnect } = useAI();
+  const { state, connecting, error, connectAgent, connectMCP, disconnect, setAgents: saveAgents } = useAI();
   const project = useProject((s) => s.project);
   const nav = useNavigate();
   const [custom, setCustom] = useState("");
@@ -15,6 +16,9 @@ export function ConnectPage() {
   const [picked, setPicked] = useState<string | null>(null);
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
+  const [agents, setAgents] = useState(state?.parallel?.default ?? 3);
+  const parallel = state?.parallel;
+  const maxAgents = parallel?.max ?? 8;
   const chosen = state?.agents.find((a) => a.id === picked);
   // Models come from the CLI when it can list them, so new ones show up
   // without a Foundry update; the preset list shows until then.
@@ -33,6 +37,10 @@ export function ConnectPage() {
       <section className="card narrow center-text">
         <h1>✓ AI siap digunakan</h1>
         <p>Agent: <strong>{agentName(state)}</strong>{agentOptions(state) && <span className="muted"> · {agentOptions(state)}</span>}</p>
+        <div className="agent-opts ready-agents">
+          <AgentsField value={parallel?.agents ?? agents} max={maxAgents} fromEnv={parallel?.from_env}
+            onChange={(n) => { setAgents(n); void saveAgents(n); }} />
+        </div>
         <div className="row center">
           <button className="primary big" onClick={() => nav(project ? stepFor(project.stage).path : "/")}>Mulai</button>
           <button className="ghost" onClick={disconnect}>Ganti AI</button>
@@ -70,7 +78,7 @@ export function ConnectPage() {
       {chosen && (
         <form className="agent-opts" onSubmit={(e) => {
           e.preventDefault();
-          void connectAgent(chosen.id, undefined, { model: model.trim() || undefined, effort: effort || undefined });
+          void connectAgent(chosen.id, undefined, { model: model.trim() || undefined, effort: effort || undefined, agents });
         }}>
           <div className="small mp-field">Model
             <ModelPicker models={(models?.agent === chosen.id && models.list?.length ? models.list : chosen.models) ?? []} loading={loadingModels} value={model} onChange={setModel} />
@@ -83,6 +91,7 @@ export function ConnectPage() {
               </select>
             </label>
           )}
+          <AgentsField value={agents} max={maxAgents} fromEnv={parallel?.from_env} disabled={!!connecting} onChange={setAgents} />
           <button type="submit" className="primary" disabled={!!connecting}>Hubungkan {chosen.name}</button>
         </form>
       )}
@@ -92,7 +101,7 @@ export function ConnectPage() {
         <form className="inline" onSubmit={(e) => {
           e.preventDefault();
           const argv = custom.trim().split(/\s+/).filter(Boolean);
-          if (argv.length) void connectAgent("custom", argv);
+          if (argv.length) void connectAgent("custom", argv, { agents });
         }}>
           <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="mis. my-agent --headless (prompt via stdin)" size={40} />
           <button type="submit" disabled={!!connecting}>Hubungkan</button>
@@ -107,8 +116,11 @@ export function ConnectPage() {
         <div className="mcp-box">
           <p>Tambahkan Foundry ke konfigurasi MCP di AI Host kamu (Claude, Codex, Qwen, Gemini, dll):</p>
           <pre className="code">{JSON.stringify(state?.mcp_config, null, 2)}</pre>
+          <div className="agent-opts">
+            <AgentsField value={agents} max={maxAgents} fromEnv={parallel?.from_env} disabled={!!connecting} onChange={setAgents} />
+          </div>
           {!waitingMCP ? (
-            <button className="primary" disabled={connecting === "mcp"} onClick={connectMCP}>Sudah ditambahkan</button>
+            <button className="primary" disabled={connecting === "mcp"} onClick={() => connectMCP(agents)}>Sudah ditambahkan</button>
           ) : (
             <p className="waiting"><span className="spinner" /> Menunggu AI Host terhubung… buka AI Host dan panggil tool <code>get_project</code>.</p>
           )}

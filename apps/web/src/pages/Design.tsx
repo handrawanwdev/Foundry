@@ -11,20 +11,20 @@ import type { Blocker, DesignHandoff, PageHandoff, PageStates, Project, TechStac
 import { TECH_AREA, techChoice } from "../components/TechStack";
 import { ThemeGallery } from "../components/ThemeGallery";
 import { RegenerateButton, TemplateLibrary } from "../components/TemplateGallery";
-import { Features, PlatformStructure, Summary } from "./DesignInfo";
+import { Architecture, Features, PlatformStructure, Summary } from "./DesignInfo";
 import { CanvasComponent, CanvasPage, CanvasWarnings, Layers, PrototypeMap, Versions } from "../components/Canvas";
 
 type Mode = "pratinjau" | "prototipe" | "kode" | "tinjau";
-type Info = "fitur" | "platform" | "kebutuhan" | "tema" | "template" | "peta" | "versi";
+type Info = "fitur" | "platform" | "kebutuhan" | "arsitektur" | "tema" | "template" | "peta" | "versi";
 
 const MODES: [Mode, string][] = [["pratinjau", "Desain"], ["prototipe", "Prototipe"], ["kode", "Kode"], ["tinjau", "Tinjau"]];
 const STATES: [PageState, string, keyof PageStates | null][] = [
   ["normal", "Normal", null], ["loading", "Memuat", "loading"], ["empty", "Kosong", "empty"],
   ["no_results", "Tanpa hasil", "no_results"], ["error", "Error", "error"], ["success", "Berhasil", "success"],
 ];
-const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Teknologi"], ["kebutuhan", "Kebutuhan"], ["tema", "Theme"], ["template", "Template"], ["peta", "Peta Prototipe"], ["versi", "Versi"]];
-// Explorer deep links use ?tab=fitur|platform|ringkasan.
-const TAB_INFO: Record<string, Info> = { fitur: "fitur", platform: "platform", ringkasan: "kebutuhan" };
+const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Teknologi"], ["kebutuhan", "Kebutuhan"], ["arsitektur", "Arsitektur"], ["tema", "Theme"], ["template", "Template"], ["peta", "Peta Prototipe"], ["versi", "Versi"]];
+// Explorer deep links use ?tab=fitur|platform|ringkasan|arsitektur.
+const TAB_INFO: Record<string, Info> = { fitur: "fitur", platform: "platform", ringkasan: "kebutuhan", arsitektur: "arsitektur" };
 
 // Logical screen width per device; the frame is scaled down to fit.
 const MIN_SCALE = 0.65;
@@ -177,6 +177,7 @@ function Workspace({ project }: { project: Project }) {
           {info === "fitur" ? <Features project={project} />
             : info === "platform" ? <PlatformStructure project={project} />
             : info === "kebutuhan" ? <Summary project={project} />
+            : info === "arsitektur" ? <Architecture project={project} />
             : info === "tema" ? <div className="info"><h1>Theme</h1><ThemeGallery project={project} /></div>
             : info === "template" ? <TemplateLibrary project={project} />
             : info === "peta" ? <PrototypeMap project={project} onOpen={(id) => { setMode("pratinjau"); show(id); }} onTry={(id) => { setMode("prototipe"); setInfo(null); startFlow(id, true); }} />
@@ -306,7 +307,7 @@ function Designing({ project }: { project: Project }) {
     done ? "done" : job?.kind === kind ? (failed ? "failed" : "active") : "todo";
   const steps: [string, string][] = [
     ["Cerita diterima", project.story ? "done" : "todo"],
-    ["Memahami kebutuhan", state("discovery", !!project.discovery)],
+    ["Memahami kebutuhan & blueprint", state("discovery", !!project.discovery)],
     ...(project.reference ? [["Menganalisis referensi " + project.reference.name, state("reference", ["done", "failed"].includes(project.reference.status))] as [string, string]] : []),
     ["Membuat halaman dan alur", state("design", false)],
     ["Siap ditinjau", "todo"],

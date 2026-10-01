@@ -8,6 +8,34 @@ export interface Role { name: string; description: string; platform: string }
 export interface Discovery {
   summary: string; business: string; users: string[]; roles: Role[];
   data: string[]; integrations: string[]; security: string[]; workflows: string[];
+  tech_needs?: string[];
+}
+export interface BlueprintModule {
+  id: string; responsibility: string; data?: string[]; interface?: string[]; depends_on?: string[];
+}
+export interface BlueprintEntity { name: string; fields?: string[]; module?: string; relates?: string[] }
+export interface BlueprintWorker { name: string; trigger: string; job: string }
+export interface Blueprint {
+  overview: { goal: string; users?: string[]; capabilities?: string[]; core_domain: string };
+  platform: { reason: string; devices?: string[]; offline?: string; realtime?: string; deployment?: string };
+  frontend?: { state?: string; server_state?: string; forms?: string; validation?: string; routing?: string; api?: string; components?: string };
+  backend?: { pattern?: string; di?: string; validation?: string; auth?: string; background?: string };
+  database: {
+    engine?: string; orm?: string; migrations?: string; naming?: string; pk?: string; soft_delete?: string;
+    timestamps?: string; audit?: string; entities?: BlueprintEntity[]; transactions?: string; indexing?: string[];
+  };
+  cache?: { use?: string; store?: string[]; never?: string[]; invalidation?: string };
+  architecture: { pattern: string; reason: string; tradeoff?: string; evolve_when?: string[]; scale?: string };
+  modules: BlueprintModule[];
+  storage?: { strategy?: string; provider?: string; upload?: string; types?: string[]; security?: string[]; processing?: string[]; lifecycle?: string; cdn?: string };
+  auth?: { method?: string; hashing?: string; tokens?: string; session?: string; refresh?: string };
+  authz?: { model?: string; convention?: string; permissions?: string[] };
+  realtime?: { needed?: boolean; broker?: string; events?: string[]; retry?: string };
+  workers?: BlueprintWorker[];
+  aggregation?: { needed?: boolean; approach?: string; reads?: string[] };
+  performance: { pagination?: string; caching?: string; avoid?: string[]; indexing?: string };
+  coding: { backend?: string[]; frontend?: string[]; api?: { style?: string; versioning?: string; errors?: string; pagination?: string } };
+  docs?: string[]; workflow?: string[]; change_flow?: string[]; ai_guidelines?: string[];
 }
 export interface Requirement { id: string; text: string; priority: string }
 export interface SubFeature { id: string; name: string }
@@ -239,19 +267,22 @@ export interface Event { at: string; source: string; message: string }
 
 export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string;
-  discovery?: Discovery; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
+  discovery?: Discovery; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
   platform?: PlatformPlan; structure?: Structure; stack?: TechStack; design?: Design; theme?: string; design_template?: string; reference?: DesignReference; tasks: Task[] | null;
   builds: BuildRun[] | null; verification?: Verification; job?: Job; support?: Support; events: Event[] | null; updated_at: string;
   schedule?: Schedule;
 }
 
 export interface AgentInfo { id: string; name: string; binary: string; detected: boolean; path?: string; models: string[] | null; efforts: string[] | null }
-export interface AgentOptions { model?: string; effort?: string }
-export interface Connection { mode: "agent" | "mcp"; agent_id?: string; command?: string[]; model?: string; effort?: string; since: string }
+export interface AgentOptions { model?: string; effort?: string; agents?: number }
+export interface Connection { mode: "agent" | "mcp"; agent_id?: string; command?: string[]; model?: string; effort?: string; agents?: number; since: string }
+export interface Parallel {
+  agents: number; max: number; default: number; from_env: boolean;
+}
 export interface AIState {
   connection: Connection | null; ready: boolean; mcp_alive: boolean;
   mcp: { client: string; dir: string; at: string } | null;
-  agents: AgentInfo[]; mcp_config: unknown;
+  agents: AgentInfo[]; mcp_config: unknown; parallel?: Parallel;
 }
 export interface Template { id: string; name: string; description: string; layout: string[] }
 export interface Browse {

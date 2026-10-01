@@ -2,6 +2,7 @@ package work
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
@@ -31,13 +32,23 @@ Do not write code. Do not modify files.
 	}
 	b.WriteString("PLATFORMS:\n" + mustJSON(p.Platform.Targets) + "\n\n")
 	b.WriteString(structureBrief(p) + "\n")
+	if brief := ArchitectureBrief(p); brief != "" {
+		b.WriteString(brief + "\n")
+	}
 	b.WriteString(`Areas: scaffold, data, api, ui, test, integration. If the project is new, the first task (area "scaffold", feature_id "")
 must create the chosen layout with real build/test tooling (e.g. go.mod, package.json with build/test scripts) so Foundry can verify later tasks.
+Scaffold, data and api tasks follow the architecture blueprint: module folders, layering (controller → service → repository), auth, workers for slow jobs, object storage for files, pagination and indexes as specified.
+Do not plan a different architecture, stack, ORM or folder layout.
 UI tasks implement pages from their handoff: use its route, access, layout (Design IR), data/api, hierarchy, primary and secondary actions,
 interactions, states, validation and responsive behavior, and copy the handoff tests into test_requirements.
 UI acceptance criteria also cover: design system tokens used (no arbitrary values), one primary action, every state shown,
 no horizontal overflow on mobile, labeled inputs and keyboard focus. API tasks cover every api call listed in the page handoffs.
-depends_on lists task ids that must be DONE first. files lists paths likely created or changed.
+depends_on lists task ids that must be DONE first — only true prerequisites (scaffold before the rest; an API before its own tests).
+Do not chain independent features, pages, or modules.
+files lists the fewest concrete file paths this task will create or change (e.g. apps/web/src/pages/Login.tsx). Never a whole tree
+(src, app, packages, services, packages/ui). Two tasks that can run in parallel must not share files or the same page.
+UI tasks: one page per task (page_ids length 1). Two pages = two tasks.
+Only area "scaffold" may touch the whole project. Do not use area "integration" unless the work truly spans every package.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {"tasks": [{"id": "TASK-001", "title": "", "description": "", "area": "api", "requirement_ids": ["REQ-001"], "feature_id": "FEAT-001",
@@ -94,7 +105,7 @@ func ApplyPlan(p *core.Project, raw string) error {
 			continue
 		}
 		nt := core.Task{ID: idMap[t.ID], Title: t.Title, Description: t.Description, Area: strings.ToLower(t.Area),
-			Platform: strings.ToLower(t.Platform), AcceptanceCriteria: t.AcceptanceCriteria, Files: t.Files,
+			Platform: strings.ToLower(t.Platform), AcceptanceCriteria: t.AcceptanceCriteria, Files: normalizeFiles(t.Files),
 			TestRequirements: t.TestRequirements, Status: core.TaskTodo}
 		if !taskAreas[nt.Area] {
 			nt.Area = "api"
@@ -116,6 +127,9 @@ func ApplyPlan(p *core.Project, raw string) error {
 			if p.Page(pg) != nil {
 				nt.PageIDs = append(nt.PageIDs, pg)
 			}
+		}
+		if nt.Area == "ui" && len(nt.PageIDs) > 1 {
+			nt.PageIDs = nt.PageIDs[:1]
 		}
 		for _, d := range t.DependsOn {
 			if m, ok := idMap[d]; ok && m != nt.ID {
@@ -253,6 +267,41 @@ func prefixAll(prefix string, items []string) []string {
 		out[i] = prefix + s
 	}
 	return out
+}
+
+func normalizeFiles(files []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range files {
+		f = strings.TrimPrefix(path.Clean(strings.ReplaceAll(strings.TrimSpace(f), "\\", "/")), "./")
+		if f == "" || f == "." || f == "/" || strings.HasPrefix(f, "../") || strings.Contains(f, "..") {
+			continue
+		}
+		if tooWideFile(f) {
+			continue
+		}
+		if seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	return out
+}
+
+var wideRoots = map[string]bool{
+	"src": true, "app": true, "apps": true, "packages": true, "services": true,
+	"internal": true, "cmd": true, "lib": true, "pkg": true, "web": true,
+	"frontend": true, "backend": true, "mobile": true, "server": true, "client": true,
+}
+
+func tooWideFile(f string) bool {
+	segs := strings.Split(f, "/")
+	file := strings.Contains(segs[len(segs)-1], ".")
+	if len(segs) == 1 && !file {
+		return true
+	}
+	return len(segs) == 2 && !file && wideRoots[segs[0]]
 }
 
 func NextTaskID(p *core.Project) string {

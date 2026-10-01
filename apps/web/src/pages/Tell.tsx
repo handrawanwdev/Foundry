@@ -12,7 +12,7 @@ const EXAMPLES = [
   "Sistem tiket perusahaan: karyawan membuat tiket, tim IT menangani sesuai prioritas dan SLA.",
 ];
 
-const ANALYSIS = ["Bisnis", "Pengguna & peran", "Fitur & sub-fitur", "Alur kerja", "Data", "Integrasi", "Keamanan", "Platform & perangkat", "Struktur project"];
+const ANALYSIS = ["Bisnis", "Pengguna & peran", "Fitur & sub-fitur", "Alur kerja", "Data", "Integrasi", "Keamanan", "Platform & perangkat", "Modul domain", "Auth & izin", "Penyimpanan file", "Worker", "Performa", "Struktur project"];
 
 export function TellPage() {
   const { project, run, pending } = useProject();
@@ -47,7 +47,7 @@ export function TellPage() {
     <section className="card narrow">
       <h1>Apa yang ingin kamu buat?</h1>
       <p className="muted">
-        Ceritakan dengan bahasa biasa. Foundry akan membantu menentukan kebutuhan, fitur, platform, dan struktur aplikasinya.
+        Ceritakan dengan bahasa biasa. Foundry menyusun blueprint arsitektur dulu — modul, data, auth, file, worker — sebelum ada kode.
       </p>
       <textarea
         rows={7}

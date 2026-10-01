@@ -136,7 +136,7 @@ func Escalate(p *core.Project, e core.Escalation) (*core.Escalation, error) {
 // Foundry holds about the project, compacted.
 func knowledge(p *core.Project) map[string]any {
 	k := map[string]any{"name": p.Name, "stage": p.Stage, "discovery": p.Discovery,
-		"requirements": p.Requirements, "features": p.Features, "flows": p.Flows}
+		"blueprint": p.Blueprint, "requirements": p.Requirements, "features": p.Features, "flows": p.Flows}
 	if p.Platform != nil {
 		k["platforms"] = p.Platform.Targets
 	}

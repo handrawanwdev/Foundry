@@ -444,7 +444,7 @@ blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding-left: 1
 .build-head .row { margin-top: 0; }
 .progress { flex: 1; min-width: 240px; }
 .bar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; margin-bottom: .3rem; }
-.bar div { height: 100%; background: var(--ok); transition: width .3s; }
+.bar div { height: 100%; width: 100%; background: var(--ok); transform: scaleX(0); transform-origin: left center; transition: transform .3s; }
 .kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr); gap: .75rem; overflow-x: auto; align-items: start; }
 .column { background: var(--column); border-radius: 12px; padding: .6rem; display: flex; flex-direction: column; gap: .5rem; min-height: 120px; }
 .column-head { font-size: .8rem; font-weight: 600; padding: .2rem .3rem; }
@@ -606,6 +606,8 @@ input:focus, textarea:focus { outline: 1px solid var(--accent); }
 .agent.on { border-color: var(--accent); }
 .agent-opts { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1rem; }
 .agent-opts label { display: flex; flex-direction: column; gap: .2rem; }
+.agent-opts input[type=number] { width: 4.5rem; min-height: 32px; }
+.ready-agents { justify-content: center; margin-top: .75rem; }
 .render-page { margin: 0; min-height: 100vh; }
 .plain-ol { margin: 0; padding-left: 1.1rem; }
 .qa-issues { margin-top: .35rem; }

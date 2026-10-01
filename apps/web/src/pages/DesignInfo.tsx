@@ -3,7 +3,7 @@ import { api } from "../api";
 import { PLATFORM_LABEL } from "../flow";
 import { TechStackPanel } from "../components/TechStack";
 import { useProject } from "../store/project";
-import type { ExistingUI, PlatformKind, PlatformTarget, Project, Template } from "../types";
+import type { Blueprint, ExistingUI, PlatformKind, PlatformTarget, Project, Template } from "../types";
 
 // Secondary views of the design workspace: what the pages are built from.
 
@@ -102,13 +102,15 @@ export function PlatformStructure({ project }: { project: Project }) {
 
 export function Summary({ project }: { project: Project }) {
   const d = project.discovery;
+  const o = project.blueprint?.overview;
   return (
     <div className="info">
       <h1>Kebutuhan</h1>
       <section className="info-sec">
         <h3>Pemahaman Foundry</h3>
-        <p>{d?.summary}</p>
+        <p>{o?.goal || d?.summary}</p>
         <p className="small"><strong>Bisnis:</strong> {d?.business}</p>
+        {o?.core_domain && <p className="small"><strong>Domain:</strong> {o.core_domain}</p>}
         <p className="small"><strong>Peran:</strong> {d?.roles.map((r) => `${r.name} (${PLATFORM_LABEL[r.platform] ?? r.platform})`).join(", ")}</p>
         {!!d?.data.length && <p className="small"><strong>Data:</strong> {d.data.join("; ")}</p>}
         {!!d?.integrations.length && <p className="small"><strong>Integrasi:</strong> {d.integrations.join(", ")}</p>}
@@ -121,6 +123,100 @@ export function Summary({ project }: { project: Project }) {
         ))}
       </section>
     </div>
+  );
+}
+
+export function Architecture({ project }: { project: Project }) {
+  const b = project.blueprint;
+  if (!b) {
+    return (
+      <div className="info">
+        <h1>Arsitektur</h1>
+        <p className="muted">Blueprint disusun saat Foundry memahami cerita. Jalankan Ceritakan dulu.</p>
+      </div>
+    );
+  }
+  const line = (xs?: string[]) => (xs && xs.length ? xs.join(", ") : "");
+  return (
+    <div className="info">
+      <h1>Arsitektur</h1>
+      <section className="info-sec">
+        <h3>{b.architecture.pattern || "Blueprint"}</h3>
+        <p>{b.architecture.reason}</p>
+        {b.architecture.tradeoff && <p className="small muted">{b.architecture.tradeoff}</p>}
+        {b.architecture.scale && <p className="small"><strong>Scale:</strong> {b.architecture.scale}</p>}
+        <p className="small">Offline: {b.platform.offline || "—"} · Realtime: {b.platform.realtime || "—"}</p>
+      </section>
+      <section className="info-sec">
+        <h3>Modul</h3>
+        {(b.modules ?? []).map((m) => (
+          <div key={m.id} className="small info-flow">
+            <strong><code>{m.id}</code></strong> {m.responsibility}
+            {!!m.data?.length && <div className="muted">Data: {m.data.join(", ")}</div>}
+            {!!m.interface?.length && <div className="muted">API: {m.interface.join(", ")}</div>}
+            {!!m.depends_on?.length && <div className="muted">Depends: {m.depends_on.join(", ")}</div>}
+          </div>
+        ))}
+      </section>
+      <EntityTable b={b} />
+      <section className="info-sec">
+        <h3>Auth</h3>
+        <p className="small">{b.auth?.method} · {b.auth?.hashing} · {b.auth?.tokens}</p>
+        <p className="small"><strong>Izin:</strong> {b.authz?.model} <code>{b.authz?.convention}</code></p>
+        {!!b.authz?.permissions?.length && <p className="small muted">{b.authz.permissions.join(", ")}</p>}
+      </section>
+      {b.storage?.strategy && b.storage.strategy !== "none" && (
+        <section className="info-sec">
+          <h3>File</h3>
+          <p className="small">{b.storage.strategy} {b.storage.provider}</p>
+          <p className="small">{b.storage.upload}</p>
+        </section>
+      )}
+      {!!b.workers?.length && (
+        <section className="info-sec">
+          <h3>Worker</h3>
+          {b.workers.map((w) => (
+            <div key={w.name} className="small"><strong>{w.name}</strong> [{w.trigger}] {w.job}</div>
+          ))}
+        </section>
+      )}
+      <section className="info-sec">
+        <h3>Performa</h3>
+        <p className="small">{b.performance.pagination}</p>
+        {!!b.performance.avoid?.length && <p className="small muted">Hindari: {line(b.performance.avoid)}</p>}
+      </section>
+      <section className="info-sec">
+        <h3>Aturan kode</h3>
+        <p className="small"><strong>Backend:</strong> {(b.coding.backend ?? []).join(" · ")}</p>
+        <p className="small"><strong>Frontend:</strong> {(b.coding.frontend ?? []).join(" · ")}</p>
+        {b.coding.api?.style && (
+          <p className="small"><strong>API:</strong> {b.coding.api.style} {b.coding.api.versioning}</p>
+        )}
+        {b.frontend?.state && (
+          <p className="small muted">{b.frontend.state} · {b.frontend.server_state} · {b.frontend.forms} · {b.frontend.validation}</p>
+        )}
+      </section>
+      {!!b.ai_guidelines?.length && (
+        <section className="info-sec">
+          <h3>Aturan AI agent</h3>
+          <ul className="small">{b.ai_guidelines.map((r) => <li key={r}>{r}</li>)}</ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function EntityTable({ b }: { b: Blueprint }) {
+  const ents = b.database.entities ?? [];
+  if (!ents.length) return null;
+  return (
+    <section className="info-sec">
+      <h3>Data · {b.database.engine} {b.database.orm && `(${b.database.orm})`}</h3>
+      <p className="small muted">{b.database.naming} {b.database.pk}</p>
+      {ents.map((e) => (
+        <div key={e.name} className="small"><code>{e.name}</code> {e.module && <span className="muted">[{e.module}]</span>} {(e.fields ?? []).join(", ")}</div>
+      ))}
+    </section>
   );
 }
 

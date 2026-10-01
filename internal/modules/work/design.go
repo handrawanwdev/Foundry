@@ -248,6 +248,13 @@ Write labels in the same language as the features. Do not write code. Do not mod
 	if p.Discovery != nil {
 		b.WriteString("ROLES:\n" + mustJSON(p.Discovery.Roles) + "\n\n")
 	}
+	if p.Blueprint != nil && len(p.Blueprint.Modules) > 0 {
+		b.WriteString("DOMAIN MODULES (pages and API calls belong to these; do not invent another domain):\n")
+		for _, m := range p.Blueprint.Modules {
+			fmt.Fprintf(&b, "- %s: %s\n", m.ID, m.Responsibility)
+		}
+		b.WriteString("\n")
+	}
 	if ui := existingUIBrief(p, false); ui != "" {
 		b.WriteString(ui + "\n")
 	}

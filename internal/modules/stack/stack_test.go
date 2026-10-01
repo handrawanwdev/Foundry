@@ -155,4 +155,11 @@ func TestStructure(t *testing.T) {
 	if _, layout, _ = Structure(web, nil); !slices.Equal(layout, []string{"src/", "tests/", "docs/"}) {
 		t.Fatalf("%v", layout)
 	}
+	_ = Override(s, core.TechArchitecture, core.ArchModular, "")
+	_ = Override(s, core.TechRepository, core.RepoMonorepo, "")
+	bp := &core.Blueprint{Modules: []core.Module{{ID: "identity"}, {ID: "appointment"}}}
+	if _, layout, _ = StructureFrom(s, feats, bp); !slices.Contains(layout, "services/api/modules/identity/") ||
+		!slices.Contains(layout, "services/api/modules/appointment/") || slices.Contains(layout, "services/api/modules/tiket/") {
+		t.Fatalf("blueprint modules = %v", layout)
+	}
 }

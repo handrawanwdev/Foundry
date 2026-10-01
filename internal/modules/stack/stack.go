@@ -132,7 +132,7 @@ func option(area, value string) *Option {
 
 // Needs Foundry recognizes. The analyst may report them in
 // discovery.tech_needs; keywords in the requirement add the rest.
-var KnownNeeds = []string{"realtime", "offline", "seo", "ai", "high_concurrency", "flexible_schema", "transactions", "independent_scaling", "enterprise"}
+var KnownNeeds = []string{"realtime", "offline", "seo", "ai", "high_concurrency", "flexible_schema", "transactions", "independent_scaling", "enterprise", "files"}
 
 var needWords = map[string][]string{
 	"realtime":            {"realtime", "real time", "live", "websocket", "streaming", "chat", "notifikasi instan", "push notification"},
@@ -144,6 +144,7 @@ var needWords = map[string][]string{
 	"transactions":        {"pembayaran", "payment", "transaksi", "invoice", "tagihan", "saldo", "akuntansi", "accounting", "ledger", "checkout"},
 	"independent_scaling": {"microservice", "microservices", "skala independen", "independent scaling", "deploy terpisah", "separate deployment"},
 	"enterprise":          {"sso", "audit", "rbac", "compliance", "kepatuhan", "ldap", "enterprise"},
+	"files":               {"upload", "lampiran", "attachment", "berkas", "object storage", "signed url"},
 }
 
 // normalize lowercases text and turns punctuation into spaces, padded so
@@ -417,9 +418,14 @@ func values(area string) []string {
 // from the stack: architecture and repository decide the shape, features
 // become backend modules.
 func Structure(s *core.TechStack, features []core.Feature) (template string, layout []string, reason string) {
+	return StructureFrom(s, features, nil)
+}
+
+// StructureFrom is Structure using blueprint module ids when present.
+func StructureFrom(s *core.TechStack, features []core.Feature, bp *core.Blueprint) (template string, layout []string, reason string) {
 	arch, repo := s.Choice(core.TechArchitecture), s.Choice(core.TechRepository)
 	pl := s.Platform
-	mods := modules(features)
+	mods := moduleNames(features, bp)
 	var l []string
 	clients := func(base string) {
 		if pl.Web {
@@ -500,6 +506,17 @@ func Structure(s *core.TechStack, features []core.Feature) (template string, lay
 	return template, l, reason
 }
 
+func moduleNames(features []core.Feature, bp *core.Blueprint) []string {
+	if bp != nil && len(bp.Modules) > 0 {
+		var feats []core.Feature
+		for _, m := range bp.Modules {
+			feats = append(feats, core.Feature{Name: m.ID})
+		}
+		return modules(feats)
+	}
+	return modules(features)
+}
+
 // modules turns feature names into backend module folder names.
 func modules(features []core.Feature) []string {
 	var out []string
@@ -518,7 +535,7 @@ func modules(features []core.Feature) []string {
 			continue
 		}
 		out = append(out, m)
-		if len(out) == 8 {
+		if len(out) == 16 {
 			break
 		}
 	}

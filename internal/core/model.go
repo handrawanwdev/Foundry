@@ -34,12 +34,15 @@ const (
 )
 
 type Project struct {
-	Version      int           `json:"version"`
-	Name         string        `json:"name"`
-	Dir          string        `json:"dir"`
-	Stage        Stage         `json:"stage"`
-	Story        string        `json:"story"`
-	Discovery    *Discovery    `json:"discovery,omitempty"`
+	Version   int        `json:"version"`
+	Name      string     `json:"name"`
+	Dir       string     `json:"dir"`
+	Stage     Stage      `json:"stage"`
+	Story     string     `json:"story"`
+	Discovery *Discovery `json:"discovery,omitempty"`
+	// Blueprint is the production architecture decided during discovery.
+	// Coding agents treat it as source of truth and do not invent another.
+	Blueprint    *Blueprint    `json:"blueprint,omitempty"`
 	Requirements []Requirement `json:"requirements"`
 	Features     []Feature     `json:"features"`
 	Flows        []Flow        `json:"flows"`

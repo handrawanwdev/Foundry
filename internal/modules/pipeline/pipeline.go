@@ -22,6 +22,7 @@ import (
 	"github.com/handrawanw/foundry/internal/modules/agent"
 	"github.com/handrawanw/foundry/internal/modules/stack"
 	"github.com/handrawanw/foundry/internal/modules/structure"
+	"github.com/handrawanw/foundry/internal/modules/verify"
 	"github.com/handrawanw/foundry/internal/modules/work"
 )
 
@@ -48,11 +49,42 @@ type Parallel interface {
 }
 
 // DefaultAgents build in parallel unless FOUNDRY_AGENTS or the connection
-// says otherwise; MaxAgents caps it.
+// says otherwise; MaxAgents caps it. CheapReviewEffort is used for the
+// acceptance-criteria pass when the coding agent did not self-review.
 const (
-	DefaultAgents = 3
-	MaxAgents     = 8
+	DefaultAgents     = 3
+	MaxAgents         = 8
+	CheapReviewEffort = "low"
 )
+
+// ClampAgents maps a requested worker count onto 1..MaxAgents.
+// 0 or negative means the default.
+func ClampAgents(n int) int {
+	if n <= 0 {
+		return DefaultAgents
+	}
+	if n > MaxAgents {
+		return MaxAgents
+	}
+	return n
+}
+
+// EnvAgents is FOUNDRY_AGENTS when it is a number.
+func EnvAgents() (int, bool) {
+	v, err := strconv.Atoi(strings.TrimSpace(os.Getenv("FOUNDRY_AGENTS")))
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+// ParallelInfo is the live worker count shown in the UI.
+func ParallelInfo(stored int) (agents int, fromEnv bool) {
+	if n, ok := EnvAgents(); ok {
+		return ClampAgents(n), true
+	}
+	return ClampAgents(stored), false
+}
 
 // ConfigAI resolves the connection from user config.
 type ConfigAI struct{}
@@ -98,16 +130,34 @@ type Service struct {
 
 // agents is how many coding agents build in parallel.
 func (s *Service) agents() int {
-	n := 0
-	if v, err := strconv.Atoi(os.Getenv("FOUNDRY_AGENTS")); err == nil {
-		n = v
-	} else if pa, ok := s.AI.(Parallel); ok {
-		n = pa.Agents()
+	if n, ok := EnvAgents(); ok {
+		return ClampAgents(n)
 	}
-	if n <= 0 {
-		n = DefaultAgents
+	if pa, ok := s.AI.(Parallel); ok {
+		return ClampAgents(pa.Agents())
 	}
-	return min(n, MaxAgents)
+	return DefaultAgents
+}
+
+// reviewRunner is the coding runner, or the same CLI at low effort when
+// the connected agent supports it.
+func (s *Service) reviewRunner(exec *agent.Runner) *agent.Runner {
+	c, err := config.Load()
+	if err != nil || c.Connection == nil || len(c.Connection.Command) > 0 {
+		return exec
+	}
+	p, ok := agent.PresetByID(c.Connection.AgentID)
+	if !ok || !slices.Contains(p.Efforts, CheapReviewEffort) {
+		return exec
+	}
+	if c.Connection.Effort == "" || c.Connection.Effort == CheapReviewEffort {
+		return exec
+	}
+	r, err := agent.NewRunner(c.Connection.AgentID, nil, agent.Options{Model: c.Connection.Model, Effort: CheapReviewEffort})
+	if err != nil {
+		return exec
+	}
+	return r
 }
 
 func New(store *core.Store, ai AI) *Service {
@@ -327,12 +377,13 @@ func decideStack(p *core.Project) {
 	next := stack.Recommend(p)
 	stack.Carry(p.Stack, next)
 	p.Stack = next
+	work.CompleteBlueprint(p)
 	syncStructure(p)
 }
 
 func syncStructure(p *core.Project) {
 	if st := p.Structure; st != nil && st.Mode == core.StructureNew && !st.Approved && p.Stack != nil {
-		st.Template, st.Layout, st.Reason = stack.Structure(p.Stack, p.Features)
+		st.Template, st.Layout, st.Reason = stack.StructureFrom(p.Stack, p.Features, p.Blueprint)
 	}
 }
 
@@ -432,6 +483,10 @@ func (s *Service) scaffoldApproved() error {
 		}
 		if err := structure.Scaffold(p.Dir, p.Structure); err != nil {
 			return fmt.Errorf("gagal menyiapkan struktur: %w", err)
+		}
+		work.CompleteBlueprint(p)
+		if err := verify.WriteDocs(p.Dir, p); err != nil {
+			return fmt.Errorf("gagal menulis dokumentasi arsitektur: %w", err)
 		}
 		return nil
 	})

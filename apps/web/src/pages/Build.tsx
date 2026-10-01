@@ -4,11 +4,15 @@ import { api } from "../api";
 import { Kanban } from "../components/Kanban";
 import { IssueList } from "../components/IssueList";
 import { isWorking, queueItem, queueLabel, taskCounts } from "../flow";
+import { AgentsField } from "../components/AgentsField";
+import { useAI } from "../store/ai";
 import { useProject } from "../store/project";
 import type { Project, Task } from "../types";
 
 export function BuildPage() {
   const { project, run, pending } = useProject();
+  const { state: ai, setAgents } = useAI();
+  const parallel = ai?.parallel;
   const [params] = useSearchParams();
   const [selected, setSelected] = useState<string | undefined>(params.get("task") ?? undefined);
   useEffect(() => {
@@ -37,10 +41,13 @@ export function BuildPage() {
     <div className="build">
       <div className="build-head">
         <div className="progress">
-          <div className="bar"><div style={{ width: `${(c.DONE / tasks.length) * 100}%` }} /></div>
+          <div className="bar"><div style={{ transform: `scaleX(${c.DONE / tasks.length})` }} /></div>
           <span className="small">{c.DONE}/{tasks.length} task selesai{c.BLOCKED ? ` · ${c.BLOCKED} terblokir` : ""}{independent.length > 0 ? ` · ${independent.length} siap paralel` : ""}</span>
         </div>
         <div className="row">
+          {parallel && (
+            <AgentsField value={parallel.agents} max={parallel.max} fromEnv={parallel.from_env} onChange={(n) => void setAgents(n)} />
+          )}
           {!working && c.TODO > 0 && (
             <button className="primary" disabled={pending === "build"} onClick={() => run("build", api.startBuild)}>
               {c.DONE > 0 ? "Lanjutkan Bangun" : "Mulai Bangun"}

@@ -56,8 +56,15 @@ func TaskPrompt(p *core.Project, t *core.Task) string {
 	if len(t.Notes) > 0 {
 		b.WriteString("\nFEEDBACK FROM PREVIOUS ATTEMPTS (fix these):\n- " + strings.Join(t.Notes, "\n- ") + "\n")
 	}
-	b.WriteString("\nWhile working, a few times call update_task with a short progress line (≤80 characters) so the user sees what you are doing. Example: {\"task_id\":\"" + t.ID + "\",\"progress\":\"Menulis skema user\"}. Do not implement other tasks.\n")
+	b.WriteString("\nWhile working, a few times call update_task with a short progress line (≤80 characters) so the user sees what you are doing. Example: {\"task_id\":\"" + t.ID + "\",\"progress\":\"Menulis skema user\"}.\n")
+	b.WriteString("When you finish, include a ```json block so Foundry can skip a second review pass: " +
+		`{"criteria": [{"index": 1, "met": true, "evidence": "path + what it does"}]}` +
+		". Every criterion needs evidence. Do not implement other tasks.\n")
 	b.WriteString("\n" + structureBrief(p))
+	if brief := ArchitectureBrief(p); brief != "" {
+		b.WriteString("\n" + brief)
+		b.WriteString("Follow the blueprint: put code in the owning module, keep layers, use the API/auth/storage/worker rules. Do not add a new framework, database, or folder layout.\n")
+	}
 	return b.String()
 }
 
@@ -105,13 +112,28 @@ func ReviewPrompt(p *core.Project, t *core.Task, changes string, build *core.Bui
 }
 
 // ParseReview maps a review answer onto the task's criteria. Criteria the
-// reviewer did not mention count as not met.
+// reviewer did not mention count as not met. A claim without evidence is
+// not accepted. Progress JSON (update_task) is skipped.
 func ParseReview(t *core.Task, raw string) ([]core.Criterion, error) {
 	var out reviewOut
-	if err := ExtractJSON(raw, &out); err != nil {
+	if err := ExtractJSONFunc(raw, &out, func() bool { return len(out.Criteria) > 0 }); err != nil {
 		return nil, err
 	}
+	for i := range out.Criteria {
+		if out.Criteria[i].Met && strings.TrimSpace(out.Criteria[i].Evidence) == "" {
+			out.Criteria[i].Met = false
+		}
+	}
 	return MergeCriteria(t, out.Criteria), nil
+}
+
+// SelfReview is ParseReview when the coding agent already judged criteria.
+func SelfReview(t *core.Task, raw string) ([]core.Criterion, bool) {
+	crit, err := ParseReview(t, raw)
+	if err != nil {
+		return nil, false
+	}
+	return crit, true
 }
 
 // MergeCriteria is shared by agent review and MCP submit_task.

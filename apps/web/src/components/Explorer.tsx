@@ -53,6 +53,14 @@ export function Explorer() {
         ))}
       </Section>
 
+      <Section title="Modul" count={project.blueprint?.modules?.length}>
+        {(project.blueprint?.modules ?? []).map((m) => (
+          <Leaf key={m.id} title={m.responsibility} onClick={() => nav("/simple/rancang?tab=arsitektur")}>
+            <span className="leaf-id">{m.id}</span> {m.responsibility}
+          </Leaf>
+        ))}
+      </Section>
+
       <Section title="Fitur" count={project.features?.length}>
         {(project.features ?? []).map((f) => (
           <Section key={f.id} title={f.name} nested>

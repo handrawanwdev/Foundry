@@ -42,7 +42,7 @@ func (s *Service) NextWork(worker string) (*WorkItem, error) {
 	case "build":
 		for i := range p.Tasks {
 			if t := &p.Tasks[i]; t.Status == core.TaskInProgress && t.Owner == worker {
-				return taskItem(p, t), nil
+				return taskItem(s, p, t), nil
 			}
 		}
 		p, t, err := s.claimNext(worker, "mcp", nil)
@@ -50,7 +50,7 @@ func (s *Service) NextWork(worker string) (*WorkItem, error) {
 			return nil, err
 		}
 		if t != nil {
-			return taskItem(p, t), nil
+			return taskItem(s, p, t), nil
 		}
 		if active := p.ActiveTasks(); len(active) > 0 {
 			var ids []string
@@ -66,12 +66,15 @@ func (s *Service) NextWork(worker string) (*WorkItem, error) {
 	return &WorkItem{Kind: "none", Prompt: nothingMessage(p)}, nil
 }
 
-func taskItem(p *core.Project, t *core.Task) *WorkItem {
+func taskItem(s *Service, p *core.Project, t *core.Task) *WorkItem {
+	slots := max(0, s.agents()-len(p.ActiveTasks()))
 	var also []string
 	for _, x := range p.IndependentTasks() {
-		if x.ID != t.ID {
-			also = append(also, x.ID)
+		if x.ID == t.ID || slots == 0 {
+			continue
 		}
+		also = append(also, x.ID)
+		slots--
 	}
 	return &WorkItem{Kind: work.KindTask, TaskID: t.ID, Prompt: work.TaskPrompt(p, t), AlsoReady: also,
 		Submit: fmt.Sprintf(`submit_task {"task_id": %q, "criteria": [{"index": 1, "met": true, "evidence": "file + what it does"}]}`, t.ID)}

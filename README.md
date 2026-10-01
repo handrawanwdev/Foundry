@@ -45,7 +45,7 @@ Dev: `make dev-api` + `make dev-web` (Vite :5173 proxy ke :8080).
 
 ## Teknologi
 
-Discovery → platform → teknologi → struktur project. Foundry menganalisa kebutuhan teknis (`discovery.tech_needs` + kata kunci: realtime, offline, seo, ai, high_concurrency, flexible_schema, transactions, independent_scaling, enterprise), memilih profil (`internal/modules/stack/profiles/`: trading, ai-product, mobile-app, enterprise, saas), lalu menentukan frontend, mobile, desktop, backend, database, cache, arsitektur, dan repository beserta alasannya. Deterministik: kebutuhan sama, rekomendasi sama.
+Discovery → blueprint arsitektur → platform → teknologi → struktur project. Foundry menganalisa bisnis, domain, modul, data, auth, file, worker, dan kebutuhan teknis (`discovery.tech_needs` + kata kunci: realtime, offline, seo, ai, high_concurrency, flexible_schema, transactions, independent_scaling, enterprise, files). Blueprint (domain + aturan kode) disimpan di `project.blueprint` dan ditulis ke `docs/` saat scaffold; stack dipilih deterministik dari profil (`internal/modules/stack/profiles/`: trading, ai-product, mobile-app, enterprise, saas). Kebutuhan sama, rekomendasi stack sama. Agent build wajib mengikuti blueprint, bukan mengarang arsitektur baru.
 
 - **Struktur** diturunkan dari arsitektur + repository (Simple, Modular Monolith dengan `modules/<fitur>/`, Microservices, Monorepo).
 - **Override**: `PUT /api/v1/project/stack` `{area, value, reason}` (`value ""` = kembali ke rekomendasi). Cache/arsitektur/repository harus dari katalog (`GET /api/v1/stack/catalog`). Override tetap dipakai saat platform diubah atau dianalisa ulang (`POST /api/v1/project/stack/recommend`).
@@ -74,7 +74,7 @@ Loop host: `next_work` → kerjakan → `submit_work` / `submit_task`. Izin: `--
 
 ## Aturan penting
 
-- **Bangun paralel**: saat list task ada, Foundry menganalisa TODO yang dependensinya selesai, file/halamannya tidak dipegang agent lain, dan tidak bentrok satu sama lain, lalu mengerjakannya paralel (default 3 agent, maks 8, `FOUNDRY_AGENTS`). Kanban menandai task siap paralel vs yang menunggu dependensi atau file.
+- **Bangun paralel**: saat list task ada, Foundry menganalisa TODO yang dependensinya selesai, file/halamannya tidak dipegang agent lain, dan tidak bentrok satu sama lain, lalu mengerjakannya paralel (default 3 agent, maks 8). Jumlah agent diatur di halaman Hubungkan AI / Bangun, tersimpan di koneksi, bisa diubah saat build; `FOUNDRY_AGENTS` menimpa setting itu. Coding agent yang mengirim JSON `criteria` di akhir skip review kedua; bila tidak, review memakai effort `low`. Kanban menandai task siap paralel vs yang menunggu dependensi atau file.
 - Task `DONE` hanya jika build/test project lulus (exit code) **dan** semua acceptance criteria terpenuhi dengan bukti.
 - Command verifikasi hanya dari tooling project: Go → `go build/vet/test ./...`; Node → script `typecheck/lint/build/test` yang ada; Flutter → `flutter analyze/test` bila terpasang.
 - Project existing tidak pernah diganti template.

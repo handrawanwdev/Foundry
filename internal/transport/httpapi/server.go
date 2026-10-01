@@ -137,6 +137,7 @@ func (s *Server) Handler() http.Handler {
 
 	// AI connection
 	api("GET /api/v1/ai", s.getAI)
+	api("PATCH /api/v1/ai", s.patchAI)
 	api("GET /api/v1/ai/models", s.listModels)
 	api("POST /api/v1/ai/connect", s.connectAgent)
 	api("POST /api/v1/ai/connect-mcp", s.connectMCP)
@@ -452,9 +453,12 @@ func (s *Server) getAI(r *http.Request) (any, error) {
 		dir = svc.Store.Dir
 	}
 	ready := false
+	stored := 0
 	if c.Connection != nil {
 		ready = c.Connection.Mode == config.ModeAgent || c.MCPAlive()
+		stored = c.Connection.Agents
 	}
+	n, fromEnv := pipeline.ParallelInfo(stored)
 	return map[string]any{
 		"connection": c.Connection,
 		"ready":      ready,
@@ -462,7 +466,39 @@ func (s *Server) getAI(r *http.Request) (any, error) {
 		"mcp_alive":  c.MCPAlive(),
 		"agents":     agents,
 		"mcp_config": mcp.ClientConfig(s.Binary, dir),
+		"parallel": map[string]any{
+			"agents":   n,
+			"max":      pipeline.MaxAgents,
+			"default":  pipeline.DefaultAgents,
+			"from_env": fromEnv,
+		},
 	}, nil
+}
+
+func (s *Server) patchAI(r *http.Request) (any, error) {
+	var in struct {
+		Agents *int `json:"agents"`
+	}
+	if err := decode(r, &in); err != nil {
+		return nil, err
+	}
+	if in.Agents == nil {
+		return nil, badRequest("agents wajib diisi")
+	}
+	n := pipeline.ClampAgents(*in.Agents)
+	c, err := config.Update(func(c *config.Config) {
+		if c.Connection == nil {
+			return
+		}
+		c.Connection.Agents = n
+	})
+	if err != nil {
+		return nil, err
+	}
+	if c.Connection == nil {
+		return nil, pipeline.ErrNoAI
+	}
+	return s.getAI(r)
 }
 
 // listModels asks the agent CLI for its current models (?agent=id).
@@ -481,6 +517,7 @@ func (s *Server) connectAgent(r *http.Request) (any, error) {
 	var in struct {
 		AgentID string   `json:"agent_id"`
 		Command []string `json:"command"`
+		Agents  int      `json:"agents"`
 		agent.Options
 	}
 	if err := decode(r, &in); err != nil {
@@ -511,7 +548,7 @@ func (s *Server) connectAgent(r *http.Request) (any, error) {
 	}
 	c, err := config.Update(func(c *config.Config) {
 		c.Connection = &config.Connection{Mode: config.ModeAgent, AgentID: in.AgentID, Command: in.Command,
-			Model: in.Model, Effort: in.Effort, Since: time.Now().UTC()}
+			Model: in.Model, Effort: in.Effort, Agents: keepAgents(c.Connection, in.Agents), Since: time.Now().UTC()}
 	})
 	if err != nil {
 		return nil, err
@@ -520,13 +557,29 @@ func (s *Server) connectAgent(r *http.Request) (any, error) {
 }
 
 func (s *Server) connectMCP(r *http.Request) (any, error) {
+	var in struct {
+		Agents int `json:"agents"`
+	}
+	_ = decode(r, &in) // body is optional
 	c, err := config.Update(func(c *config.Config) {
-		c.Connection = &config.Connection{Mode: config.ModeMCP, Since: time.Now().UTC()}
+		c.Connection = &config.Connection{Mode: config.ModeMCP, Agents: keepAgents(c.Connection, in.Agents), Since: time.Now().UTC()}
 	})
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{"connection": c.Connection, "mcp_alive": c.MCPAlive()}, nil
+}
+
+// keepAgents stores a clamped count when requested, else the previous value
+// so reconnecting does not reset the parallel setting.
+func keepAgents(prev *config.Connection, requested int) int {
+	if requested != 0 {
+		return pipeline.ClampAgents(requested)
+	}
+	if prev != nil {
+		return prev.Agents
+	}
+	return 0
 }
 
 // ---------- Folder browser (Open / New Project dialog) ----------

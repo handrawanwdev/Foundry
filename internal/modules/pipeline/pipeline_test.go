@@ -186,8 +186,20 @@ func fakeAgent() {
 			want = "2"
 		}
 		os.WriteFile(filepath.Join("app", id+"_test.go"), []byte("package app\n\nimport \"testing\"\n\nfunc Test_"+id+"(t *testing.T) {\n\tif F_"+id+"() != "+want+" {\n\t\tt.Fatal(\"salah\")\n\t}\n}\n"), 0o644)
+		if mode == "self_review" {
+			var parts []string
+			for i := 1; i <= 10; i++ {
+				parts = append(parts, fmt.Sprintf(`{"index": %d, "met": true, "evidence": "app/%s.go"}`, i, id))
+			}
+			fmt.Printf("```json\n{\"criteria\": [%s]}\n```\n", strings.Join(parts, ","))
+			return
+		}
 		fmt.Println("done")
 	case strings.Contains(prompt, "reviewer"):
+		if mode == "self_review" {
+			fmt.Fprintln(os.Stderr, "reviewer should be skipped")
+			os.Exit(3)
+		}
 		met := mode != "reject"
 		var parts []string
 		for i := 1; i <= 10; i++ {
@@ -436,6 +448,22 @@ func TestInvalidDiscoveryOutput(t *testing.T) {
 	}
 }
 
+func TestDiscoveryCompletesBlueprint(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	b := p.Blueprint
+	if b == nil || b.Module("identity") == nil || b.Database.Engine == "" || b.Auth.Hashing == "" {
+		t.Fatalf("blueprint = %+v", b)
+	}
+	if !strings.Contains(strings.Join(p.Structure.Layout, "\n"), "identity") && p.Stack.Choice(core.TechArchitecture) == core.ArchModular {
+		t.Fatalf("layout missing identity module: %v", p.Structure.Layout)
+	}
+}
+
 func TestDesignRevise(t *testing.T) {
 	s := newService(t, fakeAI{}, "")
 	designReady(t, s)
@@ -556,6 +584,72 @@ func TestFailingTestsBlockTasks(t *testing.T) {
 			t.Log(is)
 		}
 		t.Fatalf("after fix stage = %s", p.Stage)
+	}
+}
+
+func TestClampAgents(t *testing.T) {
+	if pipeline.ClampAgents(0) != pipeline.DefaultAgents || pipeline.ClampAgents(-1) != pipeline.DefaultAgents {
+		t.Fatal("zero/negative should be default")
+	}
+	if pipeline.ClampAgents(1) != 1 || pipeline.ClampAgents(pipeline.MaxAgents+5) != pipeline.MaxAgents {
+		t.Fatal("clamp range")
+	}
+	t.Setenv("FOUNDRY_AGENTS", "2")
+	n, fromEnv := pipeline.ParallelInfo(8)
+	if n != 2 || !fromEnv {
+		t.Fatalf("env override = %d %v", n, fromEnv)
+	}
+	t.Setenv("FOUNDRY_AGENTS", "")
+	n, fromEnv = pipeline.ParallelInfo(5)
+	if n != 5 || fromEnv {
+		t.Fatalf("stored = %d %v", n, fromEnv)
+	}
+}
+
+func TestMCPAgentLimit(t *testing.T) {
+	t.Setenv("FOUNDRY_AGENTS", "1")
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Stage = core.StageBuild
+		p.Tasks = []core.Task{
+			{ID: "T1", Title: "a", Area: "api", Files: []string{"a/x.go"}, AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo},
+			{ID: "T2", Title: "b", Area: "api", Files: []string{"b/y.go"}, AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StartBuild(); err != nil {
+		t.Fatal(err)
+	}
+	w1, err := s.NextWork("w1")
+	if err != nil || w1.Kind != work.KindTask || w1.TaskID != "T1" {
+		t.Fatalf("first = %+v %v", w1, err)
+	}
+	if len(w1.AlsoReady) != 0 {
+		t.Fatalf("also_ready past cap: %v", w1.AlsoReady)
+	}
+	w2, err := s.NextWork("w2")
+	if err != nil || w2.Kind != "wait" {
+		t.Fatalf("second = %+v %v", w2, err)
+	}
+}
+
+func TestSelfReviewSkipsReviewer(t *testing.T) {
+	s := newService(t, fakeAI{}, "self_review")
+	approveAndPlan(t, s)
+	if err := s.StartBuild(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	for _, tk := range p.Tasks {
+		if tk.Status != core.TaskDone {
+			t.Fatalf("%s status %s notes %v", tk.ID, tk.Status, tk.Notes)
+		}
+	}
+	if p.Stage != core.StageReady {
+		t.Fatalf("stage = %s", p.Stage)
 	}
 }
 

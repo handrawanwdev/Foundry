@@ -21,7 +21,8 @@ export const api = {
   ai: () => call<AIState>("GET", "/ai"),
   models: (agent: string) => call<{ models: string[] }>("GET", `/ai/models?agent=${encodeURIComponent(agent)}`),
   connectAgent: (agent_id: string, command?: string[], opts?: AgentOptions) => call("POST", "/ai/connect", { agent_id, command, ...opts }),
-  connectMCP: () => call("POST", "/ai/connect-mcp", {}),
+  connectMCP: (agents?: number) => call("POST", "/ai/connect-mcp", { agents }),
+  setAgents: (agents: number) => call<AIState>("PATCH", "/ai", { agents }),
   disconnect: () => call("POST", "/ai/disconnect", {}),
 
   projects: () => call<{ current: string; recent: string[] | null }>("GET", "/projects"),

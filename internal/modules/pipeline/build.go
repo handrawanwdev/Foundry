@@ -53,7 +53,7 @@ func (s *Service) StartBuild() error {
 	go func() {
 		defer s.wg.Done()
 		defer cancel()
-		s.buildLoop(ctx, cancel, runner, s.agents())
+		s.buildLoop(ctx, cancel, runner)
 	}()
 	return nil
 }
@@ -69,25 +69,24 @@ func (s *Service) StopBuild() error {
 	return nil
 }
 
-// buildLoop runs up to workers agents at once. Each claim takes the first
-// ready task whose pages and files no running task holds; a task that
-// overlaps one waits in the queue until that task finishes.
-func (s *Service) buildLoop(ctx context.Context, cancel context.CancelFunc, runner *agent.Runner, workers int) {
+// buildLoop runs up to s.agents() coding agents at once and re-reads that
+// cap every spawn, so a settings change applies to the next free slot.
+// Each claim takes the first ready task whose pages and files no running
+// task holds; a task that overlaps one waits in the queue until that task
+// finishes.
+func (s *Service) buildLoop(ctx context.Context, cancel context.CancelFunc, runner *agent.Runner) {
 	type result struct {
 		worker string
 		err    error
 	}
 	done := make(chan result)
-	var free []string
-	for i := workers; i >= 1; i-- {
-		free = append(free, fmt.Sprintf("agent-%d", i))
-	}
 	queued := map[string]string{} // task → blocker already logged
-	running, agentFailures := 0, 0
+	nextID, running, agentFailures := 0, 0, 0
 	var fatal error
 	for {
-		for fatal == nil && ctx.Err() == nil && len(free) > 0 {
-			worker := free[len(free)-1]
+		for fatal == nil && ctx.Err() == nil && running < s.agents() {
+			nextID++
+			worker := fmt.Sprintf("agent-%d", nextID)
 			p, t, err := s.claimNext(worker, "agent", queued)
 			if err != nil {
 				fatal = err
@@ -97,7 +96,6 @@ func (s *Service) buildLoop(ctx context.Context, cancel context.CancelFunc, runn
 			if t == nil {
 				break
 			}
-			free = free[:len(free)-1]
 			running++
 			go func() { done <- result{worker, s.runTaskWithAgent(ctx, runner, p, t)} }()
 		}
@@ -117,7 +115,6 @@ func (s *Service) buildLoop(ctx context.Context, cancel context.CancelFunc, runn
 		}
 		r := <-done
 		running--
-		free = append(free, r.worker)
 		switch {
 		case r.err == nil:
 			agentFailures = 0
@@ -142,7 +139,11 @@ func (s *Service) buildLoop(ctx context.Context, cancel context.CancelFunc, runn
 // processes (MCP hosts) can never claim overlapping tasks either.
 func (s *Service) claimNext(owner, source string, queued map[string]string) (*core.Project, *core.Task, error) {
 	var id string
+	limit := s.agents()
 	p, err := s.Store.Update(func(p *core.Project) error {
+		if len(p.ActiveTasks()) >= limit {
+			return nil
+		}
 		for _, t := range p.ReadyTasks() {
 			o, lock := p.Blocker(t)
 			if o == nil {
@@ -270,7 +271,8 @@ func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, p 
 	// diff below may include their files too; the reviewer judges criteria.
 	before := checks.Take(p.Dir)
 	stopWatch := s.watchProgress(ctx, id, p.Dir, before)
-	if _, err := runner.Run(ctx, agent.Execute, p.Dir, work.TaskPrompt(p, t)); err != nil {
+	out, err := runner.Run(ctx, agent.Execute, p.Dir, work.TaskPrompt(p, t))
+	if err != nil {
 		stopWatch()
 		if ctx.Err() != nil {
 			return s.releaseTask(ctx, id)
@@ -294,9 +296,12 @@ func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, p 
 		return nil
 	}
 	s.setProgress(id, "Meninjau hasil")
+	if crit, ok := work.SelfReview(t, out); ok {
+		return s.concludeTask(id, crit, build.ID, "agent")
+	}
 	s.setStatus(id, core.TaskReview, "agent", "Build + test lulus, review acceptance criteria")
 	p, _ = s.Store.Load()
-	out, err := runner.Run(ctx, agent.Think, p.Dir, work.ReviewPrompt(p, p.Task(id), checks.Excerpt(p.Dir, changed, 60000), &build))
+	out, err = s.reviewRunner(runner).Run(ctx, agent.Think, p.Dir, work.ReviewPrompt(p, p.Task(id), checks.Excerpt(p.Dir, changed, 60000), &build))
 	if err != nil {
 		if ctx.Err() != nil {
 			return s.releaseTask(ctx, id)

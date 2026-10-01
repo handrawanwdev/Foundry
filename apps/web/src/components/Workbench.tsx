@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { reachable, stepFor, STEPS, SUPPORT_PATH, taskCounts, viewOf, VIEWS } from "../flow";
-import { agentName, useAI } from "../store/ai";
+import { agentName, agentOptions, useAI } from "../store/ai";
 import { useProject } from "../store/project";
 import { useWorkbench } from "../store/workbench";
 import { Explorer } from "./Explorer";
@@ -182,7 +182,7 @@ function StatusBar() {
   return (
     <div className={`statusbar ${project ? "" : "noproject"}`}>
       <button className="sb-item" onClick={() => nav("/simple/connect")}>
-        {ai?.ready ? `⚡ ${agentName(ai)}` : "⚠ AI belum terhubung"}
+        {ai?.ready ? `⚡ ${agentName(ai)}${agentOptions(ai) ? ` · ${agentOptions(ai)}` : ""}` : "⚠ AI belum terhubung"}
       </button>
       {project && <span className="sb-item">{stepFor(project.stage).label} · {project.stage}</span>}
       {job && job.status !== "done" && (
