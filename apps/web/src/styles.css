@@ -90,6 +90,9 @@ textarea { width: 100%; resize: vertical; }
 
 /* Tell */
 .examples { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin: .75rem 0 1rem; }
+.theme-pick { margin: 0 0 1.5rem; }
+.theme-pick summary { cursor: pointer; padding: .25rem 0; }
+.theme-pick[open] summary { margin-bottom: .75rem; }
 .chip { border-radius: 999px; padding: .25rem .75rem; font-size: .85rem; }
 .checklist li { margin: .2rem 0; }
 blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding-left: 1rem; color: var(--muted); }
