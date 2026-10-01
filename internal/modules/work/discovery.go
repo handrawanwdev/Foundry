@@ -50,13 +50,16 @@ STORY:
 		b.WriteString("USER CORRECTIONS (must be applied):\n- " + strings.Join(p.Design.Feedback, "\n- ") + "\n\n")
 	}
 	b.WriteString(`Platform kinds allowed: web, android, ios, desktop, backend. Choose them from who uses the product and on which device.
+tech_needs lists only the technical needs the product really has, from: realtime, offline, seo, ai, high_concurrency,
+flexible_schema, transactions, independent_scaling, enterprise. Foundry picks the technology stack from them.
 Every requirement must be covered by at least one feature. Every feature needs 2-6 concrete sub-features.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
   "name": "short product name",
   "discovery": {"summary": "", "business": "", "users": [""], "roles": [{"name": "", "description": "", "platform": "web"}],
-                "data": ["entity: key fields"], "integrations": [""], "security": [""], "workflows": [""]},
+                "data": ["entity: key fields"], "integrations": [""], "security": [""], "workflows": [""],
+                "tech_needs": ["transactions"]},
   "requirements": [{"id": "REQ-001", "text": "", "priority": "MUST|SHOULD|COULD"}],
   "features": [{"id": "FEAT-001", "name": "", "description": "", "requirement_ids": ["REQ-001"], "platforms": ["web","backend"],
                 "sub_features": [{"id": "FEAT-001.1", "name": ""}]}],

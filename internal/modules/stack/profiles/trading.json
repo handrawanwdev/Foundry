@@ -1,0 +1,15 @@
+{
+  "id": "trading",
+  "name": "Trading",
+  "description": "Sistem trading atau transaksi bervolume tinggi dengan data realtime.",
+  "match": ["high_concurrency"],
+  "decisions": {
+    "frontend": {"value": "React + TypeScript + Vite", "reason": "Terminal interaktif dengan data yang sering berubah."},
+    "mobile": {"value": "React Native + TypeScript + Expo", "reason": "Berbagi bahasa dan pengetahuan dengan tim web."},
+    "desktop": {"value": "Tauri + React + TypeScript", "reason": "Memakai ulang UI web dengan aplikasi desktop yang ringan."},
+    "backend": {"value": "Go + Gin", "reason": "Konkurensi tinggi dan latensi rendah untuk order dan harga realtime."},
+    "database": {"value": "PostgreSQL", "reason": "Transaksi dan saldo harus konsisten (ACID)."},
+    "cache": {"value": "Redis", "reason": "State realtime, pub/sub harga, dan antrean."},
+    "architecture": {"value": "Modular Monolith", "reason": "Domain order, risiko, dan portofolio terpisah tanpa biaya operasional microservices."}
+  }
+}

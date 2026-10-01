@@ -18,7 +18,8 @@ internal/config/            koneksi AI + recent project (~/.foundry/foundry.json
 internal/modules/
   agent/                    runner CLI agent (Claude Code, Codex, Qwen Code, Grok, Gemini, custom)
   scan/                     deteksi komponen + command build/test nyata
-  structure/                existing vs template baru (simple/modular/monorepo), scaffold
+  stack/                    keputusan teknologi: kebutuhan → profil (profiles/*.json) → aturan; override user
+  structure/                existing vs template baru (simple/modular/monorepo/microservices), scaffold
   work/                     prompt + apply: discovery, design, plan, task, review (dipakai agent & MCP)
   checks/                   jalankan command allowlist, catat hasil, deteksi file berubah
   verify/                   traceability REQ→FEAT→PAGE→TASK→TEST→BUILD + dokumentasi
@@ -40,6 +41,15 @@ make build                         # build UI + binary bin/foundry
 UI bergaya Visual Studio: menu bar (File: Project Baru, Buka Project, terakhir, Tutup Project), activity bar, Explorer (file project read-only, pipeline, kebutuhan, fitur, halaman, task), editor bertab, status bar (AI, tahap, job, task, verifikasi). Menutup project hanya melepasnya dari UI; state tetap di `.foundry/`. Project tidak bisa ditutup/diganti saat agent sedang berjalan.
 
 Dev: `make dev-api` + `make dev-web` (Vite :5173 proxy ke :8080).
+
+## Teknologi
+
+Discovery → platform → teknologi → struktur project. Foundry menganalisa kebutuhan teknis (`discovery.tech_needs` + kata kunci: realtime, offline, seo, ai, high_concurrency, flexible_schema, transactions, independent_scaling, enterprise), memilih profil (`internal/modules/stack/profiles/`: trading, ai-product, mobile-app, enterprise, saas), lalu menentukan frontend, mobile, desktop, backend, database, cache, arsitektur, dan repository beserta alasannya. Deterministik: kebutuhan sama, rekomendasi sama.
+
+- **Struktur** diturunkan dari arsitektur + repository (Simple, Modular Monolith dengan `modules/<fitur>/`, Microservices, Monorepo).
+- **Override**: `PUT /api/v1/project/stack` `{area, value, reason}` (`value ""` = kembali ke rekomendasi). Cache/arsitektur/repository harus dari katalog (`GET /api/v1/stack/catalog`). Override tetap dipakai saat platform diubah atau dianalisa ulang (`POST /api/v1/project/stack/recommend`).
+- **Satu keputusan**: disimpan di `project.stack`, dipakai prompt design, plan, task, handoff Kode, dokumentasi, dan MCP `get_project`. Terkunci saat rancangan disetujui.
+- Project existing: teknologi dibaca dari kode, tidak bisa diganti.
 
 ## Rancangan (Design IR)
 

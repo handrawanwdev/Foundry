@@ -24,6 +24,19 @@ export interface Structure {
   mode: "existing" | "new"; components: Component[] | null; template?: string; layout?: string[];
   reason: string; commands: Command[] | null; approved: boolean; scaffolded: boolean;
 }
+// Technology decision: one choice per area with its reason; the user's
+// override wins over the recommendation.
+export type TechArea = "frontend" | "mobile" | "desktop" | "backend" | "database" | "cache" | "architecture" | "repository";
+export interface TechOverride { value: string; language?: string; reason?: string }
+export interface TechDecision { area: TechArea; recommended: string; language?: string; reason: string; override?: TechOverride }
+export interface TechStack {
+  mode: "existing" | "new"; profile?: string; needs?: string[];
+  platform: { web: boolean; mobile: boolean; desktop: boolean; backend: boolean };
+  decisions: TechDecision[]; approved: boolean;
+}
+export interface TechOption { value: string; language?: string; fit: string }
+export interface TechProfile { id: string; name: string; description: string }
+export interface StackCatalog { catalog: Record<string, TechOption[]>; profiles: TechProfile[]; areas: TechArea[] }
 export interface FormField { label: string; type: string; required?: boolean; validation?: string; error?: string; group?: string }
 // id: what the layout places. emphasis/tone: semantic tokens (action.*, text.* / status.*).
 export interface PageComponent {
@@ -78,7 +91,7 @@ export interface PageHandoff {
   tests: string[] | null; feature_id: string; sub_feature_ids?: string[]; requirement_ids: string[] | null; flow_ids: string[] | null;
 }
 export interface Blocker { page_id?: string; page?: string; text: string }
-export interface DesignHandoff { pages: PageHandoff[] | null; blockers: Blocker[] | null }
+export interface DesignHandoff { pages: PageHandoff[] | null; blockers: Blocker[] | null; stack?: TechStack | null; structure?: Structure | null }
 export interface DesignChange { kind: "added" | "changed" | "removed"; page_id?: string; page: string; details?: string[] }
 export interface ScopePage { id: string; request?: string; components?: number[]; fields?: boolean; device?: string }
 // What a change request may touch; the server rejects a patch outside it.
@@ -216,7 +229,7 @@ export interface Event { at: string; source: string; message: string }
 export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string;
   discovery?: Discovery; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
-  platform?: PlatformPlan; structure?: Structure; design?: Design; theme?: string; design_template?: string; reference?: DesignReference; tasks: Task[] | null;
+  platform?: PlatformPlan; structure?: Structure; stack?: TechStack; design?: Design; theme?: string; design_template?: string; reference?: DesignReference; tasks: Task[] | null;
   builds: BuildRun[] | null; verification?: Verification; job?: Job; support?: Support; events: Event[] | null; updated_at: string;
 }
 

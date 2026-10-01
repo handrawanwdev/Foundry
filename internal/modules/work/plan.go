@@ -48,9 +48,10 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 func structureBrief(p *core.Project) string {
 	s := p.Structure
 	if s == nil {
-		return "PROJECT STRUCTURE: unknown\n"
+		return p.Stack.Brief() + "PROJECT STRUCTURE: unknown\n"
 	}
 	var b strings.Builder
+	b.WriteString(p.Stack.Brief())
 	if s.Mode == core.StructureExisting {
 		b.WriteString("PROJECT STRUCTURE: existing project. Follow it, do not restructure.\n")
 		for _, c := range s.Components {

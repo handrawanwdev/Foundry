@@ -1,0 +1,15 @@
+{
+  "id": "mobile-app",
+  "name": "Mobile App",
+  "description": "Produk yang dipakai terutama lewat ponsel, tanpa aplikasi web.",
+  "match": ["mobile_only"],
+  "decisions": {
+    "mobile": {"value": "Flutter", "reason": "UI mobile berkualitas tinggi dan konsisten di Android dan iOS."},
+    "desktop": {"value": "Tauri + React + TypeScript", "reason": "Aplikasi desktop yang ringan."},
+    "frontend": {"value": "React + TypeScript + Vite", "reason": "UI web interaktif."},
+    "backend": {"value": "NestJS + TypeScript", "reason": "API untuk aplikasi mobile dengan iterasi cepat."},
+    "database": {"value": "PostgreSQL", "reason": "Data aplikasi relasional."},
+    "cache": {"value": "Tidak perlu", "reason": "Belum ada kebutuhan realtime atau beban tinggi."},
+    "architecture": {"value": "Modular Monolith", "reason": "Beberapa domain dalam satu API yang sederhana."}
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "saas",
+  "name": "SaaS",
+  "description": "Aplikasi bisnis berbasis web dengan banyak modul dan pengguna login.",
+  "decisions": {
+    "frontend": {"value": "React + TypeScript + Vite", "reason": "UI bisnis interaktif yang kompleks; ekosistem komponen besar dan type-safe."},
+    "mobile": {"value": "React Native + TypeScript + Expo", "reason": "Berbagi bahasa dan pengetahuan dengan tim web."},
+    "desktop": {"value": "Tauri + React + TypeScript", "reason": "Memakai ulang UI web dengan aplikasi desktop yang ringan."},
+    "backend": {"value": "NestJS + TypeScript", "reason": "API modular dengan iterasi cepat; satu bahasa dengan frontend."},
+    "database": {"value": "PostgreSQL", "reason": "Data bisnis relasional dan transaksional."},
+    "cache": {"value": "Tidak perlu", "reason": "Belum ada kebutuhan realtime atau beban tinggi."},
+    "architecture": {"value": "Modular Monolith", "reason": "Beberapa domain bisnis dalam satu deployment yang sederhana."}
+  }
+}

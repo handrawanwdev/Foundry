@@ -317,7 +317,7 @@ func TestEndToEndAgent(t *testing.T) {
 	if p.Stage != core.StageBuild {
 		t.Fatalf("stage = %s", p.Stage)
 	}
-	if _, err := os.Stat(filepath.Join(p.Dir, "services", "api")); err != nil {
+	if _, err := os.Stat(filepath.Join(p.Dir, "apps", "api", "modules", "janji-temu")); err != nil {
 		t.Fatalf("scaffold missing: %v", err)
 	}
 	// Coverage filler adds a test task for FEAT-002 and UI tasks for pages.
@@ -1180,6 +1180,66 @@ func TestUnclearChangeRequestDropped(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustJob(t, load(t, s), work.KindDesign, core.JobWaiting)
+}
+
+func TestTechStack(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
+		t.Fatal(err)
+	}
+	// Web + android + backend with two features: a simple monorepo.
+	p := load(t, s)
+	st := p.Stack
+	if st == nil || st.Profile != "saas" || st.Choice(core.TechFrontend) != "React + TypeScript + Vite" ||
+		st.Choice(core.TechMobile) != "React Native + TypeScript + Expo" || st.Choice(core.TechBackend) != "NestJS + TypeScript" ||
+		st.Choice(core.TechArchitecture) != core.ArchSimple || st.Choice(core.TechRepository) != core.RepoMonorepo {
+		t.Fatalf("stack = %+v", st)
+	}
+	if p.Structure.Template != "monorepo" || !slices.Contains(p.Structure.Layout, "apps/mobile/") {
+		t.Fatalf("structure = %+v", p.Structure)
+	}
+	if _, err := s.SetStack(core.TechFrontend, "vue + typescript + vite", "Tim sudah pakai Vue"); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range [][2]string{{core.TechArchitecture, "Serverless"}, {core.TechDesktop, "Tauri + React + TypeScript"}, {"ui", "x"}} {
+		if _, err := s.SetStack(bad[0], bad[1], ""); err == nil {
+			t.Fatalf("%v must fail", bad)
+		}
+	}
+	p, err := s.SetStack(core.TechRepository, core.RepoSimple, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Structure.Template != "simple" || !slices.Equal(p.Structure.Layout, []string{"frontend/", "mobile/", "backend/", "docs/"}) {
+		t.Fatalf("structure = %+v", p.Structure)
+	}
+	// A platform change decides again but keeps the user's choices.
+	p, err = s.SetPlatform([]core.PlatformTarget{{Kind: "web"}, {Kind: "backend"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := p.Stack.Decision(core.TechFrontend)
+	if p.Stack.Decision(core.TechMobile) != nil || d.Choice() != "Vue + TypeScript + Vite" || d.Lang() != "TypeScript" ||
+		d.Override.Reason != "Tim sudah pakai Vue" || p.Stack.Choice(core.TechRepository) != core.RepoSimple {
+		t.Fatalf("stack = %+v", p.Stack)
+	}
+	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApproveDesign(); err != nil {
+		t.Fatal(err)
+	}
+	// The plan is made with the same decision.
+	w, _ := s.NextWork("")
+	if w.Kind != work.KindPlan || !strings.Contains(w.Prompt, "- frontend: Vue + TypeScript + Vite (language TypeScript) — chosen by the user: Tim sudah pakai Vue") {
+		t.Fatalf("work = %+v", w)
+	}
+	if _, err := s.SetStack(core.TechFrontend, "", ""); !errors.Is(err, pipeline.ErrWrongStage) {
+		t.Fatalf("approved err = %v", err)
+	}
 }
 
 func TestRegenerateDesign(t *testing.T) {

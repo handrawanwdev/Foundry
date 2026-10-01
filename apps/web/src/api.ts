@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, CanvasOp, CanvasResult, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, Prototype, TaskStatus, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
+import type { AgentOptions, AIState, Browse, CanvasOp, CanvasResult, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, StackCatalog, TechArea, Prototype, TaskStatus, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -40,6 +40,10 @@ export const api = {
   retry: () => call("POST", "/project/retry", {}),
   setPlatform: (targets: PlatformTarget[]) => call<Project>("PUT", "/project/platform", { targets }),
   setTemplate: (template: string) => call<Project>("PUT", "/project/structure", { template }),
+  // value "" returns the area to Foundry's recommendation.
+  setStack: (area: TechArea, value: string, reason: string) => call<Project>("PUT", "/project/stack", { area, value, reason }),
+  recommendStack: () => call<Project>("POST", "/project/stack/recommend", {}),
+  stackCatalog: () => call<StackCatalog>("GET", "/stack/catalog"),
   // theme "" lets Foundry select one; a draft design is re-themed at once.
   setTheme: (theme: string) => call<Project>("PUT", "/project/theme", { theme }),
   // template "" lets the AI choose, "blank" asks for none; applies on generate.

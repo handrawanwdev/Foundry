@@ -20,6 +20,7 @@ import (
 	"github.com/handrawanw/foundry/internal/config"
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/agent"
+	"github.com/handrawanw/foundry/internal/modules/stack"
 	"github.com/handrawanw/foundry/internal/modules/structure"
 	"github.com/handrawanw/foundry/internal/modules/work"
 )
@@ -238,27 +239,101 @@ func (s *Service) SetPlatform(targets []core.PlatformTarget) (*core.Project, err
 			return errors.New("pilih minimal satu platform")
 		}
 		p.Platform.Targets = ok
-		if p.Structure != nil && p.Structure.Mode == core.StructureNew && !p.Structure.Approved {
-			t, reason := structure.Suggest(p.Platform)
-			p.Structure.Template, p.Structure.Layout, p.Structure.Reason = t.ID, t.Layout, reason
+		if p.Stack == nil || !p.Stack.Approved {
+			decideStack(p)
 		}
 		p.Log("ui", "Platform diubah")
 		return nil
 	})
 }
 
+// SetTemplate picks the project structure template; for a new project it
+// is recorded as the architecture and repository decision it stands for,
+// so the stack and the structure never disagree.
 func (s *Service) SetTemplate(id string) (*core.Project, error) {
 	return s.Store.Update(func(p *core.Project) error {
-		if p.Structure == nil || p.Busy() {
+		if p.Structure == nil || p.Busy() || p.Structure.Approved {
 			return ErrWrongStage
 		}
 		if err := structure.Apply(p.Structure, id); err != nil {
 			return err
 		}
-		p.Structure.Reason = "Dipilih oleh user."
+		if p.Stack == nil {
+			decideStack(p)
+		}
+		arch, repo := core.ArchModular, core.RepoSimple
+		switch id {
+		case "simple":
+			arch = core.ArchSimple
+		case "monorepo":
+			repo = core.RepoMonorepo
+		case "microservices":
+			arch = core.ArchMicroservices
+		}
+		const why = "Struktur dipilih oleh user."
+		if err := stack.Override(p.Stack, core.TechArchitecture, arch, why); err != nil {
+			return err
+		}
+		if err := stack.Override(p.Stack, core.TechRepository, repo, why); err != nil {
+			return err
+		}
+		syncStructure(p)
 		p.Log("ui", "Struktur project: "+id)
 		return nil
 	})
+}
+
+// SetStack overrides the recommended technology for one area (value ""
+// returns to the recommendation). The reason is kept with the decision.
+func (s *Service) SetStack(area, value, reason string) (*core.Project, error) {
+	return s.Store.Update(func(p *core.Project) error {
+		if p.Busy() {
+			return ErrBusy
+		}
+		if p.Platform == nil || p.Structure == nil || (p.Stack != nil && p.Stack.Approved) {
+			return ErrWrongStage
+		}
+		if p.Stack == nil {
+			decideStack(p)
+		}
+		if err := stack.Override(p.Stack, area, value, reason); err != nil {
+			return err
+		}
+		syncStructure(p)
+		p.Log("ui", fmt.Sprintf("Teknologi %s: %s", area, p.Stack.Choice(area)))
+		return nil
+	})
+}
+
+// RecommendStack analyzes the requirement again (projects made before the
+// technology decision get theirs here); the user's overrides stay.
+func (s *Service) RecommendStack() (*core.Project, error) {
+	return s.Store.Update(func(p *core.Project) error {
+		if p.Busy() {
+			return ErrBusy
+		}
+		if p.Platform == nil || p.Structure == nil || (p.Stack != nil && p.Stack.Approved) {
+			return ErrWrongStage
+		}
+		decideStack(p)
+		p.Log("ui", "Rekomendasi teknologi diperbarui")
+		return nil
+	})
+}
+
+// decideStack recommends the stack from the requirement and platform, keeps
+// the user's overrides and derives a new project's structure from it.
+func decideStack(p *core.Project) {
+	next := stack.Recommend(p)
+	stack.Carry(p.Stack, next)
+	p.Stack = next
+	syncStructure(p)
+}
+
+func syncStructure(p *core.Project) {
+	if st := p.Structure; st != nil && st.Mode == core.StructureNew && !st.Approved && p.Stack != nil {
+		st.Template, st.Layout, st.Reason = stack.Structure(p.Stack, p.Features)
+	}
 }
 
 // SetTheme picks the design's theme ("" lets Foundry select one from the
@@ -313,8 +388,12 @@ func (s *Service) ApproveDesign() error {
 		}
 		p.Design.Status = core.DesignApproved
 		p.Design.Revision = nil // approving keeps any pending change
+		if p.Stack == nil {
+			decideStack(p)
+		}
 		p.Platform.Approved = true
 		p.Structure.Approved = true
+		p.Stack.Approved = true
 		if err := structure.Scaffold(p.Dir, p.Structure); err != nil {
 			return fmt.Errorf("gagal menyiapkan struktur: %w", err)
 		}
@@ -464,6 +543,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 				return err
 			}
 			p.Structure = structure.Detect(p.Dir, p.Platform)
+			decideStack(p)
 			p.Stage = core.StageDesign
 			next = work.KindDesign
 			if r := p.Reference; r != nil && r.Status == "pending" {

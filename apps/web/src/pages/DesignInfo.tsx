@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { PLATFORM_LABEL } from "../flow";
+import { TechStackPanel } from "../components/TechStack";
 import { useProject } from "../store/project";
 import type { PlatformKind, PlatformTarget, Project, Template } from "../types";
 
@@ -35,7 +36,7 @@ const KINDS: PlatformKind[] = ["web", "android", "ios", "desktop", "backend"];
 export function PlatformStructure({ project }: { project: Project }) {
   const { run } = useProject();
   const [templates, setTemplates] = useState<Template[]>([]);
-  const locked = project.design?.status === "approved";
+  const locked = project.design?.status === "approved" || !!project.structure?.approved;
   useEffect(() => { void api.templates().then(setTemplates); }, []);
   const targets = project.platform?.targets ?? [];
   const has = (k: PlatformKind) => targets.some((t) => t.kind === k);
@@ -50,7 +51,7 @@ export function PlatformStructure({ project }: { project: Project }) {
 
   return (
     <div className="info">
-      <h1>Platform & Struktur</h1>
+      <h1>Platform & Teknologi</h1>
       <section className="info-sec">
         <h3>Platform</h3>
         {KINDS.map((k) => {
@@ -65,6 +66,7 @@ export function PlatformStructure({ project }: { project: Project }) {
         })}
         {project.platform?.reason && <p className="small"><strong>Alasan:</strong> {project.platform.reason}</p>}
       </section>
+      <TechStackPanel project={project} />
       <section className="info-sec">
         <h3>Struktur project</h3>
         {s?.mode === "existing" ? (

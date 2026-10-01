@@ -1,0 +1,15 @@
+{
+  "id": "ai-product",
+  "name": "AI Product",
+  "description": "Produk yang inti nilainya dari model AI, pemrosesan data, atau otomasi.",
+  "match": ["ai"],
+  "decisions": {
+    "frontend": {"value": "React + TypeScript + Vite", "reason": "UI interaktif untuk hasil AI dan alur kerja."},
+    "mobile": {"value": "React Native + TypeScript + Expo", "reason": "Berbagi bahasa dan pengetahuan dengan tim web."},
+    "desktop": {"value": "Tauri + React + TypeScript", "reason": "Memakai ulang UI web dengan aplikasi desktop yang ringan."},
+    "backend": {"value": "Python + FastAPI", "reason": "Ekosistem AI dan data processing paling lengkap ada di Python."},
+    "database": {"value": "PostgreSQL", "reason": "Data aplikasi relasional; bisa ditambah pgvector untuk embedding."},
+    "cache": {"value": "Tidak perlu", "reason": "Belum ada kebutuhan realtime atau beban tinggi."},
+    "architecture": {"value": "Modular Monolith", "reason": "Layanan AI sebagai modul tersendiri tanpa memecah deployment."}
+  }
+}

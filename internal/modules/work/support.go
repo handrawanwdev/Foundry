@@ -143,6 +143,9 @@ func knowledge(p *core.Project) map[string]any {
 	if s := p.Structure; s != nil {
 		k["architecture"] = map[string]any{"mode": s.Mode, "modules": s.Components, "template": s.Template, "layout": s.Layout}
 	}
+	if p.Stack != nil {
+		k["technology"] = p.Stack.Decisions
+	}
 	if p.Design != nil {
 		var pages []map[string]any
 		for _, pg := range p.Design.Pages {

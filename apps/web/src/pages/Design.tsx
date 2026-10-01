@@ -7,7 +7,8 @@ import { isWorking } from "../flow";
 import { useProject } from "../store/project";
 import { useWorkbench } from "../store/workbench";
 import { api } from "../api";
-import type { Blocker, DesignHandoff, PageHandoff, PageStates, Project } from "../types";
+import type { Blocker, DesignHandoff, PageHandoff, PageStates, Project, TechStack } from "../types";
+import { TECH_AREA, techChoice } from "../components/TechStack";
 import { ThemeGallery } from "../components/ThemeGallery";
 import { RegenerateButton, TemplateLibrary } from "../components/TemplateGallery";
 import { Features, PlatformStructure, Summary } from "./DesignInfo";
@@ -21,7 +22,7 @@ const STATES: [PageState, string, keyof PageStates | null][] = [
   ["normal", "Normal", null], ["loading", "Memuat", "loading"], ["empty", "Kosong", "empty"],
   ["no_results", "Tanpa hasil", "no_results"], ["error", "Error", "error"], ["success", "Berhasil", "success"],
 ];
-const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Struktur"], ["kebutuhan", "Kebutuhan"], ["tema", "Theme"], ["template", "Template"], ["peta", "Peta Prototipe"], ["versi", "Versi"]];
+const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Teknologi"], ["kebutuhan", "Kebutuhan"], ["tema", "Theme"], ["template", "Template"], ["peta", "Peta Prototipe"], ["versi", "Versi"]];
 // Explorer deep links use ?tab=fitur|platform|ringkasan.
 const TAB_INFO: Record<string, Info> = { fitur: "fitur", platform: "platform", ringkasan: "kebutuhan" };
 
@@ -185,7 +186,7 @@ function Workspace({ project }: { project: Project }) {
                 onOpen={(id) => { setMode("pratinjau"); show(id); }}
                 onTry={(id) => { setMode("prototipe"); startFlow(id, true); }} />
             ) : mode === "kode" ? (
-              page && <CodeHandoff key={page.id} handoff={handoff?.pages?.find((h) => h.page_id === page.id)} blockers={(handoff?.blockers ?? []).filter((b) => b.page_id === page.id)} />
+              page && <CodeHandoff key={page.id} stack={handoff?.stack} handoff={handoff?.pages?.find((h) => h.page_id === page.id)} blockers={(handoff?.blockers ?? []).filter((b) => b.page_id === page.id)} />
             ) : page && (
               <div className={`dw-stage ${dev}`}>
                 <Fit width={SCREEN_WIDTH[dev]}>
@@ -246,16 +247,20 @@ function Workspace({ project }: { project: Project }) {
 
 // Code: the implementation handoff of one page, derived from the Design IR;
 // the build receives exactly this.
-function CodeHandoff({ handoff, blockers }: { handoff?: PageHandoff; blockers: Blocker[] }) {
+function CodeHandoff({ handoff, blockers, stack }: { handoff?: PageHandoff; blockers: Blocker[]; stack?: TechStack | null }) {
   const [copied, setCopied] = useState(false);
   if (!handoff) return <div className="code-view"><p className="muted">Handoff belum tersedia.</p></div>;
-  const json = JSON.stringify(handoff, null, 2);
+  const tech = stack?.decisions ?? [];
+  // The copied spec carries the technology so the code follows the same decision.
+  const technology = Object.fromEntries(tech.map((d) => [d.area, techChoice(d)]));
+  const json = JSON.stringify(tech.length ? { technology, page: handoff } : handoff, null, 2);
   return (
     <div className="code-view">
       <h1>{handoff.name}</h1>
       <p className="small muted">
         <code>{handoff.route || "route belum ditentukan"}</code> · {handoff.platform} · {handoff.access === "auth" ? "harus login" : handoff.access || "akses belum ditentukan"}
       </p>
+      {tech.length > 0 && <p className="small">Dibangun dengan: {tech.map((d) => `${TECH_AREA[d.area] ?? d.area} ${techChoice(d)}`).join(" · ")}</p>}
       {blockers.map((b, i) => <p key={i} className="warn-text small">! {b.text}</p>)}
       <p className="small muted">Handoff implementasi dari Design IR — build memakai data yang sama.</p>
       <button className="ghost small" onClick={() => navigator.clipboard?.writeText(json).then(() => setCopied(true), () => {})}>{copied ? "Tersalin" : "Salin JSON"}</button>

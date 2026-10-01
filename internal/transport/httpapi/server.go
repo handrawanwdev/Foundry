@@ -23,6 +23,7 @@ import (
 	"github.com/handrawanw/foundry/internal/modules/agent"
 	"github.com/handrawanw/foundry/internal/modules/pipeline"
 	"github.com/handrawanw/foundry/internal/modules/scan"
+	"github.com/handrawanw/foundry/internal/modules/stack"
 	"github.com/handrawanw/foundry/internal/modules/structure"
 	"github.com/handrawanw/foundry/internal/modules/verify"
 	"github.com/handrawanw/foundry/internal/modules/work"
@@ -206,6 +207,17 @@ func (s *Server) Handler() http.Handler {
 		}
 		return svc.SetTemplate(in.Template)
 	}))
+	api("PUT /api/v1/project/stack", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Area, Value, Reason string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.SetStack(in.Area, in.Value, in.Reason)
+	}))
+	api("POST /api/v1/project/stack/recommend", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.RecommendStack() }))
+	api("GET /api/v1/stack/catalog", func(r *http.Request) (any, error) {
+		return map[string]any{"catalog": stack.Catalog, "profiles": stack.Profiles, "areas": core.TechAreas}, nil
+	})
 	api("GET /api/v1/themes", func(r *http.Request) (any, error) {
 		dir := ""
 		if svc, err := s.service(); err == nil {
@@ -264,7 +276,7 @@ func (s *Server) Handler() http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"pages": work.Handoffs(p), "blockers": work.Blockers(p)}, nil
+		return map[string]any{"pages": work.Handoffs(p), "blockers": work.Blockers(p), "stack": p.Stack, "structure": p.Structure}, nil
 	}))
 	// Canvas: direct edits of one page's Design IR tree, no AI.
 	api("POST /api/v1/project/design/edit", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {

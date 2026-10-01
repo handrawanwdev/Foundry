@@ -174,7 +174,7 @@ func obj(props map[string]any, required ...string) map[string]any {
 var str = map[string]any{"type": "string"}
 
 var tools = []tool{
-	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, discovery, platform, structure, job, counts.", InputSchema: obj(nil)},
+	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, discovery, platform, structure, technology stack, job, counts.", InputSchema: obj(nil)},
 	{Name: "get_requirements", perm: PermRead, Description: "Requirements, features, sub-features and user flows.", InputSchema: obj(nil)},
 	{Name: "get_design", perm: PermRead, Description: "Design pages with wireframe components and status.", InputSchema: obj(nil)},
 	{Name: "get_tasks", perm: PermRead, Description: "All tasks (Kanban), optionally filtered by status.",
@@ -233,7 +233,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 	switch name {
 	case "get_project":
 		return map[string]any{"name": p.Name, "stage": p.Stage, "story": p.Story, "discovery": p.Discovery,
-			"platform": p.Platform, "structure": p.Structure, "job": p.Job,
+			"platform": p.Platform, "structure": p.Structure, "stack": p.Stack, "job": p.Job,
 			"counts": map[string]int{"requirements": len(p.Requirements), "features": len(p.Features), "tasks": len(p.Tasks)}}, nil
 	case "get_requirements":
 		return map[string]any{"requirements": p.Requirements, "features": p.Features, "flows": p.Flows}, nil

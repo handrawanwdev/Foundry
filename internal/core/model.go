@@ -45,7 +45,9 @@ type Project struct {
 	Flows        []Flow        `json:"flows"`
 	Platform     *PlatformPlan `json:"platform,omitempty"`
 	Structure    *Structure    `json:"structure,omitempty"`
-	Design       *Design       `json:"design,omitempty"`
+	// Stack is the technology decision every later stage builds with.
+	Stack  *TechStack `json:"stack,omitempty"`
+	Design *Design    `json:"design,omitempty"`
 	// Theme is the theme the user picked for the design; empty lets
 	// Foundry select one from the requirement.
 	Theme string `json:"theme,omitempty"`
@@ -73,6 +75,9 @@ type Discovery struct {
 	Integrations []string `json:"integrations"`
 	Security     []string `json:"security"`
 	Workflows    []string `json:"workflows"`
+	// TechNeeds are the technical signals the analyst found (realtime,
+	// offline, seo, ai, ...); the technology decision starts from them.
+	TechNeeds []string `json:"tech_needs,omitempty"`
 }
 
 type Role struct {

@@ -26,6 +26,8 @@ var Templates = []Template{
 		Layout: []string{"services/api/", "apps/web/", "docs/"}},
 	{ID: "monorepo", Name: "Monorepo", Description: "Web + Mobile + Backend dengan kode bersama",
 		Layout: []string{"apps/web/", "apps/mobile/", "services/api/", "packages/shared/", "packages/ui/", "docs/"}},
+	{ID: "microservices", Name: "Microservices", Description: "Layanan terpisah per domain; hanya untuk skala dan deployment independen",
+		Layout: []string{"apps/web/", "services/", "docs/"}},
 }
 
 func TemplateByID(id string) (Template, bool) {

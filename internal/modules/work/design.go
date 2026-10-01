@@ -236,6 +236,9 @@ Write labels in the same language as the features. Do not write code. Do not mod
 		b.WriteString("YOUR PREVIOUS DESIGN WAS REJECTED, send a corrected design:\n" + d.Rejected + "\n\n")
 	}
 	b.WriteString("PLATFORMS:\n" + mustJSON(p.Platform.Targets) + "\n\n")
+	if brief := p.Stack.Brief(); brief != "" {
+		b.WriteString(brief + "Design only what this stack can build on its platforms.\n\n")
+	}
 	b.WriteString("FEATURES:\n" + mustJSON(p.Features) + "\n\n")
 	b.WriteString("FLOWS:\n" + mustJSON(p.Flows) + "\n\n")
 	if p.Discovery != nil {

@@ -29,6 +29,17 @@ func Markdown(p *core.Project) string {
 		}
 		fmt.Fprintf(&b, "\n%s\n\n", p.Platform.Reason)
 	}
+	if st := p.Stack; st != nil && len(st.Decisions) > 0 {
+		b.WriteString("## Teknologi\n\n")
+		for _, d := range st.Decisions {
+			fmt.Fprintf(&b, "- **%s**: %s — %s", d.Area, d.Choice(), d.Reason)
+			if o := d.Override; o != nil {
+				fmt.Fprintf(&b, " (diganti user dari %s: %s)", d.Recommended, o.Reason)
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
 	if s := p.Structure; s != nil {
 		b.WriteString("## Struktur Project\n\n")
 		if s.Mode == core.StructureExisting {
