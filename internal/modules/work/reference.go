@@ -298,9 +298,17 @@ func ApplyReference(p *core.Project, raw string) (*core.Theme, error) {
 	return &t, nil
 }
 
-// saveTheme writes a theme in the layout LoadTheme reads, plus the DNA it
-// came from (reference.json) for traceability.
+// saveTheme writes a reference theme plus the DNA it came from
+// (reference.json) for traceability.
 func saveTheme(dir string, t core.Theme, dna core.ThemeDNA) error {
+	if err := SaveTheme(dir, t); err != nil {
+		return err
+	}
+	return writeJSON(filepath.Join(dir, ProjectThemesDir, t.ID, "reference.json"), dna)
+}
+
+// SaveTheme writes a project theme in the layout LoadTheme reads.
+func SaveTheme(dir string, t core.Theme) error {
 	out := filepath.Join(dir, ProjectThemesDir, t.ID)
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err
@@ -314,14 +322,18 @@ func saveTheme(dir string, t core.Theme, dna core.ThemeDNA) error {
 	}{t.Colors, t.Typography, t.Spacing, t.Radius, t.Shadow}
 	head := t
 	head.Colors, head.Typography, head.Spacing, head.Radius, head.Shadow, head.Components = nil, nil, nil, nil, nil, nil
-	for name, v := range map[string]any{"theme.json": head, "tokens.json": tokens, "components.json": t.Components, "reference.json": dna} {
-		b, err := json.MarshalIndent(v, "", "  ")
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(out, name), append(b, '\n'), 0o644); err != nil {
+	for name, v := range map[string]any{"theme.json": head, "tokens.json": tokens, "components.json": t.Components} {
+		if err := writeJSON(filepath.Join(out, name), v); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func writeJSON(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o644)
 }

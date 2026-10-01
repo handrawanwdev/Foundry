@@ -23,6 +23,12 @@ export interface Command { name: string; dir: string; argv: string[] }
 export interface Structure {
   mode: "existing" | "new"; components: Component[] | null; template?: string; layout?: string[];
   reason: string; commands: Command[] | null; approved: boolean; scaffolded: boolean;
+  ui?: ExistingUI;
+}
+// The frontend an existing project already has, read from its code.
+export interface ExistingUI {
+  paths: string[]; routes?: string[]; shell?: string[]; navigation?: "side" | "top" | "";
+  nav_items?: string[]; components?: string[]; theme_id?: string; theme_sources?: string[];
 }
 // Technology decision: one choice per area with its reason; the user's
 // override wins over the recommendation.

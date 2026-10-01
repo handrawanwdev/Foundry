@@ -543,6 +543,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 				return err
 			}
 			p.Structure = structure.Detect(p.Dir, p.Platform)
+			readExistingUI(p)
 			decideStack(p)
 			p.Stage = core.StageDesign
 			next = work.KindDesign

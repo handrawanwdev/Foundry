@@ -47,6 +47,9 @@ Write labels in the same language as the design. Do not write code. Do not modif
 	if len(fb) > 1 {
 		b.WriteString("EARLIER REQUESTS (already applied, do not redo):\n- " + strings.Join(fb[:len(fb)-1], "\n- ") + "\n\n")
 	}
+	if ui := existingUIBrief(p, false); ui != "" {
+		b.WriteString(ui + "\n")
+	}
 	b.WriteString("PAGES (for targets and navigation):\n")
 	for _, pg := range d.Pages {
 		fmt.Fprintf(&b, "- %s %q %s %s %s\n", pg.ID, pg.Name, pg.Platform, pg.Kind, pg.Route)

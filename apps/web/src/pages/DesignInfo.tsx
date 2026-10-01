@@ -3,7 +3,7 @@ import { api } from "../api";
 import { PLATFORM_LABEL } from "../flow";
 import { TechStackPanel } from "../components/TechStack";
 import { useProject } from "../store/project";
-import type { PlatformKind, PlatformTarget, Project, Template } from "../types";
+import type { ExistingUI, PlatformKind, PlatformTarget, Project, Template } from "../types";
 
 // Secondary views of the design workspace: what the pages are built from.
 
@@ -75,6 +75,7 @@ export function PlatformStructure({ project }: { project: Project }) {
               <div key={i} className="small">✓ {c.kind} ditemukan <code>{c.path}</code> {c.tech && <span className="muted">({c.tech})</span>}</div>
             ))}
             <p className="small">{s.reason}</p>
+            {s.ui && <ExistingUIInfo ui={s.ui} />}
             {(s.commands ?? []).length > 0 && (
               <details className="small"><summary>Command verifikasi</summary>
                 {(s.commands ?? []).map((c, i) => <div key={i}><code>{c.argv.join(" ")}</code> <span className="muted">di {c.dir}</span></div>)}
@@ -119,6 +120,26 @@ export function Summary({ project }: { project: Project }) {
           <div key={r.id} className="small req"><span className="muted">{r.id}</span> <span className={`prio ${r.priority}`}>{r.priority}</span> {r.text}</div>
         ))}
       </section>
+    </div>
+  );
+}
+
+const NAV_LABEL = { side: "menu samping", top: "menu atas" } as const;
+
+// What the existing frontend has; new pages are designed to fit into it.
+function ExistingUIInfo({ ui }: { ui: ExistingUI }) {
+  const list = (items: string[] | undefined, label: string) =>
+    items?.length ? <details className="small"><summary>{label} ({items.length})</summary>{items.map((x) => <div key={x}><code>{x}</code></div>)}</details> : null;
+  return (
+    <div className="small">
+      <p><strong>UI yang sudah ada</strong> — halaman baru dirancang mengikuti ini.</p>
+      {ui.navigation && <div>Navigasi: {NAV_LABEL[ui.navigation]}{ui.nav_items?.length ? ` (${ui.nav_items.join(", ")})` : ""}</div>}
+      {ui.theme_id
+        ? <div>Theme <code>{ui.theme_id}</code> dari token di {ui.theme_sources?.join(", ")}</div>
+        : <div className="muted">Token desain tidak ditemukan di kode; theme dipilih seperti biasa.</div>}
+      {list(ui.routes, "Route")}
+      {list(ui.shell, "Layout & navigasi")}
+      {list(ui.components, "Komponen bersama")}
     </div>
   );
 }

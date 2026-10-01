@@ -57,6 +57,7 @@ func structureBrief(p *core.Project) string {
 		for _, c := range s.Components {
 			fmt.Fprintf(&b, "- %s: %s %s\n", c.Kind, c.Path, c.Tech)
 		}
+		b.WriteString(existingUIBrief(p, true))
 	} else {
 		fmt.Fprintf(&b, "PROJECT STRUCTURE: new project, template %q, layout:\n", s.Template)
 		for _, l := range s.Layout {

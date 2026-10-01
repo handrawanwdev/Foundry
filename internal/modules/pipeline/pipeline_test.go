@@ -565,7 +565,25 @@ func TestExistingProjectKeepsStructure(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/x\n\ngo 1.22\n"), 0o644)
 	os.MkdirAll(filepath.Join(dir, "web"), 0o755)
 	os.WriteFile(filepath.Join(dir, "web", "package.json"), []byte(`{"dependencies": {"react": "18"}, "scripts": {"build": "vite build", "test": "vitest"}}`), 0o644)
+	os.MkdirAll(filepath.Join(dir, "web", "src", "components"), 0o755)
+	os.WriteFile(filepath.Join(dir, "web", "src", "router.tsx"), []byte(`[{ path: "/orders" }, { path: "/settings" }]`), 0o644)
+	os.WriteFile(filepath.Join(dir, "web", "src", "components", "Sidebar.tsx"), []byte(`[{ label: "Pesanan" }]`), 0o644)
+	os.WriteFile(filepath.Join(dir, "web", "src", "index.css"), []byte(`:root { --primary: #7c3aed; --background: #ffffff; --foreground: #111827; --border: #e5e7eb; }`), 0o644)
 	p := designReady(t, s)
+	// The existing frontend is read: the design follows its tokens and the
+	// prompts know its routes, navigation and components.
+	if ui := p.Structure.UI; ui == nil || ui.Navigation != "side" || len(ui.Routes) != 2 || ui.ThemeID != "existing-ui" {
+		t.Fatalf("ui = %+v", p.Structure.UI)
+	}
+	if p.Theme != "existing-ui" || p.Design.Theme == nil || p.Design.Theme.ID != "existing-ui" {
+		t.Fatalf("theme = %q %+v", p.Theme, p.Design.Theme)
+	}
+	if prompt := work.DesignPrompt(p); !strings.Contains(prompt, "EXISTING UI") || !strings.Contains(prompt, "/orders, /settings") || !strings.Contains(prompt, "Pesanan") {
+		t.Fatalf("design prompt misses the existing ui")
+	}
+	if !strings.Contains(work.PlanPrompt(p), "register their routes in the existing router") {
+		t.Fatalf("plan prompt misses the existing ui")
+	}
 	if p.Structure.Mode != core.StructureExisting {
 		t.Fatalf("mode = %s", p.Structure.Mode)
 	}

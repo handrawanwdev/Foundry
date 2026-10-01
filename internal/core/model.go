@@ -152,6 +152,28 @@ type Structure struct {
 	Commands   []Command     `json:"commands"`
 	Approved   bool          `json:"approved"`
 	Scaffolded bool          `json:"scaffolded"`
+	// UI is what the existing frontend already has; nil for new projects
+	// or when no frontend was found.
+	UI *ExistingUI `json:"ui,omitempty"`
+}
+
+// ExistingUI is the frontend an existing project already has, read from
+// its code: new pages are designed to fit into it, not beside it.
+type ExistingUI struct {
+	// Paths are the frontend components that were read.
+	Paths  []string `json:"paths"`
+	Routes []string `json:"routes,omitempty"`
+	// Shell are the layout and navigation files every page sits in.
+	Shell []string `json:"shell,omitempty"`
+	// Navigation is side or top, "" when unknown; NavItems its menu labels.
+	Navigation string   `json:"navigation,omitempty"`
+	NavItems   []string `json:"nav_items,omitempty"`
+	// Components are the shared UI components ("Button (src/components/ui/button.tsx)").
+	Components []string `json:"components,omitempty"`
+	// ThemeID is the theme generated from the code's design tokens;
+	// ThemeSources the files they came from.
+	ThemeID      string   `json:"theme_id,omitempty"`
+	ThemeSources []string `json:"theme_sources,omitempty"`
 }
 
 type Component struct {

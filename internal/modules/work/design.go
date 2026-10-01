@@ -244,6 +244,9 @@ Write labels in the same language as the features. Do not write code. Do not mod
 	if p.Discovery != nil {
 		b.WriteString("ROLES:\n" + mustJSON(p.Discovery.Roles) + "\n\n")
 	}
+	if ui := existingUIBrief(p, false); ui != "" {
+		b.WriteString(ui + "\n")
+	}
 	theme, _ := ResolveTheme(p)
 	b.WriteString(designRules + "\n" + designKnowledge(DetectDomain(p)) + "\n" + themeKnowledge(theme) + "\n" + templateKnowledge(p) + "\n" + designProcess + "\n" + componentRules + renderRules + "\n")
 	system := systemShape

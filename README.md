@@ -18,6 +18,7 @@ internal/config/            koneksi AI + recent project (~/.foundry/foundry.json
 internal/modules/
   agent/                    runner CLI agent (Claude Code, Codex, Qwen Code, Grok, Gemini, custom)
   scan/                     deteksi komponen + command build/test nyata
+  uiscan/                   UI project existing: route, layout shell, navigasi, komponen, token desain → theme
   stack/                    keputusan teknologi: kebutuhan → profil (profiles/*.json) → aturan; override user
   structure/                existing vs template baru (simple/modular/monorepo/microservices), scaffold
   work/                     prompt + apply: discovery, design, plan, task, review (dipakai agent & MCP)
@@ -61,6 +62,7 @@ Prompt → discovery → design intelligence → theme → template → adaptasi
 - **Peta prototipe**: `GET /api/v1/project/design/prototype` — navigasi dari IR, halaman tak terjangkau, halaman buntu, celah alur.
 - **Template desain**: 8 pola UX (`internal/modules/work/design-templates/<id>/{intent,layout,rules,examples}.json`): auth-clean, dashboard-executive, workspace-agent, table-management, master-detail, finance-overview, trading-terminal, developer-tool. Foundry merekomendasikan dari domain/peran/kata kunci, AI memilih + menjelaskan alasan (`design.template`), lalu mengadaptasi ke fitur. Template = keputusan struktur, bukan HTML; theme tetap mengatur visual. Lint kategori `template` masuk skor kualitas. Template awal opsional dipilih user sebelum generate (`PUT /api/v1/project/design-template`, `""` = AI memilih, `blank` = tanpa template); pilihan user mengikat AI. Galeri: `GET /api/v1/design-templates?theme=&domain=`. Buat ulang rancangan (fitur/alur sama, tanpa discovery): `POST /api/v1/project/design/regenerate`.
 - **Referensi**: website/screenshot hanya menghasilkan Theme DNA; HTML/CSS/aset/konten tidak disalin.
+- **Project existing**: setelah discovery Foundry membaca frontend yang ada (`structure.ui`): route (Next.js app/pages, SvelteKit, Nuxt, config router), layout shell + navigasi (samping/atas, label menu), komponen bersama, dan token desain (CSS custom properties, SCSS, Tailwind config; termasuk format shadcn/oklch). Token jadi theme `.foundry/themes/existing-ui/` (yang tidak ada di kode diisi theme bawaan, ditandai di `use`) dan dipakai rancangan bila user belum memilih theme. Prompt design/plan/task: halaman baru masuk shell + menu yang ada, pakai ulang komponen, jangan buat ulang halaman lama. `existing-ui` ditulis ulang tiap discovery; untuk edit manual salin ke folder theme lain.
 
 ## MCP
 
