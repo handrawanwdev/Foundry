@@ -1,0 +1,37 @@
+{
+  "id": "sakura-light",
+  "name": "Sakura Light",
+  "description": "Terang dengan aksen pink lembut untuk beauty, fashion dan booking.",
+  "personality": [
+    "elegant",
+    "soft",
+    "refined",
+    "welcoming"
+  ],
+  "tokens": {
+    "color_mode": "light",
+    "radius": "large",
+    "spacing": "comfortable"
+  },
+  "preferences": {
+    "navigation": "top",
+    "layout": [
+      "list",
+      "steps",
+      "sections"
+    ],
+    "density": "comfortable"
+  },
+  "avoid": [
+    "glassmorphism",
+    "excessive_whitespace",
+    "decorative_gradient"
+  ],
+  "rules": [
+    {
+      "if": "customers book a service or slot",
+      "then": "show availability first, then a short booking flow",
+      "why": "choosing a time is the main decision"
+    }
+  ]
+}

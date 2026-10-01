@@ -1,0 +1,38 @@
+{
+  "id": "government-civic",
+  "name": "Government Civic",
+  "description": "Netral, jelas dan formal untuk layanan pemerintah dan formulir publik.",
+  "personality": [
+    "official",
+    "clear",
+    "neutral",
+    "dependable"
+  ],
+  "tokens": {
+    "color_mode": "light",
+    "radius": "small",
+    "spacing": "comfortable"
+  },
+  "preferences": {
+    "navigation": "top",
+    "layout": [
+      "steps",
+      "focused",
+      "sections"
+    ],
+    "density": "comfortable"
+  },
+  "avoid": [
+    "decorative_gradient",
+    "glassmorphism",
+    "illustration",
+    "large_cards"
+  ],
+  "rules": [
+    {
+      "if": "a citizen fills a long form",
+      "then": "split it into steps with progress and save-and-continue",
+      "why": "long public forms are done in several sittings"
+    }
+  ]
+}
