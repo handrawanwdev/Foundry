@@ -428,6 +428,9 @@ func applyFix(p *core.Project, out designOut) error {
 	if err != nil {
 		return err
 	}
+	if err := comparePatch(p, pages); err != nil {
+		return err
+	}
 	d.Pages = pages
 	d.Revision.Scope = scope
 	d.Revision.Patch = append(d.Revision.Patch, requested...)

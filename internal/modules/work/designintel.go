@@ -355,9 +355,9 @@ func LintPage(pg core.Page, domain string) []core.QAIssue {
 		return nil
 	}
 	var out []core.QAIssue
-	add := func(sev, cat, comp, dev, problem, why, fix string) {
+	add := func(rule, sev, cat, comp, dev, problem, why, fix string) {
 		out = append(out, core.QAIssue{PageID: pg.ID, Severity: sev, Category: cat, Component: comp, Device: dev,
-			Problem: problem, Why: why, Fix: fix, Source: "lint"})
+			Problem: problem, Why: why, Fix: fix, Source: "lint", Rule: rule})
 	}
 	comps := map[string]core.PageComponent{}
 	count := map[string]int{}
@@ -387,12 +387,12 @@ func LintPage(pg core.Page, domain string) []core.QAIssue {
 	if id := plan.Primary; id != "" {
 		for _, dev := range core.Devices {
 			if !visible(dev, id) && !(dev != base && (plan.Responsive == "list_then_detail" || plan.Responsive == "context_to_overlay")) {
-				add("major", "hierarchy", id, dev, fmt.Sprintf("Fokus utama %q tidak tampil di %s.", id, dev),
+				add("primary_hidden", "major", "hierarchy", id, dev, fmt.Sprintf("Fokus utama %q tidak tampil di %s.", id, dev),
 					"tugas utama halaman harus selalu terlihat", fmt.Sprintf("Hapus %q dari devices.%s.hide atau ganti primary_focus.", id, dev))
 			}
 		}
 		if before := leadingSupport(resolved[base].Root, id, plan.Supporting); before != "" {
-			add("minor", "hierarchy", before, base, fmt.Sprintf("Konten pendukung %q tampil sebelum fokus utama %q.", before, id),
+			add("support_before_primary", "minor", "hierarchy", before, base, fmt.Sprintf("Konten pendukung %q tampil sebelum fokus utama %q.", before, id),
 				"urutan baca harus mengikuti prioritas informasi", fmt.Sprintf("Pindahkan %q setelah %q, atau ke kolom samping.", before, id))
 		}
 	}
@@ -400,9 +400,14 @@ func LintPage(pg core.Page, domain string) []core.QAIssue {
 		focal := slices.ContainsFunc(pg.Components, func(c core.PageComponent) bool { return c.Emphasis == "action.primary" }) ||
 			count["form"] > 0 && strings.EqualFold(FormSubmit(pg), a.Label)
 		if !focal {
-			add("major", "hierarchy", "", base, fmt.Sprintf("Aksi utama %q tidak punya titik fokus visual.", a.Label),
+			add("no_primary_focal", "major", "hierarchy", "", base, fmt.Sprintf("Aksi utama %q tidak punya titik fokus visual.", a.Label),
 				"satu workflow butuh satu aksi fokus", fmt.Sprintf("Beri emphasis action.primary pada tombol %q.", a.Label))
 		}
+	}
+	m := PageMetrics(pg)
+	if n := m["primary_actions"]; n > 1 {
+		add("duplicate_primary_action", "major", "hierarchy", "", base, fmt.Sprintf("Aksi utama %q tampil %d kali.", pg.PrimaryAction.Label, n),
+			"satu workflow punya satu aksi utama; aksi ganda membuat user ragu mana yang benar", "Hapus tombol duplikat; sisakan satu aksi utama.")
 	}
 
 	// Spacing follows density.
@@ -412,10 +417,10 @@ func LintPage(pg core.Page, domain string) []core.QAIssue {
 		}
 		switch {
 		case pg.Density == "compact" && (n.Gap == "space.lg" || n.Gap == "space.xl"):
-			add("minor", "spacing", n.ID, "", fmt.Sprintf("Node %q memakai gap %s di halaman compact.", n.Key(), n.Gap),
+			add("spacing_density", "minor", "spacing", n.ID, "", fmt.Sprintf("Node %q memakai gap %s di halaman compact.", n.Key(), n.Gap),
 				"halaman padat butuh jarak rapat agar banyak data terlihat", fmt.Sprintf("Ubah gap node %q ke space.sm atau space.md.", n.Key()))
 		case pg.Density == "spacious" && (n.Gap == "space.none" || n.Gap == "space.xs") && len(n.Children) > 1:
-			add("minor", "spacing", n.ID, "", fmt.Sprintf("Node %q memakai gap %s di halaman spacious.", n.Key(), n.Gap),
+			add("spacing_density", "minor", "spacing", n.ID, "", fmt.Sprintf("Node %q memakai gap %s di halaman spacious.", n.Key(), n.Gap),
 				"halaman yang dipandu butuh jarak untuk memisahkan langkah", fmt.Sprintf("Ubah gap node %q ke space.md atau lebih.", n.Key()))
 		}
 	})
@@ -424,7 +429,7 @@ func LintPage(pg core.Page, domain string) []core.QAIssue {
 	if in := pg.Intent; in != nil {
 		d := Decide(PlanInput{Intent: *in, Platform: pg.Platform, Domain: domain, HasNav: hasNav(pg)})
 		if r, ok := densityRank[pg.Density]; ok && abs(r-densityRank[d.Density]) == 2 {
-			add("major", "density", "", "", fmt.Sprintf("Density %s bertentangan dengan intent (frekuensi %s, kepadatan informasi %s).", pg.Density, in.Frequency, in.InformationDensity),
+			add("density_mismatch", "major", "density", "", "", fmt.Sprintf("Density %s bertentangan dengan intent (frekuensi %s, kepadatan informasi %s).", pg.Density, in.Frequency, in.InformationDensity),
 				strings.Join(d.Reasons, "; "), "Ubah density ke "+d.Density+".")
 		}
 		cardGrid := ""
@@ -443,18 +448,18 @@ func LintPage(pg core.Page, domain string) []core.QAIssue {
 			}
 		})
 		if cardGrid != "" && (in.Comparison || in.Frequency == "high" && in.InformationDensity == "high") && count["table"]+count["list"] == 0 {
-			add("major", "composition", cardGrid, "", fmt.Sprintf("Record yang dibandingkan disusun sebagai kartu terpisah di node %q.", cardGrid),
+			add("cards_for_comparison", "major", "composition", cardGrid, "", fmt.Sprintf("Record yang dibandingkan disusun sebagai kartu terpisah di node %q.", cardGrid),
 				"perbandingan banyak record butuh baris yang sejajar", "Ganti kartu dengan satu table (atau list) berisi record tersebut.")
 		}
 	}
 	if webLike && (plan.Layout == "master-detail" || plan.Layout == "workspace") && !hasNode(resolved[base].Root, "split", "sidebar") {
-		add("major", "composition", "", base, fmt.Sprintf("Strategi %s, tetapi layout %s tidak punya split atau sidebar.", plan.Layout, base),
+		add("layout_mismatch", "major", "composition", "", base, fmt.Sprintf("Strategi %s, tetapi layout %s tidak punya split atau sidebar.", plan.Layout, base),
 			"daftar dan detail (atau area kerja dan konteks) harus tampil bersamaan di desktop", "Susun root dengan node split atau sidebar berisi dua area tersebut.")
 	}
 
 	// Navigation: a nav component must have a place.
 	if hasNav(pg) && l.Frame == "app" && (l.Nav == "" || l.Nav == "none") {
-		add("major", "navigation", "", base, "Halaman punya komponen nav tetapi layout.nav none, jadi menu tidak tampil.",
+		add("nav_hidden", "major", "navigation", "", base, "Halaman punya komponen nav tetapi layout.nav none, jadi menu tidak tampil.",
 			"navigasi persisten dibutuhkan untuk berpindah antarhalaman", "Set layout.nav ke side (desktop) atau bottom (mobile).")
 	}
 
@@ -462,24 +467,37 @@ func LintPage(pg core.Page, domain string) []core.QAIssue {
 	if webLike && pg.Platform != core.PlatformDesktop {
 		for _, c := range pg.Components {
 			if c.Type == "table" && len(c.Columns) > 4 && visible("mobile", c.ID) && swaps["mobile"][c.ID] != "list" {
-				add("major", "responsive", c.ID, "mobile", fmt.Sprintf("Tabel %q dengan %d kolom hanya diperkecil di mobile.", c.ID, len(c.Columns)),
+				add("table_not_swapped", "major", "responsive", c.ID, "mobile", fmt.Sprintf("Tabel %q dengan %d kolom hanya diperkecil di mobile.", c.ID, len(c.Columns)),
 					"tabel lebar tidak terbaca di layar HP", fmt.Sprintf("Tambahkan devices.mobile.swap {%q: \"list\"}.", c.ID))
 			}
 		}
 		if plan.Responsive == "table_to_list" && !slices.ContainsFunc(pg.Components, func(c core.PageComponent) bool { return swaps["mobile"][c.ID] == "list" }) {
-			add("major", "responsive", "", "mobile", "Strategi table_to_list, tetapi tidak ada tabel yang ditukar ke list di mobile.",
+			add("table_to_list_missing", "major", "responsive", "", "mobile", "Strategi table_to_list, tetapi tidak ada tabel yang ditukar ke list di mobile.",
 				"keputusan responsif harus tercatat di IR", "Tambahkan devices.mobile.swap untuk tabel utama.")
 		}
 		if plan.Responsive == "list_then_detail" && plan.Primary != "" && len(plan.Secondary) > 0 &&
 			visible("mobile", plan.Primary) && slices.ContainsFunc(plan.Secondary, func(id string) bool { return visible("mobile", id) }) {
-			add("major", "responsive", plan.Primary, "mobile", "Strategi list_then_detail, tetapi mobile masih menumpuk daftar dan detail di satu layar.",
+			add("mobile_stacked_detail", "major", "responsive", plan.Primary, "mobile", "Strategi list_then_detail, tetapi mobile masih menumpuk daftar dan detail di satu layar.",
 				"di HP daftar membuka detail; menumpuk keduanya membuat halaman sangat panjang", "Sembunyikan salah satu di devices.mobile.hide (detail dibuka dari daftar).")
 		}
 	}
 
+	if m["mobile_split_remaining"] > 0 {
+		add("mobile_split", "major", "responsive", "", "mobile", "Split atau sidebar desktop masih tampil di mobile.",
+			"dua kolom tidak muat di layar HP", "Ubah node tersebut lewat devices.mobile.nodes.<id>.type ke stack.")
+	}
+
 	// AI slop.
+	if n := m["duplicate_actions"]; n > 0 {
+		add("duplicate_action", "minor", "ai_slop", "", "", fmt.Sprintf("%d aksi tampil lebih dari sekali.", n),
+			"aksi yang sama di dua tempat menambah elemen tanpa fungsi baru", "Hapus tombol yang mengulang aksi yang sudah ada.")
+	}
+	if n := m["nested_surfaces"]; n > 0 {
+		add("nested_surface", "minor", "ai_slop", "", "", fmt.Sprintf("%d panel (surface) di dalam panel lain.", n),
+			"panel di dalam panel menambah garis dan jarak tanpa memisahkan informasi", "Hapus surface dari node bagian dalam.")
+	}
 	if count["stat"] > 3 {
-		add("major", "ai_slop", "", "", fmt.Sprintf("%d angka statistik di satu halaman.", count["stat"]),
+		add("too_many_stats", "major", "ai_slop", "", "", fmt.Sprintf("%d angka statistik di satu halaman.", count["stat"]),
 			"angka hanya untuk yang mendorong keputusan, maksimal 3", "Hapus stat yang tidak dipakai untuk mengambil keputusan.")
 	}
 	decorative := 0
@@ -489,7 +507,7 @@ func LintPage(pg core.Page, domain string) []core.QAIssue {
 		}
 	}
 	if decorative >= 3 {
-		add("major", "ai_slop", "", "", fmt.Sprintf("%d kartu tanpa isi atau tujuan.", decorative),
+		add("decorative_cards", "major", "ai_slop", "", "", fmt.Sprintf("%d kartu tanpa isi atau tujuan.", decorative),
 			"kartu dekoratif tidak membawa informasi atau aksi", "Hapus kartu tersebut atau ganti dengan konten yang dipakai user.")
 	}
 	surfaces, shadows := 0, 0
@@ -505,11 +523,11 @@ func LintPage(pg core.Page, domain string) []core.QAIssue {
 		}
 	})
 	if surfaces >= 3 && surfaces >= len(l.Root.Children) {
-		add("minor", "ai_slop", "", "", "Setiap bagian diletakkan di panel (surface).",
+		add("surface_everywhere", "minor", "ai_slop", "", "", "Setiap bagian diletakkan di panel (surface).",
 			"panel hanya untuk mengelompokkan yang perlu dipisah", "Hapus surface dari bagian yang tidak perlu dipisah.")
 	}
 	if shadows > 1 {
-		add("minor", "ai_slop", "", "", fmt.Sprintf("%d node non-overlay memakai elevation.", shadows),
+		add("extra_elevation", "minor", "ai_slop", "", "", fmt.Sprintf("%d node non-overlay memakai elevation.", shadows),
 			"bayangan hanya untuk lapisan di atas halaman", "Ubah elevation node tersebut ke elevation.none.")
 	}
 	if len(plan.Reasons) > 0 {
@@ -520,7 +538,7 @@ func LintPage(pg core.Page, domain string) []core.QAIssue {
 			}
 		}
 		if len(none) > 0 {
-			add("minor", "ai_slop", none[0], "", "Komponen tanpa alasan: "+strings.Join(none, ", ")+".",
+			add("missing_reason", "minor", "ai_slop", none[0], "", "Komponen tanpa alasan: "+strings.Join(none, ", ")+".",
 				"setiap elemen harus punya alasan fungsional, informasional, navigasi atau hierarki", "Tulis alasannya di plan.reasons atau hapus komponennya.")
 		}
 	}

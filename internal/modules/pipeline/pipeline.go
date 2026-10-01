@@ -156,7 +156,7 @@ func (s *Service) UndoDesignChange() error {
 }
 
 func (s *Service) reviseStep(msg string, fn func(*core.Project) error) error {
-	_, err := s.Store.Update(func(p *core.Project) error {
+	p, err := s.Store.Update(func(p *core.Project) error {
 		if p.Busy() {
 			return ErrBusy
 		}
@@ -169,9 +169,13 @@ func (s *Service) reviseStep(msg string, fn func(*core.Project) error) error {
 		if j := p.Job; j != nil && j.Kind == work.KindDesignQA && j.Status == core.JobWaiting {
 			j.Status, j.Message = core.JobDone, "Pemeriksaan visual dilewati"
 		}
+		measureQuality(p)
 		p.Log("ui", msg)
 		return nil
 	})
+	if err == nil {
+		saveQuality(p)
+	}
 	return err
 }
 
@@ -337,7 +341,8 @@ func (s *Service) failJob(kind string, err error) {
 // applyAI lands an AI answer in the project and chains the next step.
 func (s *Service) applyAI(kind, raw, source string) error {
 	var next string
-	_, err := s.Store.Update(func(p *core.Project) error {
+	measured := false
+	p, err := s.Store.Update(func(p *core.Project) error {
 		if p.Job == nil || p.Job.Kind != kind || p.Job.Status == core.JobDone {
 			return fmt.Errorf("%w: tidak ada job %s yang aktif", ErrWrongStage, kind)
 		}
@@ -369,6 +374,8 @@ func (s *Service) applyAI(kind, raw, source string) error {
 				}
 			}
 			p.Stage = core.StageDesign
+			measureQuality(p)
+			measured = true
 		case work.KindPlan:
 			if err := work.ApplyPlan(p, raw); err != nil {
 				return err
@@ -379,6 +386,8 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			if err != nil {
 				return err
 			}
+			measureQuality(p) // re-measure after the critic round
+			measured = true
 			if again {
 				next = work.KindDesignQA
 			}
@@ -391,6 +400,9 @@ func (s *Service) applyAI(kind, raw, source string) error {
 	})
 	if err != nil {
 		return err
+	}
+	if measured {
+		saveQuality(p)
 	}
 	if next != "" {
 		return s.startAI(next)

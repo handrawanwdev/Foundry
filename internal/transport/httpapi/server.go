@@ -167,6 +167,15 @@ func (s *Server) Handler() http.Handler {
 		}
 		return s.Open(in.Dir, in.Name, in.Create)
 	})
+	// Removes one entry from the recent list (dir empty = clear all). Project files stay.
+	api("POST /api/v1/projects/recent/remove", func(r *http.Request) (any, error) {
+		var in struct{ Dir string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		_, err := config.Update(func(c *config.Config) { c.RemoveRecent(in.Dir) })
+		return ok(err)
+	})
 	api("POST /api/v1/projects/close", func(r *http.Request) (any, error) { return ok(s.Close()) })
 	api("GET /api/v1/fs", s.browse)
 	api("GET /api/v1/templates", func(r *http.Request) (any, error) { return structure.Templates, nil })

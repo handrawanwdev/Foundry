@@ -4,7 +4,7 @@ import { api } from "../api";
 import { changeRequest, changeScope, componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf, type PageRequest } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
-import type { Blocker, DesignQA, DesignSystem, Page, PageHandoff, Project, QAIssue, Token } from "../types";
+import type { Blocker, DesignQA, DesignQuality, DesignSystem, Page, PageHandoff, Project, QAIssue, Token } from "../types";
 import type { Device } from "../design";
 
 // ---------- Inspect ----------
@@ -181,6 +181,43 @@ function QAIssues({ issues, pages, onOpen }: { issues: QAIssue[]; pages: Page[];
   );
 }
 
+const DIMENSION_LABEL: Record<string, string> = {
+  hierarchy: "Hierarki", composition: "Komposisi", spacing: "Spasi", density: "Kepadatan",
+  responsive: "Responsif", navigation: "Navigasi", ai_slop: "Anti AI-slop",
+};
+const CONFIDENCE_LABEL = { low: "rendah", medium: "sedang", high: "tinggi" };
+const VERDICT_LABEL = { improved: "membaik", neutral: "tetap", degraded: "memburuk" };
+
+// Quality report: why the design passes or needs a revision. The score is an
+// indicator of the decisions, not a ranking.
+function QualityPanel({ q, pages, onOpen }: { q: DesignQuality; pages: Page[]; onOpen: (pageId: string) => void }) {
+  const c = q.compared_to_previous;
+  const blocked = q.decision === "revision_required";
+  return (
+    <section className="review-flows quality">
+      <h3>Kualitas desain</h3>
+      <div className="quality-head">
+        <strong>{q.overall}/100</strong>
+        <span className={blocked ? "warn-text" : "ok-text"}>{blocked ? "Perlu revisi" : "Lolos gate"}</span>
+        <span className="muted small">keyakinan {CONFIDENCE_LABEL[q.confidence]}</span>
+      </div>
+      <ul className="quality-bars">
+        {Object.entries(DIMENSION_LABEL).map(([k, label]) => (
+          <li key={k}><span>{label}</span><span className="quality-bar"><span style={{ width: `${q.dimensions[k] ?? 0}%` }} /></span><span className="muted">{q.dimensions[k] ?? 0}</span></li>
+        ))}
+      </ul>
+      {c && <p className="small muted">Patch kritik ronde {c.round}: {c.before.overall} → {c.after.overall}, blocker {c.before.blockers} → {c.after.blockers} ({VERDICT_LABEL[c.verdict]}{c.rejected ? ", patch ditolak" : ""})</p>}
+      <ul className="review-findings small">
+        {(q.dimensions.ai_slop ?? 0) === 100 && <li className="ok-text">✓ Tidak ada AI slop</li>}
+        {(q.dimensions.responsive ?? 0) === 100 && <li className="ok-text">✓ Strategi mobile valid</li>}
+        {q.reasons?.map((r, i) => <li key={i} className="warn-text">! {r.problem}{r.fix && <span className="muted"> Perbaikan: {r.fix}</span>}</li>)}
+      </ul>
+      {q.recommendation && <p className="small muted">{q.recommendation}</p>}
+      {!!q.findings?.length && <QAIssues issues={q.findings} pages={pages} onOpen={onOpen} />}
+    </section>
+  );
+}
+
 export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (pageId: string) => void }) {
   const { run, pending } = useProject();
   const [open, setOpen] = useState(true);
@@ -337,7 +374,7 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
           {" · "}Struktur: {s?.mode === "existing" ? "project yang sudah ada" : s?.template ?? "—"}
           {!approved && <> <button className="link" onClick={() => onInfo("platform")}>Ubah</button></>}
         </li>
-        {blockers.length ? <li className="warn">! Wajib dilengkapi: {blockers.length} hal (design system, route, akses, aksi, urutan informasi, kondisi, menu)</li>
+        {blockers.length ? <li className="warn">! Wajib dilengkapi: {blockers.length} hal (design system, route, akses, aksi, urutan informasi, kondisi, menu, kualitas)</li>
           : <li className="ok">✓ Design system ada; tiap halaman punya route, akses, satu aksi utama, urutan informasi dan kondisi data</li>}
         {findings.length ? <li className="warn">! Kualitas rancangan: {findings.length} temuan</li>
           : <li className="ok">✓ Kualitas rancangan: tiap halaman punya layout sesuai jenisnya</li>}
@@ -345,6 +382,8 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
         {d.qa && !d.revision && <li className={d.qa.status === "failed" ? "warn" : "ok"} style={{ whiteSpace: "pre-line" }}>{qaText(d.qa)}
           {!!d.qa.issues?.length && <QAIssues issues={d.qa.issues} pages={pages} onOpen={onOpen} />}</li>}
       </ul>
+
+      {d.quality && <QualityPanel q={d.quality} pages={pages} onOpen={onOpen} />}
 
       {!approved && blockers.length > 0 && (
         <section className="review-flows">

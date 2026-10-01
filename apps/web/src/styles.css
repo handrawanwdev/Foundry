@@ -530,6 +530,12 @@ button.sb-item:hover { background: rgba(255,255,255,.12); }
 .recent, .start-action { display: flex; flex-direction: column; align-items: flex-start; gap: .15rem; width: 100%; text-align: left; background: none; border: 1px solid transparent; margin-bottom: .3rem; }
 .recent:hover, .start-action:hover { background: var(--hover); border-color: var(--line); }
 .start-action { background: var(--card); border-color: var(--line); padding: .8rem 1rem; margin-bottom: .6rem; }
+.recent-head { display: flex; align-items: baseline; justify-content: space-between; }
+.recent-row { position: relative; }
+.recent-row .recent { padding-right: 2rem; }
+.recent-remove { position: absolute; top: .35rem; right: .35rem; background: none; border: none; color: var(--muted); font-size: 1.1rem; line-height: 1; padding: .1rem .35rem; opacity: 0; }
+.recent-row:hover .recent-remove, .recent-remove:focus-visible { opacity: 1; }
+.recent-remove:hover { color: inherit; background: var(--hover); }
 .recent span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .watermark { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; color: var(--muted); }
 .watermark .start-title { font-size: 5rem; opacity: .15; }
@@ -684,3 +690,10 @@ button.sp-badge { cursor: pointer; }
 .mp-pop li.on { color: var(--accent); font-weight: 600; }
 .mp-pop li.muted { cursor: default; }
 @media (max-width: 640px) { .mp, .mp input { width: 100%; } .mp-field { flex: 1 1 100%; } }
+
+.quality-head { display: flex; gap: .75rem; align-items: baseline; margin-bottom: .5rem; }
+.quality-head strong { font-size: 20px; }
+.quality-bars { list-style: none; padding: 0; margin: 0 0 .75rem; display: grid; grid-template-columns: max-content minmax(0, 1fr) 2.5rem; gap: .3rem .75rem; font-size: 13px; align-items: center; }
+.quality-bars li { display: contents; }
+.quality-bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.quality-bar span { display: block; height: 100%; background: var(--ok); }

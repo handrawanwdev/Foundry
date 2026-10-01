@@ -26,6 +26,7 @@ export const api = {
 
   projects: () => call<{ current: string; recent: string[] | null }>("GET", "/projects"),
   openProject: (dir: string, create = false, name = "") => call<Project>("POST", "/projects/open", { dir, create, name }),
+  removeRecent: (dir = "") => call("POST", "/projects/recent/remove", { dir }),
   closeProject: () => call("POST", "/projects/close", {}),
   browse: (path?: string) => call<Browse>("GET", `/fs${path ? `?path=${encodeURIComponent(path)}` : ""}`),
   templates: () => call<Template[]>("GET", "/templates"),

@@ -300,6 +300,13 @@ func Blockers(p *core.Project) []Blocker {
 		for _, a := range duplicateActions(pg) {
 			add(fmt.Sprintf("aksi “%s” tampil lebih dari sekali", a))
 		}
+		// Quality gate: rule findings that make the page unusable. A
+		// duplicate primary action is already listed above.
+		for _, is := range LintPage(pg, p.Design.Domain) {
+			if IsBlocker(is) && is.Rule != "duplicate_primary_action" {
+				add("kualitas: " + strings.TrimSuffix(is.Problem, "."))
+			}
+		}
 		if missing := missingStates(pg); len(missing) > 0 {
 			add("kondisi " + strings.Join(missing, ", ") + " belum ditentukan")
 		}

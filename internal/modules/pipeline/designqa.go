@@ -2,8 +2,10 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 
@@ -106,16 +108,55 @@ func (s *Service) prepareQA(p *core.Project) (*core.Project, error) {
 }
 
 func (s *Service) finishQA(status, notes string) error {
-	_, err := s.Store.Update(func(p *core.Project) error {
+	p, err := s.Store.Update(func(p *core.Project) error {
 		if qa, initial := work.ActiveQA(p.Design); qa != nil {
 			qa.Status, qa.Notes = status, notes
 			if initial {
 				qa.Issues = work.LintDesign(p, nil) // the design rules still apply without a browser
 			}
 		}
+		measureQuality(p)
 		p.Job = &core.Job{Kind: work.KindDesignQA, Status: core.JobDone, Message: "Pemeriksaan visual dilewati: " + notes}
 		p.Log("system", "Pemeriksaan visual dilewati: "+notes)
 		return nil
 	})
+	if err == nil {
+		saveQuality(p)
+	}
 	return err
+}
+
+// MaxQualityHistory caps the history file (lines, one per page measured).
+const MaxQualityHistory = 2000
+
+// measureQuality re-measures the design after it or its check changed.
+func measureQuality(p *core.Project) {
+	if p.Design != nil {
+		p.Design.Quality = work.MeasureDesign(p)
+	}
+}
+
+// saveQuality writes the last measurement to .foundry/design-quality.json
+// and appends it to .foundry/design-quality-history.json. Best effort: the
+// measurement also lives in project.json.
+func saveQuality(p *core.Project) {
+	if p == nil || p.Design == nil || p.Design.Quality == nil {
+		return
+	}
+	dir := filepath.Join(p.Dir, core.StateDir)
+	if b, err := json.MarshalIndent(p.Design.Quality, "", "  "); err == nil {
+		os.WriteFile(filepath.Join(dir, "design-quality.json"), b, 0o644)
+	}
+	path := filepath.Join(dir, "design-quality-history.json")
+	var hist []work.QualityRecord
+	if b, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(b, &hist)
+	}
+	hist = append(hist, work.QualityRecords(p)...)
+	if len(hist) > MaxQualityHistory {
+		hist = hist[len(hist)-MaxQualityHistory:]
+	}
+	if b, err := json.MarshalIndent(hist, "", "  "); err == nil {
+		os.WriteFile(path, b, 0o644)
+	}
 }

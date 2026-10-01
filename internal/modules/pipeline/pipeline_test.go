@@ -2,6 +2,7 @@ package pipeline_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -53,7 +54,7 @@ const designJSON = `{"system": {"colors": [{"name": "primary", "value": "#1f6feb
    "hierarchy": ["Daftar dokter"], "secondary_actions": ["pilih", "Filter", " "], "states": {"loading": "Memuat dokter", "error": "Gagal memuat. Coba lagi."},
    "route": "Dokter", "access": "AUTH", "primary_action": {"label": "Pilih", "target": "P2"}, "data": {"required": ["Nama dokter"], "api": ["get /doctors", "ambil dokter"]},
    "components": [{"type": "header", "label": "Dokter"}, {"type": "list", "label": "Dokter", "columns": ["x"], "items": ["dr. A", "dr. B"]}, {"type": "button", "label": "Pilih", "target": "P2"}]},
-  {"id": "P2", "name": "Konfirmasi Janji", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "sub_feature_ids": ["FEAT-001.2"], "purpose": "Konfirmasi",
+  {"id": "P2", "name": "Konfirmasi Janji", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "sub_feature_ids": ["FEAT-001.2"], "purpose": "Konfirmasi", "kind": "form",
    "hierarchy": ["Ringkasan janji", "Form"], "route": "/janji/konfirmasi", "access": "auth", "primary_action": {"label": "Kirim", "target": "P9"},
    "components": [{"type": "form", "label": "Janji", "items": ["x"], "fields": [{"label": "Tanggal", "type": "DATE", "required": true, "group": "Jadwal"}, {"label": " "}]}, {"type": "button", "label": "Ke halaman hilang", "target": "P9"}]},
   {"id": "P3", "name": "Admin Jadwal", "platform": "web", "role": "Admin", "feature_id": "FEAT-002", "sub_feature_ids": ["FEAT-002.1"], "purpose": "Kelola jadwal",
@@ -136,6 +137,11 @@ func fakeAgent() {
   {"page": "PAGE-001", "device": "mobile", "severity": "high", "category": "hierarchy", "component": "button-3", "problem": "Tombol Pilih ada di bawah daftar panjang", "fix": "Pindahkan tombol Pilih ke atas"},
   {"page": "PAGE-002", "severity": "low", "category": "spacing", "problem": "Make it cleaner", "fix": "improve the UI"}],
  "patches": [{"page": "PAGE-001", "operations": [{"op": "move", "target": 2, "after": -1}]}]}`)
+			return
+		}
+		if mode == "degrade_fix" && strings.Contains(prompt, "-i1.png") {
+			// Removing the primary button lowers the quality score.
+			fmt.Println(`{"status": "fix", "notes": "tombol mengganggu", "patches": [{"page": "PAGE-001", "operations": [{"op": "remove", "target": 2}]}]}`)
 			return
 		}
 		if mode == "qa_fix" && strings.Contains(prompt, "-r1.png") {
@@ -780,6 +786,20 @@ func TestInitialDesignCritic(t *testing.T) {
 	if p.Design.Revision != nil {
 		t.Fatal("the critic fix of a new design is not a user revision")
 	}
+	// Measured after generation, after the patch and after the last round.
+	q := p.Design.Quality
+	if q == nil || len(q.Pages) != 3 || q.Confidence == "low" || q.Compared == nil || q.Compared.Verdict == "degraded" || len(qa.Compared) != 1 {
+		t.Fatalf("quality = %+v compared = %+v", q, qa.Compared)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, core.StateDir, "design-quality.json")); err != nil {
+		t.Fatal(err)
+	}
+	var hist []work.QualityRecord
+	b, _ := os.ReadFile(filepath.Join(p.Dir, core.StateDir, "design-quality-history.json"))
+	if err := json.Unmarshal(b, &hist); err != nil || len(hist) != 9 || hist[0].Round != 0 ||
+		hist[6].PageID != "PAGE-001" || hist[6].Round != 2 || !slices.Equal(hist[6].Devices, []string{"mobile"}) || len(hist[8].Devices) != 0 {
+		t.Fatalf("history (%v) = %+v", err, hist)
+	}
 
 	// Round 1 checked 3 pages on their base device + the web page on mobile.
 	s = newService(t, fakeAI{}, "initial_fix")
@@ -792,6 +812,28 @@ func TestInitialDesignCritic(t *testing.T) {
 	want := []string{"PAGE-001 mobile", "PAGE-002 mobile", "PAGE-003 desktop", "PAGE-003 mobile", "PAGE-001 mobile"}
 	if strings.Join(shots, ",") != strings.Join(want, ",") {
 		t.Fatalf("shots = %v", shots)
+	}
+}
+
+// A critic patch that lowers the quality score is rejected; the design the
+// generator made stays.
+func TestCriticPatchDegradesRejected(t *testing.T) {
+	s := newService(t, fakeAI{}, "degrade_fix")
+	s.Render = fakeRender{}
+	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	qa := p.Design.QA
+	if qa.Status != "failed" || !strings.Contains(qa.Notes, "memperburuk kualitas") || len(qa.Compared) != 1 || !qa.Compared[0].Rejected {
+		t.Fatalf("qa = %+v", qa)
+	}
+	if got := types(findPage(p, "PAGE-001")); got != "header,list,button" {
+		t.Fatalf("components = %s", got)
+	}
+	if p.Design.Quality.Compared == nil || p.Design.Quality.Compared.Verdict != "degraded" {
+		t.Fatalf("quality = %+v", p.Design.Quality)
 	}
 }
 

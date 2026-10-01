@@ -124,7 +124,11 @@ REQUEST:
 			if lint := LintPage(*pg, p.Design.Domain); len(lint) > 0 {
 				b.WriteString("RULE FINDINGS (measured on the IR by Foundry; confirm on the screenshot):\n")
 				for _, it := range lint {
-					fmt.Fprintf(&b, "- %s %s [%s] %s Fix: %s\n", it.Severity, it.Category, it.Component, it.Problem, it.Fix)
+					mark := ""
+					if IsBlocker(it) {
+						mark = "BLOCKER "
+					}
+					fmt.Fprintf(&b, "- %s%s %s [%s] %s Fix: %s\n", mark, it.Severity, it.Category, it.Component, it.Problem, it.Fix)
 				}
 			}
 		}
@@ -148,6 +152,8 @@ Severity: critical = the request is not visible on screen or the page is broken;
 (duplicate, overlap, element in the wrong place, overflow, a second primary action, the primary task not dominant, a table shrunk on mobile); minor = anything else worth fixing later.
 ` + status + `
 Everything else is reported as a minor issue and the status stays "pass". Never answer only "looks good".
+RULE FINDINGS marked BLOCKER fail Foundry's quality gate: when one is confirmed on the screenshot, answer "fix" with a patch for it.
+A fix patch is scored on the Design IR before and after; a patch that lowers the score or adds a blocker is rejected.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block:
 {"status": "pass", "issues": [{"page": "PAGE-001", "device": "desktop|tablet|mobile", "severity": "minor", "category": "hierarchy", "component": "component id or empty", "problem": "what is wrong on screen", "why": "which rule it breaks", "impact": "what it does to the user", "fix": "the concrete change"}]}
@@ -283,6 +289,9 @@ func applyInitialFix(p *core.Project, patches []pagePatch, qa *core.DesignQA) er
 	}
 	pages, _, _, _, err := mergePatch(p, p.Design.Pages, designOut{Patches: patches}, scope)
 	if err != nil {
+		return err
+	}
+	if err := comparePatch(p, pages); err != nil {
 		return err
 	}
 	p.Design.Pages = pages

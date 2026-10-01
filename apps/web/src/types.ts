@@ -86,9 +86,22 @@ export interface ChangeScope { open?: boolean; fields?: boolean; general?: strin
 export interface QAShot { page_id: string; device: string; image: string; outline: string }
 export interface QAIssue {
   page_id?: string; severity: "critical" | "major" | "minor"; problem: string; why?: string; impact?: string; fix?: string;
-  category?: string; component?: string; device?: string; source?: "lint";
+  category?: string; component?: string; device?: string; source?: "lint"; rule?: string;
 }
-export interface DesignQA { status: "running" | "pass" | "fixed" | "failed" | "skipped"; round: number; notes?: string; issues?: QAIssue[]; shots?: QAShot[]; next?: QAShot[] }
+export interface DesignQA {
+  status: "running" | "pass" | "fixed" | "failed" | "skipped"; round: number; notes?: string; issues?: QAIssue[]; shots?: QAShot[]; next?: QAShot[];
+  compared?: QualityComparison[];
+}
+// Design quality: rule metrics on the Design IR plus the critic's findings.
+// An internal indicator, never a ranking.
+export interface QualityScore { overall: number; dimensions: Record<string, number>; blockers: number }
+export interface QualityComparison { round: number; before: QualityScore; after: QualityScore; verdict: "improved" | "neutral" | "degraded"; rejected?: boolean }
+export interface PageQuality { page_id: string; overall: number; dimensions: Record<string, number>; metrics?: Record<string, number> }
+export interface DesignQuality {
+  overall: number; dimensions: Record<string, number>; pages?: PageQuality[]; findings?: QAIssue[];
+  confidence: "low" | "medium" | "high"; decision: "pass" | "revision_required"; reasons?: QAIssue[];
+  compared_to_previous?: QualityComparison; recommendation?: string; measured_at: string;
+}
 export interface DesignRevision { request: string; changes: DesignChange[] | null; scope?: ChangeScope; patch?: string[]; qa?: DesignQA }
 export interface Token { name: string; value: string; use?: string }
 export interface DesignSystem {
@@ -102,6 +115,7 @@ export interface Design {
   rejected?: string; // why the last patch was refused
   domain?: string;
   qa?: DesignQA; // visual critic of a newly generated design
+  quality?: DesignQuality;
 }
 export interface Criterion { text: string; met: boolean; evidence: string }
 export interface Task {

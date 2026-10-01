@@ -182,6 +182,53 @@ type Design struct {
 	// QA is the visual critic of a newly generated design; a revision keeps
 	// its own check in Revision.QA.
 	QA *DesignQA `json:"qa,omitempty"`
+	// Quality is the last measurement of the design: rule metrics on the
+	// Design IR plus the critic's findings. An internal indicator, not a
+	// ranking.
+	Quality *DesignQuality `json:"quality,omitempty"`
+}
+
+// DesignQuality is the measured quality of the current design.
+type DesignQuality struct {
+	Overall    int            `json:"overall"`
+	Dimensions map[string]int `json:"dimensions"`
+	Pages      []PageQuality  `json:"pages,omitempty"`
+	Findings   []QAIssue      `json:"findings,omitempty"`
+	// Confidence: low (rules on an IR without intent/plan), medium (rules
+	// only), high (rules plus the critic on rendered pages).
+	Confidence string `json:"confidence"`
+	// Decision is the quality gate: pass | revision_required. Reasons are
+	// the blocker findings that require a revision.
+	Decision       string             `json:"decision"`
+	Reasons        []QAIssue          `json:"reasons,omitempty"`
+	Compared       *QualityComparison `json:"compared_to_previous,omitempty"`
+	Recommendation string             `json:"recommendation,omitempty"`
+	MeasuredAt     time.Time          `json:"measured_at"`
+}
+
+type PageQuality struct {
+	PageID     string         `json:"page_id"`
+	Overall    int            `json:"overall"`
+	Dimensions map[string]int `json:"dimensions"`
+	// Metrics are the deterministic counts measured on the IR.
+	Metrics map[string]int `json:"metrics,omitempty"`
+}
+
+// QualityScore is the rule score of one design version.
+type QualityScore struct {
+	Overall    int            `json:"overall"`
+	Dimensions map[string]int `json:"dimensions"`
+	Blockers   int            `json:"blockers"`
+}
+
+// QualityComparison is the rule score before and after a critic patch.
+// Verdict: improved | neutral | degraded; a degraded patch is rejected.
+type QualityComparison struct {
+	Round    int          `json:"round"`
+	Before   QualityScore `json:"before"`
+	After    QualityScore `json:"after"`
+	Verdict  string       `json:"verdict"`
+	Rejected bool         `json:"rejected,omitempty"`
 }
 
 // DesignSystem holds the design tokens: the build maps them onto the
@@ -264,6 +311,8 @@ type DesignQA struct {
 	// Next are the page/device pairs the next round renders again: only
 	// what the last fix touched, on the device its findings were about.
 	Next []QAShot `json:"next,omitempty"`
+	// Compared is the rule score before and after each fix patch.
+	Compared []QualityComparison `json:"compared,omitempty"`
 }
 
 // QAIssue is one problem the visual critic saw on a screenshot.
@@ -282,6 +331,8 @@ type QAIssue struct {
 	// for findings of the deterministic design rules, empty for the critic.
 	Device string `json:"device,omitempty"`
 	Source string `json:"source,omitempty"`
+	// Rule is the id of the design rule a lint finding comes from.
+	Rule string `json:"rule,omitempty"`
 }
 
 type QAShot struct {
