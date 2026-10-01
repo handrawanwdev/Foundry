@@ -228,6 +228,17 @@ func TestApplyDesignIR(t *testing.T) {
 	}
 }
 
+func TestApplyDesignLeavesApprovedUntouched(t *testing.T) {
+	p := revisionProject()
+	p.Design.Status = core.DesignApproved
+	if err := ApplyDesign(p, "```json\n{\"pages\": [{\"id\": \"P1\", \"name\": \"X\", \"feature_id\": \"FEAT-001\", \"components\": []}]}\n```"); !errors.Is(err, ErrApproved) {
+		t.Fatalf("err = %v", err)
+	}
+	if p.Design.Status != core.DesignApproved || len(p.Design.Pages) != 2 || p.Design.Pages[0].Name != "Daftar" {
+		t.Fatalf("approved design mutated: %+v", p.Design)
+	}
+}
+
 func TestApplyDesignRejectsInvalidIR(t *testing.T) {
 	p := irProject()
 	bad := strings.Replace(irDesign, `"queue"]}`, `"queue", "ghost"]}`, 1)

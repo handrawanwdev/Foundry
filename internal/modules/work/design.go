@@ -29,6 +29,10 @@ type designOut struct {
 // gives the same answer, so the request is dropped instead.
 var ErrNoChange = errors.New("rancangan tidak berubah")
 
+// ErrApproved: the design is locked; applying a new draft would cancel
+// the user's approval.
+var ErrApproved = errors.New("rancangan sudah disetujui")
+
 // KindUnclear is the job of a change request the AI could not act on; it
 // is not retried, the user writes a clearer request.
 const KindUnclear = "revise"
@@ -264,8 +268,12 @@ Write labels in the same language as the features. Do not write code. Do not mod
 	return b.String()
 }
 
-// ApplyDesign replaces pages with a new draft; approval is reset.
+// ApplyDesign replaces pages with a new draft. An approved design is
+// left untouched: a failed later step must not cancel the approval.
 func ApplyDesign(p *core.Project, raw string) error {
+	if p.Design != nil && p.Design.Status == core.DesignApproved {
+		return ErrApproved
+	}
 	var out designOut
 	if err := ExtractJSON(raw, &out); err != nil {
 		return err

@@ -169,7 +169,7 @@ func (s *Service) ReviseDesign(feedback string, screens map[string]string, scope
 		if p.Busy() {
 			return ErrBusy
 		}
-		if p.Design == nil {
+		if p.Design == nil || p.Design.Status == core.DesignApproved {
 			return ErrWrongStage
 		}
 		p.Design.Feedback = append(p.Design.Feedback, feedback)
@@ -375,12 +375,17 @@ func (s *Service) SetTheme(id string) (*core.Project, error) {
 }
 
 // ApproveDesign locks platform, structure and design, then generates tasks.
+// The approval is saved first: a later scaffold or plan error does not
+// undo it. RetryJob re-runs those steps.
 func (s *Service) ApproveDesign() error {
 	_, err := s.Store.Update(func(p *core.Project) error {
 		if p.Busy() {
 			return ErrBusy
 		}
 		if p.Design == nil || len(p.Design.Pages) == 0 || p.Platform == nil || p.Structure == nil {
+			return ErrWrongStage
+		}
+		if p.Design.Status == core.DesignApproved {
 			return ErrWrongStage
 		}
 		if b := work.Blockers(p); len(b) > 0 {
@@ -391,12 +396,12 @@ func (s *Service) ApproveDesign() error {
 		if p.Stack == nil {
 			decideStack(p)
 		}
+		if p.Stack == nil {
+			return errors.New("keputusan teknologi belum ada")
+		}
 		p.Platform.Approved = true
 		p.Structure.Approved = true
 		p.Stack.Approved = true
-		if err := structure.Scaffold(p.Dir, p.Structure); err != nil {
-			return fmt.Errorf("gagal menyiapkan struktur: %w", err)
-		}
 		p.Stage = core.StagePlan
 		p.Log("ui", "Rancangan disetujui")
 		return nil
@@ -404,7 +409,33 @@ func (s *Service) ApproveDesign() error {
 	if err != nil {
 		return err
 	}
+	return s.continueApproval()
+}
+
+// continueApproval scaffolds the project (if needed) and starts the plan
+// job. Called after a fresh approval and when retrying a failed plan.
+func (s *Service) continueApproval() error {
+	if err := s.scaffoldApproved(); err != nil {
+		s.failJob(work.KindPlan, err)
+		return err
+	}
 	return s.startAI(work.KindPlan)
+}
+
+func (s *Service) scaffoldApproved() error {
+	_, err := s.Store.Update(func(p *core.Project) error {
+		if p.Design == nil || p.Design.Status != core.DesignApproved {
+			return ErrWrongStage
+		}
+		if p.Structure == nil || p.Structure.Scaffolded {
+			return nil
+		}
+		if err := structure.Scaffold(p.Dir, p.Structure); err != nil {
+			return fmt.Errorf("gagal menyiapkan struktur: %w", err)
+		}
+		return nil
+	})
+	return err
 }
 
 // ---------- AI jobs (shared by agent and MCP) ----------
@@ -642,8 +673,10 @@ func (s *Service) RetryJob() error {
 		return ErrNothingToDo
 	}
 	switch p.Job.Kind {
-	case work.KindDiscovery, work.KindDesign, work.KindPlan, work.KindDesignQA, work.KindReference:
+	case work.KindDiscovery, work.KindDesign, work.KindDesignQA, work.KindReference:
 		return s.startAI(p.Job.Kind)
+	case work.KindPlan:
+		return s.continueApproval()
 	case "build":
 		return s.StartBuild()
 	case "verify":

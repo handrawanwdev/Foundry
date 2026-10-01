@@ -161,6 +161,10 @@ func fakeAgent() {
 		}
 		fmt.Println(`{"status": "pass"}`)
 	case strings.Contains(prompt, "tech lead"):
+		if mode == "plan_fail" {
+			fmt.Println("maaf, saya tidak bisa")
+			return
+		}
 		fmt.Println(planJSON)
 	case strings.Contains(prompt, "coding agent"):
 		if mode == "crash" {
@@ -367,6 +371,58 @@ func TestNoAIConnected(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	mustJob(t, load(t, s), work.KindDiscovery, core.JobFailed)
+}
+
+// Approval is the user's decision: a later scaffold or plan error must not
+// put the design back to draft.
+func TestApproveKeepsDesignOnLaterError(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	p := designReady(t, s)
+	first := strings.TrimSuffix(p.Structure.Layout[0], "/")
+	top := strings.Split(first, "/")[0]
+	block := filepath.Join(p.Dir, top)
+	if err := os.WriteFile(block, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApproveDesign(); err == nil {
+		t.Fatal("expected scaffold error")
+	}
+	p = load(t, s)
+	if p.Design.Status != core.DesignApproved || p.Stage != core.StagePlan {
+		t.Fatalf("approval rolled back: status=%s stage=%s", p.Design.Status, p.Stage)
+	}
+	if p.Platform == nil || !p.Platform.Approved || p.Structure == nil || !p.Structure.Approved || p.Stack == nil || !p.Stack.Approved {
+		t.Fatalf("locks undone: platform=%+v structure=%+v stack=%+v", p.Platform, p.Structure, p.Stack)
+	}
+	mustJob(t, p, work.KindPlan, core.JobFailed)
+	if err := s.ReviseDesign("ubah warna", nil, nil); !errors.Is(err, pipeline.ErrWrongStage) {
+		t.Fatalf("revise after approval err = %v", err)
+	}
+
+	if err := os.Remove(block); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RetryJob(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p = load(t, s)
+	if !p.Structure.Scaffolded {
+		t.Fatal("scaffold not retried")
+	}
+	mustJob(t, p, work.KindPlan, core.JobDone)
+
+	s = newService(t, fakeAI{}, "plan_fail")
+	designReady(t, s)
+	if err := s.ApproveDesign(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p = load(t, s)
+	mustJob(t, p, work.KindPlan, core.JobFailed)
+	if p.Design.Status != core.DesignApproved || p.Stage != core.StagePlan {
+		t.Fatalf("plan error cancelled approval: status=%s stage=%s", p.Design.Status, p.Stage)
+	}
 }
 
 func TestInvalidDiscoveryOutput(t *testing.T) {
