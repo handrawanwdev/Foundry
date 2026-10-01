@@ -1,0 +1,37 @@
+{
+  "id": "clinical-care",
+  "name": "Clinical Care",
+  "description": "Bersih dan menenangkan dengan hijau teal untuk kesehatan, klinik dan layanan.",
+  "personality": [
+    "trustworthy",
+    "calm",
+    "clean",
+    "careful"
+  ],
+  "tokens": {
+    "color_mode": "light",
+    "radius": "medium",
+    "spacing": "comfortable"
+  },
+  "preferences": {
+    "navigation": "side",
+    "layout": [
+      "master-detail",
+      "list",
+      "steps"
+    ],
+    "density": "comfortable"
+  },
+  "avoid": [
+    "decorative_gradient",
+    "glassmorphism",
+    "illustration"
+  ],
+  "rules": [
+    {
+      "if": "a mistake affects a patient or a customer",
+      "then": "confirm critical actions and show status in words, not only color",
+      "why": "safety needs unambiguous feedback"
+    }
+  ]
+}

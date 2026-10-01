@@ -1,0 +1,36 @@
+{
+  "id": "playful-pop",
+  "name": "Playful Pop",
+  "description": "Cerah, bulat dan ramah untuk aplikasi konsumen, komunitas dan edukasi.",
+  "personality": [
+    "playful",
+    "friendly",
+    "energetic",
+    "bold"
+  ],
+  "tokens": {
+    "color_mode": "light",
+    "radius": "large",
+    "spacing": "comfortable"
+  },
+  "preferences": {
+    "navigation": "top",
+    "layout": [
+      "sections",
+      "list",
+      "steps"
+    ],
+    "density": "comfortable"
+  },
+  "avoid": [
+    "glassmorphism",
+    "excessive_whitespace"
+  ],
+  "rules": [
+    {
+      "if": "the audience uses the product for fun or learning",
+      "then": "rounded shapes, friendly copy and clear progress",
+      "why": "delight keeps casual users engaged"
+    }
+  ]
+}

@@ -43,7 +43,7 @@ func writeTheme(t *testing.T, dir, id string, edit func(m map[string]any)) {
 
 func TestBuiltinThemes(t *testing.T) {
 	themes, bad := Themes("")
-	if len(bad) > 0 || len(themes) != 4 {
+	if len(bad) > 0 || len(themes) != 14 {
 		t.Fatalf("themes = %d, invalid = %+v", len(themes), bad)
 	}
 	for _, th := range themes {
@@ -80,7 +80,7 @@ func TestThemeLoading(t *testing.T) {
 		m["colors"].([]any)[0].(map[string]any)["value"] = "red;background:url(x)"
 	})
 	themes, bad := Themes(dir)
-	if findTheme(themes, "brand") == nil || len(themes) != 5 {
+	if findTheme(themes, "brand") == nil || len(themes) != 15 {
 		t.Fatalf("valid project theme not loaded: %d themes", len(themes))
 	}
 	want := map[string]string{"bad-mode": `color_mode "neon"`, "no-primary": "token action.primary tidak ada",
