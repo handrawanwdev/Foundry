@@ -50,7 +50,7 @@ func (s *Service) StartBuild() error {
 	go func() {
 		defer s.wg.Done()
 		defer cancel()
-		s.buildLoop(ctx, runner)
+		s.buildLoop(ctx, cancel, runner, s.agents())
 	}()
 	return nil
 }
@@ -66,80 +66,125 @@ func (s *Service) StopBuild() error {
 	return nil
 }
 
-func (s *Service) buildLoop(ctx context.Context, runner *agent.Runner) {
-	agentFailures := 0
+// buildLoop runs up to workers agents at once. Each claim takes the first
+// ready task whose pages and files no running task holds; a task that
+// overlaps one waits in the queue until that task finishes.
+func (s *Service) buildLoop(ctx context.Context, cancel context.CancelFunc, runner *agent.Runner, workers int) {
+	type result struct {
+		worker string
+		err    error
+	}
+	done := make(chan result)
+	var free []string
+	for i := workers; i >= 1; i-- {
+		free = append(free, fmt.Sprintf("agent-%d", i))
+	}
+	queued := map[string]string{} // task → blocker already logged
+	running, agentFailures := 0, 0
+	var fatal error
 	for {
-		if ctx.Err() != nil {
-			s.Store.Update(func(p *core.Project) error {
-				p.Job = &core.Job{Kind: "build", Status: core.JobDone, Message: "Build dihentikan", Started: time.Now().UTC()}
-				return nil
-			})
-			return
-		}
-		p, err := s.Store.Load()
-		if err != nil {
-			s.failJob("build", err)
-			return
-		}
-		ready := p.ReadyTasks()
-		if len(ready) == 0 {
-			s.finishBuild(ctx)
-			return
-		}
-		t := ready[0]
-		if err := s.runTaskWithAgent(ctx, runner, t.ID); err != nil {
-			if ctx.Err() != nil {
-				continue // stopped by the user; handled at the top of the loop
+		for fatal == nil && ctx.Err() == nil && len(free) > 0 {
+			worker := free[len(free)-1]
+			p, t, err := s.claimNext(worker, "agent", queued)
+			if err != nil {
+				fatal = err
+				cancel()
+				break
 			}
-			if errors.Is(err, agent.ErrAgentFailed) {
-				agentFailures++
-				if agentFailures >= 2 {
-					s.failJob("build", fmt.Errorf("agent gagal berulang kali, periksa koneksi AI: %w", err))
-					return
-				}
-				continue
+			if t == nil {
+				break
 			}
-			s.failJob("build", err)
+			free = free[:len(free)-1]
+			running++
+			go func() { done <- result{worker, s.runTaskWithAgent(ctx, runner, p, t)} }()
+		}
+		if running == 0 {
+			switch {
+			case fatal != nil:
+				s.failJob("build", fatal)
+			case ctx.Err() != nil:
+				s.Store.Update(func(p *core.Project) error {
+					p.Job = &core.Job{Kind: "build", Status: core.JobDone, Message: "Build dihentikan", Started: time.Now().UTC()}
+					return nil
+				})
+			default:
+				s.finishBuild(ctx)
+			}
 			return
 		}
-		agentFailures = 0
+		r := <-done
+		running--
+		free = append(free, r.worker)
+		switch {
+		case r.err == nil:
+			agentFailures = 0
+		case ctx.Err() != nil:
+			// stopped by the user or by a fatal error; handled once all return
+		case errors.Is(r.err, agent.ErrAgentFailed):
+			if agentFailures++; agentFailures >= 2 && fatal == nil {
+				fatal = fmt.Errorf("agent gagal berulang kali, periksa koneksi AI: %w", r.err)
+				cancel()
+			}
+		case fatal == nil:
+			fatal = r.err
+			cancel()
+		}
 	}
 }
 
-// claimTask moves a ready task to IN_PROGRESS.
-func (s *Service) claimTask(id, source string) (*core.Project, *core.Task, error) {
-	var task *core.Task
+// claimNext atomically moves the first claimable task to IN_PROGRESS for
+// owner. It returns a nil task when every ready task is locked by a running
+// one (or none is ready). Waits are logged once per blocker when queued is
+// non-nil. The check runs inside the store lock, so agents in other
+// processes (MCP hosts) can never claim overlapping tasks either.
+func (s *Service) claimNext(owner, source string, queued map[string]string) (*core.Project, *core.Task, error) {
+	var id string
 	p, err := s.Store.Update(func(p *core.Project) error {
-		t := p.Task(id)
-		if t == nil {
-			return fmt.Errorf("task %s tidak ada", id)
+		for _, t := range p.ReadyTasks() {
+			o, lock := p.Blocker(t)
+			if o == nil {
+				id = t.ID
+				claim(p, t, owner, source)
+				return nil
+			}
+			if queued != nil && queued[t.ID] != o.ID {
+				queued[t.ID] = o.ID
+				p.Log("system", fmt.Sprintf("%s antri: %s sedang dipakai %s", t.ID, lockName(lock), o.ID))
+			}
 		}
-		ready := false
-		for _, r := range p.ReadyTasks() {
-			ready = ready || r.ID == id
-		}
-		if !ready {
-			return fmt.Errorf("task %s belum siap (status %s atau dependency belum DONE)", id, t.Status)
-		}
-		t.Status = core.TaskInProgress
-		t.Attempts++
-		p.Job.TaskID = id
-		p.Job.Message = jobMessage("build") + ": " + t.Title
-		p.Log(source, fmt.Sprintf("%s diambil (percobaan %d)", id, t.Attempts))
 		return nil
 	})
-	if err != nil {
-		return nil, nil, err
+	if err != nil || id == "" {
+		return p, nil, err
 	}
-	task = p.Task(id)
-	return p, task, nil
+	return p, p.Task(id), nil
 }
 
-func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, id string) error {
-	p, t, err := s.claimTask(id, "agent")
-	if err != nil {
-		return err
+func claim(p *core.Project, t *core.Task, owner, source string) {
+	t.Status = core.TaskInProgress
+	t.Attempts++
+	t.Owner = owner
+	if p.Job != nil {
+		p.Job.TaskID = t.ID
+		p.Job.Message = jobMessage("build") + ": " + t.Title
+		if n := len(p.ActiveTasks()); n > 1 {
+			p.Job.Message = fmt.Sprintf("%s: %d task paralel", jobMessage("build"), n)
+		}
 	}
+	p.Log(source, fmt.Sprintf("%s diambil %s (percobaan %d)", t.ID, owner, t.Attempts))
+}
+
+func lockName(lock string) string {
+	if lock == core.LockAll {
+		return "seluruh project"
+	}
+	return strings.Replace(lock, ":", " ", 1)
+}
+
+func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, p *core.Project, t *core.Task) error {
+	id := t.ID
+	// Changes by agents running in parallel land in the same tree, so the
+	// diff below may include their files too; the reviewer judges criteria.
 	before := checks.Take(p.Dir)
 	if _, err := runner.Run(ctx, agent.Execute, p.Dir, work.TaskPrompt(p, t)); err != nil {
 		if ctx.Err() != nil {
@@ -184,7 +229,9 @@ func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, id
 func (s *Service) runChecks(ctx context.Context, taskID string) core.BuildRun {
 	p, _ := s.Store.Load()
 	cmds := scan.Scan(p.Dir).Commands
+	s.checkMu.Lock()
 	build := checks.Run(ctx, p.Dir, cmds, taskID)
+	s.checkMu.Unlock()
 	s.Store.Update(func(p *core.Project) error {
 		if p.Structure != nil {
 			p.Structure.Commands = cmds
