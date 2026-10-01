@@ -42,6 +42,9 @@ type Project struct {
 	Platform     *PlatformPlan `json:"platform,omitempty"`
 	Structure    *Structure    `json:"structure,omitempty"`
 	Design       *Design       `json:"design,omitempty"`
+	// Theme is the theme the user picked for the design; empty lets
+	// Foundry select one from the requirement.
+	Theme        string        `json:"theme,omitempty"`
 	Tasks        []Task        `json:"tasks"`
 	Builds       []BuildRun    `json:"builds"`
 	Verification *Verification `json:"verification,omitempty"`
@@ -186,6 +189,9 @@ type Design struct {
 	// Design IR plus the critic's findings. An internal indicator, not a
 	// ranking.
 	Quality *DesignQuality `json:"quality,omitempty"`
+	// Theme is the theme the design follows: System holds its tokens, the
+	// renderer reads its style. Nil on designs made before themes.
+	Theme *ThemeContext `json:"theme,omitempty"`
 }
 
 // DesignQuality is the measured quality of the current design.

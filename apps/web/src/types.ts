@@ -116,7 +116,23 @@ export interface Design {
   domain?: string;
   qa?: DesignQA; // visual critic of a newly generated design
   quality?: DesignQuality;
+  theme?: ThemeContext; // nil on designs made before themes
 }
+// The theme a design follows, as the renderer reads it.
+export interface ThemeContext {
+  id: string; name: string; source: "user" | "auto" | "fallback"; reasons?: string[];
+  color_mode: "light" | "dark"; style?: Record<string, string>;
+}
+export interface ThemeRule { if: string; then: string; why: string }
+export interface Theme {
+  id: string; name: string; description?: string; personality: string[];
+  tokens: { color_mode: string; radius: string; spacing: string };
+  colors: Token[]; typography: Token[]; spacing: Token[]; radius: Token[]; shadow: Token[];
+  components: Record<string, string> | null;
+  preferences: { navigation?: string; layout?: string[]; density?: string };
+  avoid?: string[]; use_when: { domains?: string[]; not?: string[] }; rules?: ThemeRule[];
+}
+export interface ThemeProblem { id: string; error: string }
 export interface Criterion { text: string; met: boolean; evidence: string }
 export interface Task {
   id: string; title: string; description: string; area: string; requirement_ids: string[] | null;
@@ -162,7 +178,7 @@ export interface Event { at: string; source: string; message: string }
 export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string;
   discovery?: Discovery; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
-  platform?: PlatformPlan; structure?: Structure; design?: Design; tasks: Task[] | null;
+  platform?: PlatformPlan; structure?: Structure; design?: Design; theme?: string; tasks: Task[] | null;
   builds: BuildRun[] | null; verification?: Verification; job?: Job; support?: Support; events: Event[] | null; updated_at: string;
 }
 

@@ -4,7 +4,7 @@ import { api } from "../api";
 import { changeRequest, changeScope, componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf, type PageRequest } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
-import type { Blocker, DesignQA, DesignQuality, DesignSystem, Page, PageHandoff, Project, QAIssue, Token } from "../types";
+import type { Blocker, DesignQA, DesignQuality, DesignSystem, Page, PageHandoff, Project, QAIssue, ThemeContext, Token } from "../types";
 import type { Device } from "../design";
 
 // ---------- Inspect ----------
@@ -183,14 +183,14 @@ function QAIssues({ issues, pages, onOpen }: { issues: QAIssue[]; pages: Page[];
 
 const DIMENSION_LABEL: Record<string, string> = {
   hierarchy: "Hierarki", composition: "Komposisi", spacing: "Spasi", density: "Kepadatan",
-  responsive: "Responsif", navigation: "Navigasi", ai_slop: "Anti AI-slop",
+  responsive: "Responsif", navigation: "Navigasi", ai_slop: "Anti AI-slop", theme: "Konsistensi theme",
 };
 const CONFIDENCE_LABEL = { low: "rendah", medium: "sedang", high: "tinggi" };
 const VERDICT_LABEL = { improved: "membaik", neutral: "tetap", degraded: "memburuk" };
 
 // Quality report: why the design passes or needs a revision. The score is an
 // indicator of the decisions, not a ranking.
-function QualityPanel({ q, pages, onOpen }: { q: DesignQuality; pages: Page[]; onOpen: (pageId: string) => void }) {
+function QualityPanel({ q, pages, theme, onOpen }: { q: DesignQuality; pages: Page[]; theme?: ThemeContext; onOpen: (pageId: string) => void }) {
   const c = q.compared_to_previous;
   const blocked = q.decision === "revision_required";
   return (
@@ -210,6 +210,7 @@ function QualityPanel({ q, pages, onOpen }: { q: DesignQuality; pages: Page[]; o
       <ul className="review-findings small">
         {(q.dimensions.ai_slop ?? 0) === 100 && <li className="ok-text">✓ Tidak ada AI slop</li>}
         {(q.dimensions.responsive ?? 0) === 100 && <li className="ok-text">✓ Strategi mobile valid</li>}
+        {theme && (q.dimensions.theme ?? 0) === 100 && <li className="ok-text">✓ Konsisten dengan theme {theme.name}</li>}
         {q.reasons?.map((r, i) => <li key={i} className="warn-text">! {r.problem}{r.fix && <span className="muted"> Perbaikan: {r.fix}</span>}</li>)}
       </ul>
       {q.recommendation && <p className="small muted">{q.recommendation}</p>}
@@ -383,7 +384,7 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
           {!!d.qa.issues?.length && <QAIssues issues={d.qa.issues} pages={pages} onOpen={onOpen} />}</li>}
       </ul>
 
-      {d.quality && <QualityPanel q={d.quality} pages={pages} onOpen={onOpen} />}
+      {d.quality && <QualityPanel q={d.quality} pages={pages} theme={d.theme} onOpen={onOpen} />}
 
       {!approved && blockers.length > 0 && (
         <section className="review-flows">

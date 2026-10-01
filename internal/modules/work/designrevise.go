@@ -87,7 +87,7 @@ Write labels in the same language as the design. Do not write code. Do not modif
 	b.WriteString(componentRules + renderRules + "\n")
 	if open {
 		// A general request may add pages or fill page contracts.
-		b.WriteString("DESIGN RULES (only for new pages and for components or fields you add or update):\n" + designRules + "\n" + designKnowledge(d.Domain) + "\n")
+		b.WriteString("DESIGN RULES (only for new pages and for components or fields you add or update):\n" + designRules + "\n" + designKnowledge(d.Domain) + "\n" + themeKnowledge(currentTheme(p)) + "\n")
 		b.WriteString("FEATURES:\n" + mustJSON(p.Features) + "\n\nFLOWS:\n" + mustJSON(p.Flows) + "\n\n")
 		b.WriteString("A new page has this shape:\n" + pageShape + "\n\n")
 		b.WriteString("DESIGN SYSTEM (changeable, same shape):\n" + mustJSON(d.System) + "\n\n")

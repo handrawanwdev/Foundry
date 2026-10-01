@@ -89,6 +89,12 @@ const systemShape = `{"direction": "Operations: dense tables, restrained neutral
    "breakpoints": [{"name": "mobile", "value": "<640px"}],
    "components": [{"name": "Button", "value": "primary | secondary | ghost | danger; 40px high, 44px touch on mobile", "use": "one primary per context"}]}`
 
+// themedSystemShape: with a theme the tokens come from the theme; the
+// designer adds only breakpoints and component usage rules.
+const themedSystemShape = `{"breakpoints": [{"name": "mobile", "value": "<640px"}],
+   "components": [{"name": "Button", "value": "primary | secondary | ghost | danger; 40px high, 44px touch on mobile", "use": "one primary per context"}]}
+   (colors, typography, spacing, radius and shadow come from the theme; do not define them)`
+
 // isRevision reports a change request on an existing design: the AI then
 // returns only the pages that change.
 func isRevision(p *core.Project) bool {
@@ -223,11 +229,16 @@ Write labels in the same language as the features. Do not write code. Do not mod
 	if p.Discovery != nil {
 		b.WriteString("ROLES:\n" + mustJSON(p.Discovery.Roles) + "\n\n")
 	}
-	b.WriteString(designRules + "\n" + designKnowledge(DetectDomain(p)) + "\n" + designProcess + "\n" + componentRules + renderRules + "\n")
+	theme, _ := ResolveTheme(p)
+	b.WriteString(designRules + "\n" + designKnowledge(DetectDomain(p)) + "\n" + themeKnowledge(theme) + "\n" + designProcess + "\n" + componentRules + renderRules + "\n")
+	system := systemShape
+	if theme != nil {
+		system = themedSystemShape
+	}
 	b.WriteString(`Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
   "domain": "` + strings.Join(Domains, "|") + `|" (the product domain; empty when none fits),
-  "system": ` + systemShape + `,
+  "system": ` + system + `,
   "pages": [` + pageShape + `],
   "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002"]}]
 }`)
@@ -281,6 +292,10 @@ func ApplyDesign(p *core.Project, raw string) error {
 		domain = DetectDomain(p)
 	}
 	p.Design = &core.Design{System: normSystem(out.System), Pages: pages, Status: core.DesignDraft, Feedback: feedback, Domain: domain}
+	if t, ctx := ResolveTheme(p); t != nil {
+		p.Design.System = out.System // the theme gives the tokens; the designer's notes are kept
+		ApplyTheme(p.Design, t, ctx)
+	}
 	p.Tasks, p.Verification = nil, nil
 	return nil
 }
@@ -334,7 +349,10 @@ func applyRevision(p *core.Project, out designOut) error {
 		rev.Patch = append(rev.Patch, "UPDATE design system")
 		rev.Changes = append(rev.Changes, core.DesignChange{Kind: "changed", Page: "Design system"})
 	}
-	p.Design = &core.Design{System: next, Pages: pages, Status: core.DesignDraft, Feedback: d.Feedback, Revision: rev, Domain: d.Domain}
+	p.Design = &core.Design{System: next, Pages: pages, Status: core.DesignDraft, Feedback: d.Feedback, Revision: rev, Domain: d.Domain, Theme: d.Theme}
+	if t := currentTheme(p); t != nil {
+		p.Design.System = ThemeSystem(*t, next) // a revision keeps the theme's tokens
+	}
 	p.Tasks, p.Verification = nil, nil
 	return nil
 }

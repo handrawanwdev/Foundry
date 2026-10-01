@@ -608,8 +608,10 @@ func TestMCPHostFlow(t *testing.T) {
 	if pg[2].Kind != "admin" || pg[2].Density != "" || pg[0].Components[1].Columns != nil || !slices.Equal(pg[0].SecondaryActions, []string{"Filter"}) {
 		t.Fatalf("pages = %+v", pg)
 	}
-	if d.System == nil || len(d.System.Colors) != 1 {
-		t.Fatalf("system = %+v", d.System)
+	// The theme gives the tokens; the designer's component rules stay.
+	if d.Theme == nil || d.Theme.Source != "auto" || d.System == nil || len(d.System.Colors) != len(core.ThemeColorTokens) ||
+		!strings.HasPrefix(d.System.Direction, d.Theme.Name) {
+		t.Fatalf("theme = %+v system = %+v", d.Theme, d.System)
 	}
 	if err := s.ApproveDesign(); err != nil {
 		t.Fatal(err)
@@ -909,5 +911,38 @@ func TestSupportMCPHost(t *testing.T) {
 	}
 	if w, _ := s.NextWork(); w.Kind != "none" {
 		t.Fatalf("work after answer = %+v", w)
+	}
+}
+
+// A theme picked before the design is followed by it; picking another
+// re-themes the draft without touching its pages.
+func TestSetTheme(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	if _, err := s.SetTheme("nope"); err == nil || !strings.Contains(err.Error(), "tidak tersedia") {
+		t.Fatalf("unknown theme err = %v", err)
+	}
+	if _, err := s.SetTheme("finance-minimal"); err != nil {
+		t.Fatal(err)
+	}
+	p := designReady(t, s)
+	if th := p.Design.Theme; th == nil || th.ID != "finance-minimal" || th.Source != "user" || p.Design.System.Colors[6].Value != "#0f766e" {
+		t.Fatalf("theme = %+v", th)
+	}
+	pages, _ := json.Marshal(p.Design.Pages)
+	p, err := s.SetTheme("trading-terminal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := json.Marshal(p.Design.Pages)
+	if string(after) != string(pages) || p.Design.Theme.ID != "trading-terminal" || p.Design.Theme.ColorMode != "dark" || p.Design.Quality == nil {
+		t.Fatalf("re-theme: theme = %+v", p.Design.Theme)
+	}
+	// Back to automatic: selected from the detected domain.
+	if p, err = s.SetTheme(""); err != nil || p.Theme != "" || p.Design.Theme.ID != "enterprise-dark" || p.Design.Theme.Source != "auto" {
+		t.Fatalf("auto: err = %v theme = %+v", err, p.Design.Theme)
+	}
+	approveAndPlan(t, s)
+	if _, err := s.SetTheme("trading-terminal"); !errors.Is(err, pipeline.ErrWrongStage) {
+		t.Fatalf("approved design re-themed: %v", err)
 	}
 }

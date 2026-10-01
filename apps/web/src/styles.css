@@ -697,3 +697,57 @@ button.sp-badge { cursor: pointer; }
 .quality-bars li { display: contents; }
 .quality-bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .quality-bar span { display: block; height: 100%; background: var(--ok); }
+
+/* Theme of the design (ir.ts themeClass): color mode and component style.
+   Token values come from the design system as CSS variables; these rules
+   only switch the parts the defaults hard-code for a light screen. */
+.wf-screen.th-light, .wf-screen.th-dark { --wf-primary-soft: color-mix(in srgb, var(--wf-primary) 12%, var(--wf-surface)); background: var(--wf-bg); }
+.th-dark .wf-bar { background: var(--wf-surface-2); border-color: var(--wf-line); }
+.th-dark .wf-url, .th-dark.mobile .wf-bar { background: var(--wf-surface); color: var(--wf-muted); }
+.th-dark .wf-header, .th-dark .wf-bottom { background: var(--wf-surface); }
+.th-dark .wf-btn, .th-dark .wf-steps span { background: var(--wf-surface-2); border-color: var(--wf-line); box-shadow: none; }
+.th-dark .wf-btn.primary { background: var(--wf-primary); border-color: var(--wf-primary); color: var(--wf-bg); }
+.th-dark .wf-tr.head, .th-dark .wf-tr.link:hover, .th-dark .wf-row.link:hover, .th-dark .wf-badge, .th-dark .wf-empty-icon { background: var(--wf-surface-2); color: var(--wf-muted); }
+.th-dark .wf-badge.ok { background: color-mix(in srgb, var(--wf-ok) 18%, transparent); color: var(--wf-ok); }
+.th-dark .wf-badge.warn { background: color-mix(in srgb, var(--wf-warn) 18%, transparent); color: var(--wf-warn); }
+.th-dark .wf-badge.bad { background: color-mix(in srgb, var(--wf-bad) 18%, transparent); color: var(--wf-bad); }
+.th-dark .wf-field { color: var(--wf-text); }
+.th-dark .wf-field input:not([type="checkbox"]):not([type="radio"]), .th-dark .wf-field select, .th-dark .wf-field textarea, .th-dark .wf-search {
+  background: var(--wf-surface-2); border-color: var(--wf-line); box-shadow: none; }
+.th-dark .wf-loading span { background: linear-gradient(90deg, var(--wf-surface-2) 25%, var(--wf-line) 50%, var(--wf-surface-2) 75%); background-size: 200% 100%; }
+.th-dark .wf-center { background: var(--wf-bg); }
+.th-dark .wf-sent { color: var(--wf-ok); }
+.th-button-outline .wf-btn.primary { background: transparent; color: var(--wf-primary); box-shadow: none; }
+.th-button-soft .wf-btn.primary { background: var(--wf-primary-soft); border-color: transparent; color: var(--wf-primary); box-shadow: none; }
+.th-card-flat .wf-card, .th-card-flat .wf-stat { border-color: transparent; background: var(--wf-surface-2); }
+.th-card-elevated .wf-card, .th-card-elevated .wf-stat { border-color: transparent; box-shadow: var(--wf-elev-raised); }
+.th-nav-light .wf-sidenav { background: var(--wf-surface); color: var(--wf-text); border-right: 1px solid var(--wf-line); }
+.th-nav-light .wf-sidenav .wf-brand { color: var(--wf-text); }
+.th-nav-light .wf-sidenav .wf-nav-item:hover { background: var(--wf-surface-2); }
+.th-nav-light .wf-sidenav .wf-nav-item.current { background: var(--wf-primary-soft); color: var(--wf-primary); }
+.th-nav-accent .wf-sidenav { background: var(--wf-primary); color: color-mix(in srgb, #fff 80%, var(--wf-primary)); }
+.th-dark.th-nav-dark .wf-sidenav { background: var(--wf-surface); border-right: 1px solid var(--wf-line); }
+.th-table-striped .wf-tr:not(.head):nth-child(even), .th-table-striped .wf-row:nth-child(even) { background: var(--wf-surface-2); }
+.th-table-striped .wf-tr, .th-table-plain .wf-tr, .th-table-plain .wf-row { border-bottom-color: transparent; }
+.th-table-plain .wf-tr.head { background: transparent; border-bottom-color: var(--wf-line); }
+.th-font-mono .wf-tr, .th-font-mono .wf-stat strong, .th-font-mono .wf-badge { font-family: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+/* Theme Gallery */
+.theme-gallery { display: flex; flex-direction: column; gap: .6rem; margin: .5rem 0 1rem; }
+.theme-gallery h3 { margin: 0; }
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .6rem; }
+.theme-card { display: flex; flex-direction: column; align-items: flex-start; gap: .35rem; text-align: left; padding: .6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+.theme-card:hover:not(:disabled) { border-color: var(--muted); }
+.theme-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.theme-card.auto { justify-content: center; }
+.theme-card:disabled { opacity: .6; cursor: not-allowed; }
+.theme-tags { display: flex; flex-wrap: wrap; gap: .25rem; }
+.theme-tags i { font-style: normal; font-size: .7rem; padding: .05rem .4rem; border-radius: 999px; background: var(--select); color: var(--muted); }
+.theme-preview { display: flex; align-items: flex-end; gap: .4rem; width: 100%; height: 64px; padding: .45rem; border: 1px solid; box-sizing: border-box; }
+.theme-panel { flex: 1; height: 100%; display: flex; flex-direction: column; gap: 5px; padding: 6px; border: 1px solid; border-radius: 4px; box-sizing: border-box; }
+.theme-line { height: 5px; width: 80%; border-radius: 3px; opacity: .85; }
+.theme-line.short { width: 50%; }
+.theme-dots { display: flex; gap: 4px; margin-top: auto; }
+.theme-dots i { width: 8px; height: 8px; border-radius: 50%; }
+.theme-btn { width: 34px; height: 14px; border: 1.5px solid; border-radius: 4px; }
+.theme-gallery.compact .theme-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }

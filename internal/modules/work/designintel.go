@@ -339,9 +339,11 @@ func LintDesign(p *core.Project, ids []string) []core.QAIssue {
 		return nil
 	}
 	var out []core.QAIssue
+	theme := currentTheme(p)
 	for _, pg := range p.Design.Pages {
 		if len(ids) == 0 || slices.Contains(ids, pg.ID) {
 			out = append(out, LintPage(pg, p.Design.Domain)...)
+			out = append(out, ThemeLint(pg, theme)...)
 		}
 	}
 	return out

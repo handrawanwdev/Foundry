@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Wireframe } from "./components/Wireframe";
-import { leaves, nodeStyle, resolveLayout, tokenVars, validateIR } from "./ir";
-import type { LayoutChild, LayoutNode, Page } from "./types";
+import { leaves, nodeStyle, resolveLayout, themeClass, tokenVars, validateIR } from "./ir";
+import type { DesignSystem, LayoutChild, LayoutNode, Page, ThemeContext } from "./types";
 
 // Same page as internal/core/designir_test.go irPage, so both sides agree.
 const irPage = (): Page => ({
@@ -118,5 +118,31 @@ describe("renderer", () => {
     const html = render(p, "desktop");
     expect(html).toContain("DESIGN_IR_INVALID");
     expect(html).not.toContain('data-type="table"');
+  });
+
+  it("same IR with another theme: other tokens and style, same structure", () => {
+    const terminal: ThemeContext = { id: "trading-terminal", name: "Trading Terminal", source: "auto", color_mode: "dark",
+      style: { button: "solid", table: "striped", font: "mono", nav: "dark" } };
+    const finance: ThemeContext = { id: "finance-minimal", name: "Finance Minimal", source: "user", color_mode: "light",
+      style: { button: "outline", table: "plain", nav: "light", card: "flat" } };
+    const sys = (primary: string): DesignSystem => ({ colors: [{ name: "action.primary", value: primary }], typography: [], spacing: [] });
+    const draw = (theme?: ThemeContext, system?: DesignSystem) =>
+      renderToStaticMarkup(<Wireframe page={irPage()} pages={[irPage()]} device="desktop" mode="run" onNavigate={() => {}} app="Helpdesk" theme={theme} system={system} />);
+    const a = draw(terminal, sys("#f0b90b"));
+    const b = draw(finance, sys("#0f766e"));
+    expect(a).not.toBe(b);
+    expect(a).toContain("th-dark th-button-solid th-table-striped th-font-mono th-nav-dark");
+    expect(a).toContain("--wf-primary:#f0b90b");
+    expect(b).toContain("th-light th-button-outline th-table-plain th-nav-light th-card-flat");
+    // The structure is the IR's, whatever the theme.
+    const structure = (html: string) => html.match(/data-(node-type|id)="[^"]*"/g);
+    expect(structure(a)).toEqual(structure(b));
+    expect(structure(a)).toEqual(structure(draw()));
+  });
+
+  it("old designs without a theme draw the defaults", () => {
+    expect(themeClass(undefined)).toBe("");
+    expect(themeClass({ id: "x", name: "X", source: "auto", color_mode: "light", style: { button: "neon", evil: "x" } })).toBe("th-light");
+    expect(render(irPage(), "desktop")).toContain('class="wf-screen desktop d-compact"');
   });
 });

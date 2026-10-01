@@ -1,5 +1,5 @@
 import type { Device } from "./design";
-import type { DesignSystem, DeviceLayout, LayoutChild, LayoutNode, Page, PageLayout } from "./types";
+import type { DesignSystem, DeviceLayout, LayoutChild, LayoutNode, Page, PageLayout, ThemeContext } from "./types";
 
 // Design IR on the client: the same vocabulary, validation and per-device
 // resolution as internal/core/designir.go. The renderer draws only what
@@ -213,6 +213,21 @@ export function tokenVars(system?: DesignSystem): Record<string, string> {
   }
   for (const t of system.shadow ?? []) if (SHADOW_VARS[t.name] && SHADOW.test(t.value.trim()) && !/url|expression|;/i.test(t.value)) out[SHADOW_VARS[t.name]] = t.value.trim();
   return out;
+}
+
+// Component styles a theme may set; the renderer turns them into classes.
+export const THEME_STYLES: Record<string, string[]> = {
+  button: ["solid", "outline", "soft"], card: ["bordered", "flat", "elevated"], nav: ["dark", "light", "accent"],
+  table: ["lined", "striped", "plain"], font: ["sans", "mono"],
+};
+
+// Classes of the theme on the screen: color mode and component style. Only
+// known values pass; no theme (older designs) draws the defaults.
+export function themeClass(theme?: ThemeContext): string {
+  if (!theme) return "";
+  const out = [theme.color_mode === "dark" ? "th-dark" : "th-light"];
+  for (const [k, v] of Object.entries(theme.style ?? {})) if (THEME_STYLES[k]?.includes(v)) out.push(`th-${k}-${v}`);
+  return out.join(" ");
 }
 
 const SPACE_VAR = (t?: string) => (t === "space.none" ? "0" : t ? `var(--wf-${t.replace(".", "-")})` : undefined);

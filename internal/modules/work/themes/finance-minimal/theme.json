@@ -1,0 +1,13 @@
+{
+  "id": "finance-minimal",
+  "name": "Finance Minimal",
+  "description": "Terang, tenang dan terpercaya untuk keuangan: ringkasan dulu, detail bertahap.",
+  "personality": ["trustworthy", "calm", "precise", "minimal"],
+  "tokens": { "color_mode": "light", "radius": "small", "spacing": "comfortable" },
+  "preferences": { "navigation": "side", "layout": ["sections", "table", "dashboard", "list"], "density": "comfortable" },
+  "avoid": ["hero_section", "large_cards", "decorative_gradient", "illustration", "glassmorphism"],
+  "use_when": { "domains": ["finance"] },
+  "rules": [
+    { "if": "the page shows money", "then": "totals above detail, amounts right-aligned with currency, status by tone", "why": "trust comes from a clear financial hierarchy" }
+  ]
+}

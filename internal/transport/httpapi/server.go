@@ -204,6 +204,21 @@ func (s *Server) Handler() http.Handler {
 		}
 		return svc.SetTemplate(in.Template)
 	}))
+	api("GET /api/v1/themes", func(r *http.Request) (any, error) {
+		dir := ""
+		if svc, err := s.service(); err == nil {
+			dir = svc.Store.Dir
+		}
+		themes, invalid := work.Themes(dir)
+		return map[string]any{"themes": themes, "invalid": invalid}, nil
+	})
+	api("PUT /api/v1/project/theme", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Theme string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.SetTheme(strings.TrimSpace(in.Theme))
+	}))
 	api("POST /api/v1/project/design/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {
 			Feedback string

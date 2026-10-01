@@ -1,0 +1,14 @@
+{
+  "id": "trading-terminal",
+  "name": "Trading Terminal",
+  "description": "Terminal gelap berdensitas tinggi untuk pemantauan pasar dan eksekusi cepat.",
+  "personality": ["technical", "fast", "high density", "monitoring focused"],
+  "tokens": { "color_mode": "dark", "radius": "small", "spacing": "compact" },
+  "preferences": { "navigation": "rail", "layout": ["workspace", "table", "dashboard", "master-detail"], "density": "compact" },
+  "avoid": ["hero_section", "large_cards", "excessive_whitespace", "decorative_gradient", "illustration"],
+  "use_when": { "domains": ["trading"] },
+  "rules": [
+    { "if": "the workflow monitors many states AND the domain is trading", "then": "prefer a dense workspace layout with price and status always visible", "why": "the user needs rapid comparison and action" },
+    { "if": "a number changes live (price, position, P&L)", "then": "show it in a table or stat with a status tone, monospaced", "why": "aligned digits are compared at a glance" }
+  ]
+}

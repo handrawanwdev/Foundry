@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { cells, formGroups, formSubmit, navTarget, pageDensity, pageKind, statParts, type Device } from "../design";
-import { leaves, nodeStyle, resolveLayout, tokenVars, validateIR } from "../ir";
-import type { DesignSystem, FormField, LayoutChild, Page, PageComponent } from "../types";
+import { leaves, nodeStyle, resolveLayout, themeClass, tokenVars, validateIR } from "../ir";
+import type { DesignSystem, FormField, LayoutChild, Page, PageComponent, ThemeContext } from "../types";
 
 export type PageState = "normal" | "loading" | "empty" | "no_results" | "error" | "success";
 
@@ -18,6 +18,7 @@ interface Props {
   onNavigate: (pageId: string) => void;
   app?: string; // product name shown in the app shell
   system?: DesignSystem; // resolves the semantic tokens
+  theme?: ThemeContext; // color mode and component style
 }
 
 type Item = { c: PageComponent; i: number };
@@ -26,7 +27,7 @@ type Item = { c: PageComponent; i: number };
 // component tree and the device changes exactly as page.layout says; it
 // never picks a layout, groups components or adds UI of its own. An invalid
 // IR is not drawn: the errors are shown instead.
-export function Wireframe({ page, pages, device, mode, state = "normal", selected, onSelect, onNavigate, app = "Aplikasi", system }: Props) {
+export function Wireframe({ page, pages, device, mode, state = "normal", selected, onSelect, onNavigate, app = "Aplikasi", system, theme }: Props) {
   const errors = validateIR(page, new Set(pages.map((p) => p.id)));
   const mobile = device === "mobile";
   const bar = (
@@ -149,7 +150,7 @@ export function Wireframe({ page, pages, device, mode, state = "normal", selecte
   }
 
   return (
-    <div className={`wf-screen ${device} d-${pageDensity(page)}`} style={tokenVars(system) as CSSProperties} onClick={() => mode === "select" && onSelect?.(null)}>
+    <div className={`wf-screen ${device} d-${pageDensity(page)} ${themeClass(theme)}`.trim()} style={tokenVars(system) as CSSProperties} onClick={() => mode === "select" && onSelect?.(null)}>
       {bar}
       {frame}
     </div>

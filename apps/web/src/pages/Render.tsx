@@ -23,7 +23,7 @@ export default function RenderPage() {
   const device: Device = DEVICES.some((d) => d.key === q) ? q : "desktop";
   return (
     <div className="render-page" style={{ width: SCREEN_WIDTH[device] }}>
-      <Wireframe app={project.name} page={page} pages={pages} device={device} mode="run" onNavigate={() => {}} system={project.design?.system} />
+      <Wireframe app={project.name} page={page} pages={pages} device={device} mode="run" onNavigate={() => {}} system={project.design?.system} theme={project.design?.theme} />
       <pre id="outline" data-dir={project.dir} hidden>{screenOutline(page, pages, project.name, device, project.design?.system)}</pre>
     </div>
   );

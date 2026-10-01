@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template } from "./types";
+import type { AgentOptions, AIState, Browse, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template, Theme, ThemeProblem } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -30,12 +30,15 @@ export const api = {
   closeProject: () => call("POST", "/projects/close", {}),
   browse: (path?: string) => call<Browse>("GET", `/fs${path ? `?path=${encodeURIComponent(path)}` : ""}`),
   templates: () => call<Template[]>("GET", "/templates"),
+  themes: () => call<{ themes: Theme[] | null; invalid: ThemeProblem[] | null }>("GET", "/themes"),
 
   project: () => call<Project>("GET", "/project"),
   story: (story: string) => call<Project>("POST", "/project/story", { story }),
   retry: () => call("POST", "/project/retry", {}),
   setPlatform: (targets: PlatformTarget[]) => call<Project>("PUT", "/project/platform", { targets }),
   setTemplate: (template: string) => call<Project>("PUT", "/project/structure", { template }),
+  // theme "" lets Foundry select one; a draft design is re-themed at once.
+  setTheme: (theme: string) => call<Project>("PUT", "/project/theme", { theme }),
   // screens: what the user sees on each page, so the designer AI sees it too.
   // scope: what the change may touch; the server rejects a patch outside it.
   reviseDesign: (feedback: string, screens: Record<string, string>, scope: ChangeScope) =>

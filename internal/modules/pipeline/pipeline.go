@@ -6,9 +6,11 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -217,6 +219,43 @@ func (s *Service) SetTemplate(id string) (*core.Project, error) {
 		p.Log("ui", "Struktur project: "+id)
 		return nil
 	})
+}
+
+// SetTheme picks the design's theme ("" lets Foundry select one from the
+// requirement). A draft design follows it at once: its tokens and style
+// change, its pages (Design IR) do not.
+func (s *Service) SetTheme(id string) (*core.Project, error) {
+	p, err := s.Store.Update(func(p *core.Project) error {
+		if p.Busy() {
+			return ErrBusy
+		}
+		if id != "" {
+			themes, _ := work.Themes(p.Dir)
+			if !slices.ContainsFunc(themes, func(t core.Theme) bool { return t.ID == id }) {
+				return fmt.Errorf("theme %q tidak tersedia", id)
+			}
+		}
+		d := p.Design
+		designed := d != nil && len(d.Pages) > 0
+		if designed && d.Status == core.DesignApproved {
+			return ErrWrongStage
+		}
+		if designed && d.Revision != nil {
+			return errors.New("simpan atau batalkan perubahan rancangan dulu")
+		}
+		p.Theme = id
+		if designed {
+			t, ctx := work.ResolveTheme(p)
+			work.ApplyTheme(d, t, ctx)
+			measureQuality(p)
+		}
+		p.Log("ui", "Theme: "+cmp.Or(id, "otomatis"))
+		return nil
+	})
+	if err == nil {
+		saveQuality(p)
+	}
+	return p, err
 }
 
 // ApproveDesign locks platform, structure and design, then generates tasks.

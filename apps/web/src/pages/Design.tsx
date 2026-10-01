@@ -8,17 +8,18 @@ import { useProject } from "../store/project";
 import { useWorkbench } from "../store/workbench";
 import { api } from "../api";
 import type { DesignHandoff, PageStates, Project } from "../types";
+import { ThemeGallery } from "../components/ThemeGallery";
 import { Features, PlatformStructure, Summary } from "./DesignInfo";
 
 type Mode = "pratinjau" | "prototipe" | "tinjau";
-type Info = "fitur" | "platform" | "kebutuhan";
+type Info = "fitur" | "platform" | "kebutuhan" | "tema";
 
 const MODES: [Mode, string][] = [["pratinjau", "Pratinjau"], ["prototipe", "Prototipe"], ["tinjau", "Tinjau"]];
 const STATES: [PageState, string, keyof PageStates | null][] = [
   ["normal", "Normal", null], ["loading", "Memuat", "loading"], ["empty", "Kosong", "empty"],
   ["no_results", "Tanpa hasil", "no_results"], ["error", "Error", "error"], ["success", "Berhasil", "success"],
 ];
-const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Struktur"], ["kebutuhan", "Kebutuhan"]];
+const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Struktur"], ["kebutuhan", "Kebutuhan"], ["tema", "Theme"]];
 // Explorer deep links use ?tab=fitur|platform|ringkasan.
 const TAB_INFO: Record<string, Info> = { fitur: "fitur", platform: "platform", ringkasan: "kebutuhan" };
 
@@ -171,6 +172,7 @@ function Workspace({ project }: { project: Project }) {
           {info === "fitur" ? <Features project={project} />
             : info === "platform" ? <PlatformStructure project={project} />
             : info === "kebutuhan" ? <Summary project={project} />
+            : info === "tema" ? <div className="info"><h1>Theme</h1><ThemeGallery project={project} /></div>
             : mode === "tinjau" ? (
               <Review project={project} blockers={handoff?.blockers ?? []} onAsk={() => setAsking(true)} onInfo={setInfo}
                 onOpen={(id) => { setMode("pratinjau"); show(id); }}
@@ -180,7 +182,7 @@ function Workspace({ project }: { project: Project }) {
                 <Fit width={SCREEN_WIDTH[dev]}>
                 <Wireframe app={project.name} page={page} pages={pages} device={dev} mode={mode === "prototipe" ? "run" : "select"} state={mode === "pratinjau" ? pstate : "normal"}
                   selected={selected} onSelect={(i) => { setSelected(i); if (i !== null) setInspect(true); }} onNavigate={go}
-                  system={project.design?.system} />
+                  system={project.design?.system} theme={project.design?.theme} />
                 </Fit>
               </div>
             )}

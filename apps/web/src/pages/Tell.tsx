@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
+import { ThemeGallery } from "../components/ThemeGallery";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
 
@@ -59,6 +60,10 @@ export function TellPage() {
           <button key={e} className="chip" onClick={() => setStory(e)}>{e.split(":")[0]}</button>
         ))}
       </div>
+      <details className="theme-pick">
+        <summary className="muted small">Theme visual: {project.theme || "otomatis"}</summary>
+        <ThemeGallery project={project} compact />
+      </details>
       {confirmReset && (
         <p className="warn">Cerita baru akan membuat ulang rancangan dan task yang sudah ada. Tekan lagi untuk lanjut.</p>
       )}
