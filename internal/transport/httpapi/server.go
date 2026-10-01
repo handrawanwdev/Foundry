@@ -193,6 +193,7 @@ func (s *Server) Handler() http.Handler {
 		return svc.SubmitStory(in.Story)
 	}))
 	api("POST /api/v1/project/retry", s.action(func(svc *pipeline.Service) error { return svc.RetryJob() }))
+	api("POST /api/v1/project/job/dismiss", s.action(func(svc *pipeline.Service) error { return svc.DismissJob() }))
 	api("PUT /api/v1/project/platform", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct{ Targets []core.PlatformTarget }
 		if err := decode(r, &in); err != nil {

@@ -38,6 +38,7 @@ export const api = {
   project: () => call<Project>("GET", "/project"),
   story: (story: string) => call<Project>("POST", "/project/story", { story }),
   retry: () => call("POST", "/project/retry", {}),
+  dismissJob: () => call("POST", "/project/job/dismiss", {}),
   setPlatform: (targets: PlatformTarget[]) => call<Project>("PUT", "/project/platform", { targets }),
   setTemplate: (template: string) => call<Project>("PUT", "/project/structure", { template }),
   // value "" returns the area to Foundry's recommendation.

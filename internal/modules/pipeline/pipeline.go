@@ -618,6 +618,20 @@ func (s *Service) applyAI(kind, raw, source string) error {
 }
 
 // RetryJob reruns the last failed AI job.
+// DismissJob closes a failed job without retrying it; the error stays in
+// the log.
+func (s *Service) DismissJob() error {
+	_, err := s.Store.Update(func(p *core.Project) error {
+		if p.Job == nil || p.Job.Status != core.JobFailed {
+			return ErrNothingToDo
+		}
+		p.Job = nil
+		p.Log("ui", "Pesan gagal ditutup")
+		return nil
+	})
+	return err
+}
+
 func (s *Service) RetryJob() error {
 	p, err := s.Store.Load()
 	if err != nil {

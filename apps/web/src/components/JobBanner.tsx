@@ -18,7 +18,10 @@ export function JobBanner() {
           <strong>{job.message} gagal.</strong> <JobError text={job.error ?? ""} />
         </div>
         {/* An unclear change request is not retried: the user writes a clearer one. */}
-        {job.kind !== "revise" && <button disabled={pending === "retry"} onClick={() => run("retry", api.retry)}>Coba lagi</button>}
+        <div className="banner-actions">
+          {job.kind !== "revise" && <button disabled={pending === "retry"} onClick={() => run("retry", api.retry)}>Coba lagi</button>}
+          <button className="ghost" title="Tutup" aria-label="Tutup" disabled={pending === "dismiss"} onClick={() => run("dismiss", api.dismissJob)}>✕</button>
+        </div>
       </div>
     );
   }

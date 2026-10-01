@@ -1175,6 +1175,13 @@ func TestUnclearChangeRequestDropped(t *testing.T) {
 	if err := s.RetryJob(); !errors.Is(err, pipeline.ErrNothingToDo) {
 		t.Fatalf("retry err = %v", err)
 	}
+	// The user closes the message; only a failed job can be closed.
+	if err := s.DismissJob(); err != nil || load(t, s).Job != nil {
+		t.Fatalf("dismiss err = %v", err)
+	}
+	if err := s.DismissJob(); !errors.Is(err, pipeline.ErrNothingToDo) {
+		t.Fatalf("dismiss err = %v", err)
+	}
 	// A clearer request works as usual.
 	if err := s.ReviseDesign("Tambahkan halaman profil", nil, nil); err != nil {
 		t.Fatal(err)
