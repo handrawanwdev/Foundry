@@ -1,0 +1,3 @@
+5. Prompt AI
+   - Design dan revisi: halaman baru masuk ke layout dan menu yang sudah ada, halaman lama tidak dibuat ulang, dan route yang sudah dipakai tidak boleh dipakai lagi.
+   - Plan dan task: daftarkan route di router yang ada, tambahkan item ke menu yang ada, dan pakai ulang komponen sebelum membuat yang baru.
