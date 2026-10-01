@@ -15,7 +15,7 @@ export function JobBanner() {
     return (
       <div className="banner error">
         <div>
-          <strong>{job.message} gagal.</strong> <span style={{ whiteSpace: "pre-line" }}>{job.error}</span>
+          <strong>{job.message} gagal.</strong> <JobError text={job.error ?? ""} />
         </div>
         {/* An unclear change request is not retried: the user writes a clearer one. */}
         {job.kind !== "revise" && <button disabled={pending === "retry"} onClick={() => run("retry", api.retry)}>Coba lagi</button>}
@@ -39,5 +39,23 @@ export function JobBanner() {
         <button className="ghost" disabled={pending === "stop"} onClick={() => run("stop", api.stopBuild)}>Hentikan</button>
       )}
     </div>
+  );
+}
+
+// Long errors (a rejected patch lists every operation) show their first
+// lines; the rest folds away so the banner does not cover the page.
+const SHOWN_LINES = 4;
+
+function JobError({ text }: { text: string }) {
+  const lines = text.trim().split("\n");
+  if (lines.length <= SHOWN_LINES) return <span style={{ whiteSpace: "pre-line" }}>{text}</span>;
+  return (
+    <>
+      <span style={{ whiteSpace: "pre-line" }}>{lines.slice(0, SHOWN_LINES).join("\n")}</span>
+      <details className="banner-more">
+        <summary>Detail ({lines.length - SHOWN_LINES} baris lagi)</summary>
+        <div style={{ whiteSpace: "pre-line" }}>{lines.slice(SHOWN_LINES).join("\n")}</div>
+      </details>
+    </>
   );
 }

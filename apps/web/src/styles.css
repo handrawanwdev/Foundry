@@ -68,6 +68,8 @@ textarea { width: 100%; resize: vertical; }
 .banner { margin: .75rem 1rem 0; padding: .75rem 1rem; border-radius: 10px; display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
 .banner.running, .banner.waiting { background: var(--accent-soft); }
 .banner.error { background: var(--bad-soft); justify-content: space-between; }
+.banner-more summary { cursor: pointer; }
+.banner-more > div { max-height: 40vh; overflow-y: auto; }
 .toast { position: fixed; bottom: 1rem; right: 1rem; padding: .75rem 1rem; border-radius: 10px; max-width: 420px; cursor: pointer; z-index: 10; }
 .toast.error { background: #a1260d; color: #fff; }
 .toast .muted { color: #fee; }

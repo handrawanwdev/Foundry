@@ -46,18 +46,26 @@ type PatchRejected struct {
 	Unexpected []string
 }
 
+// maxRequestedShown caps the requested list in the message; the reason
+// (what was not asked for) comes first so it is never buried.
+const maxRequestedShown = 8
+
 func (e *PatchRejected) Error() string {
 	var b strings.Builder
-	b.WriteString("PATCH DITOLAK\n\nDiminta:\n")
-	for _, r := range e.Requested {
+	b.WriteString("PATCH DITOLAK\n\nTidak diminta:\n")
+	for _, u := range e.Unexpected {
+		b.WriteString("- " + u + "\n")
+	}
+	b.WriteString("\nDiminta:\n")
+	for i, r := range e.Requested {
+		if i == maxRequestedShown {
+			fmt.Fprintf(&b, "- … dan %d operasi lain\n", len(e.Requested)-i)
+			break
+		}
 		b.WriteString("- " + r + "\n")
 	}
 	if len(e.Requested) == 0 {
 		b.WriteString("- (tidak ada operasi yang sah)\n")
-	}
-	b.WriteString("\nTidak diminta:\n")
-	for _, u := range e.Unexpected {
-		b.WriteString("- " + u + "\n")
 	}
 	return strings.TrimSpace(b.String())
 }
