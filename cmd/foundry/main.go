@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	web "github.com/handrawanw/foundry/apps/web"
@@ -61,7 +62,12 @@ func serve(args []string) {
 	bin, _ := os.Executable()
 	srv := httpapi.New(web.FS(), bin)
 	if *uiURL == "" && web.FS() != nil {
-		*uiURL = "http://" + *addr
+		// ":8081" listens on all interfaces; Chrome needs a concrete host.
+		host := *addr
+		if strings.HasPrefix(host, ":") {
+			host = "127.0.0.1" + host
+		}
+		*uiURL = "http://" + host
 	}
 	if r := render.Find(*uiURL); r != nil {
 		srv.Render = r

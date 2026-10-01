@@ -10,7 +10,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +41,18 @@ type AI interface {
 	Runner() (*agent.Runner, bool, error) // runner, isMCP, err
 }
 
+// Parallel is optional on AI: how many coding agents may build at once.
+type Parallel interface {
+	Agents() int
+}
+
+// DefaultAgents build in parallel unless FOUNDRY_AGENTS or the connection
+// says otherwise; MaxAgents caps it.
+const (
+	DefaultAgents = 3
+	MaxAgents     = 8
+)
+
 // ConfigAI resolves the connection from user config.
 type ConfigAI struct{}
 
@@ -58,6 +72,14 @@ func (ConfigAI) Runner() (*agent.Runner, bool, error) {
 	return r, false, err
 }
 
+func (ConfigAI) Agents() int {
+	c, err := config.Load()
+	if err != nil || c.Connection == nil {
+		return 0
+	}
+	return c.Connection.Agents
+}
+
 type Service struct {
 	Store *core.Store
 	AI    AI
@@ -68,6 +90,23 @@ type Service struct {
 	mu     sync.Mutex
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+	// checkMu runs one build/test at a time; parallel runs of the same
+	// toolchain would fight over its outputs.
+	checkMu sync.Mutex
+}
+
+// agents is how many coding agents build in parallel.
+func (s *Service) agents() int {
+	n := 0
+	if v, err := strconv.Atoi(os.Getenv("FOUNDRY_AGENTS")); err == nil {
+		n = v
+	} else if pa, ok := s.AI.(Parallel); ok {
+		n = pa.Agents()
+	}
+	if n <= 0 {
+		n = DefaultAgents
+	}
+	return min(n, MaxAgents)
 }
 
 func New(store *core.Store, ai AI) *Service {
@@ -82,7 +121,7 @@ func (s *Service) RecoverStale() {
 		if p.Job != nil && p.Job.Status == core.JobRunning {
 			p.Job.Status, p.Job.Error = core.JobFailed, "Proses terhenti sebelum selesai. Jalankan ulang."
 			for i := range p.Tasks {
-				if p.Tasks[i].Status == core.TaskInProgress {
+				if p.Tasks[i].Active() { // frees its page/file locks
 					p.Tasks[i].Status = core.TaskTodo
 				}
 			}

@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/work"
@@ -10,15 +11,18 @@ import (
 
 // WorkItem is what an MCP host must do next.
 type WorkItem struct {
-	Kind   string `json:"kind"` // discovery | design | plan | task | none
+	Kind   string `json:"kind"` // discovery | design | plan | task | wait | none
 	TaskID string `json:"task_id,omitempty"`
 	Prompt string `json:"prompt"`
 	Submit string `json:"submit"` // how to hand the result back
 }
 
-// NextWork hands the pending job to the MCP host. For builds it claims the
-// next ready task.
-func (s *Service) NextWork() (*WorkItem, error) {
+// NextWork hands the pending job to the MCP host. For builds it returns the
+// task worker already holds, else claims the next one no other worker's task
+// overlaps. Several hosts can build in parallel, each with its own worker
+// name; a host whose tasks are all locked gets kind "wait".
+func (s *Service) NextWork(worker string) (*WorkItem, error) {
+	worker = strings.TrimSpace(worker)
 	p, err := s.Store.Load()
 	if err != nil {
 		return nil, err
@@ -36,20 +40,23 @@ func (s *Service) NextWork() (*WorkItem, error) {
 			Submit: fmt.Sprintf(`submit_work {"kind": %q, "result": "<the JSON object>"}`, p.Job.Kind)}, nil
 	case "build":
 		for i := range p.Tasks {
-			if t := &p.Tasks[i]; t.Status == core.TaskInProgress {
+			if t := &p.Tasks[i]; t.Status == core.TaskInProgress && t.Owner == worker {
 				return taskItem(p, t), nil
 			}
 		}
-		ready := p.ReadyTasks()
-		if len(ready) == 0 {
-			s.finishBuild(context.Background())
-			return &WorkItem{Kind: "none", Prompt: "Semua task yang bisa dikerjakan sudah selesai. Foundry menjalankan verifikasi."}, nil
-		}
-		p, t, err := s.claimTask(ready[0].ID, "mcp")
+		p, t, err := s.claimNext(worker, "mcp", nil)
 		if err != nil {
 			return nil, err
 		}
-		return taskItem(p, t), nil
+		if t != nil {
+			return taskItem(p, t), nil
+		}
+		if len(p.ActiveTasks()) > 0 {
+			return &WorkItem{Kind: "wait", Prompt: "Task yang siap sedang dikerjakan worker lain atau halaman/file-nya sedang dipakai. " +
+				"Tunggu sebentar lalu panggil next_work lagi."}, nil
+		}
+		s.finishBuild(context.Background())
+		return &WorkItem{Kind: "none", Prompt: "Semua task yang bisa dikerjakan sudah selesai. Foundry menjalankan verifikasi."}, nil
 	}
 	return &WorkItem{Kind: "none", Prompt: nothingMessage(p)}, nil
 }

@@ -594,7 +594,7 @@ func TestMCPHostFlow(t *testing.T) {
 	}
 	mustJob(t, load(t, s), work.KindDiscovery, core.JobWaiting)
 
-	w, _ := s.NextWork()
+	w, _ := s.NextWork("")
 	if w.Kind != work.KindDiscovery || !strings.Contains(w.Prompt, "klinik") {
 		t.Fatalf("work = %+v", w)
 	}
@@ -632,7 +632,7 @@ func TestMCPHostFlow(t *testing.T) {
 	if err := s.StartBuild(); err != nil {
 		t.Fatal(err)
 	}
-	w, _ = s.NextWork()
+	w, _ = s.NextWork("")
 	if w.Kind != work.KindTask || w.TaskID != "TASK-001" {
 		t.Fatalf("work = %+v", w)
 	}
@@ -642,7 +642,7 @@ func TestMCPHostFlow(t *testing.T) {
 		t.Fatalf("task=%v build=%v err=%v", tk.Status, b.Passed, err)
 	}
 	// Host implements, but gives no evidence → not DONE.
-	w, _ = s.NextWork()
+	w, _ = s.NextWork("")
 	dir := s.Store.Dir
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/k\n\ngo 1.22\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)
@@ -650,7 +650,7 @@ func TestMCPHostFlow(t *testing.T) {
 	if tk.Status == core.TaskDone {
 		t.Fatal("DONE without evidence")
 	}
-	w, _ = s.NextWork()
+	w, _ = s.NextWork("")
 	tk, b, _ = s.SubmitTask(w.TaskID, []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod dibuat"}})
 	if tk.Status != core.TaskDone || !b.Passed {
 		t.Fatalf("task = %s build %+v", tk.Status, b)
@@ -777,6 +777,58 @@ func TestDesignVisualQA(t *testing.T) {
 	}
 	if types(findPage(p, "PAGE-001")) != "button,header,list" {
 		t.Fatal("a skipped check keeps the applied patch")
+	}
+}
+
+// Two MCP hosts build in parallel: a task waits while another worker holds
+// what it needs, and tasks that do not overlap run side by side.
+func TestParallelWorkersQueueOnLocks(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct{ kind, json string }{{work.KindDiscovery, discoveryJSON}, {work.KindDesign, designJSON}} {
+		if err := s.SubmitWork(step.kind, step.json); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.ApproveDesign(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindPlan, planJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StartBuild(); err != nil {
+		t.Fatal(err)
+	}
+	// Scaffold holds the whole project: worker b waits.
+	if w, _ := s.NextWork("a"); w.TaskID != "TASK-001" {
+		t.Fatalf("a = %+v", w)
+	}
+	if w, _ := s.NextWork("b"); w.Kind != "wait" {
+		t.Fatalf("b = %+v", w)
+	}
+	if w, _ := s.NextWork("a"); w.TaskID != "TASK-001" {
+		t.Fatalf("a again = %+v", w)
+	}
+	dir := s.Store.Dir
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/k\n\ngo 1.22\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)
+	if tk, _, err := s.SubmitTask("TASK-001", []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod"}}); err != nil || tk.Status != core.TaskDone {
+		t.Fatalf("task = %v err %v", tk, err)
+	}
+	// TASK-002 (services/api) and TASK-004 (FEAT-002) do not overlap.
+	wa, _ := s.NextWork("a")
+	wb, _ := s.NextWork("b")
+	if wa.TaskID != "TASK-002" || wb.TaskID != "TASK-004" {
+		t.Fatalf("a = %s, b = %s", wa.TaskID, wb.TaskID)
+	}
+	if w, _ := s.NextWork("c"); w.Kind != "wait" {
+		t.Fatalf("c = %+v", w)
+	}
+	p := load(t, s)
+	if p.Task("TASK-002").Owner != "a" || p.Task("TASK-004").Owner != "b" || len(p.ActiveTasks()) != 2 {
+		t.Fatalf("active = %d", len(p.ActiveTasks()))
 	}
 }
 
@@ -912,11 +964,11 @@ func TestSupportMCPHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A waiting pipeline job goes first; the question follows.
-	if w, _ := s.NextWork(); w.Kind != work.KindDesign {
+	if w, _ := s.NextWork(""); w.Kind != work.KindDesign {
 		t.Fatalf("work = %+v", w)
 	}
 	s.SubmitWork(work.KindDesign, designJSON)
-	w, _ := s.NextWork()
+	w, _ := s.NextWork("")
 	if w.Kind != work.KindSupport || !strings.Contains(w.Prompt, "Bagaimana alur janji?") {
 		t.Fatalf("work = %+v", w)
 	}
@@ -926,7 +978,7 @@ func TestSupportMCPHost(t *testing.T) {
 	if m := load(t, s).Support.Messages[1]; m.Status != core.SupportDone {
 		t.Fatalf("answer = %+v", m)
 	}
-	if w, _ := s.NextWork(); w.Kind != "none" {
+	if w, _ := s.NextWork(""); w.Kind != "none" {
 		t.Fatalf("work after answer = %+v", w)
 	}
 }

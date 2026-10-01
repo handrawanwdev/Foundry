@@ -3,7 +3,11 @@
 // own copy of project data.
 package core
 
-import "time"
+import (
+	"path"
+	"strings"
+	"time"
+)
 
 // Stage is the internal pipeline position. The UI groups these into
 // Ceritakan → Rancang → Bangun → Siap.
@@ -469,23 +473,25 @@ type FormField struct {
 }
 
 type Task struct {
-	ID                 string      `json:"id"`
-	Title              string      `json:"title"`
-	Description        string      `json:"description"`
-	Area               string      `json:"area"` // scaffold | data | api | ui | test | integration
-	RequirementIDs     []string    `json:"requirement_ids"`
-	FeatureID          string      `json:"feature_id"`
-	PageIDs            []string    `json:"page_ids"`
-	Platform           string      `json:"platform"`
-	DependsOn          []string    `json:"depends_on"`
-	AcceptanceCriteria []string    `json:"acceptance_criteria"`
-	Files              []string    `json:"files"`
-	TestRequirements   []string    `json:"test_requirements"`
-	Status             TaskStatus  `json:"status"`
-	Attempts           int         `json:"attempts"`
-	Notes              []string    `json:"notes"`
-	LastBuildID        string      `json:"last_build_id,omitempty"`
-	Criteria           []Criterion `json:"criteria,omitempty"`
+	ID                 string     `json:"id"`
+	Title              string     `json:"title"`
+	Description        string     `json:"description"`
+	Area               string     `json:"area"` // scaffold | data | api | ui | test | integration
+	RequirementIDs     []string   `json:"requirement_ids"`
+	FeatureID          string     `json:"feature_id"`
+	PageIDs            []string   `json:"page_ids"`
+	Platform           string     `json:"platform"`
+	DependsOn          []string   `json:"depends_on"`
+	AcceptanceCriteria []string   `json:"acceptance_criteria"`
+	Files              []string   `json:"files"`
+	TestRequirements   []string   `json:"test_requirements"`
+	Status             TaskStatus `json:"status"`
+	Attempts           int        `json:"attempts"`
+	// Owner is the agent or MCP worker that claimed the task last.
+	Owner       string      `json:"owner,omitempty"`
+	Notes       []string    `json:"notes"`
+	LastBuildID string      `json:"last_build_id,omitempty"`
+	Criteria    []Criterion `json:"criteria,omitempty"`
 }
 
 type Criterion struct {
@@ -746,4 +752,90 @@ type DesignVersion struct {
 	System  *DesignSystem       `json:"system,omitempty"`
 	Theme   *ThemeContext       `json:"theme,omitempty"`
 	Flows   map[string][]string `json:"flows,omitempty"`
+}
+
+// LockAll is held by a task that may touch anything in the project.
+const LockAll = "*"
+
+// Locks names what a task holds while it runs: its pages and files, else its
+// feature. Scaffold and integration work, or a task that names nothing,
+// holds the whole project.
+func (t *Task) Locks() []string {
+	if t.Area == "scaffold" || t.Area == "integration" {
+		return []string{LockAll}
+	}
+	var out []string
+	for _, pg := range t.PageIDs {
+		out = append(out, "page:"+pg)
+	}
+	for _, f := range t.Files {
+		f = strings.TrimPrefix(path.Clean(strings.ReplaceAll(strings.TrimSpace(f), "\\", "/")), "./")
+		if f != "" && f != "." && f != "/" {
+			out = append(out, "file:"+strings.ToLower(strings.TrimSuffix(f, "/")))
+		}
+	}
+	if len(out) == 0 && t.FeatureID != "" {
+		out = append(out, "feature:"+t.FeatureID)
+	}
+	if len(out) == 0 {
+		return []string{LockAll}
+	}
+	return out
+}
+
+// lockOverlap: same key, the project lock, or one file path inside the other.
+func lockOverlap(a, b string) bool {
+	if a == LockAll || b == LockAll || a == b {
+		return true
+	}
+	if strings.HasPrefix(a, "file:") && strings.HasPrefix(b, "file:") {
+		return strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
+	}
+	return false
+}
+
+// Active reports whether a task is being worked on and holds its locks.
+func (t *Task) Active() bool {
+	return t.Status == TaskInProgress || t.Status == TaskReview
+}
+
+// Blocker returns the active task holding a lock t needs, and that lock.
+func (p *Project) Blocker(t *Task) (*Task, string) {
+	mine := t.Locks()
+	for i := range p.Tasks {
+		o := &p.Tasks[i]
+		if o.ID == t.ID || !o.Active() {
+			continue
+		}
+		for _, b := range o.Locks() {
+			for _, a := range mine {
+				if lockOverlap(a, b) {
+					return o, b
+				}
+			}
+		}
+	}
+	return nil, ""
+}
+
+// ClaimableTasks are ready tasks no active task blocks, in plan order.
+func (p *Project) ClaimableTasks() []*Task {
+	var out []*Task
+	for _, t := range p.ReadyTasks() {
+		if o, _ := p.Blocker(t); o == nil {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// ActiveTasks are the tasks currently holding locks.
+func (p *Project) ActiveTasks() []*Task {
+	var out []*Task
+	for i := range p.Tasks {
+		if p.Tasks[i].Active() {
+			out = append(out, &p.Tasks[i])
+		}
+	}
+	return out
 }

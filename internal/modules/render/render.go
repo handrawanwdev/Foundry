@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -32,13 +33,40 @@ func Find(uiURL string) *Chrome {
 	if uiURL == "" {
 		return nil
 	}
-	names := []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"}
+	names := []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome", "msedge"}
 	if b := os.Getenv("FOUNDRY_CHROME"); b != "" {
 		names = []string{b}
+	} else {
+		names = append(names, installPaths()...)
 	}
 	for _, n := range names {
 		if path, err := exec.LookPath(n); err == nil {
 			return &Chrome{Binary: path, UIURL: strings.TrimRight(uiURL, "/")}
+		}
+	}
+	return nil
+}
+
+// installPaths lists default install locations of Chromium-based browsers
+// that are usually not on PATH (Windows, macOS).
+func installPaths() []string {
+	switch runtime.GOOS {
+	case "windows":
+		var out []string
+		for _, env := range []string{"ProgramFiles", "ProgramFiles(x86)", "LocalAppData"} {
+			if base := os.Getenv(env); base != "" {
+				out = append(out,
+					filepath.Join(base, `Google\Chrome\Application\chrome.exe`),
+					filepath.Join(base, `Chromium\Application\chrome.exe`),
+					filepath.Join(base, `Microsoft\Edge\Application\msedge.exe`))
+			}
+		}
+		return out
+	case "darwin":
+		return []string{
+			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			"/Applications/Chromium.app/Contents/MacOS/Chromium",
+			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
 		}
 	}
 	return nil
