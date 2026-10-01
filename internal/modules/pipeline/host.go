@@ -11,10 +11,11 @@ import (
 
 // WorkItem is what an MCP host must do next.
 type WorkItem struct {
-	Kind   string `json:"kind"` // discovery | design | plan | task | wait | none
-	TaskID string `json:"task_id,omitempty"`
-	Prompt string `json:"prompt"`
-	Submit string `json:"submit"` // how to hand the result back
+	Kind      string   `json:"kind"` // discovery | design | plan | task | wait | none
+	TaskID    string   `json:"task_id,omitempty"`
+	Prompt    string   `json:"prompt"`
+	Submit    string   `json:"submit"`               // how to hand the result back
+	AlsoReady []string `json:"also_ready,omitempty"` // other independent tasks another worker can claim
 }
 
 // NextWork hands the pending job to the MCP host. For builds it returns the
@@ -51,9 +52,13 @@ func (s *Service) NextWork(worker string) (*WorkItem, error) {
 		if t != nil {
 			return taskItem(p, t), nil
 		}
-		if len(p.ActiveTasks()) > 0 {
-			return &WorkItem{Kind: "wait", Prompt: "Task yang siap sedang dikerjakan worker lain atau halaman/file-nya sedang dipakai. " +
-				"Tunggu sebentar lalu panggil next_work lagi."}, nil
+		if active := p.ActiveTasks(); len(active) > 0 {
+			var ids []string
+			for _, a := range active {
+				ids = append(ids, a.ID)
+			}
+			return &WorkItem{Kind: "wait", Prompt: fmt.Sprintf(
+				"Task independen sedang dikerjakan (%s). Tunggu sebentar lalu panggil next_work lagi.", strings.Join(ids, ", "))}, nil
 		}
 		s.finishBuild(context.Background())
 		return &WorkItem{Kind: "none", Prompt: "Semua task yang bisa dikerjakan sudah selesai. Foundry menjalankan verifikasi."}, nil
@@ -62,7 +67,13 @@ func (s *Service) NextWork(worker string) (*WorkItem, error) {
 }
 
 func taskItem(p *core.Project, t *core.Task) *WorkItem {
-	return &WorkItem{Kind: work.KindTask, TaskID: t.ID, Prompt: work.TaskPrompt(p, t),
+	var also []string
+	for _, x := range p.IndependentTasks() {
+		if x.ID != t.ID {
+			also = append(also, x.ID)
+		}
+	}
+	return &WorkItem{Kind: work.KindTask, TaskID: t.ID, Prompt: work.TaskPrompt(p, t), AlsoReady: also,
 		Submit: fmt.Sprintf(`submit_task {"task_id": %q, "criteria": [{"index": 1, "met": true, "evidence": "file + what it does"}]}`, t.ID)}
 }
 

@@ -597,7 +597,30 @@ type Job struct {
 	Message string    `json:"message"`
 	Error   string    `json:"error,omitempty"`
 	TaskID  string    `json:"task_id,omitempty"`
+	TaskIDs []string  `json:"task_ids,omitempty"` // IN_PROGRESS / REVIEW during a parallel build
 	Started time.Time `json:"started"`
+}
+
+// Queue states for a TODO task in the live build schedule.
+const (
+	QueueIndependent = "independent"  // deps done, files/pages free, no overlap with others in this set
+	QueueQueued      = "queued"       // deps done, but a file/page is held (or would be) by another task
+	QueueWaitingDeps = "waiting_deps" // a depends_on task is not DONE
+)
+
+// QueueItem is why one TODO task is or is not in the parallel set.
+type QueueItem struct {
+	ID        string   `json:"id"`
+	State     string   `json:"state"` // independent | queued | waiting_deps
+	BlockedBy string   `json:"blocked_by,omitempty"`
+	Lock      string   `json:"lock,omitempty"`
+	Waiting   []string `json:"waiting,omitempty"`
+}
+
+// Schedule is the live build queue. It is computed, never persisted.
+type Schedule struct {
+	Independent []string    `json:"independent"`
+	Items       []QueueItem `json:"items,omitempty"`
 }
 
 // Support is the Technical Support Assistant: a conversation about the system
@@ -862,6 +885,89 @@ func (p *Project) ClaimableTasks() []*Task {
 		}
 	}
 	return out
+}
+
+// overlapLock is the lock key two tasks share, if any.
+func overlapLock(a, b *Task) (string, bool) {
+	if a == nil || b == nil {
+		return "", false
+	}
+	for _, x := range a.Locks() {
+		for _, y := range b.Locks() {
+			if lockOverlap(x, y) {
+				return y, true
+			}
+		}
+	}
+	return "", false
+}
+
+// IndependentTasks are claimable tasks that also do not overlap each other,
+// in plan order. These can run in parallel without file or page conflicts.
+func (p *Project) IndependentTasks() []*Task {
+	var out []*Task
+	for _, t := range p.ClaimableTasks() {
+		ok := true
+		for _, o := range out {
+			if _, hit := overlapLock(t, o); hit {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// Schedule is the live TODO queue: which tasks can start in parallel now,
+// which wait on a file/page held by another agent, and which wait on deps.
+func (p *Project) Schedule() Schedule {
+	indep := p.IndependentTasks()
+	in := make(map[string]*Task, len(indep))
+	ids := make([]string, len(indep))
+	for i, t := range indep {
+		ids[i] = t.ID
+		in[t.ID] = t
+	}
+	var items []QueueItem
+	for i := range p.Tasks {
+		t := &p.Tasks[i]
+		if t.Status != TaskTodo {
+			continue
+		}
+		if in[t.ID] != nil {
+			items = append(items, QueueItem{ID: t.ID, State: QueueIndependent})
+			continue
+		}
+		var wait []string
+		for _, d := range t.DependsOn {
+			if dt := p.Task(d); dt == nil || dt.Status != TaskDone {
+				wait = append(wait, d)
+			}
+		}
+		if len(wait) > 0 {
+			items = append(items, QueueItem{ID: t.ID, State: QueueWaitingDeps, Waiting: wait})
+			continue
+		}
+		o, lock := p.Blocker(t)
+		if o == nil {
+			for _, x := range indep {
+				if l, hit := overlapLock(t, x); hit {
+					o, lock = x, l
+					break
+				}
+			}
+		}
+		item := QueueItem{ID: t.ID, State: QueueQueued}
+		if o != nil {
+			item.BlockedBy = o.ID
+			item.Lock = lock
+		}
+		items = append(items, item)
+	}
+	return Schedule{Independent: ids, Items: items}
 }
 
 // ActiveTasks are the tasks currently holding locks.

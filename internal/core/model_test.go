@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestTaskLocks(t *testing.T) {
 	p := &Project{Tasks: []Task{
@@ -39,4 +42,48 @@ func TestTaskLocks(t *testing.T) {
 	if l := (&Task{}).Locks(); len(l) != 1 || l[0] != LockAll {
 		t.Fatalf("unscoped locks = %v", l)
 	}
+}
+
+func TestIndependentTasks(t *testing.T) {
+	p := &Project{Tasks: []Task{
+		{ID: "T1", Area: "data", Files: []string{"packages/types"}, Status: TaskDone},
+		{ID: "T2", Area: "ui", Files: []string{"packages/ui/src/Button.tsx"}, Status: TaskTodo, DependsOn: []string{"T1"}},
+		{ID: "T3", Area: "ui", Files: []string{"packages/ui"}, Status: TaskTodo, DependsOn: []string{"T1"}}, // overlaps T2
+		{ID: "T4", Area: "data", Files: []string{"services/api/modules/autentikasi"}, Status: TaskTodo, DependsOn: []string{"T1"}},
+		{ID: "T5", Area: "data", Files: []string{"services/api/modules/pembuatan-tiket"}, Status: TaskTodo, DependsOn: []string{"T1"}},
+		{ID: "T6", Area: "api", Files: []string{"services/api/modules/autentikasi/auth.go"}, Status: TaskTodo, DependsOn: []string{"T4"}},
+		{ID: "T7", Area: "data", Files: []string{"packages/types/src/index.ts"}, Status: TaskTodo}, // no deps, overlaps nothing running
+	}}
+	got := idsOf(p.IndependentTasks())
+	if len(got) != 4 || got[0] != "T2" || got[1] != "T4" || got[2] != "T5" || got[3] != "T7" {
+		t.Fatalf("independent = %v, want T2 T4 T5 T7 (T3 overlaps T2, T6 waits on T4)", got)
+	}
+	s := p.Schedule()
+	by := map[string]QueueItem{}
+	for _, it := range s.Items {
+		by[it.ID] = it
+	}
+	if by["T2"].State != QueueIndependent || by["T3"].State != QueueQueued || by["T3"].BlockedBy != "T2" {
+		t.Fatalf("T2/T3 = %+v %+v", by["T2"], by["T3"])
+	}
+	if by["T6"].State != QueueWaitingDeps || strings.Join(by["T6"].Waiting, ",") != "T4" {
+		t.Fatalf("T6 = %+v", by["T6"])
+	}
+	p.Task("T2").Status = TaskInProgress
+	p.Task("T2").Owner = "agent-1"
+	got = idsOf(p.IndependentTasks())
+	if len(got) != 3 || got[0] != "T4" || got[1] != "T5" || got[2] != "T7" {
+		t.Fatalf("independent while T2 runs = %v", got)
+	}
+	if o, lock := p.Blocker(p.Task("T3")); o == nil || o.ID != "T2" || !strings.HasPrefix(lock, "file:") {
+		t.Fatalf("T3 blocker = %v %s", o, lock)
+	}
+}
+
+func idsOf(ts []*Task) []string {
+	out := make([]string, len(ts))
+	for i, t := range ts {
+		out[i] = t.ID
+	}
+	return out
 }

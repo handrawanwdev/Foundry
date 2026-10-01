@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isWorking, reachable, stepFor, taskCounts } from "./flow";
+import { isWorking, queueItem, queueLabel, reachable, stepFor, taskCounts } from "./flow";
 import type { Project } from "./types";
 
 describe("flow", () => {
@@ -26,5 +26,21 @@ describe("flow", () => {
     expect(taskCounts(p)).toMatchObject({ TODO: 1, DONE: 2, BLOCKED: 0 });
     expect(isWorking(p)).toBe(true);
     expect(isWorking(null)).toBe(false);
+  });
+
+  it("labels independent vs waiting vs locked tasks", () => {
+    const p = {
+      schedule: {
+        independent: ["T2", "T4"],
+        items: [
+          { id: "T2", state: "independent" },
+          { id: "T3", state: "queued", blocked_by: "T2", lock: "file:packages/ui" },
+          { id: "T6", state: "waiting_deps", waiting: ["T4"] },
+        ],
+      },
+    } as unknown as Project;
+    expect(queueLabel(queueItem(p, "T2"))).toBe("siap paralel");
+    expect(queueLabel(queueItem(p, "T3"))).toBe("dipakai T2 (file packages/ui)");
+    expect(queueLabel(queueItem(p, "T6"))).toBe("menunggu T4");
   });
 });

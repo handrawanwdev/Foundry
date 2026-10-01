@@ -184,7 +184,13 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/v1/templates", func(r *http.Request) (any, error) { return structure.Templates, nil })
 
 	// Project pipeline
-	api("GET /api/v1/project", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.Store.Load() }))
+	api("GET /api/v1/project", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		p, err := svc.Store.Load()
+		if err != nil {
+			return nil, err
+		}
+		return withSchedule(p), nil
+	}))
 	api("POST /api/v1/project/story", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct{ Story string }
 		if err := decode(r, &in); err != nil {
@@ -409,6 +415,14 @@ func ok(err error) (any, error) {
 		return nil, err
 	}
 	return map[string]bool{"ok": true}, nil
+}
+
+// withSchedule attaches the live build queue. It is computed, not stored.
+func withSchedule(p *core.Project) any {
+	return struct {
+		*core.Project
+		Schedule core.Schedule `json:"schedule"`
+	}{p, p.Schedule()}
 }
 
 // ---------- AI ----------

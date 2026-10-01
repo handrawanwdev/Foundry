@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/handrawanw/foundry/internal/core"
 )
 
 func TestGuardAndFlow(t *testing.T) {
@@ -27,7 +29,7 @@ func TestGuardAndFlow(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
-	if w := do("GET", "/api/v1/project", "", "", "127.0.0.1:8080"); w.Code != 200 || !strings.Contains(w.Body.String(), `"stage":"TELL"`) {
+	if w := do("GET", "/api/v1/project", "", "", "127.0.0.1:8080"); w.Code != 200 || !strings.Contains(w.Body.String(), `"stage":"TELL"`) || !strings.Contains(w.Body.String(), `"schedule":{"independent":[]}`) {
 		t.Fatalf("project: %d %s", w.Code, w.Body)
 	}
 	if w := do("POST", "/api/v1/project/story", `{"story":"aplikasi klinik untuk pasien"}`, "https://evil.example", "127.0.0.1:8080"); w.Code != 403 {
@@ -75,6 +77,48 @@ func TestOpenCloseBrowse(t *testing.T) {
 	}
 	if w := do("GET", "/api/v1/projects", ""); !strings.Contains(w.Body.String(), `"current":""`) || !strings.Contains(w.Body.String(), missing) {
 		t.Fatalf("after close: %s", w.Body)
+	}
+}
+
+func TestProjectSchedule(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	dir := t.TempDir()
+	s := New(nil, "/bin/foundry")
+	if _, err := s.Open(dir, "demo", true); err != nil {
+		t.Fatal(err)
+	}
+	st, err := core.NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Update(func(p *core.Project) error {
+		p.Stage = core.StageBuild
+		p.Tasks = []core.Task{
+			{ID: "T1", Area: "scaffold", Status: core.TaskDone},
+			{ID: "T2", Area: "ui", Files: []string{"packages/ui"}, Status: core.TaskTodo, DependsOn: []string{"T1"}},
+			{ID: "T3", Area: "ui", Files: []string{"packages/ui/src/Button.tsx"}, Status: core.TaskTodo, DependsOn: []string{"T1"}},
+			{ID: "T4", Area: "data", Files: []string{"services/api/auth"}, Status: core.TaskTodo, DependsOn: []string{"T1"}},
+			{ID: "T5", Area: "api", Files: []string{"services/api/auth/login.go"}, Status: core.TaskTodo, DependsOn: []string{"T4"}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/api/v1/project", nil)
+	r.Host = "127.0.0.1:8080"
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("code %d %s", w.Code, w.Body)
+	}
+	if !strings.Contains(w.Body.String(), `"independent":["T2","T4"]`) {
+		t.Fatalf("schedule = %s", w.Body)
+	}
+	if !strings.Contains(w.Body.String(), `"state":"queued"`) || !strings.Contains(w.Body.String(), `"blocked_by":"T2"`) {
+		t.Fatalf("T3 queued = %s", w.Body)
+	}
+	if !strings.Contains(w.Body.String(), `"state":"waiting_deps"`) {
+		t.Fatalf("T5 waiting = %s", w.Body)
 	}
 }
 

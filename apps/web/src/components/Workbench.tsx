@@ -191,7 +191,7 @@ function StatusBar() {
         </span>
       )}
       <div className="grow" />
-      {project && total > 0 && c && <span className="sb-item">Task {c.DONE}/{total}{c.BLOCKED ? ` · ${c.BLOCKED} blocked` : ""}</span>}
+      {project && total > 0 && c && <span className="sb-item">Task {c.DONE}/{total}{c.BLOCKED ? ` · ${c.BLOCKED} blocked` : ""}{(project.schedule?.independent.length ?? 0) > 0 ? ` · ${project.schedule!.independent.length} paralel` : ""}</span>}
       {project?.verification && <span className="sb-item">{project.verification.ready ? "✓ Terverifikasi" : `${project.verification.issues?.length ?? 0} masalah`}</span>}
       {project && <span className="sb-item path" title={project.dir}>{project.dir}</span>}
     </div>

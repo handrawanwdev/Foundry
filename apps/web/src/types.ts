@@ -208,8 +208,13 @@ export interface Trace {
 export interface Verification { ready: boolean; checks: Check[]; issues: Issue[] | null; trace: Trace[] | null; at: string }
 export interface Job {
   kind: string; status: "running" | "done" | "failed" | "waiting_host";
-  message: string; error?: string; task_id?: string; started: string;
+  message: string; error?: string; task_id?: string; task_ids?: string[] | null; started: string;
 }
+export interface QueueItem {
+  id: string; state: "independent" | "queued" | "waiting_deps";
+  blocked_by?: string; lock?: string; waiting?: string[] | null;
+}
+export interface Schedule { independent: string[]; items?: QueueItem[] | null }
 export interface FlowStep { name: string; detail?: string; role?: string; module?: string; page_id?: string; api?: string; current?: boolean }
 export interface SupportFlow { flow_id?: string; name: string; steps: FlowStep[] }
 // A cause is confirmed only with evidence; otherwise it is a possibility.
@@ -237,6 +242,7 @@ export interface Project {
   discovery?: Discovery; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
   platform?: PlatformPlan; structure?: Structure; stack?: TechStack; design?: Design; theme?: string; design_template?: string; reference?: DesignReference; tasks: Task[] | null;
   builds: BuildRun[] | null; verification?: Verification; job?: Job; support?: Support; events: Event[] | null; updated_at: string;
+  schedule?: Schedule;
 }
 
 export interface AgentInfo { id: string; name: string; binary: string; detected: boolean; path?: string; models: string[] | null; efforts: string[] | null }

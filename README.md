@@ -74,6 +74,7 @@ Loop host: `next_work` → kerjakan → `submit_work` / `submit_task`. Izin: `--
 
 ## Aturan penting
 
+- **Bangun paralel**: saat list task ada, Foundry menganalisa TODO yang dependensinya selesai, file/halamannya tidak dipegang agent lain, dan tidak bentrok satu sama lain, lalu mengerjakannya paralel (default 3 agent, maks 8, `FOUNDRY_AGENTS`). Kanban menandai task siap paralel vs yang menunggu dependensi atau file.
 - Task `DONE` hanya jika build/test project lulus (exit code) **dan** semua acceptance criteria terpenuhi dengan bukti.
 - Command verifikasi hanya dari tooling project: Go → `go build/vet/test ./...`; Node → script `typecheck/lint/build/test` yang ada; Flutter → `flutter analyze/test` bila terpasang.
 - Project existing tidak pernah diganti template.

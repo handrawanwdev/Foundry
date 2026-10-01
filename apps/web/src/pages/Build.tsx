@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { Kanban } from "../components/Kanban";
 import { IssueList } from "../components/IssueList";
-import { isWorking, taskCounts } from "../flow";
+import { isWorking, queueItem, queueLabel, taskCounts } from "../flow";
 import { useProject } from "../store/project";
 import type { Project, Task } from "../types";
 
@@ -31,13 +31,14 @@ export function BuildPage() {
   const working = isWorking(project);
   const v = project.verification;
   const task = tasks.find((t) => t.id === selected);
+  const independent = project.schedule?.independent ?? [];
 
   return (
     <div className="build">
       <div className="build-head">
         <div className="progress">
           <div className="bar"><div style={{ width: `${(c.DONE / tasks.length) * 100}%` }} /></div>
-          <span className="small">{c.DONE}/{tasks.length} task selesai{c.BLOCKED ? ` · ${c.BLOCKED} terblokir` : ""}</span>
+          <span className="small">{c.DONE}/{tasks.length} task selesai{c.BLOCKED ? ` · ${c.BLOCKED} terblokir` : ""}{independent.length > 0 ? ` · ${independent.length} siap paralel` : ""}</span>
         </div>
         <div className="row">
           {!working && c.TODO > 0 && (
@@ -75,6 +76,7 @@ function TaskDetail({ project, task, onClose }: { project: Project; task: Task; 
   const pages = (task.page_ids ?? []).map((id) => project.design?.pages.find((p) => p.id === id)?.name ?? id);
   const move = (s: Task["status"]) => run("move", () => api.moveTask(task.id, s));
   const waiting = (task.depends_on ?? []).filter((id) => project.tasks?.find((t) => t.id === id)?.status !== "DONE");
+  const queue = task.status === "TODO" ? queueLabel(queueItem(project, task.id)) : "";
 
   return (
     <aside className="card detail">
@@ -87,6 +89,8 @@ function TaskDetail({ project, task, onClose }: { project: Project; task: Task; 
       {reqs.map((r) => <div key={r!.id} className="small"><span className="tag">{r!.id}</span> {r!.text}</div>)}
       {pages.length > 0 && <div className="small">Halaman: {pages.join(", ")}</div>}
       {waiting.length > 0 && <div className="small">Menunggu: {waiting.join(", ")}</div>}
+      {queue && <div className="small">{queue}</div>}
+      {task.status === "IN_PROGRESS" && task.owner && <div className="small">Dikerjakan {task.owner}</div>}
 
       <h4>Acceptance criteria</h4>
       <ul className="small">

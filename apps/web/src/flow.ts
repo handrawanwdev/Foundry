@@ -1,4 +1,4 @@
-import type { Project, Stage, TaskStatus } from "./types";
+import type { Project, QueueItem, Stage, TaskStatus } from "./types";
 
 // User-facing steps. Discovery, Plan and Verify live inside these.
 export const STEPS = [
@@ -43,6 +43,21 @@ export function taskCounts(p: Project): Record<TaskStatus, number> {
 
 export function isWorking(p: Project | null): boolean {
   return !!p?.job && (p.job.status === "running" || p.job.status === "waiting_host");
+}
+
+export function queueItem(p: Project, id: string): QueueItem | undefined {
+  return p.schedule?.items?.find((it) => it.id === id);
+}
+
+export function queueLabel(it?: QueueItem): string {
+  if (!it) return "";
+  if (it.state === "independent") return "siap paralel";
+  if (it.state === "waiting_deps") return `menunggu ${(it.waiting ?? []).join(", ")}`;
+  if (it.blocked_by) {
+    const lock = it.lock === "*" ? "seluruh project" : (it.lock ?? "").replace(":", " ");
+    return lock ? `dipakai ${it.blocked_by} (${lock})` : `dipakai ${it.blocked_by}`;
+  }
+  return "antri";
 }
 
 export const PLATFORM_LABEL: Record<string, string> = {

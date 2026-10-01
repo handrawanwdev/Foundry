@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/handrawanw/foundry/internal/config"
+	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/pipeline"
 	"github.com/handrawanw/foundry/internal/modules/work"
 )
@@ -177,12 +178,12 @@ var tools = []tool{
 	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, discovery, platform, structure, technology stack, job, counts.", InputSchema: obj(nil)},
 	{Name: "get_requirements", perm: PermRead, Description: "Requirements, features, sub-features and user flows.", InputSchema: obj(nil)},
 	{Name: "get_design", perm: PermRead, Description: "Design pages with wireframe components and status.", InputSchema: obj(nil)},
-	{Name: "get_tasks", perm: PermRead, Description: "All tasks (Kanban), optionally filtered by status.",
+	{Name: "get_tasks", perm: PermRead, Description: "All tasks (Kanban), optionally filtered by status. Each TODO includes queue: independent (can run now in parallel), queued (file/page held by another task), or waiting_deps.",
 		InputSchema: obj(map[string]any{"status": map[string]any{"type": "string", "enum": []string{"TODO", "IN_PROGRESS", "REVIEW", "DONE", "BLOCKED"}}})},
 	{Name: "get_task", perm: PermRead, Description: "One task with its full brief.", InputSchema: obj(map[string]any{"task_id": str}, "task_id")},
 	{Name: "get_verification", perm: PermRead, Description: "Latest verification: checks, issues, requirement traceability.", InputSchema: obj(nil)},
 	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, plan, a support question or a task). Claims a task when building. " +
-		"When several hosts build in parallel, each passes its own worker name; a task whose page or files another worker holds waits (kind \"wait\": call again shortly).",
+		"When several hosts build in parallel, each passes its own worker name. also_ready lists other independent tasks another worker can claim; a task whose page or files another worker holds waits (kind \"wait\": call again shortly).",
 		InputSchema: obj(map[string]any{"worker": str})},
 	{Name: "submit_work", perm: PermWrite, Description: "Hand back a discovery/design/plan/design_qa/support result (the JSON object requested by next_work).",
 		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "plan", "design_qa", "support"}}, "result": str}, "kind", "result")},
@@ -234,16 +235,25 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 	case "get_project":
 		return map[string]any{"name": p.Name, "stage": p.Stage, "story": p.Story, "discovery": p.Discovery,
 			"platform": p.Platform, "structure": p.Structure, "stack": p.Stack, "job": p.Job,
-			"counts": map[string]int{"requirements": len(p.Requirements), "features": len(p.Features), "tasks": len(p.Tasks)}}, nil
+			"schedule": p.Schedule(),
+			"counts":   map[string]int{"requirements": len(p.Requirements), "features": len(p.Features), "tasks": len(p.Tasks)}}, nil
 	case "get_requirements":
 		return map[string]any{"requirements": p.Requirements, "features": p.Features, "flows": p.Flows}, nil
 	case "get_design":
 		return p.Design, nil
 	case "get_tasks":
+		queue := map[string]core.QueueItem{}
+		for _, it := range p.Schedule().Items {
+			queue[it.ID] = it
+		}
 		var out []map[string]any
 		for _, t := range p.Tasks {
 			if args.Status == "" || string(t.Status) == args.Status {
-				out = append(out, map[string]any{"id": t.ID, "title": t.Title, "status": t.Status, "feature_id": t.FeatureID, "depends_on": t.DependsOn})
+				row := map[string]any{"id": t.ID, "title": t.Title, "status": t.Status, "feature_id": t.FeatureID, "depends_on": t.DependsOn, "owner": t.Owner, "files": t.Files}
+				if q, ok := queue[t.ID]; ok {
+					row["queue"] = q
+				}
+				out = append(out, row)
 			}
 		}
 		return out, nil

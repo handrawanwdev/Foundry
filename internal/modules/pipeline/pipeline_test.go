@@ -876,6 +876,9 @@ func TestParallelWorkersQueueOnLocks(t *testing.T) {
 	if err := s.StartBuild(); err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(strings.Join(logTexts(load(t, s)), "\n"), "Analisa: 1 task independen siap paralel (TASK-001)") {
+		t.Fatalf("analysis = %v", logTexts(load(t, s)))
+	}
 	// Scaffold holds the whole project: worker b waits.
 	if w, _ := s.NextWork("a"); w.TaskID != "TASK-001" {
 		t.Fatalf("a = %+v", w)
@@ -897,6 +900,9 @@ func TestParallelWorkersQueueOnLocks(t *testing.T) {
 	wb, _ := s.NextWork("b")
 	if wa.TaskID != "TASK-002" || wb.TaskID != "TASK-004" {
 		t.Fatalf("a = %s, b = %s", wa.TaskID, wb.TaskID)
+	}
+	if !slices.Contains(wa.AlsoReady, "TASK-004") {
+		t.Fatalf("also_ready a=%v (want TASK-004)", wa.AlsoReady)
 	}
 	if w, _ := s.NextWork("c"); w.Kind != "wait" {
 		t.Fatalf("c = %+v", w)

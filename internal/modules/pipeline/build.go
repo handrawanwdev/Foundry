@@ -37,6 +37,7 @@ func (s *Service) StartBuild() error {
 		p.Stage = core.StageBuild
 		p.Job = &core.Job{Kind: "build", Status: status, Message: msg, Started: time.Now().UTC()}
 		p.Log("ui", "Build dimulai")
+		logIndependent(p)
 		return nil
 	})
 	if err != nil || isMCP {
@@ -165,13 +166,30 @@ func claim(p *core.Project, t *core.Task, owner, source string) {
 	t.Attempts++
 	t.Owner = owner
 	if p.Job != nil {
+		var ids []string
+		for _, a := range p.ActiveTasks() {
+			ids = append(ids, a.ID)
+		}
 		p.Job.TaskID = t.ID
+		p.Job.TaskIDs = ids
 		p.Job.Message = jobMessage("build") + ": " + t.Title
-		if n := len(p.ActiveTasks()); n > 1 {
-			p.Job.Message = fmt.Sprintf("%s: %d task paralel", jobMessage("build"), n)
+		if n := len(ids); n > 1 {
+			p.Job.Message = fmt.Sprintf("%s: %d task paralel (%s)", jobMessage("build"), n, strings.Join(ids, ", "))
 		}
 	}
 	p.Log(source, fmt.Sprintf("%s diambil %s (percobaan %d)", t.ID, owner, t.Attempts))
+}
+
+func logIndependent(p *core.Project) {
+	s := p.Schedule()
+	switch {
+	case len(s.Independent) > 0:
+		p.Log("system", fmt.Sprintf("Analisa: %d task independen siap paralel (%s)", len(s.Independent), strings.Join(s.Independent, ", ")))
+	case len(p.ReadyTasks()) > 0:
+		p.Log("system", "Analisa: task siap menunggu file atau halaman yang sedang dikerjakan")
+	default:
+		p.Log("system", "Analisa: belum ada task independen, masih menunggu dependensi")
+	}
 }
 
 func lockName(lock string) string {
