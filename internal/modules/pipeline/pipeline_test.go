@@ -131,6 +131,13 @@ func fakeAgent() {
 		}
 		fmt.Println(designJSON)
 	case strings.Contains(prompt, "visual QA checker"):
+		if mode == "initial_fix" && strings.Contains(prompt, "A new design was just generated") && strings.Contains(prompt, "-i1.png") {
+			fmt.Println(`{"status": "fix", "notes": "aksi utama tenggelam", "issues": [
+  {"page": "PAGE-001", "device": "mobile", "severity": "high", "category": "hierarchy", "component": "button-3", "problem": "Tombol Pilih ada di bawah daftar panjang", "fix": "Pindahkan tombol Pilih ke atas"},
+  {"page": "PAGE-002", "severity": "low", "category": "spacing", "problem": "Make it cleaner", "fix": "improve the UI"}],
+ "patches": [{"page": "PAGE-001", "operations": [{"op": "move", "target": 2, "after": -1}]}]}`)
+			return
+		}
 		if mode == "qa_fix" && strings.Contains(prompt, "-r1.png") {
 			fmt.Println(`{"status": "fix", "notes": "tombol terlalu atas", "patches": [{"page": "PAGE-001", "operations": [{"op": "move", "target": 0, "after": 1}]}]}`)
 			return
@@ -710,8 +717,8 @@ func logTexts(p *core.Project) []string {
 
 func TestDesignVisualQA(t *testing.T) {
 	s := newService(t, fakeAI{}, "qa_fix")
-	s.Render = fakeRender{}
 	designReady(t, s)
+	s.Render = fakeRender{}
 	if err := s.ReviseDesign("Pindahkan tombol ke atas", nil, scopePage1()); err != nil {
 		t.Fatal(err)
 	}
@@ -733,8 +740,8 @@ func TestDesignVisualQA(t *testing.T) {
 	}
 
 	s = newService(t, fakeAI{}, "")
-	s.Render = fakeRender{fail: true}
 	designReady(t, s)
+	s.Render = fakeRender{fail: true}
 	if err := s.ReviseDesign("Pindahkan tombol ke atas", nil, scopePage1()); err != nil {
 		t.Fatal(err)
 	}
@@ -746,6 +753,53 @@ func TestDesignVisualQA(t *testing.T) {
 	if types(findPage(p, "PAGE-001")) != "button,header,list" {
 		t.Fatal("a skipped check keeps the applied patch")
 	}
+}
+
+// A new design is critiqued before the user sees it: every page on its base
+// device plus the mobile view of web pages; a fix is an IR patch, the next
+// round renders only the patched page on the device of its finding.
+func TestInitialDesignCritic(t *testing.T) {
+	s := newService(t, fakeAI{}, "initial_fix")
+	s.Render = fakeRender{}
+	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindDesignQA, core.JobDone)
+	qa := p.Design.QA
+	if qa == nil || qa.Status != "fixed" || qa.Round != 2 || qa.Notes != "aksi utama tenggelam" {
+		t.Fatalf("qa = %+v", qa)
+	}
+	if len(qa.Shots) != 1 || qa.Shots[0].PageID != "PAGE-001" || qa.Shots[0].Device != "mobile" {
+		t.Fatalf("second round must render only the patched page: %+v", qa.Shots)
+	}
+	if got := types(findPage(p, "PAGE-001")); got != "button,header,list" {
+		t.Fatalf("components after critic fix = %s", got)
+	}
+	if p.Design.Revision != nil {
+		t.Fatal("the critic fix of a new design is not a user revision")
+	}
+
+	// Round 1 checked 3 pages on their base device + the web page on mobile.
+	s = newService(t, fakeAI{}, "initial_fix")
+	s.Render = &countRender{}
+	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	shots := s.Render.(*countRender).shots
+	want := []string{"PAGE-001 mobile", "PAGE-002 mobile", "PAGE-003 desktop", "PAGE-003 mobile", "PAGE-001 mobile"}
+	if strings.Join(shots, ",") != strings.Join(want, ",") {
+		t.Fatalf("shots = %v", shots)
+	}
+}
+
+type countRender struct{ shots []string }
+
+func (c *countRender) Shot(_ context.Context, _, pageID, device, _ string) (string, error) {
+	c.shots = append(c.shots, pageID+" "+device)
+	return "Tampilan " + device, nil
 }
 
 func TestSupportAgent(t *testing.T) {

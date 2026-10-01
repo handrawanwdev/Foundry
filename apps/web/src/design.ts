@@ -106,6 +106,7 @@ export const KIND_LABEL: Record<PageKind, string> = {
   auth: "Masuk / autentikasi", dashboard: "Ringkasan kerja", list: "Daftar data", detail: "Detail",
   form: "Form", wizard: "Langkah bertahap", search: "Pencarian", settings: "Pengaturan", payment: "Pembayaran",
   profile: "Profil", analytics: "Analitik", admin: "Operasional (padat)", status: "Hasil / status",
+  table: "Tabel data", workspace: "Workspace", "master-detail": "Daftar + detail", monitoring: "Pemantauan", report: "Laporan",
 };
 
 export const DENSITY_LABEL: Record<Density, string> = { compact: "padat", comfortable: "sedang", spacious: "lega" };
@@ -143,7 +144,7 @@ export function pageDensity(p: Page): Density {
   if (p.density) return p.density;
   const k = pageKind(p);
   if (k === "auth" || k === "payment" || k === "status") return "spacious";
-  if (k === "admin") return "compact";
+  if (k === "admin" || k === "workspace" || k === "monitoring" || k === "table") return "compact";
   return "comfortable";
 }
 
@@ -217,7 +218,7 @@ export function designChecks(project: Project): Finding[] {
         add(`navigasi mobile punya ${c.items!.length} item (maks. 5)`);
     }
     // Detail pages list attributes of one record; only data views can be empty.
-    if (["list", "admin", "dashboard", "search"].includes(kind) && count("list", "table") > 0 && !p.states?.empty)
+    if (["list", "admin", "dashboard", "search", "table", "workspace", "master-detail", "monitoring"].includes(kind) && count("list", "table") > 0 && !p.states?.empty)
       add("belum ada tampilan saat data kosong");
     const sig = signature(p);
     const twin = sig.split(",").length >= 3 && seen.get(p.platform + "|" + sig);

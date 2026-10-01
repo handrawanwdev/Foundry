@@ -25,18 +25,21 @@ type PageHandoff struct {
 	Density       string   `json:"density,omitempty"`
 	// Layout is the Design IR composition the preview was drawn from; the
 	// build implements the same frame, tree and device changes.
-	Layout         *core.PageLayout `json:"layout,omitempty"`
-	Components     []string         `json:"components"`
-	Data           *core.PageData   `json:"data,omitempty"`
-	Interactions   []string         `json:"interactions"`
-	EntryPoints    []string         `json:"entry_points"`
-	States         []string         `json:"states"`
-	Validation     []string         `json:"validation"`
-	Tests          []string         `json:"tests"`
-	FeatureID      string           `json:"feature_id"`
-	SubFeatureIDs  []string         `json:"sub_feature_ids,omitempty"`
-	RequirementIDs []string         `json:"requirement_ids"`
-	FlowIDs        []string         `json:"flow_ids"`
+	Layout *core.PageLayout `json:"layout,omitempty"`
+	// Plan is the design decision behind the layout: primary focus,
+	// secondary and supporting content, layout and responsive strategy.
+	Plan           *core.PagePlan `json:"plan,omitempty"`
+	Components     []string       `json:"components"`
+	Data           *core.PageData `json:"data,omitempty"`
+	Interactions   []string       `json:"interactions"`
+	EntryPoints    []string       `json:"entry_points"`
+	States         []string       `json:"states"`
+	Validation     []string       `json:"validation"`
+	Tests          []string       `json:"tests"`
+	FeatureID      string         `json:"feature_id"`
+	SubFeatureIDs  []string       `json:"sub_feature_ids,omitempty"`
+	RequirementIDs []string       `json:"requirement_ids"`
+	FlowIDs        []string       `json:"flow_ids"`
 }
 
 // Blocker is a missing or broken part of the page contract; the design
@@ -105,7 +108,7 @@ func Handoffs(p *core.Project) []PageHandoff {
 func handoff(p *core.Project, pg core.Page, pages []core.Page) PageHandoff {
 	h := PageHandoff{PageID: pg.ID, Name: pg.Name, Route: pg.Route, Platform: pg.Platform, Access: pg.Access, Role: pg.Role,
 		Kind: pg.Kind, Purpose: pg.Purpose, Hierarchy: pg.Hierarchy, Secondary: pg.SecondaryActions, Responsive: pg.Responsive,
-		Density: pg.Density, Layout: pg.Layout, Data: pg.Data, FeatureID: pg.FeatureID, SubFeatureIDs: pg.SubFeatureIDs,
+		Density: pg.Density, Layout: pg.Layout, Plan: pg.Plan, Data: pg.Data, FeatureID: pg.FeatureID, SubFeatureIDs: pg.SubFeatureIDs,
 		RequirementIDs: featureReqs(p, pg.FeatureID)}
 	byID := map[string]*core.Page{}
 	for i := range pages {
@@ -356,7 +359,8 @@ func duplicateActions(pg core.Page) []string {
 
 // dataKinds show collections; a list elsewhere (e.g. on a detail page) is
 // attributes of one record and cannot be empty.
-var dataKinds = map[string]bool{"list": true, "admin": true, "dashboard": true, "search": true}
+var dataKinds = map[string]bool{"list": true, "admin": true, "dashboard": true, "search": true,
+	"table": true, "workspace": true, "master-detail": true, "monitoring": true}
 
 // missingStates lists the states a data page must describe: loading and
 // error when it loads data, empty too when it shows a collection.

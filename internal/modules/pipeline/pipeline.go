@@ -59,8 +59,8 @@ func (ConfigAI) Runner() (*agent.Runner, bool, error) {
 type Service struct {
 	Store *core.Store
 	AI    AI
-	// Render takes browser screenshots for the visual check of a design
-	// revision; nil skips the check.
+	// Render takes browser screenshots for the visual check of a new
+	// design and of a revision; nil skips the check.
 	Render Renderer
 
 	mu     sync.Mutex
@@ -354,9 +354,19 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			if err := work.ApplyDesign(p, raw); err != nil {
 				return err
 			}
-			if revising && s.Render != nil && p.Design.Revision != nil {
+			switch {
+			case revising && s.Render != nil && p.Design.Revision != nil:
 				p.Design.Revision.QA = &core.DesignQA{Status: "running", Round: 1}
 				next = work.KindDesignQA
+			case !revising && s.Render != nil:
+				// A new design is critiqued before the user sees it.
+				p.Design.QA = &core.DesignQA{Status: "running", Round: 1}
+				next = work.KindDesignQA
+			case !revising:
+				// No browser: only the design rules are checked.
+				if lint := work.LintDesign(p, nil); len(lint) > 0 {
+					p.Design.QA = &core.DesignQA{Status: "skipped", Notes: "browser tidak tersedia; hanya aturan desain yang diperiksa", Issues: lint}
+				}
 			}
 			p.Stage = core.StageDesign
 		case work.KindPlan:

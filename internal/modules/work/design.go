@@ -14,6 +14,7 @@ type designOut struct {
 	Pages   []core.Page        `json:"pages"`
 	Removed []string           `json:"removed"` // revision only: ids of deleted pages
 	Patches []pagePatch        `json:"patches"` // revision only: edits to existing pages
+	Domain  string             `json:"domain"`
 	Flows   []struct {
 		ID      string   `json:"id"`
 		PageIDs []string `json:"page_ids"`
@@ -30,6 +31,7 @@ var componentTypes = map[string]bool{
 var pageKinds = map[string]bool{
 	"auth": true, "dashboard": true, "list": true, "detail": true, "form": true, "wizard": true, "search": true,
 	"settings": true, "payment": true, "profile": true, "analytics": true, "admin": true, "status": true,
+	"table": true, "workspace": true, "master-detail": true, "monitoring": true, "report": true,
 }
 
 var accessLevels = map[string]bool{"public": true, "auth": true}
@@ -63,6 +65,9 @@ var apiCall = regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE) /\S*$`)
 const pageShape = `{"id": "PAGE-001", "name": "", "platform": "web|android|ios|desktop", "role": "", "feature_id": "FEAT-001",
              "sub_feature_ids": ["FEAT-001.1"], "purpose": "", "kind": "list", "density": "comfortable",
              "hierarchy": ["", ""], "secondary_actions": [""], "responsive": "",
+             "intent": {"primary_task": "browse", "frequency": "high", "complexity": "medium", "information_density": "high", "comparison": true},
+             "plan": {"layout_strategy": "table", "responsive_strategy": "table_to_list", "primary_focus": "appointments", "secondary_content": ["create"], "supporting_content": [],
+                      "reasons": {"title": "", "create": "", "appointments": ""}},
              "route": "/janji", "access": "auth", "primary_action": {"label": "", "target": "PAGE-003"},
              "data": {"required": [""], "optional": [], "dynamic": [""], "api": ["GET /appointments"]},
              "states": {"loading": "", "empty": "", "no_results": "", "error": ""},
@@ -143,6 +148,11 @@ Per page answer: what is the main user action, what must be seen first, what is 
 - analytics: a headline number with change vs previous period, then only charts that answer a question.
 - admin: dense operational table with filters and bulk actions.
 - status: empty/error/success result page: what happened, concrete details, the next action.
+- table: many comparable records in columns, sort/filter, bulk actions when needed.
+- workspace: persistent navigation, the primary work area and a context panel (e.g. an agent's ticket workspace).
+- master-detail: a list and the selected record side by side; on mobile the list opens the detail.
+- monitoring: live status of many items, problems first.
+- report: question-driven sections with a headline number and only charts that answer a question.
 "density": compact (admin, operations, ticketing queues, data-heavy lists, trading, monitoring, developer tools), comfortable (most app pages, general SaaS), spacious (auth, payment, status, consumer onboarding). Pick it per page from the domain and the job, not one density for the whole app. Whitespace shows hierarchy; do not fill space because it is there.
 "states": copy for {"loading", "empty", "no_results", "error", "success"} only where the page can be in that state. A page that loads data needs loading and error; a page with a list or table needs empty too. Empty says why it is empty and what to do. no_results is for search/filter matching nothing (e.g. "Tidak ada janji yang cocok dengan filter."). Error says what failed and how to recover. Success states the concrete result. No "Oops", no "Congratulations", no emoji, no generic "No data found".
 
@@ -213,9 +223,10 @@ Write labels in the same language as the features. Do not write code. Do not mod
 	if p.Discovery != nil {
 		b.WriteString("ROLES:\n" + mustJSON(p.Discovery.Roles) + "\n\n")
 	}
-	b.WriteString(designRules + "\n" + componentRules + renderRules + "\n")
+	b.WriteString(designRules + "\n" + designKnowledge(DetectDomain(p)) + "\n" + designProcess + "\n" + componentRules + renderRules + "\n")
 	b.WriteString(`Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
+  "domain": "` + strings.Join(Domains, "|") + `|" (the product domain; empty when none fits),
   "system": ` + systemShape + `,
   "pages": [` + pageShape + `],
   "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002"]}]
@@ -265,7 +276,11 @@ func ApplyDesign(p *core.Project, raw string) error {
 	if p.Design != nil {
 		feedback = p.Design.Feedback
 	}
-	p.Design = &core.Design{System: normSystem(out.System), Pages: pages, Status: core.DesignDraft, Feedback: feedback}
+	domain := strings.ToLower(strings.TrimSpace(out.Domain))
+	if !slices.Contains(Domains, domain) {
+		domain = DetectDomain(p)
+	}
+	p.Design = &core.Design{System: normSystem(out.System), Pages: pages, Status: core.DesignDraft, Feedback: feedback, Domain: domain}
 	p.Tasks, p.Verification = nil, nil
 	return nil
 }
@@ -319,7 +334,7 @@ func applyRevision(p *core.Project, out designOut) error {
 		rev.Patch = append(rev.Patch, "UPDATE design system")
 		rev.Changes = append(rev.Changes, core.DesignChange{Kind: "changed", Page: "Design system"})
 	}
-	p.Design = &core.Design{System: next, Pages: pages, Status: core.DesignDraft, Feedback: d.Feedback, Revision: rev}
+	p.Design = &core.Design{System: next, Pages: pages, Status: core.DesignDraft, Feedback: d.Feedback, Revision: rev, Domain: d.Domain}
 	p.Tasks, p.Verification = nil, nil
 	return nil
 }
@@ -480,6 +495,8 @@ func normPage(p *core.Project, pg core.Page, idMap map[string]string) (core.Page
 		}
 		np.Components = append(np.Components, c)
 	}
+	np.Intent = normIntent(pg.Intent)
+	np.Plan = normPlan(pg.Plan, np)
 	return np, true
 }
 

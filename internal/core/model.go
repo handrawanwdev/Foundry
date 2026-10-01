@@ -176,6 +176,12 @@ type Design struct {
 	Scope *ChangeScope `json:"scope,omitempty"`
 	// Rejected is why the last patch was refused; the retry prompt shows it.
 	Rejected string `json:"rejected,omitempty"`
+	// Domain is the product domain the design decisions follow (ticketing,
+	// trading, ...); empty when none fits.
+	Domain string `json:"domain,omitempty"`
+	// QA is the visual critic of a newly generated design; a revision keeps
+	// its own check in Revision.QA.
+	QA *DesignQA `json:"qa,omitempty"`
 }
 
 // DesignSystem holds the design tokens: the build maps them onto the
@@ -255,6 +261,9 @@ type DesignQA struct {
 	Notes  string    `json:"notes,omitempty"`
 	Issues []QAIssue `json:"issues,omitempty"`
 	Shots  []QAShot  `json:"shots,omitempty"`
+	// Next are the page/device pairs the next round renders again: only
+	// what the last fix touched, on the device its findings were about.
+	Next []QAShot `json:"next,omitempty"`
 }
 
 // QAIssue is one problem the visual critic saw on a screenshot.
@@ -269,6 +278,10 @@ type QAIssue struct {
 	// the id of the component it is about.
 	Category  string `json:"category,omitempty"`
 	Component string `json:"component,omitempty"`
+	// Device is the screenshot the problem was seen on; Source is "lint"
+	// for findings of the deterministic design rules, empty for the critic.
+	Device string `json:"device,omitempty"`
+	Source string `json:"source,omitempty"`
 }
 
 type QAShot struct {
@@ -311,10 +324,38 @@ type Page struct {
 	Access        string      `json:"access,omitempty"` // public | auth
 	PrimaryAction *PageAction `json:"primary_action,omitempty"`
 	Data          *PageData   `json:"data,omitempty"`
+	// Intent is how the page is used and Plan the design decisions taken
+	// from it before the layout was composed. Both may be nil on older
+	// designs.
+	Intent *PageIntent `json:"intent,omitempty"`
+	Plan   *PagePlan   `json:"plan,omitempty"`
 	// Layout is the explicit composition (Design IR): frame, component
 	// tree and per-device changes. The renderer draws only this.
 	Layout     *PageLayout     `json:"layout,omitempty"`
 	Components []PageComponent `json:"components"`
+}
+
+// PageIntent is what the designer must understand before choosing a
+// layout. The user is Page.Role and the goal Page.Purpose.
+type PageIntent struct {
+	PrimaryTask        string `json:"primary_task,omitempty"`        // authenticate | enter | configure | search | browse | compare | process | monitor | inspect | analyze | overview
+	Frequency          string `json:"frequency,omitempty"`           // low | medium | high
+	Complexity         string `json:"complexity,omitempty"`          // low | medium | high
+	InformationDensity string `json:"information_density,omitempty"` // low | medium | high
+	Comparison         bool   `json:"comparison,omitempty"`          // the user compares many records
+}
+
+// PagePlan is the design decision recorded before the layout: the layout
+// and responsive strategy and the information hierarchy by component id.
+// Page type, density and navigation live in Kind, Density and Layout.Nav.
+type PagePlan struct {
+	Layout     string   `json:"layout_strategy,omitempty"`
+	Responsive string   `json:"responsive_strategy,omitempty"`
+	Primary    string   `json:"primary_focus,omitempty"`
+	Secondary  []string `json:"secondary_content,omitempty"`
+	Supporting []string `json:"supporting_content,omitempty"`
+	// Reasons: component or node id → why it is on the page.
+	Reasons map[string]string `json:"reasons,omitempty"`
 }
 
 // PageAction is the main thing the user does on a page. A read-only page has

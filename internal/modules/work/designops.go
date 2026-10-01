@@ -36,7 +36,7 @@ type patchOp struct {
 var pageFields = map[string]bool{
 	"name": true, "role": true, "purpose": true, "kind": true, "density": true, "states": true, "route": true,
 	"access": true, "primary_action": true, "data": true, "sub_feature_ids": true,
-	"hierarchy": true, "secondary_actions": true, "responsive": true, "layout": true,
+	"hierarchy": true, "secondary_actions": true, "responsive": true, "layout": true, "intent": true, "plan": true,
 }
 
 // PatchRejected is a patch that went outside the requested scope. Nothing of

@@ -72,17 +72,22 @@ func (s *Service) noteRejection(kind string, err error) bool {
 	return retry
 }
 
-// prepareQA renders the changed pages. When nothing can be rendered the
-// check is recorded as skipped, the job closes and nil is returned.
+// prepareQA renders the pages of the active check. When nothing can be
+// rendered the check is recorded as skipped, the job closes and nil is
+// returned.
 func (s *Service) prepareQA(p *core.Project) (*core.Project, error) {
-	rev := p.Design.Revision
-	if rev == nil || rev.QA == nil {
+	qa, initial := work.ActiveQA(p.Design)
+	if qa == nil {
 		return nil, s.finishQA("skipped", "tidak ada perubahan untuk diperiksa")
+	}
+	tag := "r" // revision rounds
+	if initial {
+		tag = "i"
 	}
 	ids, devs := work.QAPages(p)
 	var shots []core.QAShot
 	for i, id := range ids {
-		img := filepath.Join(p.Dir, core.StateDir, "qa", fmt.Sprintf("%s-%s-r%d.png", id, devs[i], rev.QA.Round))
+		img := filepath.Join(p.Dir, core.StateDir, "qa", fmt.Sprintf("%s-%s-%s%d.png", id, devs[i], tag, qa.Round))
 		outline, err := s.Render.Shot(context.Background(), p.Dir, id, devs[i], img)
 		if err != nil {
 			return nil, s.finishQA("skipped", "Browser tidak bisa merender halaman: "+err.Error())
@@ -93,8 +98,8 @@ func (s *Service) prepareQA(p *core.Project) (*core.Project, error) {
 		return nil, s.finishQA("skipped", "tidak ada halaman yang berubah")
 	}
 	return s.Store.Update(func(p *core.Project) error {
-		if r := p.Design.Revision; r != nil && r.QA != nil {
-			r.QA.Shots = shots
+		if qa, _ := work.ActiveQA(p.Design); qa != nil {
+			qa.Shots = shots
 		}
 		return nil
 	})
@@ -102,8 +107,11 @@ func (s *Service) prepareQA(p *core.Project) (*core.Project, error) {
 
 func (s *Service) finishQA(status, notes string) error {
 	_, err := s.Store.Update(func(p *core.Project) error {
-		if d := p.Design; d != nil && d.Revision != nil && d.Revision.QA != nil {
-			d.Revision.QA.Status, d.Revision.QA.Notes = status, notes
+		if qa, initial := work.ActiveQA(p.Design); qa != nil {
+			qa.Status, qa.Notes = status, notes
+			if initial {
+				qa.Issues = work.LintDesign(p, nil) // the design rules still apply without a browser
+			}
 		}
 		p.Job = &core.Job{Kind: work.KindDesignQA, Status: core.JobDone, Message: "Pemeriksaan visual dilewati: " + notes}
 		p.Log("system", "Pemeriksaan visual dilewati: "+notes)

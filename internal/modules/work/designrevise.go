@@ -21,7 +21,7 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
  "pages": [], "removed": [], "flows": []}
 - "target" and "after" are the [n] indexes of CURRENT PAGE, before the patch; earlier operations never shift them. "after": -1 = top, no "after" = bottom.
 - One patch per page, with all its operations.
-- "update" with "page_fields" (no target) only where PRESERVE allows page fields. Allowed page fields: name, role, purpose, hierarchy, secondary_actions, responsive, kind, density, route, access, primary_action, data, states, sub_feature_ids, layout ("layout" replaces the whole layout).
+- "update" with "page_fields" (no target) only where PRESERVE allows page fields. Allowed page fields: name, role, purpose, hierarchy, secondary_actions, responsive, kind, density, route, access, primary_action, data, states, sub_feature_ids, intent, plan, layout ("layout" replaces the whole layout).
 - The layout follows the operations: "add" and "move" put the component right after [after] in the same layout node ("after": -1 = top of root, none = bottom of root); "remove" takes it out of the layout. Component ids never change. To regroup components (a new row, grid, split) or change devices, update page field "layout".
 - "pages": only brand-new pages (id "NEW-1", "NEW-2", ...) in full. Never send an existing page.
 - "removed": ids of pages to delete; "flows": only flows whose page list changes, with the full new list.
@@ -87,7 +87,7 @@ Write labels in the same language as the design. Do not write code. Do not modif
 	b.WriteString(componentRules + renderRules + "\n")
 	if open {
 		// A general request may add pages or fill page contracts.
-		b.WriteString("DESIGN RULES (only for new pages and for components or fields you add or update):\n" + designRules + "\n")
+		b.WriteString("DESIGN RULES (only for new pages and for components or fields you add or update):\n" + designRules + "\n" + designKnowledge(d.Domain) + "\n")
 		b.WriteString("FEATURES:\n" + mustJSON(p.Features) + "\n\nFLOWS:\n" + mustJSON(p.Flows) + "\n\n")
 		b.WriteString("A new page has this shape:\n" + pageShape + "\n\n")
 		b.WriteString("DESIGN SYSTEM (changeable, same shape):\n" + mustJSON(d.System) + "\n\n")

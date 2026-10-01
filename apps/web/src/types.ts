@@ -45,10 +45,21 @@ export interface PageLayout {
 }
 export type PageKind =
   | "auth" | "dashboard" | "list" | "detail" | "form" | "wizard" | "search"
-  | "settings" | "payment" | "profile" | "analytics" | "admin" | "status";
+  | "settings" | "payment" | "profile" | "analytics" | "admin" | "status"
+  | "table" | "workspace" | "master-detail" | "monitoring" | "report";
 export type Density = "compact" | "comfortable" | "spacious";
 export interface PageStates { loading?: string; empty?: string; no_results?: string; error?: string; success?: string }
 export interface PageAction { label?: string; target?: string; reason?: string }
+// How the page is used (internal/core/model.go PageIntent); the user is the
+// role and the goal the purpose.
+export interface PageIntent {
+  primary_task?: string; frequency?: string; complexity?: string; information_density?: string; comparison?: boolean;
+}
+// Design decisions taken before the layout; ids are component ids.
+export interface PagePlan {
+  layout_strategy?: string; responsive_strategy?: string; primary_focus?: string;
+  secondary_content?: string[]; supporting_content?: string[]; reasons?: Record<string, string>;
+}
 export interface PageData { required?: string[]; optional?: string[]; dynamic?: string[]; api?: string[] }
 export interface Page {
   id: string; name: string; platform: string; role: string; feature_id: string;
@@ -56,13 +67,13 @@ export interface Page {
   kind?: PageKind; density?: Density; states?: PageStates;
   hierarchy?: string[]; secondary_actions?: string[]; responsive?: string;
   route?: string; access?: "public" | "auth"; primary_action?: PageAction; data?: PageData;
-  layout?: PageLayout;
+  intent?: PageIntent; plan?: PagePlan; layout?: PageLayout;
 }
 // Build spec of one page, assembled by the server from the design.
 export interface PageHandoff {
   page_id: string; name: string; route: string; platform: string; access: string; role: string; kind?: string;
   purpose: string; hierarchy?: string[]; primary_action: string; secondary_actions?: string[]; responsive?: string;
-  density?: string; layout?: PageLayout; components: string[] | null; data?: PageData;
+  density?: string; layout?: PageLayout; plan?: PagePlan; components: string[] | null; data?: PageData;
   interactions: string[] | null; entry_points: string[] | null; states: string[] | null; validation: string[] | null;
   tests: string[] | null; feature_id: string; sub_feature_ids?: string[]; requirement_ids: string[] | null; flow_ids: string[] | null;
 }
@@ -75,9 +86,9 @@ export interface ChangeScope { open?: boolean; fields?: boolean; general?: strin
 export interface QAShot { page_id: string; device: string; image: string; outline: string }
 export interface QAIssue {
   page_id?: string; severity: "critical" | "major" | "minor"; problem: string; why?: string; impact?: string; fix?: string;
-  category?: string; component?: string;
+  category?: string; component?: string; device?: string; source?: "lint";
 }
-export interface DesignQA { status: "running" | "pass" | "fixed" | "failed" | "skipped"; round: number; notes?: string; issues?: QAIssue[]; shots?: QAShot[] }
+export interface DesignQA { status: "running" | "pass" | "fixed" | "failed" | "skipped"; round: number; notes?: string; issues?: QAIssue[]; shots?: QAShot[]; next?: QAShot[] }
 export interface DesignRevision { request: string; changes: DesignChange[] | null; scope?: ChangeScope; patch?: string[]; qa?: DesignQA }
 export interface Token { name: string; value: string; use?: string }
 export interface DesignSystem {
@@ -89,6 +100,8 @@ export interface Design {
   pages: Page[]; status: "draft" | "changes_requested" | "approved"; feedback: string[] | null;
   revision?: DesignRevision;
   rejected?: string; // why the last patch was refused
+  domain?: string;
+  qa?: DesignQA; // visual critic of a newly generated design
 }
 export interface Criterion { text: string; met: boolean; evidence: string }
 export interface Task {

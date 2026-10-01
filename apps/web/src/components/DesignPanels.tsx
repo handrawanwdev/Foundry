@@ -33,6 +33,7 @@ export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: 
       <div className="inspect">
         <button className="link small" onClick={() => onSelect(null)}>← {page.name}</button>
         <h2>{componentName(c)}</h2>
+        {c.id && page.plan?.reasons?.[c.id] && <p className="muted small">Alasan: {page.plan.reasons[c.id]}</p>}
         {!!c.items?.length && (
           <section><h4>Isi</h4><ul className="plain">{c.items.map((it) => <li key={it}>{it}</li>)}</ul></section>
         )}
@@ -72,6 +73,7 @@ export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: 
         <dt>Urutan informasi</dt><dd>{page.hierarchy?.length
           ? <ol className="plain-ol">{page.hierarchy.map((h) => <li key={h}>{h}</li>)}</ol> : <span className="warn-text">belum ditentukan</span>}</dd>
         {page.responsive && <><dt>Responsif</dt><dd>{page.responsive}</dd></>}
+        {(page.intent || page.plan) && <><dt>Keputusan desain</dt><dd><PlanView page={page} /></dd></>}
         <dt>Jenis</dt><dd>{KIND_LABEL[pageKind(page)]}{!page.kind && <span className="muted small"> (ditebak)</span>} · kepadatan {DENSITY_LABEL[pageDensity(page)]}</dd>
         {page.states && <><dt>Kondisi</dt><dd>
           {STATE_LABEL.filter(([k]) => page.states?.[k]).map(([k, l]) => <div key={k}><span className="muted small">{l}:</span> {page.states![k]}</div>)}
@@ -112,6 +114,24 @@ export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: 
   );
 }
 
+// Intent and plan: why the layout looks the way it does.
+function PlanView({ page }: { page: Page }) {
+  const { intent: it, plan: pl } = page;
+  const ids = (xs?: string[]) => (xs ?? []).map((id) => "#" + id).join(", ");
+  return (
+    <>
+      {it && <div className="small">
+        {[it.primary_task && `tugas ${it.primary_task}`, it.frequency && `frekuensi ${it.frequency}`, it.complexity && `kompleksitas ${it.complexity}`,
+          it.information_density && `kepadatan info ${it.information_density}`, it.comparison && "membandingkan banyak data"].filter(Boolean).join(" · ")}
+      </div>}
+      {pl?.layout_strategy && <div className="small"><span className="muted">Layout:</span> {pl.layout_strategy}{pl.responsive_strategy && ` · mobile: ${pl.responsive_strategy}`}</div>}
+      {pl?.primary_focus && <div className="small"><span className="muted">Fokus utama:</span> #{pl.primary_focus}</div>}
+      {!!pl?.secondary_content?.length && <div className="small"><span className="muted">Sekunder:</span> {ids(pl.secondary_content)}</div>}
+      {!!pl?.supporting_content?.length && <div className="small"><span className="muted">Pendukung:</span> {ids(pl.supporting_content)}</div>}
+    </>
+  );
+}
+
 const STATE_LABEL: ["loading" | "empty" | "no_results" | "error" | "success", string][] = [
   ["loading", "Memuat"], ["empty", "Kosong"], ["no_results", "Tanpa hasil"], ["error", "Error"], ["success", "Berhasil"],
 ];
@@ -138,14 +158,14 @@ const SEVERITY_LABEL = { critical: "kritis", major: "besar", minor: "kecil" } as
 // block, they are kept for the next change.
 function QAIssues({ issues, pages, onOpen }: { issues: QAIssue[]; pages: Page[]; onOpen: (pageId: string) => void }) {
   return (
-    <details className="small qa-issues"><summary>{issues.length} temuan visual</summary>
+    <details className="small qa-issues"><summary>{issues.length} temuan desain</summary>
       <ul>
         {issues.map((it, i) => {
           const pg = pages.find((p) => p.id === it.page_id);
           return (
             <li key={i}>
               <span className={`sev ${it.severity}`}>{SEVERITY_LABEL[it.severity]}</span>{" "}
-              {(it.category || it.component) && <span className="muted">[{[it.category, it.component && "#" + it.component].filter(Boolean).join(" · ")}] </span>}
+              {(it.category || it.component || it.device || it.source) && <span className="muted">[{[it.source === "lint" && "aturan", it.category, it.component && "#" + it.component, it.device].filter(Boolean).join(" · ")}] </span>}
               {pg && <><button className="link" onClick={() => onOpen(pg.id)}>{pg.name}</button>: </>}
               {it.problem}
               {(it.why || it.impact || it.fix) && (
@@ -322,6 +342,8 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
         {findings.length ? <li className="warn">! Kualitas rancangan: {findings.length} temuan</li>
           : <li className="ok">✓ Kualitas rancangan: tiap halaman punya layout sesuai jenisnya</li>}
         {d.revision && !approved && <li className="warn">! Perubahan terakhir belum disimpan. Menyetujui akan menyimpannya.</li>}
+        {d.qa && !d.revision && <li className={d.qa.status === "failed" ? "warn" : "ok"} style={{ whiteSpace: "pre-line" }}>{qaText(d.qa)}
+          {!!d.qa.issues?.length && <QAIssues issues={d.qa.issues} pages={pages} onOpen={onOpen} />}</li>}
       </ul>
 
       {!approved && blockers.length > 0 && (
