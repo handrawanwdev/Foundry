@@ -142,7 +142,9 @@ export interface DesignTemplate {
   responsive_strategy: { strategy: string; desktop: string; mobile: string };
   quality_rules: { expected_behavior: string[]; avoid: string[]; quality_checks?: string[] };
 }
-export interface TemplateChoice { id: string; name: string; secondary?: string; source: "ai" | "auto"; reasons?: string[] }
+export interface TemplateChoice { id: string; name: string; secondary?: string; source: "user" | "ai" | "auto"; reasons?: string[] }
+// A landed canvas edit and what it made worse.
+export interface CanvasResult { project: Project; warnings?: string[] }
 export interface TemplateGallery {
   templates: DesignTemplate[] | null; previews: Record<string, Page>; domain?: string;
   system?: DesignSystem; theme?: ThemeContext; recommended?: TemplateChoice; invalid?: ThemeProblem[] | null;
@@ -214,7 +216,7 @@ export interface Event { at: string; source: string; message: string }
 export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string;
   discovery?: Discovery; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
-  platform?: PlatformPlan; structure?: Structure; design?: Design; theme?: string; reference?: DesignReference; tasks: Task[] | null;
+  platform?: PlatformPlan; structure?: Structure; design?: Design; theme?: string; design_template?: string; reference?: DesignReference; tasks: Task[] | null;
   builds: BuildRun[] | null; verification?: Verification; job?: Job; support?: Support; events: Event[] | null; updated_at: string;
 }
 

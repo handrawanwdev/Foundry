@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { create } from "zustand";
 import { api } from "../api";
-import { DENSITY_LABEL } from "../design";
+import { componentName, DENSITY_LABEL } from "../design";
 import { isWorking } from "../flow";
 import { DENSITIES, EMPHASES, locate } from "../ir";
 import { useProject } from "../store/project";
-import type { CanvasOp, Density, Page, Project, Prototype, VersionComparison, VersionSummary } from "../types";
+import type { CanvasOp, Density, LayoutChild, Page, Project, Prototype, VersionComparison, VersionSummary } from "../types";
 
 // Canvas, versions and prototype map: the visual editor works on the Design
 // IR tree (by component and node ids), never on the rendered DOM. Every edit
@@ -20,9 +21,74 @@ export function canvasLock(project: Project): string {
   return "";
 }
 
+// What the last canvas edit made worse; it outlives the panel that made it
+// (a removed component unmounts its panel).
+export const useCanvasWarnings = create<{ page: string; warnings: string[]; clear: () => void }>((set) => ({
+  page: "", warnings: [], clear: () => set({ page: "", warnings: [] }),
+}));
+
 function useEdit(page: Page) {
   const { run, pending } = useProject();
-  return { busy: pending === "canvas", edit: (ops: CanvasOp[]) => run("canvas", () => api.editDesign(page.id, ops)) };
+  const edit = (ops: CanvasOp[]) => run("canvas", async () => {
+    const r = await api.editDesign(page.id, ops);
+    useCanvasWarnings.setState({ page: page.id, warnings: r.warnings ?? [] });
+  });
+  return { busy: pending === "canvas", edit };
+}
+
+// Quality check of the last direct edit: a drop is shown, not refused.
+export function CanvasWarnings({ page }: { page?: Page }) {
+  const { page: at, warnings, clear } = useCanvasWarnings();
+  if (!warnings.length || at !== page?.id) return null;
+  return (
+    <div className="canvas-warn small" role="status">
+      <span><strong>Peringatan kualitas:</strong> {warnings.join("; ")}. Kembalikan lewat tab Versi bila tidak diinginkan.</span>
+      <button className="link" onClick={clear}>Tutup</button>
+    </div>
+  );
+}
+
+const NODE_LABEL: Record<string, string> = {
+  stack: "Tumpukan", row: "Baris", split: "Split", grid: "Grid", sidebar: "Sidebar", section: "Bagian", card: "Kartu", tabs: "Tab",
+};
+
+// Layers: the page's Design IR tree. Containers are layout nodes; leaves are
+// components, selected here as on the canvas.
+export function Layers({ page, selected, onSelect }: { page: Page; selected: number | null; onSelect: (i: number | null) => void }) {
+  const comps = page.components ?? [];
+  const index = (id: string) => comps.findIndex((c) => c.id === id);
+  const Node = ({ n }: { n: LayoutChild }) => {
+    if (typeof n === "string") {
+      const i = index(n);
+      if (i < 0) return null;
+      return (
+        <li><button className={`layer leaf ${selected === i ? "on" : ""}`} onClick={() => onSelect(selected === i ? null : i)}>{componentName(comps[i])}</button></li>
+      );
+    }
+    const label = (NODE_LABEL[n.type] ?? n.type) + (n.columns ? ` ${n.columns} kolom` : "") + (n.ratio ? ` ${n.ratio}` : "");
+    return (
+      <li>
+        <span className="layer node">{label}</span>
+        {!!n.children?.length && <ul>{n.children.map((c, i) => <Node key={typeof c === "string" ? c : c.id ?? i} n={c} />)}</ul>}
+      </li>
+    );
+  };
+  return (
+    <section className="canvas layers">
+      <h4>Layer</h4>
+      <ul className="layer-tree">
+        <li>
+          <button className={`layer page ${selected === null ? "on" : ""}`} onClick={() => onSelect(null)}>
+            {page.name}{page.layout ? ` · ${page.layout.frame}${page.layout.nav ? `, nav ${page.layout.nav}` : ""}` : ""}
+          </button>
+          <ul>
+            {page.layout ? <Node n={page.layout.root} />
+              : comps.map((c, i) => <li key={i}><button className={`layer leaf ${selected === i ? "on" : ""}`} onClick={() => onSelect(i)}>{componentName(c)}</button></li>)}
+          </ul>
+        </li>
+      </ul>
+    </section>
+  );
 }
 
 // Direct edits of one component: label, emphasis, position in its node,

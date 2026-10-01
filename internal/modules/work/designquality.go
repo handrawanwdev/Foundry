@@ -320,3 +320,26 @@ func QualityRecords(p *core.Project) []QualityRecord {
 	}
 	return out
 }
+
+var dimensionName = map[string]string{
+	"hierarchy": "hierarki", "composition": "komposisi", "spacing": "spasi", "density": "kepadatan", "responsive": "kegunaan di mobile",
+	"navigation": "navigasi", "ai_slop": "anti AI-slop", "theme": "konsistensi theme", "reference": "konsistensi referensi",
+}
+
+// QualityWarnings is what a direct change made worse: every dimension that
+// dropped and a gate it no longer passes. Nil when nothing got worse.
+func QualityWarnings(before, after *core.DesignQuality) []string {
+	if before == nil || after == nil {
+		return nil
+	}
+	var out []string
+	if before.Decision == "pass" && after.Decision != "pass" {
+		out = append(out, "Rancangan tidak lagi lolos gate kualitas")
+	}
+	for _, d := range QualityDimensions {
+		if b, a := before.Dimensions[d], after.Dimensions[d]; a < b {
+			out = append(out, fmt.Sprintf("Perubahan ini menurunkan %s (%d → %d)", dimensionName[d], b, a))
+		}
+	}
+	return out
+}

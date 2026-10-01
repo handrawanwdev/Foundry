@@ -84,9 +84,14 @@ type TemplateExample struct {
 // TemplateAvoid are the anti-patterns a template can rule out.
 var TemplateAvoid = []string{"hero_section", "marketing_section", "large_cards", "excessive_stats", "decorative_chart", "competing_actions"}
 
-// TemplateChoice is the template a design follows and why. Source: ai
-// (the designer chose it), auto (Foundry's recommendation, used when the
-// designer chose none or an unknown one).
+// TemplateBlank is the user's pick for a design without a template: every
+// page is designed from its own job.
+const TemplateBlank = "blank"
+
+// TemplateChoice is the template a design follows and why. Source: user
+// (picked before the design was generated), ai (the designer chose it), auto
+// (Foundry's recommendation, used when the designer chose none or an
+// unknown one).
 type TemplateChoice struct {
 	ID        string   `json:"id"`
 	Name      string   `json:"name"`

@@ -146,6 +146,22 @@ func TestTemplateChoice(t *testing.T) {
 		t.Fatalf("fallback = %+v", c)
 	}
 
+	// The user's pick wins over the AI's; a blank canvas means no template.
+	p.DesignTemplate = "master-detail"
+	if err := ApplyDesign(p, withTpl); err != nil {
+		t.Fatal(err)
+	}
+	if c := p.Design.Template; c == nil || c.ID != "master-detail" || c.Source != "user" || c.Reasons[1] != "agen mengelola banyak tiket" {
+		t.Fatalf("user choice = %+v", c)
+	}
+	p.DesignTemplate = core.TemplateBlank
+	if err := ApplyDesign(p, withTpl); err != nil {
+		t.Fatal(err)
+	}
+	if p.Design.Template != nil {
+		t.Fatalf("blank = %+v", p.Design.Template)
+	}
+
 	// No signal and no choice: a design without a template, as before.
 	plain := irProject()
 	plain.Story, plain.Features[0].Name = "Aplikasi resep masakan", "Resep"
@@ -165,6 +181,26 @@ func TestTemplatePrompt(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("prompt misses %q", want)
 		}
+	}
+	p.DesignTemplate = "finance-overview"
+	if s := DesignPrompt(p); !strings.Contains(s, "the user picked finance-overview") || !strings.Contains(s, "Template finance-overview:") || strings.Contains(s, "Foundry recommends") {
+		t.Error("prompt must follow the user's template")
+	}
+	p.DesignTemplate = core.TemplateBlank
+	if s := DesignPrompt(p); !strings.Contains(s, "blank canvas") || strings.Contains(s, "Template workspace-agent:") {
+		t.Error("prompt must design without a template")
+	}
+}
+
+func TestQualityWarnings(t *testing.T) {
+	before := &core.DesignQuality{Decision: "pass", Dimensions: map[string]int{"responsive": 100, "hierarchy": 80}}
+	after := &core.DesignQuality{Decision: "revision_required", Dimensions: map[string]int{"responsive": 70, "hierarchy": 90}}
+	got := QualityWarnings(before, after)
+	if !slices.Equal(got, []string{"Rancangan tidak lagi lolos gate kualitas", "Perubahan ini menurunkan kegunaan di mobile (100 → 70)"}) {
+		t.Fatalf("warnings = %v", got)
+	}
+	if QualityWarnings(after, after) != nil || QualityWarnings(nil, after) != nil {
+		t.Fatal("no drop, no warning")
 	}
 }
 

@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, CanvasOp, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, Prototype, TaskStatus, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
+import type { AgentOptions, AIState, Browse, CanvasOp, CanvasResult, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, Prototype, TaskStatus, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -42,6 +42,8 @@ export const api = {
   setTemplate: (template: string) => call<Project>("PUT", "/project/structure", { template }),
   // theme "" lets Foundry select one; a draft design is re-themed at once.
   setTheme: (theme: string) => call<Project>("PUT", "/project/theme", { theme }),
+  // template "" lets the AI choose, "blank" asks for none; applies on generate.
+  setDesignTemplate: (template: string) => call<Project>("PUT", "/project/design-template", { template }),
   // url "" removes the reference; otherwise it is analyzed into a theme.
   setReference: (url: string, notes = "") => call<Project>("PUT", "/project/reference", { url, notes }),
   // screens: what the user sees on each page, so the designer AI sees it too.
@@ -54,7 +56,7 @@ export const api = {
   undoDesign: () => call("POST", "/project/design/undo", {}),
   designHandoff: () => call<DesignHandoff>("GET", "/project/design/handoff"),
   // Canvas: direct Design IR edits of one page; rejected as a whole when invalid.
-  editDesign: (page: string, ops: CanvasOp[]) => call<Project>("POST", "/project/design/edit", { page, ops }),
+  editDesign: (page: string, ops: CanvasOp[]) => call<CanvasResult>("POST", "/project/design/edit", { page, ops }),
   prototype: () => call<Prototype>("GET", "/project/design/prototype"),
   versions: () => call<VersionSummary[]>("GET", "/project/design/versions"),
   // to 0 = the current design.

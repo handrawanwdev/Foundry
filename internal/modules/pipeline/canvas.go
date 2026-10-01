@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -51,27 +52,58 @@ func editable(p *core.Project) error {
 	return nil
 }
 
+// CanvasResult is a landed canvas edit and what it made worse.
+type CanvasResult struct {
+	Project  *core.Project `json:"project"`
+	Warnings []string      `json:"warnings,omitempty"`
+}
+
 // EditDesign applies canvas operations to one page's Design IR directly,
-// without the AI. The result is validated, measured and saved as a version.
-func (s *Service) EditDesign(pageID string, ops []work.CanvasOp) (*core.Project, error) {
+// without the AI. The result is validated, measured and saved as a version;
+// a quality drop is reported, not refused (the user decides).
+func (s *Service) EditDesign(pageID string, ops []work.CanvasOp) (*CanvasResult, error) {
+	var warnings []string
 	p, err := s.Store.Update(func(p *core.Project) error {
 		if err := editable(p); err != nil {
 			return err
 		}
+		before := work.MeasureDesign(p)
 		done, err := work.EditPage(p, pageID, ops)
 		if err != nil {
 			return err
 		}
 		measureQuality(p)
+		warnings = work.QualityWarnings(before, p.Design.Quality)
 		note := strings.Join(done, "; ")
 		recordVersion(p, "canvas", note)
 		p.Log("ui", "Edit kanvas: "+note)
 		return nil
 	})
-	if err == nil {
-		saveQuality(p)
+	if err != nil {
+		return nil, err
 	}
-	return p, err
+	saveQuality(p)
+	return &CanvasResult{Project: p, Warnings: warnings}, nil
+}
+
+// SetDesignTemplate picks the template the next generated design starts
+// from: "" lets the AI choose, core.TemplateBlank asks for none. A design
+// that exists keeps its pages; "Buat ulang" applies the pick.
+func (s *Service) SetDesignTemplate(id string) (*core.Project, error) {
+	return s.Store.Update(func(p *core.Project) error {
+		if p.Busy() {
+			return ErrBusy
+		}
+		if id != "" && id != core.TemplateBlank && work.FindDesignTemplate(id) == nil {
+			return fmt.Errorf("template %q tidak tersedia", id)
+		}
+		if d := p.Design; d != nil && d.Status == core.DesignApproved {
+			return ErrWrongStage
+		}
+		p.DesignTemplate = id
+		p.Log("ui", "Template awal: "+cmp.Or(id, "dipilih AI"))
+		return nil
+	})
 }
 
 // RestoreDesignVersion makes a saved version the current design.

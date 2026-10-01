@@ -788,3 +788,17 @@ button.danger { color: var(--bad); }
 .tpl-detail dt { font-weight: 600; margin-top: .5rem; }
 .tpl-detail dd { margin: .15rem 0 0; }
 .tpl-detail ul { margin: 0; padding-left: 1.1rem; }
+.layer-tree, .layer-tree ul { list-style: none; margin: 0; padding: 0; }
+.layer-tree ul { padding-left: .9rem; border-left: 1px solid var(--line); margin-left: .35rem; }
+.layer { display: block; width: 100%; text-align: left; border: none; background: none; padding: .15rem .4rem; border-radius: 5px; font-size: 12.5px; }
+.layer.node { color: var(--muted); font-size: 11.5px; }
+.layer.page { font-weight: 600; }
+button.layer:hover { background: var(--hover); }
+button.layer.on { background: var(--accent-soft); color: var(--text); }
+.canvas-warn { display: flex; gap: .75rem; align-items: center; justify-content: space-between; padding: .45rem 1rem; background: var(--warn-soft); border-bottom: 1px solid var(--line); }
+.code-view { padding: 1.2rem 1.5rem; overflow: auto; }
+.code-view pre { background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: .8rem; font-size: 12px; max-height: 480px; overflow: auto; }
+.tpl-pick { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; }
+.tpl-pick button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: .1rem; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: none; font-size: 13px; max-width: 220px; }
+.tpl-pick button.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.tpl-pick button:disabled { opacity: .55; }

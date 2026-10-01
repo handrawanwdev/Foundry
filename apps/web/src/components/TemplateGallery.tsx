@@ -7,7 +7,7 @@ import { Wireframe } from "./Wireframe";
 
 const DOMAINS: [string, string][] = [["", "Domain proyek"], ["ticketing", "Ticketing"], ["finance", "Finance"], ["trading", "Trading"],
   ["developer_tools", "Developer tools"], ["admin_operations", "Admin & operasional"]];
-const SOURCE = { ai: "dipilih AI", auto: "rekomendasi Foundry" };
+const SOURCE = { user: "pilihanmu", ai: "dipilih AI", auto: "rekomendasi Foundry" };
 const AVOID: Record<string, string> = {
   hero_section: "hero besar", marketing_section: "bagian pemasaran", large_cards: "kartu besar", excessive_stats: "statistik berlebih",
   decorative_chart: "chart dekoratif", competing_actions: "aksi utama bersaing",
@@ -43,8 +43,10 @@ export function TemplateLibrary({ project }: { project: Project }) {
           {chosen.reasons?.length ? ` — ${chosen.reasons.join("; ")}` : ""}
         </p>
       ) : project.design?.pages.length ? <p className="small muted">Rancangan ini tidak memakai template.</p> : null}
+      <h4>Template awal</h4>
+      <TemplatePicker project={project} templates={g?.templates ?? []} />
       {project.design?.pages.length && project.design.status !== "approved" ? (
-        <p className="small"><RegenerateButton project={project} label="↻ Buat ulang rancangan" /> <span className="muted">AI memilih template dan menyusun ulang semua halaman dari fitur yang sama.</span></p>
+        <p className="small"><RegenerateButton project={project} label="↻ Buat ulang rancangan" /> <span className="muted">Menyusun ulang semua halaman dari fitur yang sama dengan template awal di atas.</span></p>
       ) : null}
       {rec && (!chosen || chosen.id !== rec.id) && (
         <p className="small muted">Rekomendasi Foundry: <strong className="fg">{g?.templates?.find((t) => t.id === rec.id)?.name}</strong> — {rec.reasons?.join("; ")}</p>
@@ -85,6 +87,34 @@ export function TemplateLibrary({ project }: { project: Project }) {
       </div>
       {detail && <TemplateDetail t={detail} />}
       {g?.invalid?.length ? <ul className="small warn-text">{g.invalid.map((p) => <li key={p.id}>Template <code>{p.id}</code> tidak dipakai: {p.error}</li>)}</ul> : null}
+    </div>
+  );
+}
+
+// Template awal: the structure the next generated design starts from. Auto
+// lets the AI choose from the library; blank asks for no template.
+export function TemplatePicker({ project, templates }: { project: Project; templates?: DesignTemplate[] }) {
+  const { run, pending } = useProject();
+  const [list, setList] = useState<DesignTemplate[]>(templates ?? []);
+  useEffect(() => {
+    if (templates) setList(templates);
+    else api.designTemplates().then((r) => setList(r.templates ?? []), () => {});
+  }, [templates]);
+  const picked = project.design_template ?? "";
+  const locked = isWorking(project) || project.design?.status === "approved" || pending === "dtemplate";
+  const pick = (id: string) => id !== picked && run("dtemplate", () => api.setDesignTemplate(id));
+  const options: [string, string, string][] = [
+    ["", "Otomatis", "AI memilih dari kebutuhan"],
+    ...list.map((t): [string, string, string] => [t.id, t.name, t.layout_pattern.structure]),
+    ["blank", "Kanvas kosong", "Tanpa template; tiap halaman dari tugasnya"],
+  ];
+  return (
+    <div className="tpl-pick">
+      {options.map(([id, name, hint]) => (
+        <button key={id || "auto"} className={picked === id ? "on" : ""} disabled={locked} onClick={() => pick(id)} title={hint}>
+          <strong>{name}</strong><span className="small muted">{hint}</span>
+        </button>
+      ))}
     </div>
   );
 }

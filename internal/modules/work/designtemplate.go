@@ -279,6 +279,9 @@ type templateOut struct {
 // designer's choice when it names a template of the library, else
 // Foundry's recommendation.
 func ChooseTemplate(p *core.Project, out *templateOut) *core.TemplateChoice {
+	if c, ok := pickedTemplate(p, out); ok {
+		return c
+	}
 	rec := RecommendTemplate(p)
 	if out == nil || strings.TrimSpace(out.Primary) == "" || out.Primary == "none" {
 		return rec
@@ -301,6 +304,29 @@ func ChooseTemplate(p *core.Project, out *templateOut) *core.TemplateChoice {
 		c.Reasons = append(c.Reasons, "rekomendasi Foundry: "+rec.Name)
 	}
 	return c
+}
+
+// pickedTemplate is the user's own pick, which the designer follows: ok is
+// false when the user picked nothing (or a template no longer in the
+// library), leaving the choice to the designer.
+func pickedTemplate(p *core.Project, out *templateOut) (*core.TemplateChoice, bool) {
+	if p.DesignTemplate == core.TemplateBlank {
+		return nil, true
+	}
+	t := FindDesignTemplate(p.DesignTemplate)
+	if t == nil {
+		return nil, false
+	}
+	c := &core.TemplateChoice{ID: t.ID, Name: t.Name, Source: "user", Reasons: []string{"dipilih user sebagai struktur awal"}}
+	if out != nil {
+		if s := strings.TrimSpace(out.Secondary); s != t.ID && FindDesignTemplate(s) != nil {
+			c.Secondary = s
+		}
+		if r := strings.TrimSpace(out.Reason); r != "" {
+			c.Reasons = append(c.Reasons, r)
+		}
+	}
+	return c, true
 }
 
 // currentTemplates are the templates the design follows: primary first.
@@ -511,6 +537,15 @@ func templateKnowledge(p *core.Project) string {
 	}
 	in := templateInput(p)
 	var b strings.Builder
+	if p.DesignTemplate == core.TemplateBlank {
+		return "DESIGN TEMPLATES: the user chose a blank canvas. Use no template; design every page from its own job, and omit \"template\".\n"
+	}
+	if t := FindDesignTemplate(p.DesignTemplate); t != nil {
+		fmt.Fprintf(&b, "DESIGN TEMPLATE: the user picked %s (%s) as the starting structure: use it as the primary template, adapted to this product. "+
+			"A secondary pattern only for pages of another kind (e.g. sign-in). Explain the adaptation in \"template.reason\".\n", t.ID, t.Name)
+		b.WriteString(templateDetail(*t, in.Domain))
+		return b.String()
+	}
 	b.WriteString("DESIGN TEMPLATES (proven UX patterns: a structural and composition reference, never a page to copy; the theme decides the look, the template the structure):\n")
 	for _, t := range tpls {
 		fmt.Fprintf(&b, "- %s (%s): %s For pages of kind %s. Layout %s; %s. Characteristics: %s.\n", t.ID, t.Name, t.Intent,

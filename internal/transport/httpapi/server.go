@@ -231,6 +231,13 @@ func (s *Server) Handler() http.Handler {
 		}
 		return svc.SetTheme(strings.TrimSpace(in.Theme))
 	}))
+	api("PUT /api/v1/project/design-template", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Template string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.SetDesignTemplate(strings.TrimSpace(in.Template))
+	}))
 	api("PUT /api/v1/project/reference", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct{ URL, Notes string }
 		if err := decode(r, &in); err != nil {

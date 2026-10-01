@@ -49,6 +49,10 @@ type Project struct {
 	// Theme is the theme the user picked for the design; empty lets
 	// Foundry select one from the requirement.
 	Theme string `json:"theme,omitempty"`
+	// DesignTemplate is the template the user picked as the design's
+	// starting structure: empty lets the AI choose, TemplateBlank asks for
+	// none. It applies when the design is generated.
+	DesignTemplate string `json:"design_template,omitempty"`
 	// Reference is the website or app the design takes inspiration from.
 	Reference    *DesignReference `json:"reference,omitempty"`
 	Tasks        []Task           `json:"tasks"`

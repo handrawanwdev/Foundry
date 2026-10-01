@@ -7,16 +7,16 @@ import { isWorking } from "../flow";
 import { useProject } from "../store/project";
 import { useWorkbench } from "../store/workbench";
 import { api } from "../api";
-import type { DesignHandoff, PageStates, Project } from "../types";
+import type { Blocker, DesignHandoff, PageHandoff, PageStates, Project } from "../types";
 import { ThemeGallery } from "../components/ThemeGallery";
 import { RegenerateButton, TemplateLibrary } from "../components/TemplateGallery";
 import { Features, PlatformStructure, Summary } from "./DesignInfo";
-import { CanvasComponent, CanvasPage, PrototypeMap, Versions } from "../components/Canvas";
+import { CanvasComponent, CanvasPage, CanvasWarnings, Layers, PrototypeMap, Versions } from "../components/Canvas";
 
-type Mode = "pratinjau" | "prototipe" | "tinjau";
+type Mode = "pratinjau" | "prototipe" | "kode" | "tinjau";
 type Info = "fitur" | "platform" | "kebutuhan" | "tema" | "template" | "peta" | "versi";
 
-const MODES: [Mode, string][] = [["pratinjau", "Pratinjau"], ["prototipe", "Prototipe"], ["tinjau", "Tinjau"]];
+const MODES: [Mode, string][] = [["pratinjau", "Desain"], ["prototipe", "Prototipe"], ["kode", "Kode"], ["tinjau", "Tinjau"]];
 const STATES: [PageState, string, keyof PageStates | null][] = [
   ["normal", "Normal", null], ["loading", "Memuat", "loading"], ["empty", "Kosong", "empty"],
   ["no_results", "Tanpa hasil", "no_results"], ["error", "Error", "error"], ["success", "Berhasil", "success"],
@@ -134,7 +134,7 @@ function Workspace({ project }: { project: Project }) {
           ))}
         </div>
         <div className="dw-actions">
-          {mode !== "tinjau" && !info && (
+          {(mode === "pratinjau" || mode === "prototipe") && !info && (
             <div className="seg subtle">
               {DEVICES.map((d) => <button key={d.key} className={dev === d.key ? "on" : ""} onClick={() => setDevice(d.key)}>{d.label}</button>)}
             </div>
@@ -149,6 +149,7 @@ function Workspace({ project }: { project: Project }) {
 
       {asking && <AskChange page={mode !== "tinjau" && !info ? page : undefined} pages={order} component={selected} device={dev} onClose={() => setAsking(false)} />}
       <ChangeBar project={project} onOpen={(id) => { setMode("pratinjau"); show(id); }} />
+      {!info && mode === "pratinjau" && <CanvasWarnings page={page} />}
 
       <div className={`dw-main ${sideOpen ? "side-open" : ""}`}>
         <aside className="dw-side">
@@ -183,6 +184,8 @@ function Workspace({ project }: { project: Project }) {
               <Review project={project} blockers={handoff?.blockers ?? []} onAsk={() => setAsking(true)} onInfo={setInfo}
                 onOpen={(id) => { setMode("pratinjau"); show(id); }}
                 onTry={(id) => { setMode("prototipe"); startFlow(id, true); }} />
+            ) : mode === "kode" ? (
+              page && <CodeHandoff key={page.id} handoff={handoff?.pages?.find((h) => h.page_id === page.id)} blockers={(handoff?.blockers ?? []).filter((b) => b.page_id === page.id)} />
             ) : page && (
               <div className={`dw-stage ${dev}`}>
                 <Fit width={SCREEN_WIDTH[dev]}>
@@ -196,6 +199,7 @@ function Workspace({ project }: { project: Project }) {
 
         {showInspect && (
           <aside className="dw-inspect">
+            <Layers page={page!} selected={selected} onSelect={setSelected} />
             {selected !== null && page!.components?.[selected]
               ? <CanvasComponent project={project} page={page!} index={selected} onRemoved={() => setSelected(null)} />
               : <CanvasPage project={project} page={page!} />}
@@ -236,6 +240,26 @@ function Workspace({ project }: { project: Project }) {
           ) : <span />}
         </footer>
       )}
+    </div>
+  );
+}
+
+// Code: the implementation handoff of one page, derived from the Design IR;
+// the build receives exactly this.
+function CodeHandoff({ handoff, blockers }: { handoff?: PageHandoff; blockers: Blocker[] }) {
+  const [copied, setCopied] = useState(false);
+  if (!handoff) return <div className="code-view"><p className="muted">Handoff belum tersedia.</p></div>;
+  const json = JSON.stringify(handoff, null, 2);
+  return (
+    <div className="code-view">
+      <h1>{handoff.name}</h1>
+      <p className="small muted">
+        <code>{handoff.route || "route belum ditentukan"}</code> · {handoff.platform} · {handoff.access === "auth" ? "harus login" : handoff.access || "akses belum ditentukan"}
+      </p>
+      {blockers.map((b, i) => <p key={i} className="warn-text small">! {b.text}</p>)}
+      <p className="small muted">Handoff implementasi dari Design IR — build memakai data yang sama.</p>
+      <button className="ghost small" onClick={() => navigator.clipboard?.writeText(json).then(() => setCopied(true), () => {})}>{copied ? "Tersalin" : "Salin JSON"}</button>
+      <pre>{json}</pre>
     </div>
   );
 }

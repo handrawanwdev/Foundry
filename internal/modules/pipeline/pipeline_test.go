@@ -1102,10 +1102,11 @@ func TestDesignVersionsAndCanvas(t *testing.T) {
 	if err := s.UndoDesignChange(); err != nil {
 		t.Fatal(err)
 	}
-	p, err := s.EditDesign("PAGE-001", []work.CanvasOp{{Op: "set_page", Fields: map[string]string{"density": "compact"}}})
+	res, err := s.EditDesign("PAGE-001", []work.CanvasOp{{Op: "set_page", Fields: map[string]string{"density": "compact"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	p := res.Project
 	if findPage(p, "PAGE-001").Density != "compact" || p.Design.Quality == nil {
 		t.Fatalf("canvas edit = %+v", findPage(p, "PAGE-001"))
 	}
@@ -1193,12 +1194,19 @@ func TestRegenerateDesign(t *testing.T) {
 		t.Fatal(err)
 	}
 	features := load(t, s).Features
+	if _, err := s.SetDesignTemplate("landing-page"); err == nil {
+		t.Fatal("unknown template must fail")
+	}
+	// The user's template applies when the design is generated again.
+	if _, err := s.SetDesignTemplate("trading-terminal"); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.RegenerateDesign(); err != nil {
 		t.Fatal(err)
 	}
 	// A full design prompt, not a revision; discovery is not run again.
 	w, _ := s.NextWork("")
-	if w.Kind != work.KindDesign || !strings.Contains(w.Prompt, "DESIGN TEMPLATES") || strings.Contains(w.Prompt, "CHANGE") {
+	if w.Kind != work.KindDesign || !strings.Contains(w.Prompt, "the user picked trading-terminal") || strings.Contains(w.Prompt, "CHANGE") {
 		t.Fatalf("work = %+v", w)
 	}
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
@@ -1207,6 +1215,9 @@ func TestRegenerateDesign(t *testing.T) {
 	p := load(t, s)
 	if !reflect.DeepEqual(p.Features, features) || p.Design.Status != core.DesignDraft {
 		t.Fatalf("project = %+v", p.Design)
+	}
+	if c := p.Design.Template; c == nil || c.ID != "trading-terminal" || c.Source != "user" {
+		t.Fatalf("template = %+v", c)
 	}
 	if err := s.ApproveDesign(); err != nil {
 		t.Fatal(err)
