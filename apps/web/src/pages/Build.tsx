@@ -91,6 +91,9 @@ function TaskDetail({ project, task, onClose }: { project: Project; task: Task; 
       {waiting.length > 0 && <div className="small">Menunggu: {waiting.join(", ")}</div>}
       {queue && <div className="small">{queue}</div>}
       {task.status === "IN_PROGRESS" && task.owner && <div className="small">Dikerjakan {task.owner}</div>}
+      {task.progress && (task.status === "IN_PROGRESS" || task.status === "REVIEW") && (
+        <div className="task-progress">{task.status === "IN_PROGRESS" && <span className="spinner" />} {task.progress}</div>
+      )}
 
       <h4>Acceptance criteria</h4>
       <ul className="small">

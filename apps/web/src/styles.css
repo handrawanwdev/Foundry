@@ -455,6 +455,7 @@ blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding-left: 1
 .task-ready { border-color: var(--ok); }
 .task-title { font-weight: 500; font-size: .9rem; }
 .task-queue { font-size: .75rem; }
+.task-progress { font-size: .75rem; color: var(--accent); display: flex; align-items: center; gap: .35rem; }
 /* Height follows the editor pane (query container), not the window, so the
    panel never runs below the status bar. */
 .detail { align-self: start; position: sticky; top: 0; max-height: 100cqh; overflow-y: auto; overflow-wrap: anywhere; }

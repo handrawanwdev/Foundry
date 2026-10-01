@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/handrawanw/foundry/internal/core"
@@ -165,6 +167,11 @@ func claim(p *core.Project, t *core.Task, owner, source string) {
 	t.Status = core.TaskInProgress
 	t.Attempts++
 	t.Owner = owner
+	if source == "mcp" {
+		t.Progress = "Host mengerjakan"
+	} else {
+		t.Progress = "Menulis kode"
+	}
 	if p.Job != nil {
 		var ids []string
 		for _, a := range p.ActiveTasks() {
@@ -199,23 +206,85 @@ func lockName(lock string) string {
 	return strings.Replace(lock, ":", " ", 1)
 }
 
+const maxProgress = 72
+
+func clipProgress(s string) string {
+	s = strings.TrimSpace(firstLine(s))
+	r := []rune(s)
+	if len(r) > maxProgress {
+		return string(r[:maxProgress-1]) + "…"
+	}
+	return s
+}
+
+func progressFromFiles(files []string) string {
+	switch len(files) {
+	case 0:
+		return "Menulis kode"
+	case 1:
+		return "Mengubah " + filepath.Base(files[0])
+	default:
+		return fmt.Sprintf("Mengubah %d file", len(files))
+	}
+}
+
+func (s *Service) setProgress(id, msg string) {
+	s.Store.Update(func(p *core.Project) error {
+		if t := p.Task(id); t != nil {
+			t.Progress = clipProgress(msg)
+		}
+		return nil
+	})
+}
+
+// watchProgress refreshes the Kanban line from files the agent touches.
+func (s *Service) watchProgress(ctx context.Context, id, dir string, before checks.Snapshot) func() {
+	done := make(chan struct{})
+	var once sync.Once
+	go func() {
+		tick := time.NewTicker(2 * time.Second)
+		defer tick.Stop()
+		last := ""
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
+			case <-tick.C:
+				msg := progressFromFiles(checks.Changed(dir, before))
+				if msg == last {
+					continue
+				}
+				last = msg
+				s.setProgress(id, msg)
+			}
+		}
+	}()
+	return func() { once.Do(func() { close(done) }) }
+}
+
 func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, p *core.Project, t *core.Task) error {
 	id := t.ID
 	// Changes by agents running in parallel land in the same tree, so the
 	// diff below may include their files too; the reviewer judges criteria.
 	before := checks.Take(p.Dir)
+	stopWatch := s.watchProgress(ctx, id, p.Dir, before)
 	if _, err := runner.Run(ctx, agent.Execute, p.Dir, work.TaskPrompt(p, t)); err != nil {
+		stopWatch()
 		if ctx.Err() != nil {
 			return s.releaseTask(ctx, id)
 		}
 		s.rejectTask(id, "Agent gagal menjalankan task: "+err.Error())
 		return err
 	}
+	stopWatch()
 	changed := checks.Changed(p.Dir, before)
 	if len(changed) == 0 {
 		s.rejectTask(id, "Tidak ada file yang berubah; implementasi belum dibuat")
 		return nil
 	}
+	s.setProgress(id, "Menjalankan build & tes")
 	build := s.runChecks(ctx, id)
 	if ctx.Err() != nil {
 		return s.releaseTask(ctx, id)
@@ -224,6 +293,7 @@ func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, p 
 		s.rejectTask(id, "Verifikasi gagal: "+build.Reason+"\n"+lastOutput(build))
 		return nil
 	}
+	s.setProgress(id, "Meninjau hasil")
 	s.setStatus(id, core.TaskReview, "agent", "Build + test lulus, review acceptance criteria")
 	p, _ = s.Store.Load()
 	out, err := runner.Run(ctx, agent.Think, p.Dir, work.ReviewPrompt(p, p.Task(id), checks.Excerpt(p.Dir, changed, 60000), &build))
@@ -284,6 +354,7 @@ func (s *Service) releaseTask(ctx context.Context, id string) error {
 	s.Store.Update(func(p *core.Project) error {
 		if t := p.Task(id); t != nil {
 			t.Status = core.TaskTodo
+			t.Progress = ""
 			if t.Attempts > 0 {
 				t.Attempts--
 			}
@@ -306,6 +377,7 @@ func (s *Service) rejectTask(id, note string) {
 		if len(t.Notes) > 5 {
 			t.Notes = t.Notes[len(t.Notes)-5:]
 		}
+		t.Progress = ""
 		if t.Attempts >= MaxAttempts {
 			t.Status = core.TaskBlocked
 			p.Log("system", fmt.Sprintf("%s BLOCKED setelah %d percobaan", id, t.Attempts))
@@ -342,6 +414,7 @@ func (s *Service) concludeTask(id string, crit []core.Criterion, buildID, source
 		}
 		t.Status = core.TaskDone
 		t.Notes = nil
+		t.Progress = ""
 		p.Log(source, id+" DONE")
 		return nil
 	})
@@ -374,15 +447,18 @@ func (s *Service) MoveTask(id string, to core.TaskStatus) (*core.Project, error)
 				return ErrBusy
 			}
 			t.Attempts = 0
+			t.Progress = ""
 		case core.TaskBlocked:
 			if t.Status == core.TaskInProgress && p.Busy() {
 				return ErrBusy
 			}
+			t.Progress = ""
 		case core.TaskDone:
 			b := p.Build(t.LastBuildID)
 			if t.Status != core.TaskReview || b == nil || !b.Passed {
 				return ErrGate
 			}
+			t.Progress = ""
 		default:
 			return fmt.Errorf("status %s tidak bisa dipindah manual", to)
 		}

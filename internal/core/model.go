@@ -522,7 +522,9 @@ type Task struct {
 	Status             TaskStatus `json:"status"`
 	Attempts           int        `json:"attempts"`
 	// Owner is the agent or MCP worker that claimed the task last.
-	Owner       string      `json:"owner,omitempty"`
+	Owner string `json:"owner,omitempty"`
+	// Progress is a short live line on the Kanban while the task is active.
+	Progress    string      `json:"progress,omitempty"`
 	Notes       []string    `json:"notes"`
 	LastBuildID string      `json:"last_build_id,omitempty"`
 	Criteria    []Criterion `json:"criteria,omitempty"`

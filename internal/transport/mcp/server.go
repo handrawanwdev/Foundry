@@ -190,8 +190,8 @@ var tools = []tool{
 	{Name: "submit_task", perm: PermExecute, Description: "Report a task as implemented. Foundry runs build/test; DONE only if checks pass and every acceptance criterion is met with evidence.",
 		InputSchema: obj(map[string]any{"task_id": str, "criteria": map[string]any{"type": "array", "items": obj(map[string]any{
 			"index": map[string]any{"type": "integer"}, "met": map[string]any{"type": "boolean"}, "evidence": str}, "index", "met", "evidence")}}, "task_id", "criteria")},
-	{Name: "update_task", perm: PermModify, Description: "Add a progress note to a task or mark it BLOCKED with the reason.",
-		InputSchema: obj(map[string]any{"task_id": str, "note": str, "blocked": map[string]any{"type": "boolean"}}, "task_id", "note")},
+	{Name: "update_task", perm: PermModify, Description: "Set a short live progress line on the Kanban (progress), add lasting feedback (note), or mark the task BLOCKED.",
+		InputSchema: obj(map[string]any{"task_id": str, "progress": str, "note": str, "blocked": map[string]any{"type": "boolean"}}, "task_id")},
 }
 
 func toolList() []tool { return tools }
@@ -219,6 +219,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		Result   json.RawMessage `json:"result"`
 		Criteria []work.Verdict  `json:"criteria"`
 		Note     string          `json:"note"`
+		Progress string          `json:"progress"`
 		Blocked  bool            `json:"blocked"`
 		Worker   string          `json:"worker"`
 	}
@@ -249,7 +250,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		var out []map[string]any
 		for _, t := range p.Tasks {
 			if args.Status == "" || string(t.Status) == args.Status {
-				row := map[string]any{"id": t.ID, "title": t.Title, "status": t.Status, "feature_id": t.FeatureID, "depends_on": t.DependsOn, "owner": t.Owner, "files": t.Files}
+				row := map[string]any{"id": t.ID, "title": t.Title, "status": t.Status, "feature_id": t.FeatureID, "depends_on": t.DependsOn, "owner": t.Owner, "files": t.Files, "progress": t.Progress}
 				if q, ok := queue[t.ID]; ok {
 					row["queue"] = q
 				}
@@ -286,7 +287,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		}
 		return map[string]any{"task": t, "build": b}, nil
 	case "update_task":
-		return s.Svc.UpdateTaskNote(args.TaskID, args.Note, args.Blocked)
+		return s.Svc.UpdateTaskNote(args.TaskID, args.Note, args.Progress, args.Blocked)
 	}
 	return nil, fmt.Errorf("tool %q tidak ada", name)
 }

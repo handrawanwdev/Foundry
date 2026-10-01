@@ -883,6 +883,9 @@ func TestParallelWorkersQueueOnLocks(t *testing.T) {
 	if w, _ := s.NextWork("a"); w.TaskID != "TASK-001" {
 		t.Fatalf("a = %+v", w)
 	}
+	if p := load(t, s).Task("TASK-001"); p == nil || p.Progress != "Host mengerjakan" {
+		t.Fatalf("progress = %+v", p)
+	}
 	if w, _ := s.NextWork("b"); w.Kind != "wait" {
 		t.Fatalf("b = %+v", w)
 	}

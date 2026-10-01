@@ -56,6 +56,7 @@ func TaskPrompt(p *core.Project, t *core.Task) string {
 	if len(t.Notes) > 0 {
 		b.WriteString("\nFEEDBACK FROM PREVIOUS ATTEMPTS (fix these):\n- " + strings.Join(t.Notes, "\n- ") + "\n")
 	}
+	b.WriteString("\nWhile working, a few times call update_task with a short progress line (≤80 characters) so the user sees what you are doing. Example: {\"task_id\":\"" + t.ID + "\",\"progress\":\"Menulis skema user\"}. Do not implement other tasks.\n")
 	b.WriteString("\n" + structureBrief(p))
 	return b.String()
 }

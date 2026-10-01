@@ -195,7 +195,7 @@ export interface Task {
   id: string; title: string; description: string; area: string; requirement_ids: string[] | null;
   feature_id: string; page_ids: string[] | null; platform: string; depends_on: string[] | null;
   acceptance_criteria: string[]; files: string[] | null; test_requirements: string[] | null;
-  status: TaskStatus; attempts: number; owner?: string; notes: string[] | null; last_build_id?: string; criteria?: Criterion[];
+  status: TaskStatus; attempts: number; owner?: string; progress?: string; notes: string[] | null; last_build_id?: string; criteria?: Criterion[];
 }
 export interface StepResult { name: string; command: string; dir: string; exit_code: number; output: string; millis: number }
 export interface BuildRun { id: string; task_id?: string; steps: StepResult[] | null; passed: boolean; reason?: string; at: string }

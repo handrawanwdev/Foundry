@@ -37,7 +37,10 @@ function TaskCard({ t, feature, queue, active, onClick }: { t: Task; feature: st
         <span>{t.area}{t.platform ? ` · ${PLATFORM_LABEL[t.platform] ?? t.platform}` : ""}</span>
       </div>
       <div className="task-title">{t.status === "IN_PROGRESS" && <span className="spinner" />} {t.title}</div>
-      <div className="small muted">{feature}{t.attempts > 1 ? ` · percobaan ${t.attempts}` : ""}</div>
+      <div className="small muted">{feature}{t.attempts > 1 ? ` · percobaan ${t.attempts}` : ""}{t.owner && t.status === "IN_PROGRESS" ? ` · ${t.owner}` : ""}</div>
+      {t.progress && (t.status === "IN_PROGRESS" || t.status === "REVIEW") && (
+        <div className="task-progress">{t.progress}</div>
+      )}
       {queue && <div className={`task-queue ${ready ? "ok-text" : "muted"}`}>{queue}</div>}
     </button>
   );

@@ -120,10 +120,12 @@ func (s *Service) SubmitTask(id string, verdicts []work.Verdict) (*core.Task, *c
 	if t == nil || t.Status != core.TaskInProgress {
 		return nil, nil, fmt.Errorf("task %s tidak sedang IN_PROGRESS", id)
 	}
+	s.setProgress(id, "Menjalankan build & tes")
 	build := s.runChecks(context.Background(), id)
 	if !build.Passed {
 		s.rejectTask(id, "Verifikasi gagal: "+build.Reason+"\n"+lastOutput(build))
 	} else {
+		s.setProgress(id, "Meninjau hasil")
 		s.setStatus(id, core.TaskReview, "mcp", "Build + test lulus")
 		for i := range verdicts {
 			if verdicts[i].Evidence == "" {
@@ -141,20 +143,35 @@ func (s *Service) SubmitTask(id string, verdicts []work.Verdict) (*core.Task, *c
 	return p.Task(id), p.Build(build.ID), nil
 }
 
-// UpdateTaskNote lets the host record progress or report a blocker.
-func (s *Service) UpdateTaskNote(id, note string, blocked bool) (*core.Task, error) {
+// UpdateTaskNote lets the host record a short live progress line, lasting
+// feedback, or a blocker. progress replaces the Kanban line; note is kept.
+func (s *Service) UpdateTaskNote(id, note, progress string, blocked bool) (*core.Task, error) {
 	p, err := s.Store.Update(func(p *core.Project) error {
 		t := p.Task(id)
 		if t == nil {
 			return fmt.Errorf("task %s tidak ada", id)
 		}
-		if note != "" {
-			t.Notes = append(t.Notes, note)
+		if progress != "" {
+			t.Progress = clipProgress(progress)
+		} else if note != "" && t.Active() && !blocked {
+			t.Progress = clipProgress(note)
 		}
 		if blocked {
 			t.Status = core.TaskBlocked
+			t.Progress = ""
+			if note != "" {
+				t.Notes = append(t.Notes, note)
+			}
+		} else if note != "" && progress != "" {
+			t.Notes = append(t.Notes, note)
 		}
-		p.Log("mcp", fmt.Sprintf("%s: %s", id, note))
+		msg := progress
+		if msg == "" {
+			msg = note
+		}
+		if strings.TrimSpace(msg) != "" {
+			p.Log("mcp", fmt.Sprintf("%s: %s", id, firstLine(msg)))
+		}
 		return nil
 	})
 	if err != nil {
