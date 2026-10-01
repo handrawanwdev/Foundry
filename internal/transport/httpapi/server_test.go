@@ -117,3 +117,38 @@ func TestFileExplorer(t *testing.T) {
 		}
 	}
 }
+
+func TestDesignVersionRoutes(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	s := New(nil, "/bin/foundry")
+	if _, err := s.Open(t.TempDir(), "demo", false); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Host = "127.0.0.1:8080"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if w := do("GET", "/api/v1/project/design/versions", ""); w.Code != 200 || w.Body.String() != "[]\n" {
+		t.Fatalf("versions: %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/api/v1/project/design/prototype", ""); w.Code != 200 {
+		t.Fatalf("prototype: %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/api/v1/project/design/versions/compare?from=x", ""); w.Code != http.StatusBadRequest {
+		t.Fatalf("compare bad id: %d", w.Code)
+	}
+	if w := do("POST", "/api/v1/project/design/versions/0/restore", ""); w.Code != http.StatusBadRequest {
+		t.Fatalf("restore bad id: %d", w.Code)
+	}
+	// No design yet: canvas edits and restores are refused.
+	if w := do("POST", "/api/v1/project/design/edit", `{"page":"PAGE-001","ops":[{"op":"remove","id":"x"}]}`); w.Code != http.StatusConflict {
+		t.Fatalf("edit without design: %d %s", w.Code, w.Body)
+	}
+	if w := do("POST", "/api/v1/project/design/versions/1/restore", ""); w.Code != http.StatusConflict {
+		t.Fatalf("restore without design: %d %s", w.Code, w.Body)
+	}
+}

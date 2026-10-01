@@ -1035,3 +1035,58 @@ func TestReferenceOnDraft(t *testing.T) {
 		t.Fatalf("theme = %+v", p.Design.Theme)
 	}
 }
+
+func TestDesignVersionsAndCanvas(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	designReady(t, s)
+	if err := s.ReviseDesign("Tambahkan halaman profil", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	if _, err := s.EditDesign("PAGE-001", []work.CanvasOp{{Op: "set_page", Fields: map[string]string{"density": "compact"}}}); err == nil {
+		t.Fatal("canvas edit must wait for the pending revision")
+	}
+	if err := s.UndoDesignChange(); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.EditDesign("PAGE-001", []work.CanvasOp{{Op: "set_page", Fields: map[string]string{"density": "compact"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if findPage(p, "PAGE-001").Density != "compact" || p.Design.Quality == nil {
+		t.Fatalf("canvas edit = %+v", findPage(p, "PAGE-001"))
+	}
+	list, err := work.Versions(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sources []string
+	for _, v := range list {
+		sources = append(sources, v.Source)
+	}
+	if !slices.Equal(sources, []string{"canvas", "undo", "revision", "generate"}) || !list[0].Current {
+		t.Fatalf("versions = %+v", list)
+	}
+
+	p, err = s.RestoreDesignVersion(list[3].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if findPage(p, "PAGE-001").Density == "compact" || len(p.Design.Pages) != 3 {
+		t.Fatalf("restore = %+v", p.Design.Pages[0])
+	}
+	if list, _ = work.Versions(p); list[0].Source != "restore" || !list[0].Current {
+		t.Fatalf("versions after restore = %+v", list)
+	}
+	if _, err := s.RestoreDesignVersion(99); err == nil {
+		t.Fatal("unknown version must fail")
+	}
+
+	if err := s.ApproveDesign(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	if _, err := s.EditDesign("PAGE-001", []work.CanvasOp{{Op: "set_page", Fields: map[string]string{"name": "X"}}}); !errors.Is(err, pipeline.ErrWrongStage) {
+		t.Fatalf("edit after approval err = %v", err)
+	}
+}

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Wireframe } from "./components/Wireframe";
-import { leaves, nodeStyle, resolveLayout, themeClass, tokenVars, validateIR } from "./ir";
+import { leaves, locate, nodeStyle, resolveLayout, themeClass, tokenVars, validateIR } from "./ir";
 import type { DesignSystem, LayoutChild, LayoutNode, Page, ThemeContext } from "./types";
 
 // Same page as internal/core/designir_test.go irPage, so both sides agree.
@@ -144,5 +144,18 @@ describe("renderer", () => {
     expect(themeClass(undefined)).toBe("");
     expect(themeClass({ id: "x", name: "X", source: "auto", color_mode: "light", style: { button: "neon", evil: "x" } })).toBe("th-light");
     expect(render(irPage(), "desktop")).toContain('class="wf-screen desktop d-compact"');
+  });
+});
+
+describe("locate", () => {
+  const root: LayoutNode = { id: "main", type: "stack", children: ["a", { id: "bar", type: "row", children: ["b", "c"] }, { type: "row", children: ["d"] }] };
+  it("names the parent by id, root as empty", () => {
+    expect(locate(root, "a")).toEqual({ parent: "", index: 0, count: 3 });
+    expect(locate(root, "c")).toEqual({ parent: "bar", index: 1, count: 2 });
+    expect(locate(root, "bar")).toEqual({ parent: "", index: 1, count: 3 });
+  });
+  it("is null outside the tree or under an unnamed node", () => {
+    expect(locate(root, "x")).toBeNull();
+    expect(locate(root, "d")).toBeNull();
   });
 });

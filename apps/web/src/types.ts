@@ -102,6 +102,18 @@ export interface DesignQuality {
   confidence: "low" | "medium" | "high"; decision: "pass" | "revision_required"; reasons?: QAIssue[];
   compared_to_previous?: QualityComparison; recommendation?: string; measured_at: string;
 }
+// Canvas: one direct edit of a page's Design IR tree (see work.CanvasOp).
+export interface CanvasOp {
+  op: "add" | "remove" | "move" | "update" | "set_node" | "wrap" | "unwrap" | "set_page";
+  id?: string; parent?: string; index?: number; component?: PageComponent; node?: LayoutNode; ids?: string[];
+  fields?: Partial<Record<"name" | "purpose" | "kind" | "density" | "frame" | "nav" | "width", string>>;
+}
+export interface VersionSummary { id: number; source: string; note?: string; quality?: number; pages: number; theme?: string; at: string; current?: boolean }
+export interface VersionComparison { from: number; to: number; changes: DesignChange[] | null; system_changed?: boolean; theme?: [string, string]; flows_changed?: string[] }
+export interface ProtoLink { to: string; via: string; kind: "target" | "nav" | "back" | "primary" }
+export interface ProtoPage { id: string; name: string; role?: string; platform?: string; route?: string; entry?: boolean; links: ProtoLink[] }
+export interface ProtoFlow { id: string; name: string; steps: string[]; gaps?: string[] }
+export interface Prototype { pages: ProtoPage[] | null; flows: ProtoFlow[] | null; unreachable?: string[]; dead_ends?: string[] }
 export interface DesignRevision { request: string; changes: DesignChange[] | null; scope?: ChangeScope; patch?: string[]; qa?: DesignQA }
 export interface Token { name: string; value: string; use?: string }
 export interface DesignSystem {

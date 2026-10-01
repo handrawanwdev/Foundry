@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template, Theme, ThemeProblem } from "./types";
+import type { AgentOptions, AIState, Browse, CanvasOp, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, Prototype, TaskStatus, Template, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -48,6 +48,13 @@ export const api = {
   keepDesign: () => call("POST", "/project/design/keep", {}),
   undoDesign: () => call("POST", "/project/design/undo", {}),
   designHandoff: () => call<DesignHandoff>("GET", "/project/design/handoff"),
+  // Canvas: direct Design IR edits of one page; rejected as a whole when invalid.
+  editDesign: (page: string, ops: CanvasOp[]) => call<Project>("POST", "/project/design/edit", { page, ops }),
+  prototype: () => call<Prototype>("GET", "/project/design/prototype"),
+  versions: () => call<VersionSummary[]>("GET", "/project/design/versions"),
+  // to 0 = the current design.
+  compareVersions: (from: number, to = 0) => call<VersionComparison>("GET", `/project/design/versions/compare?from=${from}&to=${to}`),
+  restoreVersion: (id: number) => call<Project>("POST", `/project/design/versions/${id}/restore`),
   approveDesign: () => call("POST", "/project/design/approve", {}),
   startBuild: () => call("POST", "/project/build/start", {}),
   stopBuild: () => call("POST", "/project/build/stop", {}),

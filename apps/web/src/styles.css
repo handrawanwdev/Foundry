@@ -758,3 +758,20 @@ button.sp-badge { cursor: pointer; }
 .theme-ref p { margin: 0; }
 .theme-ref-row { display: flex; gap: .4rem; flex-wrap: wrap; }
 .theme-ref-row input { flex: 1 1 160px; min-width: 0; }
+
+/* Canvas: direct Design IR edits in the inspector */
+.canvas { padding: .8rem 1.1rem 0; display: flex; flex-direction: column; gap: .45rem; }
+.canvas h4 { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 0; font-weight: 600; }
+.canvas-row { display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: .5rem; font-size: 13px; color: var(--muted); }
+.canvas-row input, .canvas-row select { min-width: 0; }
+.canvas-lock { padding: .8rem 1.1rem 0; margin: 0; }
+button.danger { color: var(--bad); }
+
+/* Versions and prototype map */
+.version-list { list-style: none; padding: 0; margin: .8rem 0; display: flex; flex-direction: column; gap: .4rem; }
+.version-list li { display: flex; justify-content: space-between; align-items: flex-start; gap: .8rem; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: 8px; }
+.version-list li.current { border-color: var(--accent-strong); }
+.version-note { overflow-wrap: anywhere; }
+.version-compare, .proto-map section { margin-top: 1rem; }
+.proto-flow { padding: .4rem 0; border-bottom: 1px solid var(--line); }
+.proto-map .link, .version-compare .link { margin-right: .4rem; }

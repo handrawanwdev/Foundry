@@ -41,6 +41,16 @@ UI bergaya Visual Studio: menu bar (File: Project Baru, Buka Project, terakhir, 
 
 Dev: `make dev-api` + `make dev-web` (Vite :5173 proxy ke :8080).
 
+## Rancangan (Design IR)
+
+Prompt → discovery → design intelligence → theme → Design IR → renderer → prototipe. Design IR satu-satunya sumber untuk pratinjau, prototipe, dan build.
+
+- **Revisi AI**: permintaan ("buat lebih compact") → patch IR dalam scope → QA visual; tidak regenerate project.
+- **Kanvas**: `POST /api/v1/project/design/edit` mengedit tree IR satu halaman (add/remove/move/update/set_node/wrap/unwrap/set_page) tanpa AI; hasil invalid ditolak utuh.
+- **Versi**: tiap perubahan tersimpan di `.foundry/design-versions.json` (maks 50); bandingkan dan kembalikan via `/api/v1/project/design/versions`.
+- **Peta prototipe**: `GET /api/v1/project/design/prototype` — navigasi dari IR, halaman tak terjangkau, halaman buntu, celah alur.
+- **Referensi**: website/screenshot hanya menghasilkan Theme DNA; HTML/CSS/aset/konten tidak disalin.
+
 ## MCP
 
 ```bash

@@ -2,6 +2,7 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -245,6 +247,72 @@ func (s *Server) Handler() http.Handler {
 			return nil, err
 		}
 		return map[string]any{"pages": work.Handoffs(p), "blockers": work.Blockers(p)}, nil
+	}))
+	// Canvas: direct edits of one page's Design IR tree, no AI.
+	api("POST /api/v1/project/design/edit", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			Page string
+			Ops  []work.CanvasOp
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.EditDesign(in.Page, in.Ops)
+	}))
+	api("GET /api/v1/project/design/prototype", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		p, err := svc.Store.Load()
+		if err != nil {
+			return nil, err
+		}
+		return work.BuildPrototype(p), nil
+	}))
+	// Versions: list, compare (to=0 or empty is the current design), restore.
+	api("GET /api/v1/project/design/versions", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		p, err := svc.Store.Load()
+		if err != nil {
+			return nil, err
+		}
+		return work.Versions(p)
+	}))
+	api("GET /api/v1/project/design/versions/compare", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		from, err1 := strconv.Atoi(r.URL.Query().Get("from"))
+		to, err2 := strconv.Atoi(cmp.Or(r.URL.Query().Get("to"), "0"))
+		if err1 != nil || err2 != nil {
+			return nil, badRequest("from dan to harus nomor versi")
+		}
+		p, err := svc.Store.Load()
+		if err != nil {
+			return nil, err
+		}
+		a, err := work.FindVersion(p, from)
+		if err != nil {
+			return nil, err
+		}
+		b, err := work.FindVersion(p, to)
+		if err != nil {
+			return nil, err
+		}
+		c := work.CompareVersions(*a, *b)
+		c.To = to
+		return c, nil
+	}))
+	api("GET /api/v1/project/design/versions/{id}", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil || id <= 0 {
+			return nil, badRequest("nomor versi tidak sah")
+		}
+		p, err := svc.Store.Load()
+		if err != nil {
+			return nil, err
+		}
+		return work.FindVersion(p, id)
+	}))
+	api("POST /api/v1/project/design/versions/{id}/restore", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil || id <= 0 {
+			return nil, badRequest("nomor versi tidak sah")
+		}
+		return svc.RestoreDesignVersion(id)
 	}))
 	api("POST /api/v1/project/design/approve", s.action(func(svc *pipeline.Service) error { return svc.ApproveDesign() }))
 	api("POST /api/v1/project/build/start", s.action(func(svc *pipeline.Service) error { return svc.StartBuild() }))

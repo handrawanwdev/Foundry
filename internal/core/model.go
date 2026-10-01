@@ -730,3 +730,20 @@ func (p *Project) ReadyTasks() []*Task {
 func (p *Project) Busy() bool {
 	return p.Job != nil && (p.Job.Status == JobRunning)
 }
+
+// DesignVersion is one saved state of the design: the pages (Design IR),
+// the design system, the theme and the pages of each flow. Versions live in
+// .foundry/design-versions.json, apart from project.json; restoring one is
+// a design change like any other.
+type DesignVersion struct {
+	ID      int                 `json:"id"`
+	Source  string              `json:"source"` // generate | revision | qa | reference | theme | canvas | keep | undo | restore
+	Note    string              `json:"note,omitempty"`
+	Hash    string              `json:"hash"`
+	Quality int                 `json:"quality,omitempty"`
+	At      time.Time           `json:"at"`
+	Pages   []Page              `json:"pages"`
+	System  *DesignSystem       `json:"system,omitempty"`
+	Theme   *ThemeContext       `json:"theme,omitempty"`
+	Flows   map[string][]string `json:"flows,omitempty"`
+}

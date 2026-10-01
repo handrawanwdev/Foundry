@@ -248,3 +248,17 @@ export function nodeStyle(n: LayoutNode): Record<string, string | undefined> {
   }
   return s;
 }
+
+// Where a component or node sits in the tree: its parent's id ("" = root)
+// and position. Null when it is not in the tree or its parent has no id
+// (a canvas edit names the parent by id).
+export function locate(root: LayoutNode, key: string): { parent: string; index: number; count: number } | null {
+  let out: { parent: string; index: number; count: number } | null = null;
+  walk(root, (n, parent) => {
+    if (out || !parent || childKey(n) !== key) return;
+    if (parent !== root && !parent.id) return;
+    const kids = parent.children ?? [];
+    out = { parent: parent === root ? "" : parent.id!, index: kids.findIndex((k) => childKey(k) === key), count: kids.length };
+  });
+  return out;
+}

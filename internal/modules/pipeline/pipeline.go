@@ -149,15 +149,15 @@ func (s *Service) ReviseDesign(feedback string, screens map[string]string, scope
 
 // KeepDesignChange accepts the last design revision.
 func (s *Service) KeepDesignChange() error {
-	return s.reviseStep("Perubahan rancangan disimpan", work.KeepRevision)
+	return s.reviseStep("Perubahan rancangan disimpan", "keep", work.KeepRevision)
 }
 
 // UndoDesignChange restores the design from before the last revision.
 func (s *Service) UndoDesignChange() error {
-	return s.reviseStep("Perubahan rancangan dibatalkan", work.UndoRevision)
+	return s.reviseStep("Perubahan rancangan dibatalkan", "undo", work.UndoRevision)
 }
 
-func (s *Service) reviseStep(msg string, fn func(*core.Project) error) error {
+func (s *Service) reviseStep(msg, source string, fn func(*core.Project) error) error {
 	p, err := s.Store.Update(func(p *core.Project) error {
 		if p.Busy() {
 			return ErrBusy
@@ -172,6 +172,7 @@ func (s *Service) reviseStep(msg string, fn func(*core.Project) error) error {
 			j.Status, j.Message = core.JobDone, "Pemeriksaan visual dilewati"
 		}
 		measureQuality(p)
+		recordVersion(p, source, "")
 		p.Log("ui", msg)
 		return nil
 	})
@@ -248,6 +249,7 @@ func (s *Service) SetTheme(id string) (*core.Project, error) {
 			t, ctx := work.ResolveTheme(p)
 			work.ApplyTheme(d, t, ctx)
 			measureQuality(p)
+			recordVersion(p, "theme", cmp.Or(id, "otomatis"))
 		}
 		p.Log("ui", "Theme: "+cmp.Or(id, "otomatis"))
 		return nil
@@ -454,6 +456,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 		default:
 			return fmt.Errorf("jenis pekerjaan %q tidak dikenal", kind)
 		}
+		recordAIVersion(p, kind)
 		p.Job = &core.Job{Kind: kind, Status: core.JobDone, Message: jobMessage(kind) + " selesai", Started: time.Now().UTC()}
 		p.Log(source, jobMessage(kind)+" selesai")
 		return nil
