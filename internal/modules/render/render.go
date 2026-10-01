@@ -100,3 +100,18 @@ func (c *Chrome) run(ctx context.Context, vp [2]int, args ...string) (string, er
 	}
 	return stdout.String(), nil
 }
+
+// Capture screenshots an external page (a design reference) at the device
+// viewport into out (PNG). Only the image is kept: no DOM, HTML or CSS is
+// read from the page.
+func (c *Chrome) Capture(ctx context.Context, pageURL, device, out string) error {
+	vp, ok := Viewports[device]
+	if !ok {
+		return fmt.Errorf("perangkat %q tidak dikenal", device)
+	}
+	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		return err
+	}
+	_, err := c.run(ctx, vp, "--screenshot="+out, pageURL)
+	return err
+}

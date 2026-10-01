@@ -299,6 +299,8 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 		return work.PlanPrompt(p)
 	case work.KindDesignQA:
 		return work.QAPrompt(p)
+	case work.KindReference:
+		return work.ReferencePrompt(p)
 	}
 	return ""
 }
@@ -326,6 +328,12 @@ func (s *Service) startAI(kind string) error {
 	if kind == work.KindDesignQA {
 		if p, err = s.prepareQA(p); err != nil || p == nil {
 			return err // nil project: check skipped, job closed
+		}
+	}
+	if kind == work.KindReference {
+		if p, err = s.prepareReference(p); err != nil {
+			s.failJob(kind, err)
+			return err
 		}
 	}
 	if isMCP {
@@ -365,6 +373,8 @@ func jobMessage(kind string) string {
 		return "Build, test, dan verifikasi"
 	case work.KindDesignQA:
 		return "Memeriksa hasil visual di browser"
+	case work.KindReference:
+		return "Menganalisis referensi desain"
 	}
 	return kind
 }
@@ -393,6 +403,17 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			p.Structure = structure.Detect(p.Dir, p.Platform)
 			p.Stage = core.StageDesign
 			next = work.KindDesign
+			if r := p.Reference; r != nil && r.Status == "pending" {
+				next = work.KindReference // the design follows the reference's theme
+			}
+		case work.KindReference:
+			if err := applyReference(p, raw); err != nil {
+				return err
+			}
+			measured = p.Design != nil && p.Design.Quality != nil
+			if p.Design == nil || len(p.Design.Pages) == 0 {
+				next = work.KindDesign
+			}
 		case work.KindDesign:
 			revising := p.Design != nil && p.Design.Status == core.DesignChanges && len(p.Design.Pages) > 0
 			if err := work.ApplyDesign(p, raw); err != nil {
@@ -459,7 +480,7 @@ func (s *Service) RetryJob() error {
 		return ErrNothingToDo
 	}
 	switch p.Job.Kind {
-	case work.KindDiscovery, work.KindDesign, work.KindPlan, work.KindDesignQA:
+	case work.KindDiscovery, work.KindDesign, work.KindPlan, work.KindDesignQA, work.KindReference:
 		return s.startAI(p.Job.Kind)
 	case "build":
 		return s.StartBuild()

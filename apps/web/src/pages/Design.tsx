@@ -269,6 +269,7 @@ function Designing({ project }: { project: Project }) {
   const steps: [string, string][] = [
     ["Cerita diterima", project.story ? "done" : "todo"],
     ["Memahami kebutuhan", state("discovery", !!project.discovery)],
+    ...(project.reference ? [["Menganalisis referensi " + project.reference.name, state("reference", ["done", "failed"].includes(project.reference.status))] as [string, string]] : []),
     ["Membuat halaman dan alur", state("design", false)],
     ["Siap ditinjau", "todo"],
   ];

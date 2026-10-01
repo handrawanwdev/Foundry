@@ -44,14 +44,16 @@ type Project struct {
 	Design       *Design       `json:"design,omitempty"`
 	// Theme is the theme the user picked for the design; empty lets
 	// Foundry select one from the requirement.
-	Theme        string        `json:"theme,omitempty"`
-	Tasks        []Task        `json:"tasks"`
-	Builds       []BuildRun    `json:"builds"`
-	Verification *Verification `json:"verification,omitempty"`
-	Job          *Job          `json:"job,omitempty"`
-	Support      *Support      `json:"support,omitempty"`
-	Events       []Event       `json:"events"`
-	UpdatedAt    time.Time     `json:"updated_at"`
+	Theme string `json:"theme,omitempty"`
+	// Reference is the website or app the design takes inspiration from.
+	Reference    *DesignReference `json:"reference,omitempty"`
+	Tasks        []Task           `json:"tasks"`
+	Builds       []BuildRun       `json:"builds"`
+	Verification *Verification    `json:"verification,omitempty"`
+	Job          *Job             `json:"job,omitempty"`
+	Support      *Support         `json:"support,omitempty"`
+	Events       []Event          `json:"events"`
+	UpdatedAt    time.Time        `json:"updated_at"`
 }
 
 type Discovery struct {

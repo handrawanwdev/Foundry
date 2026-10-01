@@ -183,7 +183,7 @@ function QAIssues({ issues, pages, onOpen }: { issues: QAIssue[]; pages: Page[];
 
 const DIMENSION_LABEL: Record<string, string> = {
   hierarchy: "Hierarki", composition: "Komposisi", spacing: "Spasi", density: "Kepadatan",
-  responsive: "Responsif", navigation: "Navigasi", ai_slop: "Anti AI-slop", theme: "Konsistensi theme",
+  responsive: "Responsif", navigation: "Navigasi", ai_slop: "Anti AI-slop", theme: "Konsistensi theme", reference: "Konsistensi referensi",
 };
 const CONFIDENCE_LABEL = { low: "rendah", medium: "sedang", high: "tinggi" };
 const VERDICT_LABEL = { improved: "membaik", neutral: "tetap", degraded: "memburuk" };

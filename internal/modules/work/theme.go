@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -228,6 +229,13 @@ func themeKnowledge(t *core.Theme) string {
 	for _, r := range t.Rules {
 		fmt.Fprintf(&b, "- IF %s THEN %s. WHY: %s.\n", r.If, r.Then, r.Why)
 	}
+	if len(t.Interaction) > 0 {
+		b.WriteString("Interaction style: " + strings.Join(t.Interaction, "; ") + ".\n")
+	}
+	if r := t.Reference; r != nil {
+		fmt.Fprintf(&b, "Inspired by %s (%s, a %s product): apply its principles to THIS product's own features and flows. "+
+			"Never copy it: no pages cloned from it, no text, slogans or brand name (%s) in labels, no logo or illustrations.\n", r.Name, r.URL, r.Category, r.Name)
+	}
 	return b.String()
 }
 
@@ -275,6 +283,48 @@ func ThemeLint(pg core.Page, t *core.Theme) []core.QAIssue {
 		(pg.Platform == core.PlatformWeb || pg.Platform == core.PlatformDesktop) {
 		add("theme_nav", "minor", "", fmt.Sprintf("Navigasi %s, theme memakai %s", l.Nav, want), conflict,
 			"Ubah layout.nav ke "+want+".")
+	}
+	return out
+}
+
+// ReferenceLint measures a page against the reference its theme comes
+// from: the reference's brand or text copied into the page, and a layout
+// strategy outside the reference direction. Category "reference".
+func ReferenceLint(pg core.Page, t *core.Theme) []core.QAIssue {
+	if t == nil || t.Reference == nil {
+		return nil
+	}
+	ref := t.Reference
+	var out []core.QAIssue
+	add := func(rule, sev, comp, problem, why, fix string) {
+		out = append(out, core.QAIssue{PageID: pg.ID, Severity: sev, Category: "reference", Component: comp,
+			Problem: problem, Why: why, Fix: fix, Source: "lint", Rule: rule})
+	}
+	if len(ref.Name) >= 3 {
+		brand := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(ref.Name) + `\b`)
+		hit := ""
+		if brand.MatchString(pg.Name) {
+			hit = "page"
+		}
+		for _, c := range pg.Components {
+			if hit == "" && (brand.MatchString(c.Label) || slices.ContainsFunc(c.Items, brand.MatchString)) {
+				hit = c.ID
+			}
+		}
+		if hit != "" {
+			comp := hit
+			if hit == "page" {
+				comp = ""
+			}
+			add("reference_copy", "major", comp, "Nama atau teks "+ref.Name+" muncul di halaman",
+				"referensi hanya inspirasi; teks dan merek tidak boleh disalin", "Pakai istilah produk ini sendiri.")
+		}
+	}
+	work := map[string]bool{"list": true, "table": true, "master-detail": true, "workspace": true, "dashboard": true}
+	if pl := pg.Plan; pl != nil && work[pl.Layout] && len(t.Preferences.Layouts) > 0 && !slices.Contains(t.Preferences.Layouts, pl.Layout) {
+		add("reference_direction", "minor", "", fmt.Sprintf("Layout %s di luar arah referensi %s (%s)", pl.Layout, ref.Name, strings.Join(t.Preferences.Layouts, ", ")),
+			fmt.Sprintf("referensi %s adalah produk %s", ref.Name, ref.Category),
+			"Pertimbangkan "+t.Preferences.Layouts[0]+" bila tugas halaman mengizinkan.")
 	}
 	return out
 }

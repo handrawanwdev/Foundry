@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Theme is a visual identity a design follows: personality, tokens,
@@ -32,6 +33,76 @@ type Theme struct {
 	Avoid       []string         `json:"avoid,omitempty"`
 	UseWhen     ThemeUse         `json:"use_when"`
 	Rules       []ThemeRule      `json:"rules,omitempty"`
+	// Interaction is how the theme's products behave (e.g. "inline edit
+	// on the canvas"); guidance for the designer.
+	Interaction []string `json:"interaction,omitempty"`
+	// Reference is the website or app the theme was extracted from; nil
+	// for hand-made themes.
+	Reference *ThemeSource `json:"reference,omitempty"`
+}
+
+// ThemeSource is where a reference theme comes from and the design
+// direction (layout philosophy) it carries.
+type ThemeSource struct {
+	URL      string `json:"url"`
+	Name     string `json:"name"`
+	Category string `json:"category"` // marketing | workspace | dashboard | editor | enterprise | consumer
+}
+
+// DesignReference is a website or app the user named as inspiration.
+// Foundry only takes screenshots as evidence; the AI extracts its design
+// language as Theme DNA and Foundry turns that into a theme. Nothing of the
+// reference (HTML, CSS, text, assets) is copied.
+type DesignReference struct {
+	URL    string `json:"url"`
+	Name   string `json:"name"`
+	Notes  string `json:"notes,omitempty"` // what the user likes about it
+	Status string `json:"status"`          // pending | analyzing | done | failed
+	// Shots are the screenshots the analysis looked at (evidence only).
+	Shots   []QAShot  `json:"shots,omitempty"`
+	DNA     *ThemeDNA `json:"dna,omitempty"`
+	ThemeID string    `json:"theme_id,omitempty"`
+	Error   string    `json:"error,omitempty"`
+	At      time.Time `json:"at"`
+}
+
+// ThemeDNA is the design language of a reference: principles and roles,
+// never its markup, styles, text or assets.
+type ThemeDNA struct {
+	Reference   string        `json:"reference"`
+	Category    string        `json:"category"`
+	Personality []string      `json:"personality"`
+	Layout      []string      `json:"layout"`     // layout strategies it favours
+	Navigation  string        `json:"navigation"` // side | rail | top
+	Density     string        `json:"density"`    // compact | comfortable | spacious
+	Visual      DNAVisual     `json:"visual"`
+	Typography  DNATypography `json:"typography"`
+	// Colors by semantic role: primary, background, surface, surface_alt,
+	// text, text_muted, border, success, warning, danger, info.
+	Colors      map[string]string `json:"colors"`
+	Components  DNAComponents     `json:"components"`
+	Interaction []string          `json:"interaction,omitempty"`
+	Rules       []ThemeRule       `json:"rules,omitempty"`
+	Avoid       []string          `json:"avoid,omitempty"`
+}
+
+type DNAVisual struct {
+	ColorMode string `json:"color_mode"` // light | dark
+	Spacing   string `json:"spacing"`    // compact | comfortable | spacious
+	Surface   string `json:"surface"`    // soft | bordered | elevated | flat
+	Radius    string `json:"radius"`     // small | medium | large
+}
+
+type DNATypography struct {
+	Scale       string `json:"scale"`       // compact | balanced | large
+	Personality string `json:"personality"` // geometric | humanist | technical
+	Weights     string `json:"weights,omitempty"`
+	Readability string `json:"readability,omitempty"`
+}
+
+type DNAComponents struct {
+	Button string `json:"button"` // solid | outline | soft
+	Nav    string `json:"nav"`    // dark | light | accent
 }
 
 type ThemeTokens struct {
@@ -95,7 +166,9 @@ var (
 	// ThemeAvoid: anti-patterns a theme may forbid. hero_section,
 	// large_cards and excessive_whitespace are measured on the IR; the
 	// others cannot be expressed in the IR and only guide the designer.
-	ThemeAvoid = []string{"hero_section", "large_cards", "excessive_whitespace", "decorative_gradient", "illustration", "glassmorphism"}
+	// ThemeCategories: the layout philosophy of a reference.
+	ThemeCategories = []string{"marketing", "workspace", "dashboard", "editor", "enterprise", "consumer"}
+	ThemeAvoid      = []string{"hero_section", "large_cards", "excessive_whitespace", "decorative_gradient", "illustration", "glassmorphism"}
 )
 
 var (
@@ -190,6 +263,12 @@ func ValidateTheme(t Theme) error {
 	}
 	for _, d := range append(slices.Clone(t.UseWhen.Domains), t.UseWhen.Not...) {
 		oneOf("use_when domain", d, ThemeDomains)
+	}
+	if r := t.Reference; r != nil {
+		if r.URL == "" || r.Name == "" {
+			bad("reference butuh url dan name")
+		}
+		oneOf("reference.category", r.Category, ThemeCategories)
 	}
 	if len(out) > 0 {
 		return &ThemeInvalid{ID: t.ID, Problems: out}

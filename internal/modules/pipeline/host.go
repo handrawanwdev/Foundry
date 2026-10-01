@@ -31,7 +31,7 @@ func (s *Service) NextWork() (*WorkItem, error) {
 		return &WorkItem{Kind: "none", Prompt: nothingMessage(p)}, nil
 	}
 	switch p.Job.Kind {
-	case work.KindDiscovery, work.KindDesign, work.KindPlan, work.KindDesignQA:
+	case work.KindDiscovery, work.KindDesign, work.KindPlan, work.KindDesignQA, work.KindReference:
 		return &WorkItem{Kind: p.Job.Kind, Prompt: s.promptFor(p, p.Job.Kind),
 			Submit: fmt.Sprintf(`submit_work {"kind": %q, "result": "<the JSON object>"}`, p.Job.Kind)}, nil
 	case "build":

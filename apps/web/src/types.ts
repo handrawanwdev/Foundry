@@ -131,6 +131,13 @@ export interface Theme {
   components: Record<string, string> | null;
   preferences: { navigation?: string; layout?: string[]; density?: string };
   avoid?: string[]; use_when: { domains?: string[]; not?: string[] }; rules?: ThemeRule[];
+  interaction?: string[];
+  reference?: { url: string; name: string; category: string }; // theme extracted from a reference
+}
+// A website or app named as inspiration; analyzed into a theme, never copied.
+export interface DesignReference {
+  url: string; name: string; notes?: string; status: "pending" | "analyzing" | "done" | "failed";
+  theme_id?: string; error?: string; at: string;
 }
 export interface ThemeProblem { id: string; error: string }
 export interface Criterion { text: string; met: boolean; evidence: string }
@@ -178,7 +185,7 @@ export interface Event { at: string; source: string; message: string }
 export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string;
   discovery?: Discovery; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
-  platform?: PlatformPlan; structure?: Structure; design?: Design; theme?: string; tasks: Task[] | null;
+  platform?: PlatformPlan; structure?: Structure; design?: Design; theme?: string; reference?: DesignReference; tasks: Task[] | null;
   builds: BuildRun[] | null; verification?: Verification; job?: Job; support?: Support; events: Event[] | null; updated_at: string;
 }
 

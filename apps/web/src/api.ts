@@ -39,6 +39,8 @@ export const api = {
   setTemplate: (template: string) => call<Project>("PUT", "/project/structure", { template }),
   // theme "" lets Foundry select one; a draft design is re-themed at once.
   setTheme: (theme: string) => call<Project>("PUT", "/project/theme", { theme }),
+  // url "" removes the reference; otherwise it is analyzed into a theme.
+  setReference: (url: string, notes = "") => call<Project>("PUT", "/project/reference", { url, notes }),
   // screens: what the user sees on each page, so the designer AI sees it too.
   // scope: what the change may touch; the server rejects a patch outside it.
   reviseDesign: (feedback: string, screens: Record<string, string>, scope: ChangeScope) =>

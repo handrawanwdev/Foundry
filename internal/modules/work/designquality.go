@@ -16,12 +16,12 @@ import (
 // the Design IR is the source. Scores are an internal indicator, never a
 // ranking between designs.
 
-var QualityDimensions = []string{"hierarchy", "composition", "spacing", "density", "responsive", "navigation", "ai_slop", "theme"}
+var QualityDimensions = []string{"hierarchy", "composition", "spacing", "density", "responsive", "navigation", "ai_slop", "theme", "reference"}
 
 // dimensionOf maps a finding category onto a dimension; the rest count as
 // composition.
 var dimensionOf = map[string]string{"hierarchy": "hierarchy", "duplicate_action": "hierarchy", "spacing": "spacing", "density": "density",
-	"responsive": "responsive", "overflow": "responsive", "navigation": "navigation", "ai_slop": "ai_slop", "theme": "theme"}
+	"responsive": "responsive", "overflow": "responsive", "navigation": "navigation", "ai_slop": "ai_slop", "theme": "theme", "reference": "reference"}
 
 var penalty = map[string]int{"critical": 40, "major": 25, "minor": 10}
 
@@ -127,7 +127,7 @@ func measure(pages []core.Page, domain string, theme *core.Theme, critic []core.
 	sums := map[string]int{}
 	total := 0
 	for _, pg := range pages {
-		issues := append(LintPage(pg, domain), ThemeLint(pg, theme)...)
+		issues := slices.Concat(LintPage(pg, domain), ThemeLint(pg, theme), ReferenceLint(pg, theme))
 		for _, is := range critic {
 			if is.PageID == pg.ID {
 				issues = append(issues, is)

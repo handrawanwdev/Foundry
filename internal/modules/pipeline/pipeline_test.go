@@ -113,6 +113,16 @@ func fakeAgent() {
 			return
 		}
 		fmt.Println(discoveryJSON)
+	case strings.Contains(prompt, "design analyst"):
+		if mode == "ref_error" {
+			fmt.Println(`{"error": "hanya halaman login"}`)
+			return
+		}
+		if !strings.Contains(prompt, "voiceflow.com") || mode == "ref_shots" && !strings.Contains(prompt, "Voiceflow-desktop.png") {
+			fmt.Fprintln(os.Stderr, "reference missing in prompt")
+			os.Exit(4)
+		}
+		fmt.Println(referenceJSON)
 	case strings.Contains(prompt, "product designer"):
 		if strings.Contains(prompt, "Tambahkan halaman profil") {
 			fmt.Println(revisedDesignJSON)
@@ -649,6 +659,13 @@ func TestMCPHostFlow(t *testing.T) {
 
 type fakeRender struct{ fail bool }
 
+func (f fakeRender) Capture(_ context.Context, url, device, out string) error {
+	if f.fail {
+		return errors.New("chrome tidak ada")
+	}
+	return nil
+}
+
 func (f fakeRender) Shot(_ context.Context, _, pageID, device, out string) (string, error) {
 	if f.fail {
 		return "", errors.New("chrome tidak ada")
@@ -944,5 +961,77 @@ func TestSetTheme(t *testing.T) {
 	approveAndPlan(t, s)
 	if _, err := s.SetTheme("trading-terminal"); !errors.Is(err, pipeline.ErrWrongStage) {
 		t.Fatalf("approved design re-themed: %v", err)
+	}
+}
+
+const referenceJSON = `{"reference": "Voiceflow", "category": "editor", "personality": ["modern", "creative", "technical"],
+ "layout": ["canvas", "split-panel"], "navigation": "side", "density": "comfortable",
+ "visual": {"color_mode": "light", "spacing": "comfortable", "surface": "soft", "radius": "medium"},
+ "typography": {"scale": "balanced", "personality": "geometric"},
+ "colors": {"primary": "#3d5afe", "background": "#f7f7f8", "surface": "#ffffff", "text": "#1a1a1a", "text_muted": "#5f6368", "border": "#e4e4e7",
+            "success": "#16a34a", "warning": "#b45309", "danger": "#dc2626"},
+ "components": {"button": "soft", "nav": "light"}, "avoid": ["hero_section"]}`
+
+// A reference named before the story is analyzed after discovery; the
+// first design follows its theme.
+func TestReferenceBeforeDesign(t *testing.T) {
+	s := newService(t, fakeAI{}, "ref_shots")
+	s.Render = fakeRender{}
+	if _, err := s.SetReference("ftp://x", ""); err == nil {
+		t.Fatal("invalid reference accepted")
+	}
+	p, err := s.SetReference("voiceflow.com", "suka kanvasnya")
+	if err != nil || p.Reference.Status != "pending" || p.Job != nil {
+		t.Fatalf("err = %v ref = %+v job = %+v", err, p.Reference, p.Job)
+	}
+	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p = load(t, s)
+	r := p.Reference
+	if r.Status != "done" || r.ThemeID != "voiceflow-inspired" || len(r.Shots) != 2 || p.Theme != r.ThemeID {
+		t.Fatalf("reference = %+v", r)
+	}
+	if th := p.Design.Theme; th == nil || th.ID != "voiceflow-inspired" || th.Source != "user" || p.Design.Quality.Dimensions["reference"] == 0 {
+		t.Fatalf("design theme = %+v", th)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, core.StateDir, "themes", "voiceflow-inspired", "reference.json")); err != nil {
+		t.Fatal(err)
+	}
+	// Removing the reference goes back to automatic selection.
+	if p, err = s.SetReference("", ""); err != nil || p.Reference != nil || p.Theme != "" {
+		t.Fatalf("remove: %v %+v", err, p.Reference)
+	}
+}
+
+// A reference that cannot be analyzed fails; the design falls back to the
+// theme selected from the requirement.
+func TestReferenceInvalidFallsBack(t *testing.T) {
+	s := newService(t, fakeAI{}, "ref_error")
+	s.SetReference("voiceflow.com", "")
+	p := designReady(t, s)
+	if p.Reference.Status != "failed" || !strings.Contains(p.Reference.Error, "login") || len(p.Reference.Shots) != 0 {
+		t.Fatalf("reference = %+v", p.Reference)
+	}
+	if p.Design.Theme == nil || p.Design.Theme.Source != "auto" {
+		t.Fatalf("theme = %+v", p.Design.Theme)
+	}
+}
+
+// A reference on an existing draft re-themes it; the pages stay.
+func TestReferenceOnDraft(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	p := designReady(t, s)
+	pages, _ := json.Marshal(p.Design.Pages)
+	if _, err := s.SetReference("https://voiceflow.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p = load(t, s)
+	after, _ := json.Marshal(p.Design.Pages)
+	mustJob(t, p, work.KindReference, core.JobDone)
+	if string(after) != string(pages) || p.Design.Theme.ID != "voiceflow-inspired" || p.Design.System.Colors[6].Value != "#3d5afe" {
+		t.Fatalf("theme = %+v", p.Design.Theme)
 	}
 }

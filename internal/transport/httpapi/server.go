@@ -219,6 +219,13 @@ func (s *Server) Handler() http.Handler {
 		}
 		return svc.SetTheme(strings.TrimSpace(in.Theme))
 	}))
+	api("PUT /api/v1/project/reference", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ URL, Notes string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.SetReference(in.URL, in.Notes)
+	}))
 	api("POST /api/v1/project/design/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {
 			Feedback string
