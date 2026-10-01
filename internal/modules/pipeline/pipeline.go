@@ -420,6 +420,28 @@ func jobMessage(kind string) string {
 	return kind
 }
 
+// dropUnclearRequest ends a change request the AI found nothing to change
+// for: the request is removed and the design is back to draft, unchanged,
+// so a retry does not ask the same thing again. The user is told to write
+// a clearer request.
+func (s *Service) dropUnclearRequest() error {
+	_, err := s.Store.Update(func(p *core.Project) error {
+		req := ""
+		if d := p.Design; d != nil && d.Status == core.DesignChanges {
+			if n := len(d.Feedback); n > 0 {
+				req, d.Feedback = d.Feedback[n-1], d.Feedback[:n-1]
+			}
+			d.Status, d.Scope, d.Screens, d.Rejected = core.DesignDraft, nil, nil, ""
+		}
+		msg := fmt.Sprintf("AI tidak menemukan perubahan untuk permintaan “%s”. Rancangan tidak diubah. "+
+			"Tulis lebih spesifik: halaman, bagian, dan hasil yang diinginkan (mis. “Halaman Antrean: tabel lebih compact, filter di atas”).", req)
+		p.Job = &core.Job{Kind: work.KindUnclear, Status: core.JobFailed, Message: "Permintaan perubahan", Error: msg, Started: time.Now().UTC()}
+		p.Log("system", "Permintaan perubahan tidak jelas: "+req)
+		return nil
+	})
+	return err
+}
+
 func (s *Service) failJob(kind string, err error) {
 	s.Store.Update(func(p *core.Project) error {
 		p.Job = &core.Job{Kind: kind, Status: core.JobFailed, Message: jobMessage(kind), Error: err.Error(), Started: time.Now().UTC()}
@@ -500,6 +522,9 @@ func (s *Service) applyAI(kind, raw, source string) error {
 		p.Log(source, jobMessage(kind)+" selesai")
 		return nil
 	})
+	if kind == work.KindDesign && errors.Is(err, work.ErrNoChange) {
+		return s.dropUnclearRequest()
+	}
 	if err != nil {
 		return err
 	}

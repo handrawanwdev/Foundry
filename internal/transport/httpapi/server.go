@@ -250,6 +250,7 @@ func (s *Server) Handler() http.Handler {
 		return ok(svc.ReviseDesign(in.Feedback, in.Screens, in.Scope))
 	}))
 	api("POST /api/v1/project/design/keep", s.action(func(svc *pipeline.Service) error { return svc.KeepDesignChange() }))
+	api("POST /api/v1/project/design/regenerate", s.action(func(svc *pipeline.Service) error { return svc.RegenerateDesign() }))
 	api("POST /api/v1/project/design/undo", s.action(func(svc *pipeline.Service) error { return svc.UndoDesignChange() }))
 	api("GET /api/v1/project/design/handoff", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		p, err := svc.Store.Load()

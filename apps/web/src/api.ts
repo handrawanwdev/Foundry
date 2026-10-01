@@ -49,6 +49,8 @@ export const api = {
   reviseDesign: (feedback: string, screens: Record<string, string>, scope: ChangeScope) =>
     call("POST", "/project/design/revise", { feedback, screens, scope }),
   keepDesign: () => call("POST", "/project/design/keep", {}),
+  // A new design from the current features and flows (no discovery).
+  regenerateDesign: () => call("POST", "/project/design/regenerate", {}),
   undoDesign: () => call("POST", "/project/design/undo", {}),
   designHandoff: () => call<DesignHandoff>("GET", "/project/design/handoff"),
   // Canvas: direct Design IR edits of one page; rejected as a whole when invalid.

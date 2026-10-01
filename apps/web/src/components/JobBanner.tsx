@@ -17,7 +17,8 @@ export function JobBanner() {
         <div>
           <strong>{job.message} gagal.</strong> <span style={{ whiteSpace: "pre-line" }}>{job.error}</span>
         </div>
-        <button disabled={pending === "retry"} onClick={() => run("retry", api.retry)}>Coba lagi</button>
+        {/* An unclear change request is not retried: the user writes a clearer one. */}
+        {job.kind !== "revise" && <button disabled={pending === "retry"} onClick={() => run("retry", api.retry)}>Coba lagi</button>}
       </div>
     );
   }

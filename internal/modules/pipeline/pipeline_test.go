@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -1140,5 +1141,77 @@ func TestDesignVersionsAndCanvas(t *testing.T) {
 	s.Wait()
 	if _, err := s.EditDesign("PAGE-001", []work.CanvasOp{{Op: "set_page", Fields: map[string]string{"name": "X"}}}); !errors.Is(err, pipeline.ErrWrongStage) {
 		t.Fatalf("edit after approval err = %v", err)
+	}
+}
+
+func TestUnclearChangeRequestDropped(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
+		t.Fatal(err)
+	}
+	before := load(t, s).Design.Pages
+	if err := s.ReviseDesign("rubah ini", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	// The AI finds nothing to change: the request is dropped, not retried.
+	if err := s.SubmitWork(work.KindDesign, "```json\n{\"pages\": []}\n```"); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	mustJob(t, p, work.KindUnclear, core.JobFailed)
+	if d := p.Design; d.Status != core.DesignDraft || len(d.Feedback) != 0 || d.Scope != nil || !reflect.DeepEqual(d.Pages, before) {
+		t.Fatalf("design = %+v", d)
+	}
+	if !strings.Contains(p.Job.Error, "“rubah ini”") {
+		t.Fatalf("job = %+v", p.Job)
+	}
+	if err := s.RetryJob(); !errors.Is(err, pipeline.ErrNothingToDo) {
+		t.Fatalf("retry err = %v", err)
+	}
+	// A clearer request works as usual.
+	if err := s.ReviseDesign("Tambahkan halaman profil", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	mustJob(t, load(t, s), work.KindDesign, core.JobWaiting)
+}
+
+func TestRegenerateDesign(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
+		t.Fatal(err)
+	}
+	features := load(t, s).Features
+	if err := s.RegenerateDesign(); err != nil {
+		t.Fatal(err)
+	}
+	// A full design prompt, not a revision; discovery is not run again.
+	w, _ := s.NextWork("")
+	if w.Kind != work.KindDesign || !strings.Contains(w.Prompt, "DESIGN TEMPLATES") || strings.Contains(w.Prompt, "CHANGE") {
+		t.Fatalf("work = %+v", w)
+	}
+	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	if !reflect.DeepEqual(p.Features, features) || p.Design.Status != core.DesignDraft {
+		t.Fatalf("project = %+v", p.Design)
+	}
+	if err := s.ApproveDesign(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RegenerateDesign(); !errors.Is(err, pipeline.ErrWrongStage) {
+		t.Fatalf("approved err = %v", err)
 	}
 }

@@ -1,6 +1,7 @@
 package work
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -22,6 +23,15 @@ type designOut struct {
 		PageIDs []string `json:"page_ids"`
 	} `json:"flows"`
 }
+
+// ErrNoChange: the AI found nothing to change for a change request
+// (usually a request too vague to act on). Retrying the same request
+// gives the same answer, so the request is dropped instead.
+var ErrNoChange = errors.New("rancangan tidak berubah")
+
+// KindUnclear is the job of a change request the AI could not act on; it
+// is not retried, the user writes a clearer request.
+const KindUnclear = "revise"
 
 var componentTypes = map[string]bool{
 	"header": true, "nav": true, "text": true, "list": true, "table": true, "form": true,
@@ -312,7 +322,7 @@ func applyRevision(p *core.Project, out designOut) error {
 	d := p.Design
 	system := normSystem(out.System)
 	if len(out.Pages) == 0 && len(out.Removed) == 0 && len(out.Flows) == 0 && len(out.Patches) == 0 && system == nil {
-		return fmt.Errorf("rancangan tidak berubah")
+		return ErrNoChange
 	}
 	if system != nil && d.Scope != nil && !d.Scope.Open {
 		return &PatchRejected{Unexpected: []string{"design system diubah, padahal permintaan hanya untuk halaman tertentu"}}

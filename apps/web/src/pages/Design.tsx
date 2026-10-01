@@ -9,7 +9,7 @@ import { useWorkbench } from "../store/workbench";
 import { api } from "../api";
 import type { DesignHandoff, PageStates, Project } from "../types";
 import { ThemeGallery } from "../components/ThemeGallery";
-import { TemplateLibrary } from "../components/TemplateGallery";
+import { RegenerateButton, TemplateLibrary } from "../components/TemplateGallery";
 import { Features, PlatformStructure, Summary } from "./DesignInfo";
 import { CanvasComponent, CanvasPage, PrototypeMap, Versions } from "../components/Canvas";
 
@@ -139,6 +139,7 @@ function Workspace({ project }: { project: Project }) {
               {DEVICES.map((d) => <button key={d.key} className={dev === d.key ? "on" : ""} onClick={() => setDevice(d.key)}>{d.label}</button>)}
             </div>
           )}
+          {!approved && <RegenerateButton project={project} />}
           {!approved && <button className="ask-btn" disabled={working} onClick={() => setAsking(!asking)}>✦ Minta perubahan</button>}
           {mode === "pratinjau" && !info && (
             <button className={`ghost ${inspect ? "on" : ""}`} title="Panel detail" onClick={() => setInspect(!inspect)}>Detail</button>

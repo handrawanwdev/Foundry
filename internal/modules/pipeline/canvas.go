@@ -97,3 +97,28 @@ func (s *Service) RestoreDesignVersion(id int) (*core.Project, error) {
 	}
 	return p, err
 }
+
+// RegenerateDesign asks the AI for a new design from the current features
+// and flows, without running discovery again: the theme, the template
+// selection and the design knowledge are applied anew. The current design
+// stays until the new one lands (a failure leaves it untouched) and is kept
+// as a version.
+func (s *Service) RegenerateDesign() error {
+	_, err := s.Store.Update(func(p *core.Project) error {
+		if err := editable(p); err != nil {
+			return err
+		}
+		if p.Design.Revision != nil {
+			return fmt.Errorf("simpan atau batalkan perubahan rancangan dulu")
+		}
+		recordVersion(p, "generate", "sebelum dibuat ulang")
+		d := p.Design
+		d.Status, d.Scope, d.Screens, d.Rejected = core.DesignDraft, nil, nil, ""
+		p.Log("ui", "Buat ulang rancangan")
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return s.startAI(work.KindDesign)
+}

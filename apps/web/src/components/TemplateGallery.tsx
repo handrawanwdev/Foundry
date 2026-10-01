@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { isWorking } from "../flow";
+import { useProject } from "../store/project";
 import type { DesignTemplate, Project, TemplateGallery, Theme } from "../types";
 import { Wireframe } from "./Wireframe";
 
@@ -41,6 +43,9 @@ export function TemplateLibrary({ project }: { project: Project }) {
           {chosen.reasons?.length ? ` — ${chosen.reasons.join("; ")}` : ""}
         </p>
       ) : project.design?.pages.length ? <p className="small muted">Rancangan ini tidak memakai template.</p> : null}
+      {project.design?.pages.length && project.design.status !== "approved" ? (
+        <p className="small"><RegenerateButton project={project} label="↻ Buat ulang rancangan" /> <span className="muted">AI memilih template dan menyusun ulang semua halaman dari fitur yang sama.</span></p>
+      ) : null}
       {rec && (!chosen || chosen.id !== rec.id) && (
         <p className="small muted">Rekomendasi Foundry: <strong className="fg">{g?.templates?.find((t) => t.id === rec.id)?.name}</strong> — {rec.reasons?.join("; ")}</p>
       )}
@@ -81,6 +86,21 @@ export function TemplateLibrary({ project }: { project: Project }) {
       {detail && <TemplateDetail t={detail} />}
       {g?.invalid?.length ? <ul className="small warn-text">{g.invalid.map((p) => <li key={p.id}>Template <code>{p.id}</code> tidak dipakai: {p.error}</li>)}</ul> : null}
     </div>
+  );
+}
+
+// A new design from the current features and flows; the old one stays in
+// Versi and remains until the new one is ready.
+export function RegenerateButton({ project, label = "↻ Buat ulang" }: { project: Project; label?: string }) {
+  const { run, pending } = useProject();
+  const d = project.design;
+  const busy = isWorking(project) || pending === "regenerate";
+  const why = d?.revision ? "Simpan atau batalkan perubahan terakhir dulu" : "Buat rancangan baru dari fitur dan alur yang sama (template dan theme dipilih ulang)";
+  return (
+    <button className="ghost" disabled={busy || !!d?.revision} title={why}
+      onClick={() => {
+        if (window.confirm("Buat ulang seluruh rancangan? Rancangan sekarang tetap tersimpan di tab Versi.")) void run("regenerate", api.regenerateDesign);
+      }}>{label}</button>
   );
 }
 
