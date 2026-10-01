@@ -7,6 +7,7 @@ const PATHS: Record<IconName, string> = {
   board: "M3 4h5v16H3z M10 4h5v10h-5z M17 4h4v7h-4z",
   check: "M4 12l5 5L20 6",
   plug: "M9 3v5 M15 3v5 M6 8h12v4a6 6 0 0 1-12 0z M12 18v3",
+  help: "M12 21a9 9 0 1 0 0-18a9 9 0 0 0 0 18z M9.6 9.2a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.5 M12 16.5v.5",
   close: "M6 6l12 12 M18 6L6 18",
 };
 

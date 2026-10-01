@@ -49,6 +49,8 @@ export const PLATFORM_LABEL: Record<string, string> = {
   web: "Web", android: "Android", ios: "iPhone", desktop: "Desktop", backend: "Backend",
 };
 
+export const SUPPORT_PATH = "/simple/support";
+
 // Editor tabs / activity bar entries.
 export const VIEWS: Record<string, { label: string; icon: IconName }> = {
   "/simple/tell": { label: "Ceritakan", icon: "chat" },
@@ -56,9 +58,10 @@ export const VIEWS: Record<string, { label: string; icon: IconName }> = {
   "/simple/bangun": { label: "Bangun", icon: "board" },
   "/simple/siap": { label: "Siap", icon: "check" },
   "/simple/connect": { label: "Hubungkan AI", icon: "plug" },
+  "/simple/support": { label: "Support", icon: "help" },
 };
 
-export type IconName = "files" | "chat" | "design" | "board" | "check" | "plug" | "close";
+export type IconName = "files" | "chat" | "design" | "board" | "check" | "plug" | "help" | "close";
 
 // Project files open as tabs at /files/<relative path>.
 export const FILE_PREFIX = "/files/";

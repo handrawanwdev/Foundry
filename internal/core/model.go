@@ -46,12 +46,18 @@ type Project struct {
 	Platform     *PlatformPlan `json:"platform,omitempty"`
 	Structure    *Structure    `json:"structure,omitempty"`
 	Design       *Design       `json:"design,omitempty"`
-	Tasks        []Task        `json:"tasks"`
-	Builds       []BuildRun    `json:"builds"`
-	Verification *Verification `json:"verification,omitempty"`
-	Job          *Job          `json:"job,omitempty"`
-	Events       []Event       `json:"events"`
-	UpdatedAt    time.Time     `json:"updated_at"`
+	// Theme is the theme the user picked for the design; empty lets
+	// Foundry select one from the requirement.
+	Theme string `json:"theme,omitempty"`
+	// Reference is the website or app the design takes inspiration from.
+	Reference    *DesignReference `json:"reference,omitempty"`
+	Tasks        []Task           `json:"tasks"`
+	Builds       []BuildRun       `json:"builds"`
+	Verification *Verification    `json:"verification,omitempty"`
+	Job          *Job             `json:"job,omitempty"`
+	Support      *Support         `json:"support,omitempty"`
+	Events       []Event          `json:"events"`
+	UpdatedAt    time.Time        `json:"updated_at"`
 }
 
 type Discovery struct {
@@ -162,9 +168,11 @@ const (
 )
 
 type Design struct {
-	Pages    []Page       `json:"pages"`
-	Status   DesignStatus `json:"status"`
-	Feedback []string     `json:"feedback"`
+	// System is the design system every page and the build follow.
+	System   *DesignSystem `json:"system,omitempty"`
+	Pages    []Page        `json:"pages"`
+	Status   DesignStatus  `json:"status"`
+	Feedback []string      `json:"feedback"`
 	// Revision is the last requested change, waiting for the user to keep or
 	// undo it. Nil when there is nothing to review.
 	Revision *DesignRevision `json:"revision,omitempty"`
@@ -177,6 +185,84 @@ type Design struct {
 	Scope *ChangeScope `json:"scope,omitempty"`
 	// Rejected is why the last patch was refused; the retry prompt shows it.
 	Rejected string `json:"rejected,omitempty"`
+	// Domain is the product domain the design decisions follow (ticketing,
+	// trading, ...); empty when none fits.
+	Domain string `json:"domain,omitempty"`
+	// QA is the visual critic of a newly generated design; a revision keeps
+	// its own check in Revision.QA.
+	QA *DesignQA `json:"qa,omitempty"`
+	// Quality is the last measurement of the design: rule metrics on the
+	// Design IR plus the critic's findings. An internal indicator, not a
+	// ranking.
+	Quality *DesignQuality `json:"quality,omitempty"`
+	// Theme is the theme the design follows: System holds its tokens, the
+	// renderer reads its style. Nil on designs made before themes.
+	Theme *ThemeContext `json:"theme,omitempty"`
+}
+
+// DesignQuality is the measured quality of the current design.
+type DesignQuality struct {
+	Overall    int            `json:"overall"`
+	Dimensions map[string]int `json:"dimensions"`
+	Pages      []PageQuality  `json:"pages,omitempty"`
+	Findings   []QAIssue      `json:"findings,omitempty"`
+	// Confidence: low (rules on an IR without intent/plan), medium (rules
+	// only), high (rules plus the critic on rendered pages).
+	Confidence string `json:"confidence"`
+	// Decision is the quality gate: pass | revision_required. Reasons are
+	// the blocker findings that require a revision.
+	Decision       string             `json:"decision"`
+	Reasons        []QAIssue          `json:"reasons,omitempty"`
+	Compared       *QualityComparison `json:"compared_to_previous,omitempty"`
+	Recommendation string             `json:"recommendation,omitempty"`
+	MeasuredAt     time.Time          `json:"measured_at"`
+}
+
+type PageQuality struct {
+	PageID     string         `json:"page_id"`
+	Overall    int            `json:"overall"`
+	Dimensions map[string]int `json:"dimensions"`
+	// Metrics are the deterministic counts measured on the IR.
+	Metrics map[string]int `json:"metrics,omitempty"`
+}
+
+// QualityScore is the rule score of one design version.
+type QualityScore struct {
+	Overall    int            `json:"overall"`
+	Dimensions map[string]int `json:"dimensions"`
+	Blockers   int            `json:"blockers"`
+}
+
+// QualityComparison is the rule score before and after a critic patch.
+// Verdict: improved | neutral | degraded; a degraded patch is rejected.
+type QualityComparison struct {
+	Round    int          `json:"round"`
+	Before   QualityScore `json:"before"`
+	After    QualityScore `json:"after"`
+	Verdict  string       `json:"verdict"`
+	Rejected bool         `json:"rejected,omitempty"`
+}
+
+// DesignSystem holds the design tokens: the build maps them onto the
+// project's styling instead of arbitrary values.
+type DesignSystem struct {
+	// Direction is the one visual direction the tokens follow
+	// (e.g. "Operations: dense, restrained, semantic color only").
+	Direction   string  `json:"direction,omitempty"`
+	Colors      []Token `json:"colors"`
+	Typography  []Token `json:"typography"`
+	Spacing     []Token `json:"spacing"`
+	Radius      []Token `json:"radius,omitempty"`
+	Shadow      []Token `json:"shadow,omitempty"`
+	Breakpoints []Token `json:"breakpoints,omitempty"`
+	// Components: component name → how it is used (variants, rules).
+	Components []Token `json:"components,omitempty"`
+}
+
+type Token struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	Use   string `json:"use,omitempty"`
 }
 
 // ChangeScope limits a change request. Pages lists the pages the user asked
@@ -219,18 +305,46 @@ type DesignRevision struct {
 	Changes       []DesignChange      `json:"changes"`
 	PreviousPages []Page              `json:"previous_pages"`
 	PreviousFlows map[string][]string `json:"previous_flows"` // flow id -> page ids
-	Scope         *ChangeScope        `json:"scope,omitempty"`
-	Patch         []string            `json:"patch,omitempty"` // operations applied, readable
-	QA            *DesignQA           `json:"qa,omitempty"`
+	// PreviousSystem is the design system before the request; undo restores it.
+	PreviousSystem *DesignSystem `json:"previous_system,omitempty"`
+	Scope          *ChangeScope  `json:"scope,omitempty"`
+	Patch          []string      `json:"patch,omitempty"` // operations applied, readable
+	QA             *DesignQA     `json:"qa,omitempty"`
 }
 
 // DesignQA is the visual check of a revision: the changed pages are
 // rendered in a browser at the user's viewport and reviewed by the AI.
 type DesignQA struct {
-	Status string   `json:"status"` // running | pass | fixed | failed | skipped
-	Round  int      `json:"round"`
-	Notes  string   `json:"notes,omitempty"`
-	Shots  []QAShot `json:"shots,omitempty"`
+	Status string    `json:"status"` // running | pass | fixed | failed | skipped
+	Round  int       `json:"round"`
+	Notes  string    `json:"notes,omitempty"`
+	Issues []QAIssue `json:"issues,omitempty"`
+	Shots  []QAShot  `json:"shots,omitempty"`
+	// Next are the page/device pairs the next round renders again: only
+	// what the last fix touched, on the device its findings were about.
+	Next []QAShot `json:"next,omitempty"`
+	// Compared is the rule score before and after each fix patch.
+	Compared []QualityComparison `json:"compared,omitempty"`
+}
+
+// QAIssue is one problem the visual critic saw on a screenshot.
+type QAIssue struct {
+	PageID   string `json:"page_id,omitempty"`
+	Severity string `json:"severity"` // critical | major | minor
+	Problem  string `json:"problem"`
+	Why      string `json:"why,omitempty"`
+	Impact   string `json:"impact,omitempty"`
+	Fix      string `json:"fix,omitempty"`
+	// Category is the kind of problem (hierarchy, spacing, ...); Component
+	// the id of the component it is about.
+	Category  string `json:"category,omitempty"`
+	Component string `json:"component,omitempty"`
+	// Device is the screenshot the problem was seen on; Source is "lint"
+	// for findings of the deterministic design rules, empty for the critic.
+	Device string `json:"device,omitempty"`
+	Source string `json:"source,omitempty"`
+	// Rule is the id of the design rule a lint finding comes from.
+	Rule string `json:"rule,omitempty"`
 }
 
 type QAShot struct {
@@ -256,18 +370,55 @@ type Page struct {
 	FeatureID     string   `json:"feature_id"`
 	SubFeatureIDs []string `json:"sub_feature_ids"`
 	Purpose       string   `json:"purpose"`
-	// Kind picks the page layout (auth, list, form, ...); Density is
-	// low | medium | high. Both may be empty on older designs.
+	// Screen intent: what the user must see first (most important first),
+	// the lower-weight actions besides the primary one, and how the layout
+	// adapts on tablet and mobile.
+	Hierarchy        []string `json:"hierarchy,omitempty"`
+	SecondaryActions []string `json:"secondary_actions,omitempty"`
+	Responsive       string   `json:"responsive,omitempty"`
+	// Kind is the page's job (auth, list, form, ...); Density is
+	// compact | comfortable | spacious. Kind may be empty on older designs.
 	Kind    string      `json:"kind,omitempty"`
 	Density string      `json:"density,omitempty"`
 	States  *PageStates `json:"states,omitempty"`
 	// Build contract: where the page lives, who may open it, what it is
 	// for and what data it needs. Required before the design is approved.
-	Route         string          `json:"route,omitempty"`
-	Access        string          `json:"access,omitempty"` // public | auth
-	PrimaryAction *PageAction     `json:"primary_action,omitempty"`
-	Data          *PageData       `json:"data,omitempty"`
-	Components    []PageComponent `json:"components"`
+	Route         string      `json:"route,omitempty"`
+	Access        string      `json:"access,omitempty"` // public | auth
+	PrimaryAction *PageAction `json:"primary_action,omitempty"`
+	Data          *PageData   `json:"data,omitempty"`
+	// Intent is how the page is used and Plan the design decisions taken
+	// from it before the layout was composed. Both may be nil on older
+	// designs.
+	Intent *PageIntent `json:"intent,omitempty"`
+	Plan   *PagePlan   `json:"plan,omitempty"`
+	// Layout is the explicit composition (Design IR): frame, component
+	// tree and per-device changes. The renderer draws only this.
+	Layout     *PageLayout     `json:"layout,omitempty"`
+	Components []PageComponent `json:"components"`
+}
+
+// PageIntent is what the designer must understand before choosing a
+// layout. The user is Page.Role and the goal Page.Purpose.
+type PageIntent struct {
+	PrimaryTask        string `json:"primary_task,omitempty"`        // authenticate | enter | configure | search | browse | compare | process | monitor | inspect | analyze | overview
+	Frequency          string `json:"frequency,omitempty"`           // low | medium | high
+	Complexity         string `json:"complexity,omitempty"`          // low | medium | high
+	InformationDensity string `json:"information_density,omitempty"` // low | medium | high
+	Comparison         bool   `json:"comparison,omitempty"`          // the user compares many records
+}
+
+// PagePlan is the design decision recorded before the layout: the layout
+// and responsive strategy and the information hierarchy by component id.
+// Page type, density and navigation live in Kind, Density and Layout.Nav.
+type PagePlan struct {
+	Layout     string   `json:"layout_strategy,omitempty"`
+	Responsive string   `json:"responsive_strategy,omitempty"`
+	Primary    string   `json:"primary_focus,omitempty"`
+	Secondary  []string `json:"secondary_content,omitempty"`
+	Supporting []string `json:"supporting_content,omitempty"`
+	// Reasons: component or node id → why it is on the page.
+	Reasons map[string]string `json:"reasons,omitempty"`
 }
 
 // PageAction is the main thing the user does on a page. A read-only page has
@@ -296,15 +447,19 @@ type PageStates struct {
 	Success   string `json:"success,omitempty"`
 }
 
-// PageComponent is a wireframe element. Target links to another page for
-// prototype navigation.
+// PageComponent is a wireframe element. ID is what the layout places.
+// Target links to another page for prototype navigation. Emphasis and Tone
+// are semantic tokens (action.*, text.* / status.*), never raw values.
 type PageComponent struct {
-	Type    string      `json:"type"` // header | nav | text | list | table | form | button | card | stat | input | section | steps
-	Label   string      `json:"label"`
-	Items   []string    `json:"items,omitempty"`
-	Columns []string    `json:"columns,omitempty"` // table only
-	Fields  []FormField `json:"fields,omitempty"`  // form only
-	Target  string      `json:"target,omitempty"`
+	ID       string      `json:"id,omitempty"`
+	Type     string      `json:"type"` // header | nav | text | list | table | form | button | card | stat | input | section | steps
+	Emphasis string      `json:"emphasis,omitempty"`
+	Tone     string      `json:"tone,omitempty"`
+	Label    string      `json:"label"`
+	Items    []string    `json:"items,omitempty"`
+	Columns  []string    `json:"columns,omitempty"` // table only
+	Fields   []FormField `json:"fields,omitempty"`  // form only
+	Target   string      `json:"target,omitempty"`
 }
 
 // FormField specifies one form input for the build phase.
@@ -409,6 +564,97 @@ type Job struct {
 	Error   string    `json:"error,omitempty"`
 	TaskID  string    `json:"task_id,omitempty"`
 	Started time.Time `json:"started"`
+}
+
+// Support is the Technical Support Assistant: a conversation about the system
+// being built, answered only from the project context and its files.
+type Support struct {
+	Messages    []SupportMessage `json:"messages"`
+	Escalations []Escalation     `json:"escalations,omitempty"`
+}
+
+// Support message statuses (assistant messages only).
+const (
+	SupportRunning = "running" // the agent is answering
+	SupportWaiting = "waiting" // waiting for the MCP host
+	SupportDone    = "done"
+	SupportFailed  = "failed"
+)
+
+type SupportMessage struct {
+	ID     string         `json:"id"`
+	Role   string         `json:"role"` // user | assistant
+	Text   string         `json:"text"` // the question (user)
+	Status string         `json:"status,omitempty"`
+	Error  string         `json:"error,omitempty"`
+	Answer *SupportAnswer `json:"answer,omitempty"`
+	At     time.Time      `json:"at"`
+}
+
+// SupportAnswer is one grounded answer. Sources are project ids (FLOW-001,
+// PAGE-002, ...) or project files; unknown references are dropped.
+type SupportAnswer struct {
+	Kind      string        `json:"kind"` // explain | flow | troubleshoot | roles | unknown
+	Summary   string        `json:"summary"`
+	Flow      *SupportFlow  `json:"flow,omitempty"`
+	Trouble   *Troubleshoot `json:"trouble,omitempty"`
+	Roles     []RoleAccess  `json:"roles,omitempty"`
+	Missing   []string      `json:"missing,omitempty"` // what the system does not define
+	Sources   []string      `json:"sources,omitempty"`
+	FollowUps []string      `json:"follow_ups,omitempty"`
+	Escalate  bool          `json:"escalate,omitempty"` // the assistant cannot resolve it
+}
+
+type SupportFlow struct {
+	FlowID string     `json:"flow_id,omitempty"`
+	Name   string     `json:"name"`
+	Steps  []FlowStep `json:"steps"`
+}
+
+type FlowStep struct {
+	Name    string `json:"name"`
+	Detail  string `json:"detail,omitempty"`
+	Role    string `json:"role,omitempty"`
+	Module  string `json:"module,omitempty"`
+	PageID  string `json:"page_id,omitempty"`
+	API     string `json:"api,omitempty"`
+	Current bool   `json:"current,omitempty"` // where the reported problem is
+}
+
+type Troubleshoot struct {
+	Problem string   `json:"problem"`
+	Status  string   `json:"status"`
+	Module  string   `json:"module,omitempty"`
+	Step    string   `json:"step,omitempty"`
+	Causes  []Cause  `json:"causes,omitempty"`
+	Actions []string `json:"actions,omitempty"`
+}
+
+// Cause is confirmed only with evidence; otherwise it is a possibility.
+type Cause struct {
+	Text      string `json:"text"`
+	Evidence  string `json:"evidence,omitempty"`
+	Confirmed bool   `json:"confirmed,omitempty"`
+}
+
+type RoleAccess struct {
+	Role   string `json:"role"`
+	Access string `json:"access"`
+	Source string `json:"source,omitempty"`
+}
+
+// Escalation is a problem handed to the technical team, as confirmed by the
+// user from the conversation.
+type Escalation struct {
+	ID            string    `json:"id"`
+	Issue         string    `json:"issue"`
+	Module        string    `json:"module,omitempty"`
+	Flow          string    `json:"flow,omitempty"`
+	Status        string    `json:"status,omitempty"`
+	Evidence      []string  `json:"evidence,omitempty"`
+	Causes        []string  `json:"causes,omitempty"`
+	Investigation []string  `json:"investigation,omitempty"`
+	At            time.Time `json:"at"`
 }
 
 type Event struct {

@@ -1,0 +1,37 @@
+{
+  "id": "warm-editorial",
+  "name": "Warm Editorial",
+  "description": "Hangat seperti kertas dengan tipografi tegas untuk produk konten, publikasi dan dokumentasi.",
+  "personality": [
+    "warm",
+    "editorial",
+    "readable",
+    "crafted"
+  ],
+  "tokens": {
+    "color_mode": "light",
+    "radius": "small",
+    "spacing": "comfortable"
+  },
+  "preferences": {
+    "navigation": "top",
+    "layout": [
+      "sections",
+      "list",
+      "focused"
+    ],
+    "density": "comfortable"
+  },
+  "avoid": [
+    "glassmorphism",
+    "decorative_gradient",
+    "large_cards"
+  ],
+  "rules": [
+    {
+      "if": "the main content is text people read",
+      "then": "a readable column width with strong headings and quiet chrome",
+      "why": "reading comfort matters more than visual effects"
+    }
+  ]
+}

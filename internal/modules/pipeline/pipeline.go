@@ -6,10 +6,12 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -81,8 +83,8 @@ func (ConfigAI) Agents() int {
 type Service struct {
 	Store *core.Store
 	AI    AI
-	// Render takes browser screenshots for the visual check of a design
-	// revision; nil skips the check.
+	// Render takes browser screenshots for the visual check of a new
+	// design and of a revision; nil skips the check.
 	Render Renderer
 
 	mu     sync.Mutex
@@ -115,6 +117,7 @@ func New(store *core.Store, ai AI) *Service {
 // the process that runs agent jobs (the HTTP server) should call this.
 func (s *Service) RecoverStale() {
 	s.Store.Update(func(p *core.Project) error {
+		recoverSupport(p)
 		if p.Job != nil && p.Job.Status == core.JobRunning {
 			p.Job.Status, p.Job.Error = core.JobFailed, "Proses terhenti sebelum selesai. Jalankan ulang."
 			for i := range p.Tasks {
@@ -194,7 +197,7 @@ func (s *Service) UndoDesignChange() error {
 }
 
 func (s *Service) reviseStep(msg string, fn func(*core.Project) error) error {
-	_, err := s.Store.Update(func(p *core.Project) error {
+	p, err := s.Store.Update(func(p *core.Project) error {
 		if p.Busy() {
 			return ErrBusy
 		}
@@ -207,9 +210,13 @@ func (s *Service) reviseStep(msg string, fn func(*core.Project) error) error {
 		if j := p.Job; j != nil && j.Kind == work.KindDesignQA && j.Status == core.JobWaiting {
 			j.Status, j.Message = core.JobDone, "Pemeriksaan visual dilewati"
 		}
+		measureQuality(p)
 		p.Log("ui", msg)
 		return nil
 	})
+	if err == nil {
+		saveQuality(p)
+	}
 	return err
 }
 
@@ -253,6 +260,43 @@ func (s *Service) SetTemplate(id string) (*core.Project, error) {
 	})
 }
 
+// SetTheme picks the design's theme ("" lets Foundry select one from the
+// requirement). A draft design follows it at once: its tokens and style
+// change, its pages (Design IR) do not.
+func (s *Service) SetTheme(id string) (*core.Project, error) {
+	p, err := s.Store.Update(func(p *core.Project) error {
+		if p.Busy() {
+			return ErrBusy
+		}
+		if id != "" {
+			themes, _ := work.Themes(p.Dir)
+			if !slices.ContainsFunc(themes, func(t core.Theme) bool { return t.ID == id }) {
+				return fmt.Errorf("theme %q tidak tersedia", id)
+			}
+		}
+		d := p.Design
+		designed := d != nil && len(d.Pages) > 0
+		if designed && d.Status == core.DesignApproved {
+			return ErrWrongStage
+		}
+		if designed && d.Revision != nil {
+			return errors.New("simpan atau batalkan perubahan rancangan dulu")
+		}
+		p.Theme = id
+		if designed {
+			t, ctx := work.ResolveTheme(p)
+			work.ApplyTheme(d, t, ctx)
+			measureQuality(p)
+		}
+		p.Log("ui", "Theme: "+cmp.Or(id, "otomatis"))
+		return nil
+	})
+	if err == nil {
+		saveQuality(p)
+	}
+	return p, err
+}
+
 // ApproveDesign locks platform, structure and design, then generates tasks.
 func (s *Service) ApproveDesign() error {
 	_, err := s.Store.Update(func(p *core.Project) error {
@@ -294,6 +338,8 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 		return work.PlanPrompt(p)
 	case work.KindDesignQA:
 		return work.QAPrompt(p)
+	case work.KindReference:
+		return work.ReferencePrompt(p)
 	}
 	return ""
 }
@@ -321,6 +367,12 @@ func (s *Service) startAI(kind string) error {
 	if kind == work.KindDesignQA {
 		if p, err = s.prepareQA(p); err != nil || p == nil {
 			return err // nil project: check skipped, job closed
+		}
+	}
+	if kind == work.KindReference {
+		if p, err = s.prepareReference(p); err != nil {
+			s.failJob(kind, err)
+			return err
 		}
 	}
 	if isMCP {
@@ -360,6 +412,8 @@ func jobMessage(kind string) string {
 		return "Build, test, dan verifikasi"
 	case work.KindDesignQA:
 		return "Memeriksa hasil visual di browser"
+	case work.KindReference:
+		return "Menganalisis referensi desain"
 	}
 	return kind
 }
@@ -375,7 +429,8 @@ func (s *Service) failJob(kind string, err error) {
 // applyAI lands an AI answer in the project and chains the next step.
 func (s *Service) applyAI(kind, raw, source string) error {
 	var next string
-	_, err := s.Store.Update(func(p *core.Project) error {
+	measured := false
+	p, err := s.Store.Update(func(p *core.Project) error {
 		if p.Job == nil || p.Job.Kind != kind || p.Job.Status == core.JobDone {
 			return fmt.Errorf("%w: tidak ada job %s yang aktif", ErrWrongStage, kind)
 		}
@@ -387,16 +442,39 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			p.Structure = structure.Detect(p.Dir, p.Platform)
 			p.Stage = core.StageDesign
 			next = work.KindDesign
+			if r := p.Reference; r != nil && r.Status == "pending" {
+				next = work.KindReference // the design follows the reference's theme
+			}
+		case work.KindReference:
+			if err := applyReference(p, raw); err != nil {
+				return err
+			}
+			measured = p.Design != nil && p.Design.Quality != nil
+			if p.Design == nil || len(p.Design.Pages) == 0 {
+				next = work.KindDesign
+			}
 		case work.KindDesign:
 			revising := p.Design != nil && p.Design.Status == core.DesignChanges && len(p.Design.Pages) > 0
 			if err := work.ApplyDesign(p, raw); err != nil {
 				return err
 			}
-			if revising && s.Render != nil && p.Design.Revision != nil {
+			switch {
+			case revising && s.Render != nil && p.Design.Revision != nil:
 				p.Design.Revision.QA = &core.DesignQA{Status: "running", Round: 1}
 				next = work.KindDesignQA
+			case !revising && s.Render != nil:
+				// A new design is critiqued before the user sees it.
+				p.Design.QA = &core.DesignQA{Status: "running", Round: 1}
+				next = work.KindDesignQA
+			case !revising:
+				// No browser: only the design rules are checked.
+				if lint := work.LintDesign(p, nil); len(lint) > 0 {
+					p.Design.QA = &core.DesignQA{Status: "skipped", Notes: "browser tidak tersedia; hanya aturan desain yang diperiksa", Issues: lint}
+				}
 			}
 			p.Stage = core.StageDesign
+			measureQuality(p)
+			measured = true
 		case work.KindPlan:
 			if err := work.ApplyPlan(p, raw); err != nil {
 				return err
@@ -407,6 +485,8 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			if err != nil {
 				return err
 			}
+			measureQuality(p) // re-measure after the critic round
+			measured = true
 			if again {
 				next = work.KindDesignQA
 			}
@@ -419,6 +499,9 @@ func (s *Service) applyAI(kind, raw, source string) error {
 	})
 	if err != nil {
 		return err
+	}
+	if measured {
+		saveQuality(p)
 	}
 	if next != "" {
 		return s.startAI(next)
@@ -436,7 +519,7 @@ func (s *Service) RetryJob() error {
 		return ErrNothingToDo
 	}
 	switch p.Job.Kind {
-	case work.KindDiscovery, work.KindDesign, work.KindPlan, work.KindDesignQA:
+	case work.KindDiscovery, work.KindDesign, work.KindPlan, work.KindDesignQA, work.KindReference:
 		return s.startAI(p.Job.Kind)
 	case "build":
 		return s.StartBuild()

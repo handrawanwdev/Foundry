@@ -81,6 +81,15 @@ func pageDetails(old, new core.Page, oldNames, newNames map[string]string) []str
 	if old.Purpose != new.Purpose {
 		d = append(d, "~ Tujuan halaman")
 	}
+	if !slices.Equal(old.Hierarchy, new.Hierarchy) {
+		d = append(d, "~ Urutan informasi")
+	}
+	if !slices.Equal(old.SecondaryActions, new.SecondaryActions) {
+		d = append(d, "~ Aksi sekunder")
+	}
+	if old.Responsive != new.Responsive {
+		d = append(d, "~ Perilaku responsif")
+	}
 	if old.Role != new.Role {
 		d = append(d, "~ Peran: "+new.Role)
 	}

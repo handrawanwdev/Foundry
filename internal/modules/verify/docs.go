@@ -62,6 +62,24 @@ func Markdown(p *core.Project) string {
 			fmt.Fprintf(&b, "- **%s** %s (%s, %s): %s\n", pg.ID, pg.Name, pg.Platform, pg.FeatureID, pg.Purpose)
 		}
 		b.WriteString("\n")
+		if s := p.Design.System; s != nil {
+			b.WriteString("## Design system\n\n")
+			if s.Direction != "" {
+				b.WriteString("Arah visual: " + s.Direction + "\n\n")
+			}
+			b.WriteString("| Grup | Token | Nilai | Pemakaian |\n|---|---|---|---|\n")
+			for _, g := range []struct {
+				name   string
+				tokens []core.Token
+			}{{"Warna", s.Colors}, {"Tipografi", s.Typography}, {"Spacing", s.Spacing}, {"Radius", s.Radius},
+				{"Shadow", s.Shadow}, {"Breakpoint", s.Breakpoints}, {"Komponen", s.Components}} {
+				for _, t := range g.tokens {
+					cell := strings.NewReplacer("|", "\\|", "\n", " ")
+					fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", g.name, cell.Replace(t.Name), cell.Replace(t.Value), cell.Replace(t.Use))
+				}
+			}
+			b.WriteString("\n")
+		}
 	}
 	b.WriteString("## Task\n\n| ID | Task | Feature | Status |\n|---|---|---|---|\n")
 	for _, t := range p.Tasks {

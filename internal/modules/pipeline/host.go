@@ -28,10 +28,14 @@ func (s *Service) NextWork(worker string) (*WorkItem, error) {
 		return nil, err
 	}
 	if p.Job == nil || p.Job.Status != core.JobWaiting {
+		if m := work.PendingSupport(p); m != nil && m.Status == core.SupportWaiting {
+			return &WorkItem{Kind: work.KindSupport, Prompt: work.SupportPrompt(p),
+				Submit: fmt.Sprintf(`submit_work {"kind": %q, "result": "<the JSON object>"}`, work.KindSupport)}, nil
+		}
 		return &WorkItem{Kind: "none", Prompt: nothingMessage(p)}, nil
 	}
 	switch p.Job.Kind {
-	case work.KindDiscovery, work.KindDesign, work.KindPlan, work.KindDesignQA:
+	case work.KindDiscovery, work.KindDesign, work.KindPlan, work.KindDesignQA, work.KindReference:
 		return &WorkItem{Kind: p.Job.Kind, Prompt: s.promptFor(p, p.Job.Kind),
 			Submit: fmt.Sprintf(`submit_work {"kind": %q, "result": "<the JSON object>"}`, p.Job.Kind)}, nil
 	case "build":
@@ -76,8 +80,11 @@ func nothingMessage(p *core.Project) string {
 	return "Tidak ada pekerjaan saat ini."
 }
 
-// SubmitWork applies a discovery/design/plan answer from the MCP host.
+// SubmitWork applies a discovery/design/plan/support answer from the MCP host.
 func (s *Service) SubmitWork(kind, result string) error {
+	if kind == work.KindSupport {
+		return s.applySupport(result)
+	}
 	p, err := s.Store.Load()
 	if err != nil {
 		return err

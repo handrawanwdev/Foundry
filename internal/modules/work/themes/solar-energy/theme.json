@@ -1,0 +1,36 @@
+{
+  "id": "solar-energy",
+  "name": "Solar Energy",
+  "description": "Terang dengan kuning amber dan hijau untuk energi, IoT dan sustainability.",
+  "personality": [
+    "optimistic",
+    "clean",
+    "technical",
+    "sustainable"
+  ],
+  "tokens": {
+    "color_mode": "light",
+    "radius": "medium",
+    "spacing": "comfortable"
+  },
+  "preferences": {
+    "navigation": "side",
+    "layout": [
+      "dashboard",
+      "list",
+      "master-detail"
+    ],
+    "density": "comfortable"
+  },
+  "avoid": [
+    "glassmorphism",
+    "excessive_whitespace"
+  ],
+  "rules": [
+    {
+      "if": "a page shows readings from devices",
+      "then": "current value, trend and threshold side by side",
+      "why": "operators judge a reading against its normal range"
+    }
+  ]
+}

@@ -106,9 +106,10 @@ export const KIND_LABEL: Record<PageKind, string> = {
   auth: "Masuk / autentikasi", dashboard: "Ringkasan kerja", list: "Daftar data", detail: "Detail",
   form: "Form", wizard: "Langkah bertahap", search: "Pencarian", settings: "Pengaturan", payment: "Pembayaran",
   profile: "Profil", analytics: "Analitik", admin: "Operasional (padat)", status: "Hasil / status",
+  table: "Tabel data", workspace: "Workspace", "master-detail": "Daftar + detail", monitoring: "Pemantauan", report: "Laporan",
 };
 
-export const DENSITY_LABEL: Record<Density, string> = { low: "rendah", medium: "sedang", high: "tinggi" };
+export const DENSITY_LABEL: Record<Density, string> = { compact: "padat", comfortable: "sedang", spacious: "lega" };
 
 const NAME_KINDS: [RegExp, PageKind][] = [
   [/login|masuk|sign ?in|sign ?up|registrasi|daftar akun|lupa (kata sandi|password)/, "auth"],
@@ -137,12 +138,14 @@ export function pageKind(p: Page): PageKind {
   return "detail";
 }
 
+// Density set by the designer; the server maps older names on load. Pages
+// without one use the kind's usual density.
 export function pageDensity(p: Page): Density {
   if (p.density) return p.density;
   const k = pageKind(p);
-  if (k === "auth" || k === "payment" || k === "status") return "low";
-  if (k === "admin") return "high";
-  return "medium";
+  if (k === "auth" || k === "payment" || k === "status") return "spacious";
+  if (k === "admin" || k === "workspace" || k === "monitoring" || k === "table") return "compact";
+  return "comfortable";
 }
 
 const KIND_SUBMIT: Partial<Record<PageKind, string>> = { auth: "Masuk", payment: "Bayar", search: "Cari", wizard: "Lanjut" };
@@ -215,7 +218,7 @@ export function designChecks(project: Project): Finding[] {
         add(`navigasi mobile punya ${c.items!.length} item (maks. 5)`);
     }
     // Detail pages list attributes of one record; only data views can be empty.
-    if (["list", "admin", "dashboard", "search"].includes(kind) && count("list", "table") > 0 && !p.states?.empty)
+    if (["list", "admin", "dashboard", "search", "table", "workspace", "master-detail", "monitoring"].includes(kind) && count("list", "table") > 0 && !p.states?.empty)
       add("belum ada tampilan saat data kosong");
     const sig = signature(p);
     const twin = sig.split(",").length >= 3 && seen.get(p.platform + "|" + sig);
@@ -231,8 +234,9 @@ export function fixRequest(blockers: Blocker[], findings: Finding[]): string {
     ...blockers.map((b) => `- ${b.page ? `Halaman "${b.page}": ` : ""}${b.text}`),
     ...findings.map((f) => `- ${f.page ? `Halaman "${f.page.name}": ` : ""}${f.text}`),
   ];
-  return "Lengkapi dan perbaiki rancangan: tiap halaman wajib punya \"route\", \"access\", \"primary_action\", \"data\", " +
-    "\"kind\", \"density\", \"states\", dan form punya \"fields\". Layout sesuai jenis halaman.\n" + lines.join("\n");
+  return "Lengkapi dan perbaiki rancangan: design system (\"system\") wajib ada; tiap halaman wajib punya \"route\", \"access\", " +
+    "\"primary_action\" (satu), \"hierarchy\", \"data\", \"kind\", \"density\", \"states\", dan form punya \"fields\". " +
+    "Tidak ada aksi yang tampil dua kali. Layout sesuai jenis halaman.\n" + lines.join("\n");
 }
 
 // component: index of the component the user picked in the inspector;

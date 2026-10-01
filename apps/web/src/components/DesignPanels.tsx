@@ -4,7 +4,7 @@ import { api } from "../api";
 import { changeRequest, changeScope, componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf, type PageRequest } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
-import type { Blocker, DesignQA, Page, PageHandoff, Project } from "../types";
+import type { Blocker, DesignQA, DesignQuality, DesignSystem, Page, PageHandoff, Project, QAIssue, ThemeContext, Token } from "../types";
 import type { Device } from "../design";
 
 // ---------- Inspect ----------
@@ -33,6 +33,7 @@ export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: 
       <div className="inspect">
         <button className="link small" onClick={() => onSelect(null)}>← {page.name}</button>
         <h2>{componentName(c)}</h2>
+        {c.id && page.plan?.reasons?.[c.id] && <p className="muted small">Alasan: {page.plan.reasons[c.id]}</p>}
         {!!c.items?.length && (
           <section><h4>Isi</h4><ul className="plain">{c.items.map((it) => <li key={it}>{it}</li>)}</ul></section>
         )}
@@ -68,6 +69,11 @@ export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: 
         <dt>Akses</dt><dd>{page.access === "auth" ? "Harus login" : page.access === "public" ? "Publik" : <span className="warn-text">belum ditentukan</span>}</dd>
         <dt>Aksi utama</dt><dd>{action?.label ? <>{action.label}{actionTarget && <> <PageLink p={actionTarget} /></>}</>
           : action?.reason ? <span className="muted">Tidak ada — {action.reason}</span> : <span className="warn-text">belum ditentukan</span>}</dd>
+        {!!page.secondary_actions?.length && <><dt>Aksi lain</dt><dd>{page.secondary_actions.join(", ")}</dd></>}
+        <dt>Urutan informasi</dt><dd>{page.hierarchy?.length
+          ? <ol className="plain-ol">{page.hierarchy.map((h) => <li key={h}>{h}</li>)}</ol> : <span className="warn-text">belum ditentukan</span>}</dd>
+        {page.responsive && <><dt>Responsif</dt><dd>{page.responsive}</dd></>}
+        {(page.intent || page.plan) && <><dt>Keputusan desain</dt><dd><PlanView page={page} /></dd></>}
         <dt>Jenis</dt><dd>{KIND_LABEL[pageKind(page)]}{!page.kind && <span className="muted small"> (ditebak)</span>} · kepadatan {DENSITY_LABEL[pageDensity(page)]}</dd>
         {page.states && <><dt>Kondisi</dt><dd>
           {STATE_LABEL.filter(([k]) => page.states?.[k]).map(([k, l]) => <div key={k}><span className="muted small">{l}:</span> {page.states![k]}</div>)}
@@ -108,6 +114,24 @@ export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: 
   );
 }
 
+// Intent and plan: why the layout looks the way it does.
+function PlanView({ page }: { page: Page }) {
+  const { intent: it, plan: pl } = page;
+  const ids = (xs?: string[]) => (xs ?? []).map((id) => "#" + id).join(", ");
+  return (
+    <>
+      {it && <div className="small">
+        {[it.primary_task && `tugas ${it.primary_task}`, it.frequency && `frekuensi ${it.frequency}`, it.complexity && `kompleksitas ${it.complexity}`,
+          it.information_density && `kepadatan info ${it.information_density}`, it.comparison && "membandingkan banyak data"].filter(Boolean).join(" · ")}
+      </div>}
+      {pl?.layout_strategy && <div className="small"><span className="muted">Layout:</span> {pl.layout_strategy}{pl.responsive_strategy && ` · mobile: ${pl.responsive_strategy}`}</div>}
+      {pl?.primary_focus && <div className="small"><span className="muted">Fokus utama:</span> #{pl.primary_focus}</div>}
+      {!!pl?.secondary_content?.length && <div className="small"><span className="muted">Sekunder:</span> {ids(pl.secondary_content)}</div>}
+      {!!pl?.supporting_content?.length && <div className="small"><span className="muted">Pendukung:</span> {ids(pl.supporting_content)}</div>}
+    </>
+  );
+}
+
 const STATE_LABEL: ["loading" | "empty" | "no_results" | "error" | "success", string][] = [
   ["loading", "Memuat"], ["empty", "Kosong"], ["no_results", "Tanpa hasil"], ["error", "Error"], ["success", "Berhasil"],
 ];
@@ -128,6 +152,73 @@ function qaText(qa: DesignQA): string {
   return "Memeriksa hasil visual…";
 }
 
+const SEVERITY_LABEL = { critical: "kritis", major: "besar", minor: "kecil" } as const;
+
+// Problems the visual critic saw on the screenshots; minor ones do not
+// block, they are kept for the next change.
+function QAIssues({ issues, pages, onOpen }: { issues: QAIssue[]; pages: Page[]; onOpen: (pageId: string) => void }) {
+  return (
+    <details className="small qa-issues"><summary>{issues.length} temuan desain</summary>
+      <ul>
+        {issues.map((it, i) => {
+          const pg = pages.find((p) => p.id === it.page_id);
+          return (
+            <li key={i}>
+              <span className={`sev ${it.severity}`}>{SEVERITY_LABEL[it.severity]}</span>{" "}
+              {(it.category || it.component || it.device || it.source) && <span className="muted">[{[it.source === "lint" && "aturan", it.category, it.component && "#" + it.component, it.device].filter(Boolean).join(" · ")}] </span>}
+              {pg && <><button className="link" onClick={() => onOpen(pg.id)}>{pg.name}</button>: </>}
+              {it.problem}
+              {(it.why || it.impact || it.fix) && (
+                <div className="muted">
+                  {it.why && <>Mengapa: {it.why}. </>}{it.impact && <>Dampak: {it.impact}. </>}{it.fix && <>Perbaikan: {it.fix}</>}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
+const DIMENSION_LABEL: Record<string, string> = {
+  hierarchy: "Hierarki", composition: "Komposisi", spacing: "Spasi", density: "Kepadatan",
+  responsive: "Responsif", navigation: "Navigasi", ai_slop: "Anti AI-slop", theme: "Konsistensi theme", reference: "Konsistensi referensi",
+};
+const CONFIDENCE_LABEL = { low: "rendah", medium: "sedang", high: "tinggi" };
+const VERDICT_LABEL = { improved: "membaik", neutral: "tetap", degraded: "memburuk" };
+
+// Quality report: why the design passes or needs a revision. The score is an
+// indicator of the decisions, not a ranking.
+function QualityPanel({ q, pages, theme, onOpen }: { q: DesignQuality; pages: Page[]; theme?: ThemeContext; onOpen: (pageId: string) => void }) {
+  const c = q.compared_to_previous;
+  const blocked = q.decision === "revision_required";
+  return (
+    <section className="review-flows quality">
+      <h3>Kualitas desain</h3>
+      <div className="quality-head">
+        <strong>{q.overall}/100</strong>
+        <span className={blocked ? "warn-text" : "ok-text"}>{blocked ? "Perlu revisi" : "Lolos gate"}</span>
+        <span className="muted small">keyakinan {CONFIDENCE_LABEL[q.confidence]}</span>
+      </div>
+      <ul className="quality-bars">
+        {Object.entries(DIMENSION_LABEL).map(([k, label]) => (
+          <li key={k}><span>{label}</span><span className="quality-bar"><span style={{ width: `${q.dimensions[k] ?? 0}%` }} /></span><span className="muted">{q.dimensions[k] ?? 0}</span></li>
+        ))}
+      </ul>
+      {c && <p className="small muted">Patch kritik ronde {c.round}: {c.before.overall} → {c.after.overall}, blocker {c.before.blockers} → {c.after.blockers} ({VERDICT_LABEL[c.verdict]}{c.rejected ? ", patch ditolak" : ""})</p>}
+      <ul className="review-findings small">
+        {(q.dimensions.ai_slop ?? 0) === 100 && <li className="ok-text">✓ Tidak ada AI slop</li>}
+        {(q.dimensions.responsive ?? 0) === 100 && <li className="ok-text">✓ Strategi mobile valid</li>}
+        {theme && (q.dimensions.theme ?? 0) === 100 && <li className="ok-text">✓ Konsisten dengan theme {theme.name}</li>}
+        {q.reasons?.map((r, i) => <li key={i} className="warn-text">! {r.problem}{r.fix && <span className="muted"> Perbaikan: {r.fix}</span>}</li>)}
+      </ul>
+      {q.recommendation && <p className="small muted">{q.recommendation}</p>}
+      {!!q.findings?.length && <QAIssues issues={q.findings} pages={pages} onOpen={onOpen} />}
+    </section>
+  );
+}
+
 export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (pageId: string) => void }) {
   const { run, pending } = useProject();
   const [open, setOpen] = useState(true);
@@ -144,6 +235,7 @@ export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (page
           <span className="muted"> · {changes.length ? `${changes.length} perubahan` : "tidak ada perubahan halaman"}</span>
           <div className="small muted" style={{ whiteSpace: "pre-line" }}>“{rev.request}”</div>
           {rev.qa && <div className={`small ${rev.qa.status === "failed" ? "warn-text" : "muted"}`} style={{ whiteSpace: "pre-line" }}>{qaText(rev.qa)}</div>}
+          {!!rev.qa?.issues?.length && <QAIssues issues={rev.qa.issues} pages={project.design?.pages ?? []} onOpen={onOpen} />}
         </div>
         <div className="inline">
           {changes.length > 0 && <button className="ghost" onClick={() => setOpen(!open)}>{open ? "Sembunyikan" : "Lihat"}</button>}
@@ -283,12 +375,16 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
           {" · "}Struktur: {s?.mode === "existing" ? "project yang sudah ada" : s?.template ?? "—"}
           {!approved && <> <button className="link" onClick={() => onInfo("platform")}>Ubah</button></>}
         </li>
-        {blockers.length ? <li className="warn">! Wajib dilengkapi: {blockers.length} hal (route, akses, aksi utama, kolom, menu)</li>
-          : <li className="ok">✓ Tiap halaman punya route, akses dan aksi utama</li>}
+        {blockers.length ? <li className="warn">! Wajib dilengkapi: {blockers.length} hal (design system, route, akses, aksi, urutan informasi, kondisi, menu, kualitas)</li>
+          : <li className="ok">✓ Design system ada; tiap halaman punya route, akses, satu aksi utama, urutan informasi dan kondisi data</li>}
         {findings.length ? <li className="warn">! Kualitas rancangan: {findings.length} temuan</li>
           : <li className="ok">✓ Kualitas rancangan: tiap halaman punya layout sesuai jenisnya</li>}
         {d.revision && !approved && <li className="warn">! Perubahan terakhir belum disimpan. Menyetujui akan menyimpannya.</li>}
+        {d.qa && !d.revision && <li className={d.qa.status === "failed" ? "warn" : "ok"} style={{ whiteSpace: "pre-line" }}>{qaText(d.qa)}
+          {!!d.qa.issues?.length && <QAIssues issues={d.qa.issues} pages={pages} onOpen={onOpen} />}</li>}
       </ul>
+
+      {d.quality && <QualityPanel q={d.quality} pages={pages} theme={d.theme} onOpen={onOpen} />}
 
       {!approved && blockers.length > 0 && (
         <section className="review-flows">
@@ -324,6 +420,8 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
             { open: true, fields: true, general: fixRequest(blockers, findings) }))}>✦ Perbaiki otomatis</button>
       )}
 
+      {d.system && <SystemView system={d.system} />}
+
       {flows.length > 0 && (
         <section className="review-flows">
           <h3>Alur</h3>
@@ -353,5 +451,43 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
         )}
       </div>
     </div>
+  );
+}
+
+// ---------- Design system ----------
+
+const COLOR = /^(#[0-9a-f]{3,8}|rgba?\(|hsla?\()/i;
+
+function TokenRows({ title, tokens }: { title: string; tokens?: Token[] }) {
+  if (!tokens?.length) return null;
+  return (
+    <>
+      <h4>{title}</h4>
+      <ul className="ds-tokens">
+        {tokens.map((t) => (
+          <li key={t.name}>
+            {COLOR.test(t.value) && <span className="ds-swatch" style={{ background: t.value }} aria-hidden="true" />}
+            <code>{t.name}</code> <span>{t.value}</span>{t.use && <span className="muted"> — {t.use}</span>}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+// The tokens every page and the build use.
+function SystemView({ system }: { system: DesignSystem }) {
+  return (
+    <section className="review-flows ds">
+      <h3>Design system</h3>
+      {system.direction && <p className="muted">Arah visual: {system.direction}</p>}
+      <TokenRows title="Warna" tokens={system.colors} />
+      <TokenRows title="Tipografi" tokens={system.typography} />
+      <TokenRows title="Spacing" tokens={system.spacing} />
+      <TokenRows title="Radius" tokens={system.radius} />
+      <TokenRows title="Shadow" tokens={system.shadow} />
+      <TokenRows title="Breakpoint" tokens={system.breakpoints} />
+      <TokenRows title="Komponen" tokens={system.components} />
+    </section>
   );
 }

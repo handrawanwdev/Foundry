@@ -181,11 +181,11 @@ var tools = []tool{
 		InputSchema: obj(map[string]any{"status": map[string]any{"type": "string", "enum": []string{"TODO", "IN_PROGRESS", "REVIEW", "DONE", "BLOCKED"}}})},
 	{Name: "get_task", perm: PermRead, Description: "One task with its full brief.", InputSchema: obj(map[string]any{"task_id": str}, "task_id")},
 	{Name: "get_verification", perm: PermRead, Description: "Latest verification: checks, issues, requirement traceability.", InputSchema: obj(nil)},
-	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, plan or a task). Claims a task when building. " +
+	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, plan, a support question or a task). Claims a task when building. " +
 		"When several hosts build in parallel, each passes its own worker name; a task whose page or files another worker holds waits (kind \"wait\": call again shortly).",
 		InputSchema: obj(map[string]any{"worker": str})},
-	{Name: "submit_work", perm: PermWrite, Description: "Hand back a discovery/design/plan/design_qa result (the JSON object requested by next_work).",
-		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "plan", "design_qa"}}, "result": str}, "kind", "result")},
+	{Name: "submit_work", perm: PermWrite, Description: "Hand back a discovery/design/plan/design_qa/support result (the JSON object requested by next_work).",
+		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "plan", "design_qa", "support"}}, "result": str}, "kind", "result")},
 	{Name: "submit_task", perm: PermExecute, Description: "Report a task as implemented. Foundry runs build/test; DONE only if checks pass and every acceptance criterion is met with evidence.",
 		InputSchema: obj(map[string]any{"task_id": str, "criteria": map[string]any{"type": "array", "items": obj(map[string]any{
 			"index": map[string]any{"type": "integer"}, "met": map[string]any{"type": "boolean"}, "evidence": str}, "index", "met", "evidence")}}, "task_id", "criteria")},

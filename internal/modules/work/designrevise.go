@@ -21,9 +21,11 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
  "pages": [], "removed": [], "flows": []}
 - "target" and "after" are the [n] indexes of CURRENT PAGE, before the patch; earlier operations never shift them. "after": -1 = top, no "after" = bottom.
 - One patch per page, with all its operations.
-- "update" with "page_fields" (no target) only where PRESERVE allows page fields. Allowed page fields: name, role, purpose, kind, density, route, access, primary_action, data, states, sub_feature_ids.
+- "update" with "page_fields" (no target) only where PRESERVE allows page fields. Allowed page fields: name, role, purpose, hierarchy, secondary_actions, responsive, kind, density, route, access, primary_action, data, states, sub_feature_ids, intent, plan, layout ("layout" replaces the whole layout).
+- The layout follows the operations: "add" and "move" put the component right after [after] in the same layout node ("after": -1 = top of root, none = bottom of root); "remove" takes it out of the layout. Component ids never change. To regroup components (a new row, grid, split) or change devices, update page field "layout".
 - "pages": only brand-new pages (id "NEW-1", "NEW-2", ...) in full. Never send an existing page.
 - "removed": ids of pages to delete; "flows": only flows whose page list changes, with the full new list.
+- "system": only when the request changes the design system and it is listed above as changeable; then the whole new system.
 Foundry applies the patch and compares before/after. Any change outside the targets, or a target outside the scope, rejects the whole patch.`
 
 // revisionPrompt asks for a patch: per requested page the current
@@ -85,9 +87,12 @@ Write labels in the same language as the design. Do not write code. Do not modif
 	b.WriteString(componentRules + renderRules + "\n")
 	if open {
 		// A general request may add pages or fill page contracts.
-		b.WriteString("DESIGN RULES (only for new pages and for components or fields you add or update):\n" + designRules + "\n")
+		b.WriteString("DESIGN RULES (only for new pages and for components or fields you add or update):\n" + designRules + "\n" + designKnowledge(d.Domain) + "\n" + themeKnowledge(currentTheme(p)) + "\n")
 		b.WriteString("FEATURES:\n" + mustJSON(p.Features) + "\n\nFLOWS:\n" + mustJSON(p.Flows) + "\n\n")
 		b.WriteString("A new page has this shape:\n" + pageShape + "\n\n")
+		b.WriteString("DESIGN SYSTEM (changeable, same shape):\n" + mustJSON(d.System) + "\n\n")
+	} else if d.System != nil {
+		b.WriteString("DESIGN SYSTEM (use its tokens and component rules; not changeable in this request):\n" + mustJSON(d.System) + "\n\n")
 	}
 	b.WriteString(patchFormat)
 	return b.String()
@@ -132,8 +137,8 @@ func preserve(pg core.Page, scope *core.ChangeScope, sp *core.ScopePage) string 
 	if scope == nil || scope.Fields || sp != nil && sp.Fields {
 		keep = append(keep, "page fields the change does not name")
 	} else {
-		keep = append(keep, "all page fields: kind, route, access, data, states, primary_action, density, name")
+		keep = append(keep, "all page fields: kind, route, access, data, states, primary_action, density, name, layout")
 	}
-	keep = append(keep, "automatic elements (top bar, brand, back link, form buttons) — change them only through the component that produces them")
+	keep = append(keep, "frame elements (top bar, brand, back link) come from \"layout\"; form buttons from the form — change them only there")
 	return "Everything else exactly as-is:\n- " + strings.Join(keep, "\n- ")
 }

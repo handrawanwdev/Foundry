@@ -48,7 +48,9 @@ func TestShotRendersTheWireframe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Tampilan mobile:", "[1] form:", "Tombol bawaan form:", `[2] button: Tombol "Masuk"`} {
+	// The page was saved without a layout: loading gives it its Design IR,
+	// and the outline shows the layout nodes and the component ids.
+	for _, want := range []string{"Tampilan mobile:", `(layout) stack "main":`, "[1] form #form-2:", "Tombol bawaan form:", `[2] button #button-3: Tombol "Masuk"`} {
 		if !strings.Contains(outline, want) {
 			t.Errorf("outline missing %q:\n%s", want, outline)
 		}

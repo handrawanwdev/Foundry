@@ -99,6 +99,21 @@ func (c *Config) AddRecent(dir string) {
 	c.Recent = out
 }
 
+// RemoveRecent drops dir from the recent list; an empty dir clears it.
+func (c *Config) RemoveRecent(dir string) {
+	if dir == "" {
+		c.Recent = nil
+		return
+	}
+	out := c.Recent[:0]
+	for _, d := range c.Recent {
+		if d != dir {
+			out = append(out, d)
+		}
+	}
+	c.Recent = out
+}
+
 // MCPAlive reports whether an AI host talked to `foundry mcp` recently.
 func (c *Config) MCPAlive() bool {
 	return c.MCP != nil && time.Since(c.MCP.At) < 10*time.Minute

@@ -6,7 +6,7 @@ import { useWorkbench } from "../store/workbench";
 
 // Start page when no project is open (like Visual Studio's start window).
 export function StartPage() {
-  const { recent, open } = useProject();
+  const { recent, open, removeRecent } = useProject();
   const { setDialog } = useWorkbench();
   const ai = useAI((s) => s.state);
   const nav = useNavigate();
@@ -21,13 +21,25 @@ export function StartPage() {
       <p className="muted">Ceritakan aplikasi yang kamu inginkan. Foundry mengurus sisanya sampai siap diperiksa.</p>
       <div className="start-grid">
         <div>
-          <h3>Buka terakhir</h3>
+          <div className="recent-head">
+            <h3>Buka terakhir</h3>
+            {recent.length > 0 && (
+              <button className="link small" onClick={() => removeRecent()} title="Hapus semua dari daftar (folder project tidak dihapus)">
+                Hapus semua
+              </button>
+            )}
+          </div>
           {recent.length === 0 && <p className="muted small">Belum ada project.</p>}
           {recent.map((d) => (
-            <button key={d} className="recent" onClick={() => openRecent(d)} title={d}>
-              <strong>{d.split("/").filter(Boolean).pop()}</strong>
-              <span className="muted small">{d}</span>
-            </button>
+            <div key={d} className="recent-row">
+              <button className="recent" onClick={() => openRecent(d)} title={d}>
+                <strong>{d.split("/").filter(Boolean).pop()}</strong>
+                <span className="muted small">{d}</span>
+              </button>
+              <button className="recent-remove" onClick={() => removeRecent(d)} title="Hapus dari daftar (folder tidak dihapus)" aria-label={`Hapus ${d} dari daftar`}>
+                ×
+              </button>
+            </div>
           ))}
         </div>
         <div>

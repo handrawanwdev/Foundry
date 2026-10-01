@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../api";
 import { useNavigate } from "react-router-dom";
+import { ModelPicker } from "../components/ModelPicker";
 import { stepFor } from "../flow";
 import { agentName, agentOptions, useAI } from "../store/ai";
 import { useProject } from "../store/project";
@@ -14,6 +16,16 @@ export function ConnectPage() {
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
   const chosen = state?.agents.find((a) => a.id === picked);
+  // Models come from the CLI when it can list them, so new ones show up
+  // without a Foundry update; the preset list shows until then.
+  const [models, setModels] = useState<{ agent: string; list: string[] | null } | null>(null);
+  useEffect(() => {
+    if (!picked) return;
+    let live = true;
+    api.models(picked).then((r) => { if (live) setModels({ agent: picked, list: r.models ?? [] }); }).catch(() => { if (live) setModels({ agent: picked, list: null }); });
+    return () => { live = false; };
+  }, [picked]);
+  const loadingModels = !!picked && models?.agent !== picked;
   const pick = (id: string) => { setPicked(id); setModel(""); setEffort(""); };
 
   if (state?.ready) {
@@ -60,10 +72,9 @@ export function ConnectPage() {
           e.preventDefault();
           void connectAgent(chosen.id, undefined, { model: model.trim() || undefined, effort: effort || undefined });
         }}>
-          <label className="small">Model
-            <input list="agent-models" value={model} onChange={(e) => setModel(e.target.value)} placeholder="default" size={18} />
-            <datalist id="agent-models">{chosen.models?.map((m) => <option key={m} value={m} />)}</datalist>
-          </label>
+          <div className="small mp-field">Model
+            <ModelPicker models={(models?.agent === chosen.id && models.list?.length ? models.list : chosen.models) ?? []} loading={loadingModels} value={model} onChange={setModel} />
+          </div>
           {!!chosen.efforts?.length && (
             <label className="small">Effort
               <select value={effort} onChange={(e) => setEffort(e.target.value)}>

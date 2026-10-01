@@ -48,8 +48,8 @@ describe("design", () => {
     expect(pageKind(page("B", "Jadwal", "Admin Klinik", { components: [{ type: "table", label: "J" }] }))).toBe("admin");
     expect(pageKind(page("C", "Janji", "Pasien", { components: [{ type: "form", label: "F" }] }))).toBe("form");
     expect(pageKind(page("D", "Masuk", "x", { kind: "status" }))).toBe("status");
-    expect(pageDensity(page("A", "Masuk", "Pasien"))).toBe("low");
-    expect(pageDensity(page("B", "Jadwal", "Admin", { components: [{ type: "table", label: "J" }] }))).toBe("high");
+    expect(pageDensity(page("A", "Masuk", "Pasien"))).toBe("spacious");
+    expect(pageDensity(page("B", "Jadwal", "Admin", { components: [{ type: "table", label: "J" }] }))).toBe("compact");
   });
 
   it("parses table rows, stats and form groups", () => {

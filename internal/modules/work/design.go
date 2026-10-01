@@ -10,9 +10,11 @@ import (
 )
 
 type designOut struct {
-	Pages   []core.Page `json:"pages"`
-	Removed []string    `json:"removed"` // revision only: ids of deleted pages
-	Patches []pagePatch `json:"patches"` // revision only: edits to existing pages
+	System  *core.DesignSystem `json:"system"`
+	Pages   []core.Page        `json:"pages"`
+	Removed []string           `json:"removed"` // revision only: ids of deleted pages
+	Patches []pagePatch        `json:"patches"` // revision only: edits to existing pages
+	Domain  string             `json:"domain"`
 	Flows   []struct {
 		ID      string   `json:"id"`
 		PageIDs []string `json:"page_ids"`
@@ -29,9 +31,8 @@ var componentTypes = map[string]bool{
 var pageKinds = map[string]bool{
 	"auth": true, "dashboard": true, "list": true, "detail": true, "form": true, "wizard": true, "search": true,
 	"settings": true, "payment": true, "profile": true, "analytics": true, "admin": true, "status": true,
+	"table": true, "workspace": true, "master-detail": true, "monitoring": true, "report": true,
 }
-
-var densities = map[string]bool{"low": true, "medium": true, "high": true}
 
 var accessLevels = map[string]bool{"public": true, "auth": true}
 
@@ -62,13 +63,37 @@ func FormSubmit(pg core.Page) string {
 var apiCall = regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE) /\S*$`)
 
 const pageShape = `{"id": "PAGE-001", "name": "", "platform": "web|android|ios|desktop", "role": "", "feature_id": "FEAT-001",
-             "sub_feature_ids": ["FEAT-001.1"], "purpose": "", "kind": "list", "density": "medium",
+             "sub_feature_ids": ["FEAT-001.1"], "purpose": "", "kind": "list", "density": "comfortable",
+             "hierarchy": ["", ""], "secondary_actions": [""], "responsive": "",
+             "intent": {"primary_task": "browse", "frequency": "high", "complexity": "medium", "information_density": "high", "comparison": true},
+             "plan": {"layout_strategy": "table", "responsive_strategy": "table_to_list", "primary_focus": "appointments", "secondary_content": ["create"], "supporting_content": [],
+                      "reasons": {"title": "", "create": "", "appointments": ""}},
              "route": "/janji", "access": "auth", "primary_action": {"label": "", "target": "PAGE-003"},
              "data": {"required": [""], "optional": [], "dynamic": [""], "api": ["GET /appointments"]},
              "states": {"loading": "", "empty": "", "no_results": "", "error": ""},
-             "components": [{"type": "header", "label": ""}, {"type": "table", "label": "", "columns": [""], "items": [""], "target": "PAGE-002"},
-                            {"type": "button", "label": "", "target": "PAGE-003"},
-                            {"type": "form", "label": "", "fields": [{"label": "", "type": "text", "required": true, "validation": "", "error": "", "group": ""}]}]}`
+             "layout": {"frame": "app", "nav": "side", "width": "full",
+                        "root": {"id": "main", "type": "stack", "gap": "space.md", "children": [
+                          {"id": "toolbar", "type": "row", "align": "between", "children": ["title", "create"]},
+                          "appointments"]},
+                        "devices": {"mobile": {"nav": "bottom", "nodes": {"toolbar": {"type": "stack"}}, "swap": {"appointments": "list"}}}},
+             "components": [{"id": "menu", "type": "nav", "label": "", "items": [""]},
+                            {"id": "title", "type": "header", "label": ""},
+                            {"id": "create", "type": "button", "label": "", "target": "PAGE-003", "emphasis": "action.primary"},
+                            {"id": "appointments", "type": "table", "label": "", "columns": [""], "items": [""], "target": "PAGE-002"}]}`
+
+const systemShape = `{"direction": "Operations: dense tables, restrained neutrals, color only for status",
+   "colors": [{"name": "action.primary", "value": "#1f6feb", "use": "primary action, links, focus"}],
+   "typography": [{"name": "type.body", "value": "Inter 14px/20px 400", "use": "body text"}],
+   "spacing": [{"name": "space.sm", "value": "8px"}], "radius": [{"name": "radius.md", "value": "6px"}],
+   "shadow": [{"name": "elevation.overlay", "value": "0 8px 24px rgba(0,0,0,.12)", "use": "modal, dropdown only"}],
+   "breakpoints": [{"name": "mobile", "value": "<640px"}],
+   "components": [{"name": "Button", "value": "primary | secondary | ghost | danger; 40px high, 44px touch on mobile", "use": "one primary per context"}]}`
+
+// themedSystemShape: with a theme the tokens come from the theme; the
+// designer adds only breakpoints and component usage rules.
+const themedSystemShape = `{"breakpoints": [{"name": "mobile", "value": "<640px"}],
+   "components": [{"name": "Button", "value": "primary | secondary | ghost | danger; 40px high, 44px touch on mobile", "use": "one primary per context"}]}
+   (colors, typography, spacing, radius and shadow come from the theme; do not define them)`
 
 // isRevision reports a change request on an existing design: the AI then
 // returns only the pages that change.
@@ -80,10 +105,42 @@ func isRevision(p *core.Project) bool {
 // Prompt parts. The full design rules go only into a new design and into
 // revisions that may create pages; a scoped revision gets the component
 // format and how the wireframe renders, nothing else.
-const designRules = `Design every page for its job, not from one template. Components may repeat across pages; layouts should not.
+const designerRules = `Work like a senior product designer: the product must be usable, clear, consistent, responsive and accessible, not just good-looking.
+Source of truth, in order: requirements, business rules, user flows, existing structure, design system. Never invent features, flows, data, APIs or business rules.
+When information is missing, pick the simplest UI that does not change business logic. Simple and intentional beats complex and decorative:
+no extra dashboards, analytics, filters, menus, settings or decoration to make the UI look richer.
+Priority on conflict: usability, clarity, consistency, accessibility, responsiveness, maintainability, visual polish.
+
+Screen intent, per page:
+- "purpose": the primary goal in one sentence (what the user understands or finishes on this page).
+- "hierarchy": what the user must see, most important first (e.g. ["Judul halaman", "Status janji hari ini", "Daftar janji", "Filter"]). Not everything is equally important. The purpose must be clear within 2-3 seconds.
+- "primary_action": at most ONE primary CTA per page. "secondary_actions": the other actions, visually lower; only actions the user needs. Never the same action twice, and never two buttons that look the same but do different things.
+  Destructive actions (delete, cancel, revoke) use the danger style and ask for confirmation with what will be lost.
+- "responsive": how the layout adapts on tablet and mobile (e.g. "Mobile: tabel jadi daftar kartu, filter di sheet, tombol utama menempel di bawah"). Mobile is not a shrunk desktop: no horizontal overflow, touch targets at least 44px, important information stays visible.
+Accessibility is part of the design: labels on every field, readable contrast, clear focus, keyboard navigation, form errors per field that say how to recover, never color alone for meaning.
+Beyond the happy path: long names and long lists must not break the layout (truncate, wrap or paginate), a disabled action says why,
+a page limited to a role says in "error" what access is missing, partial data shows what loaded and what did not.
+
+Every component must answer: why does it exist, which user problem does it solve, what happens on interaction, when data is missing, when the action fails. No clear answer: remove it.
+Do not make it look like a generated mockup. Never: gradient hero with three cards, glassmorphism, purple/blue gradient by default, every section in a card,
+identical repeated cards, big meaningless numbers, decorative icons, badges or illustrations, charts nobody asked for, oversized headings, arbitrary animation.
+Prefer strong hierarchy, restrained color, intentional whitespace and domain-specific UI.
+
+Design system: define it once in "system" and design every page with it. Tokens only, no arbitrary values.
+"direction": ONE visual direction that fits the product (enterprise, financial, developer tool, productivity, consumer, healthcare, operations, trading, creative, industrial) and what it means for the tokens; never mix styles.
+Token names are semantic; the pages reference them by name and the renderer resolves them from here:
+colors: text.primary, text.secondary, surface.page, surface.primary, surface.secondary, border.default, action.primary, action.danger, status.success, status.warning, status.error, status.info
+(every color has a semantic role, no random colors; text contrast at least WCAG AA), typography: type.display, type.heading, type.body, type.caption (a small scale),
+spacing: space.xs, space.sm, space.md, space.lg, space.xl (one scale, e.g. 4/8/16/24/32), radius: radius.sm, radius.md, radius.lg, shadow: elevation.raised, elevation.overlay (only where it has a function), breakpoints, and components with usage rules
+(Button, Input, Select, Search, Table, Card, Modal, Drawer, Tabs, Badge, Tooltip, Alert, Toast, Dropdown, Navigation, EmptyState, LoadingState, ErrorState, ConfirmDialog).
+Keep the vocabulary small: reuse a component before adding a new one.
+
+`
+
+const designRules = designerRules + `Design every page for its job, not from one template. Components may repeat across pages; layouts should not.
 Per page answer: what is the main user action, what must be seen first, what is only needed on demand.
 
-"kind" picks the layout, one of:
+"kind" is the page's job; build its "layout" for that job, one of:
 - auth: login/sign up. Brand, the form, one primary action, recovery link. No marketing, no promo cards.
 - dashboard: the user's work for today (e.g. today's schedule, items waiting). Use stat only for numbers that drive decisions, at most 3. Never a page of only stats and cards.
 - list: data to scan: a table with columns (or a list for short simple items), search/filter only when the data needs it, a create button.
@@ -97,8 +154,13 @@ Per page answer: what is the main user action, what must be seen first, what is 
 - analytics: a headline number with change vs previous period, then only charts that answer a question.
 - admin: dense operational table with filters and bulk actions.
 - status: empty/error/success result page: what happened, concrete details, the next action.
-"density": low (auth, payment, status), medium (most app pages), high (admin, data-heavy lists).
-"states": copy for {"loading", "empty", "no_results", "error", "success"} only where the page can be in that state. Empty says why it is empty and what to do. no_results is for search/filter matching nothing (e.g. "Tidak ada janji yang cocok dengan filter."). Error says what failed and how to recover. Success states the concrete result. No "Oops", no "Congratulations", no emoji, no generic "No data found".
+- table: many comparable records in columns, sort/filter, bulk actions when needed.
+- workspace: persistent navigation, the primary work area and a context panel (e.g. an agent's ticket workspace).
+- master-detail: a list and the selected record side by side; on mobile the list opens the detail.
+- monitoring: live status of many items, problems first.
+- report: question-driven sections with a headline number and only charts that answer a question.
+"density": compact (admin, operations, ticketing queues, data-heavy lists, trading, monitoring, developer tools), comfortable (most app pages, general SaaS), spacious (auth, payment, status, consumer onboarding). Pick it per page from the domain and the job, not one density for the whole app. Whitespace shows hierarchy; do not fill space because it is there.
+"states": copy for {"loading", "empty", "no_results", "error", "success"} only where the page can be in that state. A page that loads data needs loading and error; a page with a list or table needs empty too. Empty says why it is empty and what to do. no_results is for search/filter matching nothing (e.g. "Tidak ada janji yang cocok dengan filter."). Error says what failed and how to recover. Success states the concrete result. No "Oops", no "Congratulations", no emoji, no generic "No data found".
 
 Every page is a build contract, all required:
 - "route": URL path (e.g. "/janji", "/janji/:id"); unique per platform. Mobile screens use a route too.
@@ -108,12 +170,22 @@ Every page is a build contract, all required:
 - form components need "fields": [{"label": "Email", "type": "email", "required": true, "validation": "format email", "error": "Masukkan email yang valid", "group": "Kontak"}].
   Field types: text, email, password, number, tel, date, time, datetime, select, textarea, checkbox, radio, file, currency.
 
-Mobile pages are designed for mobile: short content, the main nav becomes a bottom nav with at most 5 items.
+Domain decides the layout, never one generic dashboard for every product. Put the domain's working objects first, e.g.
+ticketing: queue, SLA, priority, assignee, status; trading: market data, order book, chart, order entry, executions; finance: balance, transactions, category, trend;
+developer tool: navigation, workspace, logs, code, actions. Use the words and objects of this product's features.
+
+Design per platform, never a shrunk copy of another:
+- web: persistent sidebar nav, header, page title with its actions, then content; tables for structured data, search/filter for large data, multi-column only when useful.
+- android/ios: thumb reach, short vertical flow, one primary action, progressive disclosure, touch targets at least 44px; the main nav becomes a bottom nav with at most 5 items; no sidebar, no dense tables.
+- desktop: app shell with nav, workspace and a context panel; high density; keyboard shortcuts where they speed up frequent work.
 Every UI feature needs at least one page. Every flow lists the pages it walks through, in order.
 `
 
 const componentRules = `Component types: header, nav, text, list, table, form, button, card, stat, input, section, steps.
-- table: "columns" are the column names; "items" are example rows with cells separated by " | " (e.g. "Budi Santoso | Dr. Andi | Aktif"). Use realistic example data.
+Every component has an "id" unique on its page (short, readable: "title", "ticket-table"); the layout places components by id.
+Visual intent is semantic tokens only, never raw values (no hex colors, no px): "emphasis" on button and card: action.primary (at most one per page: the primary action),
+action.secondary (default), action.ghost, action.danger (destructive); "tone" on text, stat, card, section: text.primary, text.secondary, status.success, status.warning, status.error, status.info.
+- table: "columns" are the column names; "items" are example rows with cells separated by " | " (e.g. "Budi Santoso | Dr. Andi | Aktif"). Use realistic domain data (real-looking names, IDs, dates, amounts); never "Lorem ipsum", "John Doe", "Example User" or "$1234".
 - stat: label "Name: value" (e.g. "Janji hari ini: 12").
 - form: "fields" as above ("group" groups fields); "items" is not needed when "fields" is given.
 - section: a separator heading that groups what follows.
@@ -123,12 +195,19 @@ Use "target" to link to another page id so the prototype is clickable: on button
 Navigation uses the user's business words (Jadwal, Pasien, Laporan), not database tables. Name nav items exactly like the pages they open.
 `
 
-const renderRules = `How the wireframe renders a page (so you know what the user sees):
-- Components show top to bottom in array order; to move something, change its position in "components".
-- "nav" goes to the sidebar (desktop/tablet) or the bottom tab bar (mobile), not in the content.
-- list/admin pages on desktop: header and buttons share one toolbar row above the data.
-- consecutive "stat" components sit on one row.
-- Added automatically, never as components: the top bar with app name and avatar, the app brand above the auth card (hidden when a header has the app name), a back link on detail pages, the form buttons above.
+const renderRules = `Every page has an explicit "layout" (the Design IR). The renderer draws exactly the layout and never picks one itself:
+- "frame": app (top bar with page name and avatar, plus the nav slot), center (one centered panel, e.g. sign-in; "brand": true shows the app name above it), full (content only).
+- "nav": where the page's nav components go in the app frame: side (sidebar), rail (icon rail), top (in the top bar), bottom (tab bar), none. Nav components are never placed in the tree.
+- "width": content width: narrow (sign-in, payment, status), medium (forms), wide (detail, search), full (tables, workspaces).
+- "back": page id of a back link above the content (detail pages); omit when there is none.
+- "root": the component tree. A node is {"id", "type", "children"} and children are component ids (strings) or nested nodes. Primitives:
+  stack (vertical), row (horizontal; "align": start|center|end|between), grid ("columns": 1-4), split (exactly 2 children, "ratio": 1:1|1:2|2:1|1:3|3:1),
+  sidebar (exactly 2 children, the narrow one is "side": start|end), center (centered column), full (fills the width), overlay ("placement": drawer|modal|sheet, drawn over the page).
+  Node tokens: "gap" space.none|space.xs|space.sm|space.md|space.lg|space.xl, "surface" surface.primary|surface.secondary (a panel; never a surface inside a surface), "elevation" elevation.none|elevation.raised|elevation.overlay.
+  Every non-nav component appears in the tree exactly once; order in the tree is the order on screen.
+- "devices": what changes on tablet or mobile, explicitly: {"mobile": {"frame", "nav", "width", "hide": [ids], "nodes": {"node-id": {"type": "stack", "columns": 1, "order": [child ids]}}, "swap": {"table-id": "list"}}}.
+  Mobile is not a shrunk desktop: on mobile no split or sidebar node, grids at most 2 columns, nav bottom, top or none; swap dense tables to a list where rows are long.
+- Drawn by the renderer from the components themselves: a form draws its submit and cancel buttons; a table or list draws the empty state copy when there is no data; loading, error and success show the page's header and the state copy.
 `
 
 func DesignPrompt(p *core.Project) string {
@@ -141,15 +220,25 @@ Pages MUST come from the features, sub-features and user flows below. Do not inv
 Write labels in the same language as the features. Do not write code. Do not modify files.
 
 `)
+	if d := p.Design; d != nil && d.Rejected != "" {
+		b.WriteString("YOUR PREVIOUS DESIGN WAS REJECTED, send a corrected design:\n" + d.Rejected + "\n\n")
+	}
 	b.WriteString("PLATFORMS:\n" + mustJSON(p.Platform.Targets) + "\n\n")
 	b.WriteString("FEATURES:\n" + mustJSON(p.Features) + "\n\n")
 	b.WriteString("FLOWS:\n" + mustJSON(p.Flows) + "\n\n")
 	if p.Discovery != nil {
 		b.WriteString("ROLES:\n" + mustJSON(p.Discovery.Roles) + "\n\n")
 	}
-	b.WriteString(designRules + "\n" + componentRules + renderRules + "\n")
+	theme, _ := ResolveTheme(p)
+	b.WriteString(designRules + "\n" + designKnowledge(DetectDomain(p)) + "\n" + themeKnowledge(theme) + "\n" + designProcess + "\n" + componentRules + renderRules + "\n")
+	system := systemShape
+	if theme != nil {
+		system = themedSystemShape
+	}
 	b.WriteString(`Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
+  "domain": "` + strings.Join(Domains, "|") + `|" (the product domain; empty when none fits),
+  "system": ` + system + `,
   "pages": [` + pageShape + `],
   "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002"]}]
 }`)
@@ -181,7 +270,11 @@ func ApplyDesign(p *core.Project, raw string) error {
 	if len(pages) == 0 {
 		return fmt.Errorf("tidak ada page yang terhubung ke feature")
 	}
+	core.EnsureIR(pages, p.Name)
 	valid := clearDangling(pages)
+	if err := core.ValidateDesign(pages, pages); err != nil {
+		return err
+	}
 	for i := range p.Flows {
 		p.Flows[i].PageIDs = nil
 		for _, fl := range out.Flows {
@@ -194,7 +287,15 @@ func ApplyDesign(p *core.Project, raw string) error {
 	if p.Design != nil {
 		feedback = p.Design.Feedback
 	}
-	p.Design = &core.Design{Pages: pages, Status: core.DesignDraft, Feedback: feedback}
+	domain := strings.ToLower(strings.TrimSpace(out.Domain))
+	if !slices.Contains(Domains, domain) {
+		domain = DetectDomain(p)
+	}
+	p.Design = &core.Design{System: normSystem(out.System), Pages: pages, Status: core.DesignDraft, Feedback: feedback, Domain: domain}
+	if t, ctx := ResolveTheme(p); t != nil {
+		p.Design.System = out.System // the theme gives the tokens; the designer's notes are kept
+		ApplyTheme(p.Design, t, ctx)
+	}
 	p.Tasks, p.Verification = nil, nil
 	return nil
 }
@@ -205,8 +306,12 @@ func ApplyDesign(p *core.Project, raw string) error {
 // is kept so the user can undo it.
 func applyRevision(p *core.Project, out designOut) error {
 	d := p.Design
-	if len(out.Pages) == 0 && len(out.Removed) == 0 && len(out.Flows) == 0 && len(out.Patches) == 0 {
+	system := normSystem(out.System)
+	if len(out.Pages) == 0 && len(out.Removed) == 0 && len(out.Flows) == 0 && len(out.Patches) == 0 && system == nil {
 		return fmt.Errorf("rancangan tidak berubah")
+	}
+	if system != nil && d.Scope != nil && !d.Scope.Open {
+		return &PatchRejected{Unexpected: []string{"design system diubah, padahal permintaan hanya untuk halaman tertentu"}}
 	}
 	prevFlows := map[string][]string{}
 	for _, fl := range p.Flows {
@@ -236,15 +341,25 @@ func applyRevision(p *core.Project, out designOut) error {
 		requested = append(requested, "REMOVE halaman "+id)
 	}
 	rev := &core.DesignRevision{Request: d.Feedback[len(d.Feedback)-1], PreviousPages: d.Pages, PreviousFlows: prevFlows,
-		Scope: scope, Patch: requested}
+		PreviousSystem: d.System, Scope: scope, Patch: requested}
 	rev.Changes = DiffPages(rev.PreviousPages, pages)
-	p.Design = &core.Design{Pages: pages, Status: core.DesignDraft, Feedback: d.Feedback, Revision: rev}
+	next := d.System
+	if system != nil {
+		next = system
+		rev.Patch = append(rev.Patch, "UPDATE design system")
+		rev.Changes = append(rev.Changes, core.DesignChange{Kind: "changed", Page: "Design system"})
+	}
+	p.Design = &core.Design{System: next, Pages: pages, Status: core.DesignDraft, Feedback: d.Feedback, Revision: rev, Domain: d.Domain, Theme: d.Theme}
+	if t := currentTheme(p); t != nil {
+		p.Design.System = ThemeSystem(*t, next) // a revision keeps the theme's tokens
+	}
 	p.Tasks, p.Verification = nil, nil
 	return nil
 }
 
 // mergePatch builds the next page list from the current one and a patch.
 func mergePatch(p *core.Project, current []core.Page, out designOut, scope *core.ChangeScope) ([]core.Page, map[string]string, []string, *core.ChangeScope, error) {
+	core.EnsureIR(current, p.Name)
 	idMap := map[string]string{}
 	next := 0
 	for _, pg := range current {
@@ -270,24 +385,37 @@ func mergePatch(p *core.Project, current []core.Page, out designOut, scope *core
 		return nil, nil, nil, nil, err
 	}
 	var pages []core.Page
+	touched := map[string]bool{}
 	for _, pg := range current {
 		if _, ok := idMap[pg.ID]; !ok {
 			continue // removed
 		}
 		if np, ok := changed[pg.ID]; ok {
 			pg = np
+			touched[pg.ID] = true
 		}
 		pages = append(pages, pg)
 	}
 	for _, pg := range added {
 		if np, ok := normPage(p, pg, idMap); ok {
 			pages = append(pages, dropFormButtons(np))
+			touched[np.ID] = true
 		}
 	}
 	if len(pages) == 0 {
 		return nil, nil, nil, nil, fmt.Errorf("rancangan tidak boleh kosong")
 	}
+	core.EnsureIR(pages, p.Name)
 	clearDangling(pages)
+	var check []core.Page
+	for _, pg := range pages {
+		if touched[pg.ID] {
+			check = append(check, pg)
+		}
+	}
+	if err := core.ValidateDesign(check, pages); err != nil {
+		return nil, nil, nil, nil, err
+	}
 	return pages, idMap, requested, remapScope(scope, origins), nil
 }
 
@@ -308,14 +436,17 @@ func ApplyQAFix(p *core.Project, raw string) error {
 
 func applyFix(p *core.Project, out designOut) error {
 	d := p.Design
-	if len(out.Pages) > 0 || len(out.Removed) > 0 || len(out.Flows) > 0 {
-		return &PatchRejected{Unexpected: []string{"perbaikan visual hanya boleh berupa patch, bukan halaman/alur"}}
+	if len(out.Pages) > 0 || len(out.Removed) > 0 || len(out.Flows) > 0 || out.System != nil {
+		return &PatchRejected{Unexpected: []string{"perbaikan visual hanya boleh berupa patch, bukan halaman/alur/design system"}}
 	}
 	if len(out.Patches) == 0 {
 		return fmt.Errorf("perbaikan visual tanpa patch")
 	}
 	pages, _, requested, scope, err := mergePatch(p, d.Pages, out, d.Revision.Scope)
 	if err != nil {
+		return err
+	}
+	if err := comparePatch(p, pages); err != nil {
 		return err
 	}
 	d.Pages = pages
@@ -333,7 +464,15 @@ func normPage(p *core.Project, pg core.Page, idMap map[string]string) (core.Page
 	}
 	np := core.Page{ID: idMap[pg.ID], Name: pg.Name, Platform: strings.ToLower(pg.Platform), Role: pg.Role,
 		FeatureID: pg.FeatureID, Purpose: pg.Purpose, States: pg.States,
-		Route: normRoute(pg.Route), PrimaryAction: normAction(pg.PrimaryAction, idMap), Data: normData(pg.Data)}
+		Hierarchy: nonEmpty(pg.Hierarchy), Responsive: strings.TrimSpace(pg.Responsive),
+		Route: normRoute(pg.Route), PrimaryAction: normAction(pg.PrimaryAction, idMap), Data: normData(pg.Data),
+		Density: core.NormDensity(pg.Density), Layout: pg.Layout.Clone()}
+	for _, a := range nonEmpty(pg.SecondaryActions) {
+		dup := slices.ContainsFunc(np.SecondaryActions, func(x string) bool { return strings.EqualFold(x, a) })
+		if !dup && (np.PrimaryAction == nil || !strings.EqualFold(np.PrimaryAction.Label, a)) {
+			np.SecondaryActions = append(np.SecondaryActions, a)
+		}
+	}
 	if np.ID == "" {
 		return core.Page{}, false
 	}
@@ -342,9 +481,6 @@ func normPage(p *core.Project, pg core.Page, idMap map[string]string) (core.Page
 	}
 	if k := strings.ToLower(pg.Kind); pageKinds[k] {
 		np.Kind = k
-	}
-	if d := strings.ToLower(pg.Density); densities[d] {
-		np.Density = d
 	}
 	if s := np.States; s != nil && *s == (core.PageStates{}) {
 		np.States = nil
@@ -357,6 +493,9 @@ func normPage(p *core.Project, pg core.Page, idMap map[string]string) (core.Page
 		}
 	}
 	for _, c := range pg.Components {
+		c.ID = strings.TrimSpace(c.ID)
+		c.Emphasis = strings.ToLower(strings.TrimSpace(c.Emphasis))
+		c.Tone = strings.ToLower(strings.TrimSpace(c.Tone))
 		c.Type = strings.ToLower(c.Type)
 		if !componentTypes[c.Type] {
 			c.Type = "text"
@@ -377,6 +516,8 @@ func normPage(p *core.Project, pg core.Page, idMap map[string]string) (core.Page
 		}
 		np.Components = append(np.Components, c)
 	}
+	np.Intent = normIntent(pg.Intent)
+	np.Plan = normPlan(pg.Plan, np)
 	return np, true
 }
 
@@ -388,9 +529,14 @@ func dropFormButtons(pg core.Page) core.Page {
 	}
 	submit := FormSubmit(pg)
 	cancel := pg.Kind == "form" || pg.Kind == "settings" || pg.Kind == "profile"
+	pg.Layout = pg.Layout.Clone()
 	pg.Components = slices.DeleteFunc(pg.Components, func(c core.PageComponent) bool {
 		l := strings.TrimSpace(c.Label)
-		return c.Type == "button" && (strings.EqualFold(l, submit) || cancel && strings.EqualFold(l, "Batal"))
+		drop := c.Type == "button" && (strings.EqualFold(l, submit) || cancel && strings.EqualFold(l, "Batal"))
+		if drop && pg.Layout != nil && c.ID != "" {
+			pg.Layout.Detach(c.ID)
+		}
+		return drop
 	})
 	return pg
 }
@@ -406,6 +552,11 @@ func clearDangling(pages []core.Page) map[string]bool {
 		if a := pages[i].PrimaryAction; a != nil && !valid[a.Target] {
 			a.Target = ""
 		}
+		if l := pages[i].Layout; l != nil && l.Back != "" && !valid[l.Back] {
+			l = l.Clone()
+			l.Back = ""
+			pages[i].Layout = l
+		}
 		for j := range pages[i].Components {
 			if !valid[pages[i].Components[j].Target] {
 				pages[i].Components[j].Target = ""
@@ -420,6 +571,31 @@ func mapIDs(ids []string, idMap map[string]string, valid map[string]bool) []stri
 	for _, id := range ids {
 		if m := idMap[id]; valid[m] {
 			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// normSystem drops empty tokens; nil when colors, typography or spacing is
+// missing, so the design is not approvable without a real system.
+func normSystem(s *core.DesignSystem) *core.DesignSystem {
+	if s == nil {
+		return nil
+	}
+	out := core.DesignSystem{Direction: strings.TrimSpace(s.Direction), Colors: normTokens(s.Colors), Typography: normTokens(s.Typography), Spacing: normTokens(s.Spacing),
+		Radius: normTokens(s.Radius), Shadow: normTokens(s.Shadow), Breakpoints: normTokens(s.Breakpoints), Components: normTokens(s.Components)}
+	if len(out.Colors) == 0 || len(out.Typography) == 0 || len(out.Spacing) == 0 {
+		return nil
+	}
+	return &out
+}
+
+func normTokens(in []core.Token) []core.Token {
+	var out []core.Token
+	for _, t := range in {
+		t = core.Token{Name: strings.TrimSpace(t.Name), Value: strings.TrimSpace(t.Value), Use: strings.TrimSpace(t.Use)}
+		if t.Name != "" && t.Value != "" {
+			out = append(out, t)
 		}
 	}
 	return out
@@ -530,6 +706,7 @@ func UndoRevision(p *core.Project) error {
 	}
 	rev := p.Design.Revision
 	p.Design.Pages = rev.PreviousPages
+	p.Design.System = rev.PreviousSystem
 	for i := range p.Flows {
 		p.Flows[i].PageIDs = rev.PreviousFlows[p.Flows[i].ID]
 	}

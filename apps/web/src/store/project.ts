@@ -13,6 +13,7 @@ interface ProjectStore {
   run: (name: string, fn: () => Promise<unknown>) => Promise<boolean>;
   open: (dir: string, create?: boolean, name?: string) => Promise<boolean>;
   close: () => Promise<boolean>;
+  removeRecent: (dir?: string) => Promise<boolean>;
   clearError: () => void;
 }
 
@@ -54,5 +55,6 @@ export const useProject = create<ProjectStore>((set, get) => ({
   },
   open: (dir, create = false, name = "") => get().run("open", () => api.openProject(dir, create, name)),
   close: () => get().run("close", api.closeProject),
+  removeRecent: (dir = "") => get().run("removeRecent", () => api.removeRecent(dir)),
   clearError: () => set({ error: null }),
 }));

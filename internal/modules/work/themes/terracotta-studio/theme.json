@@ -1,0 +1,36 @@
+{
+  "id": "terracotta-studio",
+  "name": "Terracotta Studio",
+  "description": "Hangat dan earthy untuk agensi, kreatif, hospitality dan lifestyle.",
+  "personality": [
+    "warm",
+    "artisanal",
+    "inviting",
+    "expressive"
+  ],
+  "tokens": {
+    "color_mode": "light",
+    "radius": "large",
+    "spacing": "spacious"
+  },
+  "preferences": {
+    "navigation": "top",
+    "layout": [
+      "sections",
+      "focused",
+      "steps"
+    ],
+    "density": "spacious"
+  },
+  "avoid": [
+    "glassmorphism",
+    "excessive_whitespace"
+  ],
+  "rules": [
+    {
+      "if": "the product sells an experience",
+      "then": "few large visuals with short copy and one clear action per section",
+      "why": "emotion sells experiences, clutter breaks it"
+    }
+  ]
+}

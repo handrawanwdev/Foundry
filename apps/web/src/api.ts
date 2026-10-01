@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, ChangeScope, Command, DesignHandoff, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template } from "./types";
+import type { AgentOptions, AIState, Browse, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, TaskStatus, Template, Theme, ThemeProblem } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -19,21 +19,28 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 export const api = {
   ai: () => call<AIState>("GET", "/ai"),
+  models: (agent: string) => call<{ models: string[] }>("GET", `/ai/models?agent=${encodeURIComponent(agent)}`),
   connectAgent: (agent_id: string, command?: string[], opts?: AgentOptions) => call("POST", "/ai/connect", { agent_id, command, ...opts }),
   connectMCP: () => call("POST", "/ai/connect-mcp", {}),
   disconnect: () => call("POST", "/ai/disconnect", {}),
 
   projects: () => call<{ current: string; recent: string[] | null }>("GET", "/projects"),
   openProject: (dir: string, create = false, name = "") => call<Project>("POST", "/projects/open", { dir, create, name }),
+  removeRecent: (dir = "") => call("POST", "/projects/recent/remove", { dir }),
   closeProject: () => call("POST", "/projects/close", {}),
   browse: (path?: string) => call<Browse>("GET", `/fs${path ? `?path=${encodeURIComponent(path)}` : ""}`),
   templates: () => call<Template[]>("GET", "/templates"),
+  themes: () => call<{ themes: Theme[] | null; invalid: ThemeProblem[] | null }>("GET", "/themes"),
 
   project: () => call<Project>("GET", "/project"),
   story: (story: string) => call<Project>("POST", "/project/story", { story }),
   retry: () => call("POST", "/project/retry", {}),
   setPlatform: (targets: PlatformTarget[]) => call<Project>("PUT", "/project/platform", { targets }),
   setTemplate: (template: string) => call<Project>("PUT", "/project/structure", { template }),
+  // theme "" lets Foundry select one; a draft design is re-themed at once.
+  setTheme: (theme: string) => call<Project>("PUT", "/project/theme", { theme }),
+  // url "" removes the reference; otherwise it is analyzed into a theme.
+  setReference: (url: string, notes = "") => call<Project>("PUT", "/project/reference", { url, notes }),
   // screens: what the user sees on each page, so the designer AI sees it too.
   // scope: what the change may touch; the server rejects a patch outside it.
   reviseDesign: (feedback: string, screens: Record<string, string>, scope: ChangeScope) =>
@@ -49,5 +56,9 @@ export const api = {
   fix: () => call("POST", "/project/fix", {}),
   files: (path = "") => call<FileEntry[]>("GET", `/project/files?path=${encodeURIComponent(path)}`),
   file: (path: string) => call<FileContent>("GET", `/project/file?path=${encodeURIComponent(path)}`),
+  askSupport: (question: string) => call("POST", "/project/support/ask", { question }),
+  retrySupport: () => call("POST", "/project/support/retry", {}),
+  clearSupport: () => call("POST", "/project/support/clear", {}),
+  escalate: (e: Omit<Escalation, "id" | "at">) => call<Escalation>("POST", "/project/support/escalate", e),
   docs: () => call<{ markdown: string; run: Command[] | null }>("GET", "/project/docs"),
 };

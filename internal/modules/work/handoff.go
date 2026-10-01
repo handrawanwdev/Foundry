@@ -10,15 +10,25 @@ import (
 // PageHandoff is the build spec of one page, assembled from the design
 // without AI so it always matches what the user approved.
 type PageHandoff struct {
-	PageID         string         `json:"page_id"`
-	Name           string         `json:"name"`
-	Route          string         `json:"route"`
-	Platform       string         `json:"platform"`
-	Access         string         `json:"access"`
-	Role           string         `json:"role"`
-	Kind           string         `json:"kind,omitempty"`
-	Purpose        string         `json:"purpose"`
-	PrimaryAction  string         `json:"primary_action"`
+	PageID        string   `json:"page_id"`
+	Name          string   `json:"name"`
+	Route         string   `json:"route"`
+	Platform      string   `json:"platform"`
+	Access        string   `json:"access"`
+	Role          string   `json:"role"`
+	Kind          string   `json:"kind,omitempty"`
+	Purpose       string   `json:"purpose"`
+	Hierarchy     []string `json:"hierarchy,omitempty"`
+	PrimaryAction string   `json:"primary_action"`
+	Secondary     []string `json:"secondary_actions,omitempty"`
+	Responsive    string   `json:"responsive,omitempty"`
+	Density       string   `json:"density,omitempty"`
+	// Layout is the Design IR composition the preview was drawn from; the
+	// build implements the same frame, tree and device changes.
+	Layout *core.PageLayout `json:"layout,omitempty"`
+	// Plan is the design decision behind the layout: primary focus,
+	// secondary and supporting content, layout and responsive strategy.
+	Plan           *core.PagePlan `json:"plan,omitempty"`
 	Components     []string       `json:"components"`
 	Data           *core.PageData `json:"data,omitempty"`
 	Interactions   []string       `json:"interactions"`
@@ -97,7 +107,8 @@ func Handoffs(p *core.Project) []PageHandoff {
 
 func handoff(p *core.Project, pg core.Page, pages []core.Page) PageHandoff {
 	h := PageHandoff{PageID: pg.ID, Name: pg.Name, Route: pg.Route, Platform: pg.Platform, Access: pg.Access, Role: pg.Role,
-		Kind: pg.Kind, Purpose: pg.Purpose, Data: pg.Data, FeatureID: pg.FeatureID, SubFeatureIDs: pg.SubFeatureIDs,
+		Kind: pg.Kind, Purpose: pg.Purpose, Hierarchy: pg.Hierarchy, Secondary: pg.SecondaryActions, Responsive: pg.Responsive,
+		Density: pg.Density, Layout: pg.Layout, Plan: pg.Plan, Data: pg.Data, FeatureID: pg.FeatureID, SubFeatureIDs: pg.SubFeatureIDs,
 		RequirementIDs: featureReqs(p, pg.FeatureID)}
 	byID := map[string]*core.Page{}
 	for i := range pages {
@@ -193,6 +204,12 @@ func handoff(p *core.Project, pg core.Page, pages []core.Page) PageHandoff {
 	for _, n := range exitOrder {
 		tests = append(tests, "Navigasi ke "+n+" berfungsi")
 	}
+	if pg.Platform == core.PlatformWeb {
+		tests = append(tests, "Tampil di mobile tanpa scroll horizontal")
+	}
+	if len(h.Validation) > 0 {
+		tests = append(tests, "Tiap isian punya label, error tampil di isiannya, form bisa dipakai dengan keyboard")
+	}
 	h.Tests = append(tests, h.Tests...)
 	return h
 }
@@ -218,6 +235,14 @@ func linksTo(from core.Page, id string, pages []core.Page) bool {
 
 func componentSpec(c core.PageComponent) string {
 	s := componentName(c)
+	if c.ID != "" {
+		s = "#" + c.ID + " " + s
+	}
+	for _, t := range []string{c.Emphasis, c.Tone} {
+		if t != "" {
+			s += " (" + t + ")"
+		}
+	}
 	switch {
 	case len(c.Columns) > 0:
 		s += " kolom: " + strings.Join(c.Columns, ", ")
@@ -240,15 +265,19 @@ func orDash(s string) string {
 	return s
 }
 
-// Blockers lists contract gaps that stop approval: missing route, access or
-// primary action, duplicate routes, tables without columns and nav items
-// that open no page.
+// Blockers lists contract gaps that stop approval: no design system,
+// missing route, access, primary action or hierarchy, duplicate routes,
+// duplicate actions, missing data states, tables without columns and nav
+// items that open no page.
 func Blockers(p *core.Project) []Blocker {
 	if p.Design == nil {
 		return nil
 	}
 	pages := p.Design.Pages
 	var out []Blocker
+	if p.Design.System == nil {
+		out = append(out, Blocker{Text: "design system (warna, tipografi, spacing) belum ditentukan"})
+	}
 	routes := map[string]string{}
 	for _, pg := range pages {
 		add := func(text string) { out = append(out, Blocker{PageID: pg.ID, Page: pg.Name, Text: text}) }
@@ -265,6 +294,22 @@ func Blockers(p *core.Project) []Blocker {
 		if pg.PrimaryAction == nil {
 			add("aksi utama belum ditentukan (atau alasan halaman tanpa aksi)")
 		}
+		if len(pg.Hierarchy) == 0 {
+			add("urutan informasi (apa yang dilihat user lebih dulu) belum ditentukan")
+		}
+		for _, a := range duplicateActions(pg) {
+			add(fmt.Sprintf("aksi “%s” tampil lebih dari sekali", a))
+		}
+		// Quality gate: rule findings that make the page unusable. A
+		// duplicate primary action is already listed above.
+		for _, is := range LintPage(pg, p.Design.Domain) {
+			if IsBlocker(is) && is.Rule != "duplicate_primary_action" {
+				add("kualitas: " + strings.TrimSuffix(is.Problem, "."))
+			}
+		}
+		if missing := missingStates(pg); len(missing) > 0 {
+			add("kondisi " + strings.Join(missing, ", ") + " belum ditentukan")
+		}
 		for _, c := range pg.Components {
 			if c.Type == "table" && len(c.Columns) == 0 {
 				add(fmt.Sprintf("tabel “%s” belum punya kolom", c.Label))
@@ -280,6 +325,71 @@ func Blockers(p *core.Project) []Blocker {
 					add("menu tidak menuju halaman: " + strings.Join(dead, ", "))
 				}
 			}
+		}
+	}
+	return out
+}
+
+// duplicateActions lists action labels the page renders more than once:
+// buttons and the submit button of each form.
+func duplicateActions(pg core.Page) []string {
+	count := map[string]int{}
+	label := map[string]string{}
+	var order []string
+	see := func(l string) {
+		k := strings.ToLower(strings.TrimSpace(l))
+		if k == "" {
+			return
+		}
+		if count[k] == 0 {
+			label[k] = strings.TrimSpace(l)
+			order = append(order, k)
+		}
+		count[k]++
+	}
+	for _, c := range pg.Components {
+		switch c.Type {
+		case "button":
+			see(c.Label)
+		case "form":
+			see(FormSubmit(pg))
+		}
+	}
+	var out []string
+	for _, k := range order {
+		if count[k] > 1 {
+			out = append(out, label[k])
+		}
+	}
+	return out
+}
+
+// dataKinds show collections; a list elsewhere (e.g. on a detail page) is
+// attributes of one record and cannot be empty.
+var dataKinds = map[string]bool{"list": true, "admin": true, "dashboard": true, "search": true,
+	"table": true, "workspace": true, "master-detail": true, "monitoring": true}
+
+// missingStates lists the states a data page must describe: loading and
+// error when it loads data, empty too when it shows a collection.
+func missingStates(pg core.Page) []string {
+	list := false
+	for _, c := range pg.Components {
+		list = list || c.Type == "table" || c.Type == "list" && dataKinds[pg.Kind]
+	}
+	loads := list
+	if pg.Data != nil {
+		for _, a := range pg.Data.API {
+			loads = loads || strings.HasPrefix(a, "GET ")
+		}
+	}
+	if !loads {
+		return nil
+	}
+	var out []string
+	for _, s := range stateNames {
+		need := s.key == "loading" || s.key == "error" || s.key == "empty" && list
+		if need && stateCopy(pg.States, s.key) == "" {
+			out = append(out, s.label)
 		}
 	}
 	return out

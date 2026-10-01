@@ -1,0 +1,37 @@
+{
+  "id": "lavender-wellness",
+  "name": "Lavender Wellness",
+  "description": "Lembut dan menenangkan untuk wellness, mental health dan habit tracker.",
+  "personality": [
+    "gentle",
+    "soothing",
+    "supportive",
+    "soft"
+  ],
+  "tokens": {
+    "color_mode": "light",
+    "radius": "large",
+    "spacing": "spacious"
+  },
+  "preferences": {
+    "navigation": "top",
+    "layout": [
+      "focused",
+      "steps",
+      "sections"
+    ],
+    "density": "spacious"
+  },
+  "avoid": [
+    "decorative_gradient",
+    "large_cards",
+    "glassmorphism"
+  ],
+  "rules": [
+    {
+      "if": "the user may be stressed or tired",
+      "then": "one gentle step at a time with encouraging feedback",
+      "why": "pressure and density push vulnerable users away"
+    }
+  ]
+}
