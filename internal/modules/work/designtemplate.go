@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/handrawanw/foundry/internal/core"
 )
@@ -20,7 +21,8 @@ import (
 // recommends one from the requirement, the designer chooses and adapts it
 // to the product's features and composes the Design IR; the theme still
 // decides the look, the renderer still draws only the IR. Each template is
-// a directory: intent.json, layout.json, rules.json, examples.json.
+// a directory: intent.json, layout.json, rules.json, examples.json and
+// wireframes.json (three pages sketched with the pattern).
 
 //go:embed design-templates
 var builtinTemplates embed.FS
@@ -71,7 +73,7 @@ func LoadDesignTemplate(fsys fs.FS, dir string) (core.DesignTemplate, error) {
 	for _, f := range []struct {
 		name     string
 		required bool
-	}{{"intent.json", true}, {"layout.json", true}, {"rules.json", true}, {"examples.json", false}} {
+	}{{"intent.json", true}, {"layout.json", true}, {"rules.json", true}, {"examples.json", false}, {"wireframes.json", true}} {
 		b, err := fs.ReadFile(fsys, dir+"/"+f.name)
 		if errors.Is(err, fs.ErrNotExist) && !f.required {
 			continue
@@ -88,6 +90,13 @@ func LoadDesignTemplate(fsys fs.FS, dir string) (core.DesignTemplate, error) {
 	}
 	return t, ValidateDesignTemplate(t)
 }
+
+// templateWireframes is how many pages a template sketches; maxSketchWidth
+// keeps a sketch readable in the prompt.
+const (
+	templateWireframes = 3
+	maxSketchWidth     = 80
+)
 
 var regionRoles = []string{"primary", "secondary", "supporting", "action", "navigation"}
 var regionAreas = []string{"top", "side", "main", "aside"}
@@ -162,6 +171,40 @@ func ValidateDesignTemplate(t core.DesignTemplate) error {
 				bad("contoh %q: region %q tidak ada", ex.Product, r)
 			}
 		}
+	}
+	if len(t.Wireframes) != templateWireframes {
+		bad("wireframes butuh tepat %d halaman, ada %d", templateWireframes, len(t.Wireframes))
+	}
+	for i, w := range t.Wireframes {
+		at := fmt.Sprintf("wireframe %q", w.Page)
+		if strings.TrimSpace(w.Page) == "" || strings.TrimSpace(w.Purpose) == "" || len(w.Sketch) == 0 {
+			bad("wireframe %d: page, purpose dan sketch wajib diisi", i+1)
+		}
+		if !pageKinds[w.Kind] {
+			bad("%s: page kind %q tidak dikenal", at, w.Kind)
+		}
+		oneOf(at+" layout", w.Layout, LayoutStrategies)
+		// A page of a kind the template structures keeps its layout pattern,
+		// as TemplateLint expects of designed pages.
+		if slices.Contains(fit.PageKinds, w.Kind) && !slices.Contains(l.Strategies, w.Layout) {
+			bad("%s: layout %q di luar layout_pattern.strategies", at, w.Layout)
+		}
+		for _, r := range w.Regions {
+			if !seen[r] {
+				bad("%s: region %q tidak ada", at, r)
+			}
+		}
+		for _, line := range w.Sketch {
+			if n := utf8.RuneCountInString(line); n > maxSketchWidth {
+				bad("%s: baris sketch %d karakter, maksimal %d", at, n, maxSketchWidth)
+				break
+			}
+		}
+	}
+	if len(t.Wireframes) > 0 && !slices.ContainsFunc(t.Composition, func(r core.TemplateRegion) bool {
+		return r.Role == "primary" && slices.Contains(t.Wireframes[0].Regions, r.Region)
+	}) {
+		bad("wireframe pertama harus memuat region primary")
 	}
 	if len(out) > 0 {
 		return fmt.Errorf("template %s tidak valid:\n- %s", t.ID, strings.Join(out, "\n- "))
@@ -588,6 +631,18 @@ func templateDetail(t core.DesignTemplate, domain string) string {
 	fmt.Fprintf(&b, "  Expected: %s. Avoid: %s.\n", strings.Join(t.Quality.Expected, "; "), strings.Join(t.Quality.Avoid, ", "))
 	if len(t.Quality.Checks) > 0 {
 		b.WriteString("  Checks: " + strings.Join(t.Quality.Checks, "; ") + ".\n")
+	}
+	if len(t.Wireframes) > 0 {
+		fmt.Fprintf(&b, "  Wireframes (the pattern on %d pages: follow their structure, proportions and placement so every page of the product stays consistent; labels are samples, never copy them):\n", len(t.Wireframes))
+		for _, w := range t.Wireframes {
+			fmt.Fprintf(&b, "    Page %q [kind %s, layout %s, regions %s]: %s\n", w.Page, w.Kind, w.Layout, strings.Join(w.Regions, ", "), w.Purpose)
+			for _, line := range w.Sketch {
+				b.WriteString("      " + line + "\n")
+			}
+			if len(w.Notes) > 0 {
+				b.WriteString("      Notes: " + strings.Join(w.Notes, "; ") + ".\n")
+			}
+		}
 	}
 	return b.String()
 }

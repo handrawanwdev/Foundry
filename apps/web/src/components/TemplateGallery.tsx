@@ -157,6 +157,19 @@ function TemplateDetail({ t }: { t: DesignTemplate }) {
         <dt>Dihindari</dt>
         <dd>{t.quality_rules.avoid.map((a) => AVOID[a] ?? a).join(", ")}</dd>
       </dl>
+      {t.wireframes?.length ? (
+        <>
+          <h4>Wireframe {t.wireframes.length} halaman</h4>
+          <p className="small muted">Contoh pola pada beberapa halaman; AI mengikuti struktur dan penempatannya, bukan labelnya.</p>
+          {t.wireframes.map((w) => (
+            <figure key={w.page} className="tpl-wire">
+              <figcaption className="small"><strong>{w.page}</strong> · {w.kind} · {w.layout} — {w.purpose}</figcaption>
+              <pre className="tpl-sketch">{w.sketch.join("\n")}</pre>
+              {w.notes?.length ? <ul className="small muted">{w.notes.map((n) => <li key={n}>{n}</li>)}</ul> : null}
+            </figure>
+          ))}
+        </>
+      ) : null}
     </section>
   );
 }

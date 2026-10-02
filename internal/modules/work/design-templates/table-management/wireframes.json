@@ -1,0 +1,96 @@
+{
+  "wireframes": [
+    {
+      "page": "Data produk",
+      "kind": "table",
+      "layout": "table",
+      "purpose": "Mencari, menyaring dan mengelola banyak record.",
+      "regions": [
+        "nav",
+        "toolbar",
+        "create",
+        "filters",
+        "records",
+        "pages"
+      ],
+      "sketch": [
+        "+--------+-------------------------------------------------------+",
+        "| LOGO   | Produk  1.240 item                   [+ Tambah produk]|",
+        "|        |                      <- toolbar             <- create |",
+        "| > Prod.| [Cari SKU/nama____] [Kategori v] [Status v]  <- filters",
+        "|   Kat. |-------------------------------------------------------|",
+        "|   Stok | [ ] SKU     Nama          Kategori  Stok  Status  ... |",
+        "|   Supl.| [ ] A-1001  Kopi Arabika  Minuman    120  * Aktif  [:]|",
+        "|        | [ ] A-1002  Teh Hijau     Minuman      8  * Menipis[:]|",
+        "| <- nav | [x] B-2001  Gula Aren     Bahan        0  * Habis  [:]|",
+        "|        |  1 dipilih: [Ubah status] [Hapus]  <- aksi massal     |",
+        "|        |                                         <- records    |",
+        "|        |-------------------------------------------------------|",
+        "|        | 1-50 dari 1.240        [50 v]     < 1 2 3 ... 25 >    |",
+        "|        |                                         <- pages      |",
+        "+--------+-------------------------------------------------------+"
+      ],
+      "notes": [
+        "Angka rata kanan, aksi baris di menu [:] baris itu",
+        "Aksi massal muncul hanya saat ada baris terpilih",
+        "Mobile: tabel jadi daftar yang membuka detail"
+      ]
+    },
+    {
+      "page": "Tambah produk",
+      "kind": "form",
+      "layout": "sections",
+      "purpose": "Membuat atau mengubah satu record.",
+      "regions": [
+        "toolbar",
+        "create"
+      ],
+      "sketch": [
+        "+--------+-------------------------------------------------------+",
+        "| LOGO   | <- Produk / Tambah produk               <- toolbar    |",
+        "|        |-------------------------------------------------------|",
+        "|        | Informasi dasar                                       |",
+        "|        | SKU         [__________]   Nama  [__________________] |",
+        "|        | Kategori    [Pilih v]      Harga [Rp ______________]  |",
+        "|        |-------------------------------------------------------|",
+        "|        | Stok                                                  |",
+        "|        | Stok awal   [____]         Minimum [____]             |",
+        "|        |-------------------------------------------------------|",
+        "|        |                         [Batal] [Simpan]  <- create   |",
+        "+--------+-------------------------------------------------------+"
+      ],
+      "notes": [
+        "Form 2 kolom di desktop, 1 kolom di mobile",
+        "Validasi inline per field"
+      ]
+    },
+    {
+      "page": "Detail produk",
+      "kind": "detail",
+      "layout": "sections",
+      "purpose": "Membaca satu record lengkap dan riwayatnya.",
+      "regions": [
+        "toolbar",
+        "create"
+      ],
+      "sketch": [
+        "+--------+-------------------------------------------------------+",
+        "| LOGO   | <- Produk / A-1002 Teh Hijau   * Menipis  [Ubah] [:]  |",
+        "|        |-------------------------------------------------------|",
+        "|        | SKU       A-1002          Harga     Rp 18.000         |",
+        "|        | Kategori  Minuman         Stok      8 (min. 20)       |",
+        "|        | Supplier  CV Daun Segar   Dibuat    12 Jan 2026       |",
+        "|        |-------------------------------------------------------|",
+        "|        | Riwayat stok                                          |",
+        "|        | Tanggal   Jenis     Jumlah   Oleh                     |",
+        "|        | 30 Sep    Keluar       -12   gudang-1                 |",
+        "|        | 21 Sep    Masuk        +40   admin                    |",
+        "+--------+-------------------------------------------------------+"
+      ],
+      "notes": [
+        "Atribut sebagai pasangan label-nilai, bukan kartu",
+        "Riwayat sebagai tabel ringkas"
+      ]
+    }
+  ]
+}

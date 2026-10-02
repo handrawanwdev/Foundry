@@ -8,18 +8,19 @@ package core
 // the Design IR itself. The theme decides the look; the template decides
 // the structure.
 type DesignTemplate struct {
-	ID              string             `json:"id"`
-	Name            string             `json:"name"`
-	Category        string             `json:"category"`
-	Intent          string             `json:"intent"`
-	Characteristics []string           `json:"characteristics"`
-	SuitableFor     TemplateFit        `json:"suitable_for"`
-	Layout          TemplateLayout     `json:"layout_pattern"`
-	Hierarchy       []string           `json:"information_hierarchy"`
-	Composition     []TemplateRegion   `json:"component_composition"`
-	Responsive      TemplateResponsive `json:"responsive_strategy"`
-	Quality         TemplateQuality    `json:"quality_rules"`
-	Examples        []TemplateExample  `json:"examples,omitempty"`
+	ID              string              `json:"id"`
+	Name            string              `json:"name"`
+	Category        string              `json:"category"`
+	Intent          string              `json:"intent"`
+	Characteristics []string            `json:"characteristics"`
+	SuitableFor     TemplateFit         `json:"suitable_for"`
+	Layout          TemplateLayout      `json:"layout_pattern"`
+	Hierarchy       []string            `json:"information_hierarchy"`
+	Composition     []TemplateRegion    `json:"component_composition"`
+	Responsive      TemplateResponsive  `json:"responsive_strategy"`
+	Quality         TemplateQuality     `json:"quality_rules"`
+	Examples        []TemplateExample   `json:"examples,omitempty"`
+	Wireframes      []TemplateWireframe `json:"wireframes"`
 }
 
 // TemplateFit is what template selection matches: the domains it is made
@@ -79,6 +80,20 @@ type TemplateExample struct {
 	Product string              `json:"product"`
 	Regions map[string]string   `json:"regions"`
 	Items   map[string][]string `json:"items,omitempty"` // sample rows, columns or nav items per region
+}
+
+// TemplateWireframe is one page of the template drawn as an ASCII sketch:
+// three pages show the designer how the pattern carries across a product
+// so its pages stay consistent. Regions are the composition regions the
+// page uses; the sketch is one line per row.
+type TemplateWireframe struct {
+	Page    string   `json:"page"`
+	Kind    string   `json:"kind"`   // a page kind
+	Layout  string   `json:"layout"` // a layout strategy
+	Purpose string   `json:"purpose"`
+	Regions []string `json:"regions"`
+	Sketch  []string `json:"sketch"`
+	Notes   []string `json:"notes,omitempty"`
 }
 
 // TemplateAvoid are the anti-patterns a template can rule out.

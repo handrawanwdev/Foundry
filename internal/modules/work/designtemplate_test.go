@@ -42,10 +42,26 @@ func TestBuiltinTemplates(t *testing.T) {
 	if !slices.Equal(ids, want) {
 		t.Fatalf("library = %v", ids)
 	}
+	for _, tp := range all {
+		if len(tp.Wireframes) != 3 {
+			t.Errorf("%s: %d wireframes", tp.ID, len(tp.Wireframes))
+		}
+	}
 	bad1 := tpl(t, "workspace-agent")
 	bad1.Layout.Strategies = []string{"carousel"}
 	bad1.Quality.Avoid = []string{"blink"}
 	if err := ValidateDesignTemplate(bad1); err == nil || !strings.Contains(err.Error(), "carousel") || !strings.Contains(err.Error(), "blink") {
+		t.Fatalf("err = %v", err)
+	}
+	bad2 := tpl(t, "auth-clean")
+	bad2.Wireframes = append([]core.TemplateWireframe(nil), bad2.Wireframes...)
+	bad2.Wireframes[1].Layout = "dashboard"
+	bad2.Wireframes[2].Regions = []string{"ghost"}
+	if err := ValidateDesignTemplate(bad2); err == nil || !strings.Contains(err.Error(), "di luar layout_pattern") || !strings.Contains(err.Error(), `"ghost"`) {
+		t.Fatalf("err = %v", err)
+	}
+	bad2.Wireframes = bad2.Wireframes[:2]
+	if err := ValidateDesignTemplate(bad2); err == nil || !strings.Contains(err.Error(), "tepat 3 halaman") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -176,7 +192,7 @@ func TestTemplateChoice(t *testing.T) {
 func TestTemplatePrompt(t *testing.T) {
 	p := &core.Project{Story: "Sistem tiket support untuk agen helpdesk", Platform: &core.PlatformPlan{}}
 	s := DesignPrompt(p)
-	for _, want := range []string{"DESIGN TEMPLATES", "- trading-terminal (Trading Terminal)", "Foundry recommends: workspace-agent", "Template workspace-agent:",
+	for _, want := range []string{"DESIGN TEMPLATES", "- trading-terminal (Trading Terminal)", "Foundry recommends: workspace-agent", "Template workspace-agent:", "Wireframes (the pattern on 3 pages", `Page "Monitoring antrean"`,
 		"queue [secondary, list, side]", "(e.g. Antrean tiket)", "Avoid: hero_section", `"template": {"primary"`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("prompt misses %q", want)

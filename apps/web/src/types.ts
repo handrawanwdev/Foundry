@@ -188,7 +188,10 @@ export interface DesignTemplate {
   component_composition: TemplateRegion[];
   responsive_strategy: { strategy: string; desktop: string; mobile: string };
   quality_rules: { expected_behavior: string[]; avoid: string[]; quality_checks?: string[] };
+  wireframes: TemplateWireframe[];
 }
+// One page of a template sketched in ASCII: how the pattern carries across a product.
+export interface TemplateWireframe { page: string; kind: string; layout: string; purpose: string; regions: string[]; sketch: string[]; notes?: string[] }
 export interface TemplateChoice { id: string; name: string; secondary?: string; source: "user" | "ai" | "auto"; reasons?: string[] }
 // A landed canvas edit and what it made worse.
 export interface CanvasResult { project: Project; warnings?: string[] }
