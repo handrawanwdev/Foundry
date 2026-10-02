@@ -262,8 +262,13 @@ func ParsePatches(raw string) []Patch {
 	if ExtractJSONFunc(raw, &out, func() bool { return len(out.Patches) > 0 }) != nil {
 		return nil
 	}
+	return CleanPatches(out.Patches)
+}
+
+// CleanPatches drops patches without a file or a change.
+func CleanPatches(in []Patch) []Patch {
 	var res []Patch
-	for _, pt := range out.Patches {
+	for _, pt := range in {
 		if normPath(pt.File) != "" && strings.TrimSpace(pt.Change) != "" {
 			res = append(res, pt)
 		}

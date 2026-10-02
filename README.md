@@ -70,7 +70,7 @@ Prompt → discovery → design intelligence → theme → template → adaptasi
 ./bin/foundry mcp --print-config     # snippet config untuk AI Host
 ```
 
-Loop host: `next_work` → kerjakan → `submit_work` / `submit_task`. Izin: `--allow READ|WRITE|MODIFY|EXECUTE|ALL` (default READ).
+Loop host: `next_work` → kerjakan → `submit_work` / `submit_task` (opsional `patches`: perubahan di file milik task lain, diteruskan ke pemiliknya). Izin: `--allow READ|WRITE|MODIFY|EXECUTE|ALL` (default READ).
 
 ## Aturan penting
 

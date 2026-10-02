@@ -810,7 +810,7 @@ func TestMCPHostFlow(t *testing.T) {
 		t.Fatalf("work = %+v", w)
 	}
 	// Host claims done without writing code: build fails (no go.mod) → TODO.
-	tk, b, err := s.SubmitTask("TASK-001", []work.Verdict{{Index: 1, Met: true, Evidence: "x"}})
+	tk, b, err := s.SubmitTask("TASK-001", []work.Verdict{{Index: 1, Met: true, Evidence: "x"}}, nil)
 	if err != nil || b.Passed || tk.Status != core.TaskTodo {
 		t.Fatalf("task=%v build=%v err=%v", tk.Status, b.Passed, err)
 	}
@@ -819,12 +819,12 @@ func TestMCPHostFlow(t *testing.T) {
 	dir := s.Store.Dir
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/k\n\ngo 1.22\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)
-	tk, _, _ = s.SubmitTask(w.TaskID, []work.Verdict{{Index: 1, Met: true}})
+	tk, _, _ = s.SubmitTask(w.TaskID, []work.Verdict{{Index: 1, Met: true}}, nil)
 	if tk.Status == core.TaskDone {
 		t.Fatal("DONE without evidence")
 	}
 	w, _ = s.NextWork("")
-	tk, b, _ = s.SubmitTask(w.TaskID, []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod dibuat"}})
+	tk, b, _ = s.SubmitTask(w.TaskID, []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod dibuat"}}, nil)
 	if tk.Status != core.TaskDone || !b.Passed {
 		t.Fatalf("task = %s build %+v", tk.Status, b)
 	}
@@ -993,8 +993,14 @@ func TestParallelWorkersQueueOnLocks(t *testing.T) {
 	dir := s.Store.Dir
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/k\n\ngo 1.22\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)
-	if tk, _, err := s.SubmitTask("TASK-001", []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod"}}); err != nil || tk.Status != core.TaskDone {
+	s.Store.Update(func(p *core.Project) error { p.Task("TASK-002").Files = []string{"services/api/main.go"}; return nil })
+	patches := []work.Patch{{File: "services/api/main.go", Change: "daftarkan route /health"}, {File: "", Change: "x"}}
+	if tk, _, err := s.SubmitTask("TASK-001", []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod"}}, patches); err != nil || tk.Status != core.TaskDone {
 		t.Fatalf("task = %v err %v", tk, err)
+	}
+	// The host's patch for a file TASK-002 owns becomes TASK-002's feedback.
+	if n := load(t, s).Task("TASK-002").Notes; len(n) != 1 || !strings.Contains(n[0], "Patch dari TASK-001 untuk services/api/main.go: daftarkan route /health") {
+		t.Fatalf("notes = %v", n)
 	}
 	// TASK-002 (services/api) and TASK-004 (FEAT-002) do not overlap.
 	wa, _ := s.NextWork("a")

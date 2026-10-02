@@ -188,9 +188,11 @@ var tools = []tool{
 		InputSchema: obj(map[string]any{"worker": str})},
 	{Name: "submit_work", perm: PermWrite, Description: "Hand back a discovery/design/plan/design_qa/support result (the JSON object requested by next_work).",
 		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "plan", "design_qa", "support"}}, "result": str}, "kind", "result")},
-	{Name: "submit_task", perm: PermExecute, Description: "Report a task as implemented. Foundry runs build/test; DONE only if checks pass and every acceptance criterion is met with evidence.",
+	{Name: "submit_task", perm: PermExecute, Description: "Report a task as implemented. Foundry runs build/test; DONE only if checks pass and every acceptance criterion is met with evidence. " +
+		"patches (optional): changes you need in files another task owns; do not edit them, Foundry hands each to its owner.",
 		InputSchema: obj(map[string]any{"task_id": str, "criteria": map[string]any{"type": "array", "items": obj(map[string]any{
-			"index": map[string]any{"type": "integer"}, "met": map[string]any{"type": "boolean"}, "evidence": str}, "index", "met", "evidence")}}, "task_id", "criteria")},
+			"index": map[string]any{"type": "integer"}, "met": map[string]any{"type": "boolean"}, "evidence": str}, "index", "met", "evidence")},
+			"patches": map[string]any{"type": "array", "items": obj(map[string]any{"file": str, "change": str}, "file", "change")}}, "task_id", "criteria")},
 	{Name: "update_task", perm: PermModify, Description: "Set a short live progress line on the Kanban (progress), add lasting feedback (note), or mark the task BLOCKED.",
 		InputSchema: obj(map[string]any{"task_id": str, "progress": str, "note": str, "blocked": map[string]any{"type": "boolean"}}, "task_id")},
 }
@@ -219,6 +221,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		Kind     string          `json:"kind"`
 		Result   json.RawMessage `json:"result"`
 		Criteria []work.Verdict  `json:"criteria"`
+		Patches  []work.Patch    `json:"patches"`
 		Note     string          `json:"note"`
 		Progress string          `json:"progress"`
 		Blocked  bool            `json:"blocked"`
@@ -285,7 +288,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		np, _ := s.Svc.Store.Load()
 		return map[string]any{"accepted": true, "stage": np.Stage, "job": np.Job, "next": "Panggil next_work untuk pekerjaan berikutnya."}, nil
 	case "submit_task":
-		t, b, err := s.Svc.SubmitTask(args.TaskID, args.Criteria)
+		t, b, err := s.Svc.SubmitTask(args.TaskID, args.Criteria, args.Patches)
 		if err != nil {
 			return nil, err
 		}

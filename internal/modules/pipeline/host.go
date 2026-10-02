@@ -77,7 +77,7 @@ func taskItem(s *Service, p *core.Project, t *core.Task) *WorkItem {
 		slots--
 	}
 	return &WorkItem{Kind: work.KindTask, TaskID: t.ID, Prompt: work.TaskPrompt(p, t), AlsoReady: also,
-		Submit: fmt.Sprintf(`submit_task {"task_id": %q, "criteria": [{"index": 1, "met": true, "evidence": "file + what it does"}]}`, t.ID)}
+		Submit: fmt.Sprintf(`submit_task {"task_id": %q, "criteria": [{"index": 1, "met": true, "evidence": "file + what it does"}], "patches": [{"file": "", "change": ""}]}`, t.ID)}
 }
 
 func nothingMessage(p *core.Project) string {
@@ -113,8 +113,9 @@ func (s *Service) SubmitWork(kind, result string) error {
 
 // SubmitTask is called by the MCP host after implementing a task. Foundry
 // runs build/test itself; DONE requires passing checks and every criterion
-// met with evidence.
-func (s *Service) SubmitTask(id string, verdicts []work.Verdict) (*core.Task, *core.BuildRun, error) {
+// met with evidence. patches are changes the host needed in files other
+// tasks own; they go to the owner whatever the outcome.
+func (s *Service) SubmitTask(id string, verdicts []work.Verdict, patches []work.Patch) (*core.Task, *core.BuildRun, error) {
 	p, err := s.Store.Load()
 	if err != nil {
 		return nil, nil, err
@@ -123,6 +124,7 @@ func (s *Service) SubmitTask(id string, verdicts []work.Verdict) (*core.Task, *c
 	if t == nil || t.Status != core.TaskInProgress {
 		return nil, nil, fmt.Errorf("task %s tidak sedang IN_PROGRESS", id)
 	}
+	s.handOffPatches(id, work.CleanPatches(patches))
 	s.setProgress(id, "Menjalankan build & tes")
 	build := s.runChecks(context.Background(), id, p.Dir)
 	if !build.Passed {
