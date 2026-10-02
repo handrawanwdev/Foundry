@@ -181,6 +181,10 @@ func fakeAgent() {
 		}
 		os.MkdirAll("app", 0o755)
 		os.WriteFile(filepath.Join("app", id+".go"), []byte("package app\n\nfunc F_"+id+"() int { return 1 }\n"), 0o644)
+		if mode == "cross" && id == "task_001" {
+			os.MkdirAll("b", 0o755)
+			os.WriteFile(filepath.Join("b", "y.go"), []byte("package b\n"), 0o644)
+		}
 		want := "1"
 		if mode == "fail_test" {
 			want = "2"

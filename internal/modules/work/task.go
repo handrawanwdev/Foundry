@@ -287,3 +287,15 @@ func PatchOwner(p *core.Project, from, file string) *core.Task {
 	}
 	return nil
 }
+
+// ForeignOwner is the pending task owning file when file is outside t's own
+// files: an edit there crosses an ownership boundary.
+func ForeignOwner(p *core.Project, t *core.Task, file string) *core.Task {
+	k := normPath(file)
+	for _, f := range t.Files {
+		if m := normPath(f); m != "" && (k == m || strings.HasPrefix(k, m+"/")) {
+			return nil
+		}
+	}
+	return PatchOwner(p, t.ID, file)
+}

@@ -124,7 +124,7 @@ func (s *Service) SubmitTask(id string, verdicts []work.Verdict) (*core.Task, *c
 		return nil, nil, fmt.Errorf("task %s tidak sedang IN_PROGRESS", id)
 	}
 	s.setProgress(id, "Menjalankan build & tes")
-	build := s.runChecks(context.Background(), id)
+	build := s.runChecks(context.Background(), id, p.Dir)
 	if !build.Passed {
 		s.rejectTask(id, "Verifikasi gagal: "+build.Reason+"\n"+lastOutput(build))
 	} else {

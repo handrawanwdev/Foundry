@@ -12,6 +12,7 @@ import (
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/agent"
 	"github.com/handrawanw/foundry/internal/modules/checks"
+	"github.com/handrawanw/foundry/internal/modules/gitwt"
 	"github.com/handrawanw/foundry/internal/modules/scan"
 	"github.com/handrawanw/foundry/internal/modules/verify"
 	"github.com/handrawanw/foundry/internal/modules/work"
@@ -44,6 +45,9 @@ func (s *Service) StartBuild() error {
 	})
 	if err != nil || isMCP {
 		return err
+	}
+	if p, err := s.Store.Load(); err == nil && gitwt.Usable(p.Dir) {
+		gitwt.Prune(p.Dir) // stale worktrees of a crashed run
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
@@ -266,6 +270,15 @@ func (s *Service) watchProgress(ctx context.Context, id, dir string, before chec
 }
 
 func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, p *core.Project, t *core.Task) error {
+	if isolated(p, t) {
+		return s.runIsolated(ctx, runner, p, t)
+	}
+	return s.runShared(ctx, runner, p, t)
+}
+
+// runShared runs a task in the project tree itself: work that holds the
+// whole project, or a project that is not a git repository.
+func (s *Service) runShared(ctx context.Context, runner *agent.Runner, p *core.Project, t *core.Task) error {
 	id := t.ID
 	// Changes by agents running in parallel land in the same tree, so the
 	// diff below may include their files too; the reviewer judges criteria.
@@ -288,7 +301,7 @@ func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, p 
 		return nil
 	}
 	s.setProgress(id, "Menjalankan build & tes")
-	build := s.runChecks(ctx, id)
+	build := s.runChecks(ctx, id, p.Dir)
 	if ctx.Err() != nil {
 		return s.releaseTask(ctx, id)
 	}
@@ -296,26 +309,38 @@ func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, p 
 		s.rejectTask(id, "Verifikasi gagal: "+build.Reason+"\n"+lastOutput(build))
 		return nil
 	}
-	s.setProgress(id, "Meninjau hasil")
-	if crit, ok := work.SelfReview(t, out); ok {
-		return s.concludeTask(id, crit, build.ID, "agent")
-	}
-	s.setStatus(id, core.TaskReview, "agent", "Build + test lulus, review acceptance criteria")
-	p, _ = s.Store.Load()
-	out, err = s.reviewRunner(runner).Run(ctx, agent.Think, p.Dir, work.ReviewPrompt(p, p.Task(id), checks.Excerpt(p.Dir, changed, 60000), &build))
-	if err != nil {
-		if ctx.Err() != nil {
-			return s.releaseTask(ctx, id)
-		}
-		s.rejectTask(id, "Review gagal: "+err.Error())
+	crit, err := s.review(ctx, runner, id, out, p.Dir, changed, &build)
+	if crit == nil {
 		return err
 	}
-	crit, err := work.ParseReview(p.Task(id), out)
+	return s.concludeTask(id, crit, build.ID, "agent")
+}
+
+// review judges acceptance criteria: the coding agent's own JSON when it
+// sent one, else a reviewer run in dir. A nil result means the task was
+// already released or rejected.
+func (s *Service) review(ctx context.Context, runner *agent.Runner, id, out, dir string, changed []string, build *core.BuildRun) ([]core.Criterion, error) {
+	s.setProgress(id, "Meninjau hasil")
+	p, _ := s.Store.Load()
+	t := p.Task(id)
+	if crit, ok := work.SelfReview(t, out); ok {
+		return crit, nil
+	}
+	s.setStatus(id, core.TaskReview, "agent", "Build + test lulus, review acceptance criteria")
+	out, err := s.reviewRunner(runner).Run(ctx, agent.Think, dir, work.ReviewPrompt(p, t, checks.Excerpt(dir, changed, 60000), build))
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, s.releaseTask(ctx, id)
+		}
+		s.rejectTask(id, "Review gagal: "+err.Error())
+		return nil, err
+	}
+	crit, err := work.ParseReview(t, out)
 	if err != nil {
 		s.rejectTask(id, "Review tidak dapat dibaca: "+err.Error())
-		return nil
+		return nil, nil
 	}
-	return s.concludeTask(id, crit, build.ID, "agent")
+	return crit, nil
 }
 
 // handOffPatches gives changes an agent needed outside its ownership to the
@@ -342,14 +367,18 @@ func (s *Service) handOffPatches(from string, patches []work.Patch) {
 	})
 }
 
-// runChecks re-detects commands (a scaffold task may have created tooling)
-// and runs them, storing the result.
-func (s *Service) runChecks(ctx context.Context, taskID string) core.BuildRun {
-	p, _ := s.Store.Load()
-	cmds := scan.Scan(p.Dir).Commands
+// runChecks re-detects commands in dir (a scaffold task may have created
+// tooling) and runs them, storing the result.
+func (s *Service) runChecks(ctx context.Context, taskID, dir string) core.BuildRun {
 	s.checkMu.Lock()
-	build := checks.Run(ctx, p.Dir, cmds, taskID)
-	s.checkMu.Unlock()
+	defer s.checkMu.Unlock()
+	return s.runChecksLocked(ctx, taskID, dir)
+}
+
+// runChecksLocked is runChecks for a caller already holding checkMu.
+func (s *Service) runChecksLocked(ctx context.Context, taskID, dir string) core.BuildRun {
+	cmds := scan.Scan(dir).Commands
+	build := checks.Run(ctx, dir, cmds, taskID)
 	s.Store.Update(func(p *core.Project) error {
 		if p.Structure != nil {
 			p.Structure.Commands = cmds
@@ -534,7 +563,8 @@ func (s *Service) Verify() error {
 }
 
 func (s *Service) verifyNow(ctx context.Context) {
-	build := s.runChecks(ctx, "")
+	p, _ := s.Store.Load()
+	build := s.runChecks(ctx, "", p.Dir)
 	s.Store.Update(func(p *core.Project) error {
 		v := verify.Report(p, p.Build(build.ID))
 		p.Verification = v
