@@ -107,7 +107,7 @@ func TestOverride(t *testing.T) {
 	if err := Override(s, core.TechBackend, "Laravel", "tim PHP"); err != nil {
 		t.Fatal(err)
 	}
-	if d := s.Decision(core.TechBackend); d.Choice() != "Laravel" || d.Lang() != "" || d.Recommended != "NestJS + TypeScript" {
+	if d := s.Decision(core.TechBackend); d.Choice() != "Laravel" || d.Lang() != "PHP" || d.Recommended != "NestJS + TypeScript" {
 		t.Fatalf("backend = %+v", d)
 	}
 	if err := Override(s, core.TechCache, "Memcached", ""); err == nil {

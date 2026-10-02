@@ -304,9 +304,56 @@ func completeStack(b *core.Blueprint, p *core.Project, needs map[string]bool) {
 	fe := ""
 	if st != nil {
 		fe = st.Choice(core.TechFrontend)
+		if v := st.Choice(core.TechDeployment); v != "" {
+			b.Platform.Deployment = v
+		}
+		if v := st.Choice(core.TechMessaging); v != "" && v != core.TechNone {
+			b.Realtime.Broker = v
+		}
+		switch v := st.Choice(core.TechStorage); {
+		case v == core.TechNone:
+			b.Storage.Strategy, b.Storage.Provider = "none", ""
+		case v == "Disk server lokal":
+			b.Storage.Strategy, b.Storage.Provider = "local", v
+		case v != "":
+			b.Storage.Strategy, b.Storage.Provider = "object", v
+		}
 	}
 	completeFrontend(b, fe)
 	completeBackend(b, backend, needs)
+}
+
+// ResetBlueprintTech clears the blueprint details derived from the changed
+// technology areas so CompleteBlueprint derives them again from the new
+// decision; nothing else in the blueprint changes.
+func ResetBlueprintTech(p *core.Project, changes []core.TechChange) {
+	b := p.Blueprint
+	if b == nil {
+		return
+	}
+	for _, c := range changes {
+		switch c.Area {
+		case core.TechFrontend:
+			b.Frontend = core.FrontendArch{}
+		case core.TechBackend:
+			b.Backend = core.BackendArch{}
+			b.Database.ORM = ""
+		case core.TechDatabase:
+			b.Database.ORM = ""
+		case core.TechCache:
+			b.Cache = core.CacheArch{}
+			b.Auth.Session = ""
+		case core.TechArchitecture:
+			b.Architecture.Reason, b.Architecture.Tradeoff = "", ""
+		case core.TechMessaging:
+			b.Realtime.Broker = ""
+		case core.TechStorage:
+			b.Storage = core.StorageArch{}
+			b.Workers = nil
+		case core.TechWorkers:
+			b.Workers = nil
+		}
+	}
 }
 
 func completeFrontend(b *core.Blueprint, fe string) {

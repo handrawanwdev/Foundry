@@ -18,6 +18,7 @@ import (
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/agent"
 	"github.com/handrawanw/foundry/internal/modules/pipeline"
+	"github.com/handrawanw/foundry/internal/modules/stack"
 	"github.com/handrawanw/foundry/internal/modules/work"
 )
 
@@ -331,7 +332,7 @@ func TestEndToEndAgent(t *testing.T) {
 	if len(load(t, s).Tasks) != 0 {
 		t.Fatal("tasks created before approval")
 	}
-	if err := s.ApproveDesign(); err != nil {
+	if err := approve(s); err != nil {
 		t.Fatal(err)
 	}
 	s.Wait()
@@ -403,7 +404,7 @@ func TestApproveKeepsDesignOnLaterError(t *testing.T) {
 	if err := os.WriteFile(block, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ApproveDesign(); err == nil {
+	if err := approve(s); err == nil {
 		t.Fatal("expected scaffold error")
 	}
 	p = load(t, s)
@@ -433,7 +434,7 @@ func TestApproveKeepsDesignOnLaterError(t *testing.T) {
 
 	s = newService(t, fakeAI{}, "plan_fail")
 	designReady(t, s)
-	if err := s.ApproveDesign(); err != nil {
+	if err := approve(s); err != nil {
 		t.Fatal(err)
 	}
 	s.Wait()
@@ -529,7 +530,7 @@ func TestDesignRevise(t *testing.T) {
 		t.Fatalf("after keep: %+v", p.Design)
 	}
 	// The new profile page has no route, access or primary action.
-	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrIncomplete) {
+	if err := approve(s); !errors.Is(err, pipeline.ErrIncomplete) {
 		t.Fatalf("approve incomplete err = %v", err)
 	}
 }
@@ -546,7 +547,7 @@ func findPage(p *core.Project, id string) *core.Page {
 func approveAndPlan(t *testing.T, s *pipeline.Service) {
 	t.Helper()
 	designReady(t, s)
-	if err := s.ApproveDesign(); err != nil {
+	if err := approve(s); err != nil {
 		t.Fatal(err)
 	}
 	s.Wait()
@@ -799,7 +800,7 @@ func TestMCPHostFlow(t *testing.T) {
 		!strings.HasPrefix(d.System.Direction, d.Theme.Name) {
 		t.Fatalf("theme = %+v system = %+v", d.Theme, d.System)
 	}
-	if err := s.ApproveDesign(); err != nil {
+	if err := approve(s); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SubmitWork(work.KindPlan, planJSON); err != nil {
@@ -968,7 +969,7 @@ func TestParallelWorkersQueueOnLocks(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := s.ApproveDesign(); err != nil {
+	if err := approve(s); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SubmitWork(work.KindPlan, planJSON); err != nil {
@@ -1344,7 +1345,7 @@ func TestDesignVersionsAndCanvas(t *testing.T) {
 		t.Fatal("unknown version must fail")
 	}
 
-	if err := s.ApproveDesign(); err != nil {
+	if err := approve(s); err != nil {
 		t.Fatal(err)
 	}
 	s.Wait()
@@ -1413,20 +1414,48 @@ func TestTechStack(t *testing.T) {
 		st.Choice(core.TechArchitecture) != core.ArchSimple || st.Choice(core.TechRepository) != core.RepoMonorepo {
 		t.Fatalf("stack = %+v", st)
 	}
+	if st.State() != core.TechRecommended || st.Version() != 1 {
+		t.Fatalf("status = %s v%d", st.State(), st.Version())
+	}
 	if p.Structure.Template != "monorepo" || !slices.Contains(p.Structure.Layout, "apps/mobile/") {
 		t.Fatalf("structure = %+v", p.Structure)
 	}
-	if _, err := s.SetStack(core.TechFrontend, "vue + typescript + vite", "Tim sudah pakai Vue"); err != nil {
+	propose := func(area, value, reason string) (*core.Project, error) {
+		return s.ProposeStack([]stack.Change{{Area: area, Value: value, Reason: reason}})
+	}
+	// A change is a proposal: nothing changes until the user applies it.
+	p, err := propose(core.TechFrontend, "vue + typescript + vite", "Tim sudah pakai Vue")
+	if err != nil {
 		t.Fatal(err)
 	}
+	if pr := p.Stack.Proposal; pr == nil || p.Stack.State() != core.TechReview || p.Stack.Choice(core.TechFrontend) != "React + TypeScript + Vite" ||
+		len(pr.Changes) != 1 || pr.Changes[0].To != "Vue + TypeScript + Vite" || len(pr.Impact) != 1 || !pr.Impact[0].Design {
+		t.Fatalf("proposal = %+v", p.Stack)
+	}
 	for _, bad := range [][2]string{{core.TechArchitecture, "Serverless"}, {core.TechDesktop, "Tauri + React + TypeScript"}, {"ui", "x"}} {
-		if _, err := s.SetStack(bad[0], bad[1], ""); err == nil {
+		if _, err := propose(bad[0], bad[1], ""); err == nil {
 			t.Fatalf("%v must fail", bad)
 		}
 	}
-	p, err := s.SetStack(core.TechRepository, core.RepoSimple, "")
+	if _, err := s.ApproveStack(); !errors.Is(err, stack.ErrPending) {
+		t.Fatalf("approve with proposal err = %v", err)
+	}
+	p, err = s.DiscardStackProposal()
+	if err != nil || p.Stack.Proposal != nil || p.Stack.State() != core.TechRecommended {
+		t.Fatalf("discard: %v %+v", err, p.Stack)
+	}
+	if _, err := propose(core.TechFrontend, "vue + typescript + vite", "Tim sudah pakai Vue"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := propose(core.TechRepository, core.RepoSimple, ""); err != nil { // merged into the same proposal
+		t.Fatal(err)
+	}
+	p, err = s.ApplyStackProposal()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if p.Stack.State() != core.TechImpactChecked || p.Stack.Version() != 2 || len(p.Stack.History[1].Changes) != 2 {
+		t.Fatalf("applied = %+v", p.Stack)
 	}
 	if p.Structure.Template != "simple" || !slices.Equal(p.Structure.Layout, []string{"frontend/", "mobile/", "backend/", "docs/"}) {
 		t.Fatalf("structure = %+v", p.Structure)
@@ -1438,22 +1467,107 @@ func TestTechStack(t *testing.T) {
 	}
 	d := p.Stack.Decision(core.TechFrontend)
 	if p.Stack.Decision(core.TechMobile) != nil || d.Choice() != "Vue + TypeScript + Vite" || d.Lang() != "TypeScript" ||
-		d.Override.Reason != "Tim sudah pakai Vue" || p.Stack.Choice(core.TechRepository) != core.RepoSimple {
+		d.Override.Reason != "Tim sudah pakai Vue" || p.Stack.Choice(core.TechRepository) != core.RepoSimple || p.Stack.Version() != 3 {
 		t.Fatalf("stack = %+v", p.Stack)
 	}
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
+	if p = load(t, s); p.Design.TechVersion != 3 {
+		t.Fatalf("design tech version = %d", p.Design.TechVersion)
+	}
+	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrStackNotApproved) {
+		t.Fatalf("approve design before stack err = %v", err)
+	}
+	if _, err := s.ApproveStack(); err != nil {
+		t.Fatal(err)
+	}
+	// After approval the user still decides: Rust + Axum, a free choice.
+	if _, err := propose(core.TechBackend, "Rust + Axum", "Tim backend memakai Rust"); err != nil {
+		t.Fatal(err)
+	}
+	p, err = s.ApplyStackProposal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Stack.State() != core.TechChanged || p.Stack.Decision(core.TechBackend).Lang() != "Rust" ||
+		!slices.ContainsFunc(p.Stack.Issues, func(i core.TechIssue) bool { return i.Area == core.TechBackend && i.Level == "warning" }) {
+		t.Fatalf("changed = %+v", p.Stack)
+	}
+	if rv := p.TechReview(); len(rv) != 1 || rv[0].From != "NestJS + TypeScript" || rv[0].To != "Rust + Axum" {
+		t.Fatalf("review = %+v", rv)
+	}
+	if p.Blueprint.Backend.Background == "BullMQ" {
+		t.Fatalf("blueprint kept the old backend: %+v", p.Blueprint.Backend)
+	}
+	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrStackNotApproved) {
+		t.Fatalf("changed stack err = %v", err)
+	}
+	if _, err := s.ApproveStack(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrTechReview) {
+		t.Fatalf("unreviewed design err = %v", err)
+	}
+	if _, err := s.AckTechReview(); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.ApproveDesign(); err != nil {
 		t.Fatal(err)
 	}
-	// The plan is made with the same decision.
+	// The plan is made with the approved decision.
 	w, _ := s.NextWork("")
-	if w.Kind != work.KindPlan || !strings.Contains(w.Prompt, "- frontend: Vue + TypeScript + Vite (language TypeScript) — chosen by the user: Tim sudah pakai Vue") {
+	if w.Kind != work.KindPlan || !strings.Contains(w.Prompt, "- frontend: Vue + TypeScript + Vite (language TypeScript) — chosen by the user: Tim sudah pakai Vue") ||
+		!strings.Contains(w.Prompt, "- backend: Rust + Axum (language Rust)") {
 		t.Fatalf("work = %+v", w)
 	}
-	if _, err := s.SetStack(core.TechFrontend, "", ""); !errors.Is(err, pipeline.ErrWrongStage) {
+	if _, err := propose(core.TechFrontend, "", ""); !errors.Is(err, pipeline.ErrWrongStage) {
 		t.Fatalf("approved err = %v", err)
+	}
+}
+
+// A change in words goes to the AI and comes back as a proposal; an answer
+// with nothing to change leaves the decision as it was.
+func TestStackRequest(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequestStackChange("Ganti backend ke Rust"); !errors.Is(err, pipeline.ErrBusy) {
+		t.Fatalf("request while design waits err = %v", err)
+	}
+	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequestStackChange("Ganti backend ke Rust. Tetap PostgreSQL."); err != nil {
+		t.Fatal(err)
+	}
+	w, _ := s.NextWork("")
+	if w.Kind != work.KindStack || !strings.Contains(w.Prompt, "Ganti backend ke Rust. Tetap PostgreSQL.") {
+		t.Fatalf("work = %+v", w)
+	}
+	if err := s.SubmitWork(work.KindStack, `{"changes":[{"area":"backend","value":"Rust + Axum","reason":"permintaan user"}],"note":"Backend diganti ke Rust."}`); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	if pr := p.Stack.Proposal; pr == nil || pr.Source != "ai" || pr.Request == "" || p.Stack.Choice(core.TechBackend) != "NestJS + TypeScript" ||
+		p.Stack.Choice(core.TechDatabase) != "PostgreSQL" || p.Stack.Request != "" {
+		t.Fatalf("stack = %+v", p.Stack)
+	}
+	if _, err := s.DiscardStackProposal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequestStackChange("buat lebih bagus"); err != nil {
+		t.Fatal(err)
+	}
+	s.SubmitWork(work.KindStack, `{"changes":[],"note":"tidak jelas"}`)
+	p = load(t, s)
+	mustJob(t, p, work.KindStack, core.JobFailed)
+	if p.Stack.Proposal != nil || p.Stack.Request != "" || p.Stack.Version() != 1 {
+		t.Fatalf("unclear request changed the stack: %+v", p.Stack)
 	}
 }
 
@@ -1494,10 +1608,18 @@ func TestRegenerateDesign(t *testing.T) {
 	if c := p.Design.Template; c == nil || c.ID != "trading-terminal" || c.Source != "user" {
 		t.Fatalf("template = %+v", c)
 	}
-	if err := s.ApproveDesign(); err != nil {
+	if err := approve(s); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.RegenerateDesign(); !errors.Is(err, pipeline.ErrWrongStage) {
 		t.Fatalf("approved err = %v", err)
 	}
+}
+
+// approve approves the technology decision, then the design.
+func approve(s *pipeline.Service) error {
+	if _, err := s.ApproveStack(); err != nil && !errors.Is(err, pipeline.ErrWrongStage) {
+		return err
+	}
+	return s.ApproveDesign()
 }

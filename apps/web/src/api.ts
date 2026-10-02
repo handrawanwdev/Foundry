@@ -43,7 +43,13 @@ export const api = {
   setPlatform: (targets: PlatformTarget[]) => call<Project>("PUT", "/project/platform", { targets }),
   setTemplate: (template: string) => call<Project>("PUT", "/project/structure", { template }),
   // value "" returns the area to Foundry's recommendation.
-  setStack: (area: TechArea, value: string, reason: string) => call<Project>("PUT", "/project/stack", { area, value, reason }),
+  // Technology changes become a proposal; applyStack/discardStack decide it.
+  proposeStack: (changes: { area: TechArea; value: string; reason?: string }[]) => call<Project>("PUT", "/project/stack", { changes }),
+  requestStack: (text: string) => call("POST", "/project/stack/request", { text }),
+  applyStack: () => call<Project>("POST", "/project/stack/apply", {}),
+  discardStack: () => call<Project>("POST", "/project/stack/discard", {}),
+  approveStack: () => call<Project>("POST", "/project/stack/approve", {}),
+  reviewedDesignTech: () => call<Project>("POST", "/project/stack/review-design", {}),
   recommendStack: () => call<Project>("POST", "/project/stack/recommend", {}),
   stackCatalog: () => call<StackCatalog>("GET", "/stack/catalog"),
   // theme "" lets Foundry select one; a draft design is re-themed at once.

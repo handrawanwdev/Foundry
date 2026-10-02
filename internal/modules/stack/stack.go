@@ -106,6 +106,29 @@ var Catalog = map[string][]Option{
 		{"Redis", "", "cache, state realtime, antrean"},
 		{core.CacheNone, "", "tanpa cache terpisah"},
 	},
+	core.TechMessaging: {
+		{core.TechNone, "", "panggilan langsung antar modul cukup"},
+		{"Redis Pub/Sub", "", "event realtime ringan memakai Redis yang sudah ada"},
+		{"NATS", "", "event antar layanan, latency rendah"},
+		{"RabbitMQ", "", "antrean pesan dengan routing dan acknowledgement"},
+		{"Kafka", "", "event stream volume sangat tinggi, replay"},
+	},
+	core.TechWorkers: {
+		{core.TechNone, "", "semua proses selesai di dalam request"},
+		{"Job in-process", "", "job ringan di proses backend yang sama"},
+		{"Worker terpisah + antrean", "", "job lama/berat (AI, file, laporan) di luar request"},
+	},
+	core.TechStorage: {
+		{core.TechNone, "", "tidak ada file dari user"},
+		{"S3-compatible (S3 / MinIO)", "", "upload file, signed URL, skala besar"},
+		{"Disk server lokal", "", "prototipe satu server, file sedikit"},
+	},
+	core.TechSearch: {
+		{core.TechNone, "", "filter dan query database biasa cukup"},
+		{"PostgreSQL full-text search", "", "pencarian teks tanpa layanan tambahan"},
+		{"Meilisearch", "", "pencarian cepat, typo-tolerant"},
+		{"Elasticsearch / OpenSearch", "", "pencarian dan analitik data besar"},
+	},
 	core.TechArchitecture: {
 		{core.ArchSimple, "", "prototipe, aplikasi kecil"},
 		{core.ArchModular, "", "aplikasi bisnis dengan beberapa domain"},
@@ -114,6 +137,18 @@ var Catalog = map[string][]Option{
 	core.TechRepository: {
 		{core.RepoSimple, "", "satu frontend dan satu backend"},
 		{core.RepoMonorepo, "", "web + mobile, paket bersama, banyak aplikasi"},
+	},
+	core.TechDeployment: {
+		{"Docker Compose (satu server)", "", "satu server/VPS, operasional sederhana"},
+		{"Managed PaaS (container)", "", "tanpa mengelola server, skala otomatis"},
+		{"Kubernetes", "", "banyak layanan, skala dan deploy independen"},
+		{"Static hosting + CDN", "", "frontend statis tanpa backend"},
+		{"Node server / Vercel", "", "frontend dengan render di server (SSR)"},
+	},
+	core.TechObservability: {
+		{"Log terstruktur + health check", "", "aplikasi kecil-menengah"},
+		{"OpenTelemetry + Prometheus + Grafana", "", "tracing dan metrics terpusat, beban tinggi, audit"},
+		{"Sentry", "", "pelacakan error aplikasi"},
 	},
 }
 
@@ -132,7 +167,7 @@ func option(area, value string) *Option {
 
 // Needs Foundry recognizes. The analyst may report them in
 // discovery.tech_needs; keywords in the requirement add the rest.
-var KnownNeeds = []string{"realtime", "offline", "seo", "ai", "high_concurrency", "flexible_schema", "transactions", "independent_scaling", "enterprise", "files"}
+var KnownNeeds = []string{"realtime", "offline", "seo", "ai", "high_concurrency", "flexible_schema", "transactions", "independent_scaling", "enterprise", "files", "search"}
 
 var needWords = map[string][]string{
 	"realtime":            {"realtime", "real time", "live", "websocket", "streaming", "chat", "notifikasi instan", "push notification"},
@@ -145,6 +180,7 @@ var needWords = map[string][]string{
 	"independent_scaling": {"microservice", "microservices", "skala independen", "independent scaling", "deploy terpisah", "separate deployment"},
 	"enterprise":          {"sso", "audit", "rbac", "compliance", "kepatuhan", "ldap", "enterprise"},
 	"files":               {"upload", "lampiran", "attachment", "berkas", "object storage", "signed url"},
+	"search":              {"pencarian teks", "full text", "full text search", "search engine", "fuzzy search", "pencarian cepat"},
 }
 
 // normalize lowercases text and turns punctuation into spaces, padded so
@@ -252,7 +288,7 @@ func Recommend(p *core.Project) *core.TechStack {
 	}
 	s := &core.TechStack{Mode: core.StructureNew, Profile: prof.ID, Needs: needs, Platform: plat}
 	add := func(area, value, reason string) {
-		d := core.TechDecision{Area: area, Recommended: value, Reason: reason}
+		d := core.TechDecision{Area: area, Recommended: value, Reason: reason, Alternatives: alternatives(area, value)}
 		if o := option(area, value); o != nil {
 			d.Language = o.Language
 		}
@@ -296,6 +332,10 @@ func Recommend(p *core.Project) *core.TechStack {
 	case len(p.Features) <= 3:
 		v, r = core.ArchSimple, "Fiturnya sedikit; struktur sederhana cukup dan mudah dipelihara."
 	}
+	arch := v
+	if plat.Backend {
+		infra(s, add, has, arch)
+	}
 	add(core.TechArchitecture, v, r)
 	apps := 0
 	for _, b := range []bool{plat.Web, plat.Mobile, plat.Desktop} {
@@ -308,7 +348,76 @@ func Recommend(p *core.Project) *core.TechStack {
 	} else {
 		add(core.TechRepository, core.RepoSimple, "Satu aplikasi klien dan backend cukup dipisah per folder.")
 	}
+	switch {
+	case plat.Backend && arch == core.ArchMicroservices && has("independent_scaling"):
+		add(core.TechDeployment, "Kubernetes", "Layanan di-deploy dan diskalakan sendiri-sendiri.")
+	case plat.Backend:
+		add(core.TechDeployment, "Docker Compose (satu server)", "Satu backend dan database; satu server cukup dan murah dioperasikan.")
+	case plat.Web && s.Choice(core.TechFrontend) == "Next.js + TypeScript":
+		add(core.TechDeployment, "Node server / Vercel", "Next.js merender halaman di server.")
+	case plat.Web:
+		add(core.TechDeployment, "Static hosting + CDN", "Tanpa backend; frontend cukup file statis.")
+	}
+	if plat.Backend {
+		if has("enterprise") || has("high_concurrency") || arch == core.ArchMicroservices {
+			add(core.TechObservability, "OpenTelemetry + Prometheus + Grafana", "Audit, beban tinggi atau banyak layanan butuh tracing dan metrics terpusat.")
+		} else {
+			add(core.TechObservability, "Log terstruktur + health check", "Skala awal; log terstruktur dan health check cukup.")
+		}
+	}
 	return s
+}
+
+// infra decides the backend infrastructure areas. Each is only used when a
+// need asks for it; otherwise it is "Tidak perlu" with the reason, so the
+// user sees it was considered and can still choose one.
+func infra(s *core.TechStack, add func(area, value, reason string), has func(string) bool, arch string) {
+	switch {
+	case arch == core.ArchMicroservices:
+		add(core.TechMessaging, "NATS", "Layanan terpisah berkomunikasi lewat event.")
+	case has("realtime") && s.Choice(core.TechCache) == "Redis":
+		add(core.TechMessaging, "Redis Pub/Sub", "Event realtime ke klien memakai Redis yang sudah dipakai.")
+	default:
+		add(core.TechMessaging, core.TechNone, "Belum ada event antar proses; panggilan langsung antar modul cukup.")
+	}
+	var why []string
+	for _, w := range []struct{ need, text string }{
+		{"ai", "panggilan AI yang lama"}, {"files", "pemrosesan file"},
+		{"transactions", "laporan dan rekonsiliasi terjadwal"}, {"high_concurrency", "agregasi data di luar jalur request"},
+	} {
+		if has(w.need) {
+			why = append(why, w.text)
+		}
+	}
+	if len(why) > 0 {
+		add(core.TechWorkers, "Worker terpisah + antrean", "Dikerjakan di luar request: "+strings.Join(why, ", ")+".")
+	} else {
+		add(core.TechWorkers, "Job in-process", "Belum ada job berat; job ringan (email) cukup di proses backend.")
+	}
+	if has("files") {
+		add(core.TechStorage, "S3-compatible (S3 / MinIO)", "Ada upload file; disimpan di object storage dengan signed URL.")
+	} else {
+		add(core.TechStorage, core.TechNone, "Tidak ada kebutuhan upload file.")
+	}
+	switch {
+	case !has("search"):
+		add(core.TechSearch, core.TechNone, "Filter dan query database biasa cukup.")
+	case s.Choice(core.TechDatabase) == "PostgreSQL":
+		add(core.TechSearch, "PostgreSQL full-text search", "Pencarian teks memakai database yang sama; tanpa layanan tambahan.")
+	default:
+		add(core.TechSearch, "Meilisearch", "Pencarian teks cepat terpisah dari database dokumen.")
+	}
+}
+
+// alternatives are up to two other known options for area.
+func alternatives(area, value string) []string {
+	var out []string
+	for _, o := range Catalog[area] {
+		if !strings.EqualFold(o.Value, value) && o.Value != core.TechNone && len(out) < 2 {
+			out = append(out, o.Value)
+		}
+	}
+	return out
 }
 
 // fromCode reads the stack of an existing project from its components.
@@ -362,6 +471,10 @@ func Carry(old, next *core.TechStack) {
 			_ = Override(next, d.Area, d.Override.Value, d.Override.Reason)
 		}
 	}
+	next.History, next.Status, next.Approved = old.History, old.State(), old.Approved
+	if old.Proposal != nil {
+		next.SetStatus(old.Proposal.Previous) // the proposal was made on the old decisions
+	}
 }
 
 var ErrExisting = errors.New("project existing: teknologi mengikuti kode yang ada")
@@ -397,11 +510,27 @@ func Override(s *core.TechStack, area, value, reason string) error {
 		d.Override = nil
 		return nil
 	}
-	d.Override = &core.TechOverride{Value: value, Reason: reason}
+	d.Override = &core.TechOverride{Value: value, Reason: reason, Language: languageOf(value)}
 	if o != nil {
 		d.Override.Language = o.Language
 	}
 	return nil
+}
+
+// languageOf guesses the language of a technology outside the catalog.
+func languageOf(value string) string {
+	v := normalize(value)
+	for _, l := range []struct{ word, lang string }{
+		{" rust ", "Rust"}, {" axum ", "Rust"}, {" go ", "Go"}, {" golang ", "Go"}, {" python ", "Python"}, {" django ", "Python"},
+		{" java ", "Java"}, {" spring ", "Java"}, {" kotlin ", "Kotlin"}, {" php ", "PHP"}, {" laravel ", "PHP"},
+		{" ruby ", "Ruby"}, {" rails ", "Ruby"}, {" net ", "C#"}, {" c ", "C#"}, {" elixir ", "Elixir"}, {" phoenix ", "Elixir"},
+		{" typescript ", "TypeScript"}, {" node ", "TypeScript"}, {" express ", "TypeScript"}, {" swift ", "Swift"}, {" dart ", "Dart"},
+	} {
+		if strings.Contains(v, l.word) {
+			return l.lang
+		}
+	}
+	return ""
 }
 
 func values(area string) []string {

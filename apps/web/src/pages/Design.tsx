@@ -8,7 +8,7 @@ import { useProject } from "../store/project";
 import { useWorkbench } from "../store/workbench";
 import { api } from "../api";
 import type { Blocker, DesignHandoff, PageHandoff, PageStates, Project, TechStack } from "../types";
-import { TECH_AREA, techChoice } from "../components/TechStack";
+import { NONE, TECH_AREA, techChoice } from "../tech";
 import { ThemeGallery } from "../components/ThemeGallery";
 import { RegenerateButton, TemplateLibrary } from "../components/TemplateGallery";
 import { Architecture, Features, PlatformStructure, Summary } from "./DesignInfo";
@@ -251,7 +251,7 @@ function Workspace({ project }: { project: Project }) {
 function CodeHandoff({ handoff, blockers, stack }: { handoff?: PageHandoff; blockers: Blocker[]; stack?: TechStack | null }) {
   const [copied, setCopied] = useState(false);
   if (!handoff) return <div className="code-view"><p className="muted">Handoff belum tersedia.</p></div>;
-  const tech = stack?.decisions ?? [];
+  const tech = (stack?.decisions ?? []).filter((d) => techChoice(d) !== NONE);
   // The copied spec carries the technology so the code follows the same decision.
   const technology = Object.fromEntries(tech.map((d) => [d.area, techChoice(d)]));
   const json = JSON.stringify(tech.length ? { technology, page: handoff } : handoff, null, 2);

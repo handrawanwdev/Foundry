@@ -217,13 +217,25 @@ func (s *Server) Handler() http.Handler {
 		}
 		return svc.SetTemplate(in.Template)
 	}))
+	// Technology changes become a proposal; apply/discard decide it.
 	api("PUT /api/v1/project/stack", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct{ Area, Value, Reason string }
+		var in struct{ Changes []stack.Change }
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		return svc.SetStack(in.Area, in.Value, in.Reason)
+		return svc.ProposeStack(in.Changes)
 	}))
+	api("POST /api/v1/project/stack/request", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Text string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.RequestStackChange(in.Text))
+	}))
+	api("POST /api/v1/project/stack/apply", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.ApplyStackProposal() }))
+	api("POST /api/v1/project/stack/discard", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.DiscardStackProposal() }))
+	api("POST /api/v1/project/stack/approve", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.ApproveStack() }))
+	api("POST /api/v1/project/stack/review-design", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.AckTechReview() }))
 	api("POST /api/v1/project/stack/recommend", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.RecommendStack() }))
 	api("GET /api/v1/stack/catalog", func(r *http.Request) (any, error) {
 		return map[string]any{"catalog": stack.Catalog, "profiles": stack.Profiles, "areas": core.TechAreas}, nil

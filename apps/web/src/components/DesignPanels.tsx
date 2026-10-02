@@ -4,6 +4,7 @@ import { api } from "../api";
 import { changeRequest, changeScope, componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf, type PageRequest } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
+import { changeText, TECH_STATUS, techGate, techReview, techState, techVersion } from "../tech";
 import type { Blocker, DesignQA, DesignQuality, DesignSystem, Page, PageHandoff, Project, QAIssue, ThemeContext, Token } from "../types";
 import type { Device } from "../design";
 
@@ -360,6 +361,8 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
   const s = project.structure;
   const working = isWorking(project);
   const approved = d.status === "approved";
+  const tech = techReview(project);
+  const gate = approved ? null : techGate(project);
 
   return (
     <div className="review">
@@ -375,6 +378,12 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
           {" · "}Struktur: {s?.mode === "existing" ? "project yang sudah ada" : s?.template ?? "—"}
           {!approved && <> <button className="link" onClick={() => onInfo("platform")}>Ubah</button></>}
         </li>
+        {project.stack && project.stack.mode === "new" && (techState(project.stack) === "approved"
+          ? <li className="ok">✓ Teknologi v{techVersion(project.stack)} disetujui</li>
+          : <li className="warn">! Teknologi: {TECH_STATUS[techState(project.stack)]} — setujui dulu
+            {!approved && <> <button className="link" onClick={() => onInfo("platform")}>Tinjau</button></>}</li>)}
+        {tech.length > 0 && <li className="warn">! Teknologi berubah setelah rancangan dibuat: {tech.map(changeText).join("; ")}
+          {" "}<button className="link" onClick={() => onInfo("platform")}>Periksa dampak</button></li>}
         {blockers.length ? <li className="warn">! Wajib dilengkapi: {blockers.length} hal (design system, route, akses, aksi, urutan informasi, kondisi, menu, kualitas)</li>
           : <li className="ok">✓ Design system ada; tiap halaman punya route, akses, satu aksi utama, urutan informasi dan kondisi data</li>}
         {findings.length ? <li className="warn">! Kualitas rancangan: {findings.length} temuan</li>
@@ -444,8 +453,8 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
           </>
         ) : (
           <>
-            <button className="primary" disabled={working || pending === "approve" || blockers.length > 0}
-              title={blockers.length ? "Lengkapi dulu hal wajib di atas" : undefined} onClick={() => run("approve", api.approveDesign)}>Setujui Rancangan</button>
+            <button className="primary" disabled={working || pending === "approve" || blockers.length > 0 || !!gate}
+              title={blockers.length ? "Lengkapi dulu hal wajib di atas" : gate ?? undefined} onClick={() => run("approve", api.approveDesign)}>Setujui Rancangan</button>
             <button disabled={working} onClick={onAsk}>Minta perubahan</button>
           </>
         )}

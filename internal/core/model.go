@@ -219,6 +219,9 @@ type Design struct {
 	Scope *ChangeScope `json:"scope,omitempty"`
 	// Rejected is why the last patch was refused; the retry prompt shows it.
 	Rejected string `json:"rejected,omitempty"`
+	// TechVersion is the technology version the design was last checked
+	// against; a later version that affects the design asks for a review.
+	TechVersion int `json:"tech_version,omitempty"`
 	// Domain is the product domain the design decisions follow (ticketing,
 	// trading, ...); empty when none fits.
 	Domain string `json:"domain,omitempty"`

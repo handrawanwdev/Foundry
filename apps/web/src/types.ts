@@ -60,13 +60,30 @@ export interface ExistingUI {
 }
 // Technology decision: one choice per area with its reason; the user's
 // override wins over the recommendation.
-export type TechArea = "frontend" | "mobile" | "desktop" | "backend" | "database" | "cache" | "architecture" | "repository";
+export type TechArea = "frontend" | "mobile" | "desktop" | "backend" | "database" | "cache" | "messaging" | "workers" | "storage" | "search"
+  | "architecture" | "repository" | "deployment" | "observability";
 export interface TechOverride { value: string; language?: string; reason?: string }
-export interface TechDecision { area: TechArea; recommended: string; language?: string; reason: string; override?: TechOverride }
+export interface TechDecision {
+  area: TechArea; recommended: string; language?: string; reason: string; alternatives?: string[]; override?: TechOverride;
+}
+// Lifecycle of the technology decision (internal/core/techstack.go).
+export type TechStatus = "recommended" | "review" | "impact_checked" | "approved" | "changed";
+export interface TechChange { area: TechArea; from: string; to: string; language?: string; reason?: string }
+export interface TechIssue { level: "error" | "warning"; area?: TechArea; message: string }
+export interface TechImpact { area: TechArea; affects: string[]; design?: boolean }
+export interface TechProposal {
+  source: "user" | "ai"; request?: string; note?: string; changes: TechChange[]; issues?: TechIssue[]; impact?: TechImpact[];
+  previous: TechStatus; at: string;
+}
+export interface TechVersion {
+  version: number; at: string; source: "recommend" | "user" | "ai" | "structure"; request?: string; changes?: TechChange[];
+  impact?: TechImpact[]; design?: boolean; status: TechStatus; decisions: TechDecision[];
+}
 export interface TechStack {
   mode: "existing" | "new"; profile?: string; needs?: string[];
   platform: { web: boolean; mobile: boolean; desktop: boolean; backend: boolean };
-  decisions: TechDecision[]; approved: boolean;
+  decisions: TechDecision[]; approved: boolean; status?: TechStatus; issues?: TechIssue[]; proposal?: TechProposal;
+  request?: string; history?: TechVersion[];
 }
 export interface TechOption { value: string; language?: string; fit: string }
 export interface TechProfile { id: string; name: string; description: string }
@@ -172,6 +189,7 @@ export interface Design {
   pages: Page[]; status: "draft" | "changes_requested" | "approved"; feedback: string[] | null;
   revision?: DesignRevision;
   rejected?: string; // why the last patch was refused
+  tech_version?: number; // technology version the design was last checked against
   domain?: string;
   qa?: DesignQA; // visual critic of a newly generated design
   quality?: DesignQuality;

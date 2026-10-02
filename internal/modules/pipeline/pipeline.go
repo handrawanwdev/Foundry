@@ -290,8 +290,8 @@ func (s *Service) SetPlatform(targets []core.PlatformTarget) (*core.Project, err
 			return errors.New("pilih minimal satu platform")
 		}
 		p.Platform.Targets = ok
-		if p.Stack == nil || !p.Stack.Approved {
-			decideStack(p)
+		if p.Design == nil || p.Design.Status != core.DesignApproved {
+			decideStack(p, "Platform diubah")
 		}
 		p.Log("ui", "Platform diubah")
 		return nil
@@ -310,8 +310,12 @@ func (s *Service) SetTemplate(id string) (*core.Project, error) {
 			return err
 		}
 		if p.Stack == nil {
-			decideStack(p)
+			decideStack(p, "")
 		}
+		if p.Stack.Proposal != nil {
+			return stack.ErrPending
+		}
+		before := core.CloneDecisions(p.Stack.Decisions)
 		arch, repo := core.ArchModular, core.RepoSimple
 		switch id {
 		case "simple":
@@ -328,58 +332,11 @@ func (s *Service) SetTemplate(id string) (*core.Project, error) {
 		if err := stack.Override(p.Stack, core.TechRepository, repo, why); err != nil {
 			return err
 		}
+		stackChanged(p, before, "structure", "Struktur project: "+id)
 		syncStructure(p)
 		p.Log("ui", "Struktur project: "+id)
 		return nil
 	})
-}
-
-// SetStack overrides the recommended technology for one area (value ""
-// returns to the recommendation). The reason is kept with the decision.
-func (s *Service) SetStack(area, value, reason string) (*core.Project, error) {
-	return s.Store.Update(func(p *core.Project) error {
-		if p.Busy() {
-			return ErrBusy
-		}
-		if p.Platform == nil || p.Structure == nil || (p.Stack != nil && p.Stack.Approved) {
-			return ErrWrongStage
-		}
-		if p.Stack == nil {
-			decideStack(p)
-		}
-		if err := stack.Override(p.Stack, area, value, reason); err != nil {
-			return err
-		}
-		syncStructure(p)
-		p.Log("ui", fmt.Sprintf("Teknologi %s: %s", area, p.Stack.Choice(area)))
-		return nil
-	})
-}
-
-// RecommendStack analyzes the requirement again (projects made before the
-// technology decision get theirs here); the user's overrides stay.
-func (s *Service) RecommendStack() (*core.Project, error) {
-	return s.Store.Update(func(p *core.Project) error {
-		if p.Busy() {
-			return ErrBusy
-		}
-		if p.Platform == nil || p.Structure == nil || (p.Stack != nil && p.Stack.Approved) {
-			return ErrWrongStage
-		}
-		decideStack(p)
-		p.Log("ui", "Rekomendasi teknologi diperbarui")
-		return nil
-	})
-}
-
-// decideStack recommends the stack from the requirement and platform, keeps
-// the user's overrides and derives a new project's structure from it.
-func decideStack(p *core.Project) {
-	next := stack.Recommend(p)
-	stack.Carry(p.Stack, next)
-	p.Stack = next
-	work.CompleteBlueprint(p)
-	syncStructure(p)
 }
 
 func syncStructure(p *core.Project) {
@@ -443,17 +400,19 @@ func (s *Service) ApproveDesign() error {
 		if b := work.Blockers(p); len(b) > 0 {
 			return fmt.Errorf("%w: %d hal wajib dilengkapi", ErrIncomplete, len(b))
 		}
-		p.Design.Status = core.DesignApproved
-		p.Design.Revision = nil // approving keeps any pending change
 		if p.Stack == nil {
-			decideStack(p)
+			decideStack(p, "")
 		}
 		if p.Stack == nil {
 			return errors.New("keputusan teknologi belum ada")
 		}
+		if err := stackReady(p); err != nil {
+			return err
+		}
+		p.Design.Status = core.DesignApproved
+		p.Design.Revision = nil // approving keeps any pending change
 		p.Platform.Approved = true
 		p.Structure.Approved = true
-		p.Stack.Approved = true
 		p.Stage = core.StagePlan
 		p.Log("ui", "Rancangan disetujui")
 		return nil
@@ -508,6 +467,8 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 		return work.QAPrompt(p)
 	case work.KindReference:
 		return work.ReferencePrompt(p)
+	case work.KindStack:
+		return work.StackPrompt(p)
 	}
 	return ""
 }
@@ -582,6 +543,8 @@ func jobMessage(kind string) string {
 		return "Memeriksa hasil visual di browser"
 	case work.KindReference:
 		return "Menganalisis referensi desain"
+	case work.KindStack:
+		return "Memahami permintaan perubahan teknologi"
 	}
 	return kind
 }
@@ -631,7 +594,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			}
 			p.Structure = structure.Detect(p.Dir, p.Platform)
 			readExistingUI(p)
-			decideStack(p)
+			decideStack(p, "")
 			p.Stage = core.StageDesign
 			next = work.KindDesign
 			if r := p.Reference; r != nil && r.Status == "pending" {
@@ -649,6 +612,9 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			revising := p.Design != nil && p.Design.Status == core.DesignChanges && len(p.Design.Pages) > 0
 			if err := work.ApplyDesign(p, raw); err != nil {
 				return err
+			}
+			if !revising {
+				p.Design.TechVersion = p.Stack.Version() // made with this decision
 			}
 			switch {
 			case revising && s.Render != nil && p.Design.Revision != nil:
@@ -672,6 +638,10 @@ func (s *Service) applyAI(kind, raw, source string) error {
 				return err
 			}
 			p.Stage = core.StageBuild
+		case work.KindStack:
+			if err := work.ApplyStackChange(p, raw); err != nil {
+				return err
+			}
 		case work.KindDesignQA:
 			again, err := work.ApplyQA(p, raw)
 			if err != nil {
@@ -692,6 +662,9 @@ func (s *Service) applyAI(kind, raw, source string) error {
 	})
 	if kind == work.KindDesign && errors.Is(err, work.ErrNoChange) {
 		return s.dropUnclearRequest()
+	}
+	if kind == work.KindStack && err != nil {
+		return s.dropStackRequest(err)
 	}
 	if err != nil {
 		return err
@@ -731,6 +704,10 @@ func (s *Service) RetryJob() error {
 	switch p.Job.Kind {
 	case work.KindDiscovery, work.KindDesign, work.KindDesignQA, work.KindReference:
 		return s.startAI(p.Job.Kind)
+	case work.KindStack:
+		if p.Stack != nil && p.Stack.Request != "" {
+			return s.startAI(work.KindStack)
+		}
 	case work.KindPlan:
 		return s.continueApproval()
 	case "build":
