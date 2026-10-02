@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"slices"
@@ -32,12 +33,13 @@ type Preset struct {
 	// Efforts lists the accepted effort levels; empty means the CLI has no
 	// effort flag.
 	Efforts []string `json:"efforts"`
-	// PromptArg: prompt is passed as the last argument instead of stdin.
-	PromptArg bool     `json:"-"`
-	sub       []string // subcommand, before the model/effort flags
-	think     []string // args after the model/effort flags
-	execute   []string
-	effortArg func(string) []string
+	// PromptFile: flag that reads the prompt from a file instead of stdin.
+	// A file avoids the kernel's per-argument limit (E2BIG, ~128 KiB).
+	PromptFile string   `json:"-"`
+	sub        []string // subcommand, before the model/effort flags
+	think      []string // args after the model/effort flags
+	execute    []string
+	effortArg  func(string) []string
 	// listModels asks the CLI (or its API) which models exist; see ListModels.
 	listModels func(context.Context, Preset) ([]string, error)
 }
@@ -59,13 +61,13 @@ var Presets = []Preset{
 	{ID: "qwen", Name: "Qwen Code", Binary: "qwen",
 		think:   []string{"--approval-mode", "plan"},
 		execute: []string{"--approval-mode", "auto-edit"}},
-	{ID: "grok", Name: "Grok", Binary: "grok", PromptArg: true,
+	{ID: "grok", Name: "Grok", Binary: "grok", PromptFile: "--prompt-file",
 		Models:     []string{"grok-4.6", "grok-4.5"},
 		listModels: grokModels,
 		Efforts:    []string{"low", "medium", "high", "xhigh"},
 		effortArg:  func(e string) []string { return []string{"--effort", e} },
-		think:      []string{"-p"},
-		execute:    []string{"--always-approve", "-p"}},
+		think:      []string{},
+		execute:    []string{"--always-approve"}},
 	{ID: "gemini", Name: "Gemini", Binary: "gemini",
 		think:   []string{},
 		execute: []string{"--approval-mode", "auto_edit"}},
@@ -115,11 +117,11 @@ func (p Preset) Detected() (string, bool) {
 
 // Runner executes one configured agent.
 type Runner struct {
-	Name      string
-	argvThink []string
-	argvExec  []string
-	promptArg bool
-	Timeout   time.Duration
+	Name       string
+	argvThink  []string
+	argvExec   []string
+	promptFile string
+	Timeout    time.Duration
 }
 
 // NewRunner builds a runner from a preset id, or from a custom command when
@@ -141,11 +143,11 @@ func NewRunner(id string, custom []string, opt Options) (*Runner, error) {
 	}
 	head := append(append([]string{p.Binary}, p.sub...), opts...)
 	return &Runner{
-		Name:      p.Name,
-		argvThink: append(slices.Clone(head), p.think...),
-		argvExec:  append(slices.Clone(head), p.execute...),
-		promptArg: p.PromptArg,
-		Timeout:   30 * time.Minute,
+		Name:       p.Name,
+		argvThink:  append(slices.Clone(head), p.think...),
+		argvExec:   append(slices.Clone(head), p.execute...),
+		promptFile: p.PromptFile,
+		Timeout:    30 * time.Minute,
 	}, nil
 }
 
@@ -161,8 +163,20 @@ func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string
 	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 	var cmd *exec.Cmd
-	if r.promptArg {
-		cmd = exec.CommandContext(ctx, argv[0], append(argv[1:], prompt)...)
+	if r.promptFile != "" {
+		f, err := os.CreateTemp("", "foundry-prompt-*.txt")
+		if err != nil {
+			return "", fmt.Errorf("%w: %v", ErrAgentFailed, err)
+		}
+		defer os.Remove(f.Name())
+		_, err = f.WriteString(prompt)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return "", fmt.Errorf("%w: %v", ErrAgentFailed, err)
+		}
+		cmd = exec.CommandContext(ctx, argv[0], append(argv[1:], r.promptFile, f.Name())...)
 	} else {
 		cmd = exec.CommandContext(ctx, argv[0], argv[1:]...)
 		cmd.Stdin = strings.NewReader(prompt)
