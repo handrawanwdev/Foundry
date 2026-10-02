@@ -4,6 +4,7 @@ import { api } from "../api";
 import { changeRequest, changeScope, componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf, type PageRequest } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
+import { STRUCTURE_TYPE, structureGate, structureVersion } from "../structure";
 import { changeText, TECH_STATUS, techGate, techReview, techState, techVersion } from "../tech";
 import type { Blocker, DesignQA, DesignQuality, DesignSystem, Page, PageHandoff, Project, QAIssue, ThemeContext, Token } from "../types";
 import type { Device } from "../design";
@@ -362,7 +363,7 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
   const working = isWorking(project);
   const approved = d.status === "approved";
   const tech = techReview(project);
-  const gate = approved ? null : techGate(project);
+  const gate = approved ? null : techGate(project) ?? structureGate(project);
 
   return (
     <div className="review">
@@ -375,9 +376,13 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
         {uncovered.length ? <li className="warn">! Fitur tanpa halaman: {uncovered.map((f) => f.name).join(", ")}</li>
           : <li className="ok">✓ Semua fitur punya halaman</li>}
         <li className="ok">✓ Platform: {(project.platform?.targets ?? []).map((t) => PLATFORM_LABEL[t.kind]).join(" + ") || "—"}
-          {" · "}Struktur: {s?.mode === "existing" ? "project yang sudah ada" : s?.template ?? "—"}
           {!approved && <> <button className="link" onClick={() => onInfo("platform")}>Ubah</button></>}
         </li>
+        {s?.mode === "existing" ? <li className="ok">✓ Struktur: project yang sudah ada</li>
+          : s?.ir && (approved || structureGate(project) === null
+            ? <li className="ok">✓ Struktur {STRUCTURE_TYPE[s.ir.type]} v{structureVersion(s)} disetujui</li>
+            : <li className="warn">! Struktur {STRUCTURE_TYPE[s.ir.type]}: {structureGate(project)}
+              {" "}<button className="link" onClick={() => onInfo("platform")}>Tinjau</button></li>)}
         {project.stack && project.stack.mode === "new" && (techState(project.stack) === "approved"
           ? <li className="ok">✓ Teknologi v{techVersion(project.stack)} disetujui</li>
           : <li className="warn">! Teknologi: {TECH_STATUS[techState(project.stack)]} — setujui dulu

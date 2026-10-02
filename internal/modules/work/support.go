@@ -141,7 +141,7 @@ func knowledge(p *core.Project) map[string]any {
 		k["platforms"] = p.Platform.Targets
 	}
 	if s := p.Structure; s != nil {
-		k["architecture"] = map[string]any{"mode": s.Mode, "modules": s.Components, "template": s.Template, "layout": s.Layout}
+		k["architecture"] = map[string]any{"mode": s.Mode, "modules": s.Components, "template": s.Template, "layout": s.Layout, "structure": s.IR}
 	}
 	if p.Stack != nil {
 		k["technology"] = p.Stack.Decisions

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/modules/structure"
 )
 
 type planOut struct {
@@ -75,6 +76,22 @@ func structureBrief(p *core.Project) string {
 			fmt.Fprintf(&b, "- %s: %s %s\n", c.Kind, c.Path, c.Tech)
 		}
 		b.WriteString(existingUIBrief(p, true))
+	} else if ir := s.IR; ir != nil {
+		fmt.Fprintf(&b, "PROJECT STRUCTURE (approved by the user, type %s) — the contract: put code only in these folders, "+
+			"do not add top-level folders, services or packages; modules are domain boundaries, never split per endpoint or CRUD operation:\n", ir.Type)
+		b.WriteString(structure.Tree(ir))
+		for _, ps := range [][]core.StructurePart{ir.Apps, ir.Services, ir.Workers, ir.Packages} {
+			for _, x := range ps {
+				fmt.Fprintf(&b, "- %s", x.Path)
+				if len(x.Modules) > 0 {
+					fmt.Fprintf(&b, " modules: %s", strings.Join(x.Modules, ", "))
+				}
+				if x.Reason != "" {
+					b.WriteString(" — " + x.Reason)
+				}
+				b.WriteString("\n")
+			}
+		}
 	} else {
 		fmt.Fprintf(&b, "PROJECT STRUCTURE: new project, template %q, layout:\n", s.Template)
 		for _, l := range s.Layout {

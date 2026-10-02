@@ -223,7 +223,7 @@ func Impact(s *core.TechStack, changes []core.TechChange) []core.TechImpact {
 			}
 		}
 		if c.Area == core.TechArchitecture || c.Area == core.TechRepository {
-			a = append(a, "struktur folder project dibuat ulang dari keputusan ini")
+			a = append(a, "struktur project: diperbarui bila masih rekomendasi; bila sudah diubah/disetujui, ditandai tidak sesuai (tidak diubah otomatis)")
 		}
 		out = append(out, core.TechImpact{Area: c.Area, Affects: a, Design: core.AffectsDesign(c.Area)})
 	}

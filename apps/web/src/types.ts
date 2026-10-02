@@ -48,10 +48,30 @@ export interface PlatformTarget { kind: PlatformKind; audience: string[]; ration
 export interface PlatformPlan { targets: PlatformTarget[]; reason: string; approved: boolean }
 export interface Component { kind: string; path: string; tech: string; evidence: string }
 export interface Command { name: string; dir: string; argv: string[] }
+export type StructureType = "simple" | "modular" | "monorepo" | "microservices";
+export type PartKind = "app" | "service" | "module" | "worker" | "package";
+export interface StructurePart { name: string; path: string; modules?: string[]; reason?: string }
+// The structure decision of a new project: the build contract.
+export interface StructureIR {
+  type: StructureType; apps?: StructurePart[]; services?: StructurePart[]; workers?: StructurePart[];
+  packages?: StructurePart[]; docs: string;
+}
+export interface StructureOp { op: "type" | "add" | "remove" | "rename" | "move"; kind?: PartKind; name: string; to?: string; reason?: string }
+export interface StructureImpact { area: string; message: string }
+export interface StructureProposal {
+  source: "user" | "ai" | "recommend"; request?: string; note?: string; ops?: StructureOp[]; ir: StructureIR; changes: string[];
+  tech?: TechChange[]; issues?: TechIssue[]; impact?: StructureImpact[]; previous: TechStatus; at: string;
+}
+export interface StructureVersion {
+  version: number; at: string; source: string; request?: string; changes?: string[]; impact?: StructureImpact[];
+  status: TechStatus; ir: StructureIR;
+}
 export interface Structure {
   mode: "existing" | "new"; components: Component[] | null; template?: string; layout?: string[];
   reason: string; commands: Command[] | null; approved: boolean; scaffolded: boolean;
   ui?: ExistingUI;
+  ir?: StructureIR; recommended?: StructureType; status?: TechStatus; issues?: TechIssue[];
+  proposal?: StructureProposal; request?: string; history?: StructureVersion[];
 }
 // The frontend an existing project already has, read from its code.
 export interface ExistingUI {

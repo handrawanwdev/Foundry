@@ -20,7 +20,6 @@ import (
 	"github.com/handrawanw/foundry/internal/config"
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/agent"
-	"github.com/handrawanw/foundry/internal/modules/stack"
 	"github.com/handrawanw/foundry/internal/modules/structure"
 	"github.com/handrawanw/foundry/internal/modules/verify"
 	"github.com/handrawanw/foundry/internal/modules/work"
@@ -298,53 +297,6 @@ func (s *Service) SetPlatform(targets []core.PlatformTarget) (*core.Project, err
 	})
 }
 
-// SetTemplate picks the project structure template; for a new project it
-// is recorded as the architecture and repository decision it stands for,
-// so the stack and the structure never disagree.
-func (s *Service) SetTemplate(id string) (*core.Project, error) {
-	return s.Store.Update(func(p *core.Project) error {
-		if p.Structure == nil || p.Busy() || p.Structure.Approved {
-			return ErrWrongStage
-		}
-		if err := structure.Apply(p.Structure, id); err != nil {
-			return err
-		}
-		if p.Stack == nil {
-			decideStack(p, "")
-		}
-		if p.Stack.Proposal != nil {
-			return stack.ErrPending
-		}
-		before := core.CloneDecisions(p.Stack.Decisions)
-		arch, repo := core.ArchModular, core.RepoSimple
-		switch id {
-		case "simple":
-			arch = core.ArchSimple
-		case "monorepo":
-			repo = core.RepoMonorepo
-		case "microservices":
-			arch = core.ArchMicroservices
-		}
-		const why = "Struktur dipilih oleh user."
-		if err := stack.Override(p.Stack, core.TechArchitecture, arch, why); err != nil {
-			return err
-		}
-		if err := stack.Override(p.Stack, core.TechRepository, repo, why); err != nil {
-			return err
-		}
-		stackChanged(p, before, "structure", "Struktur project: "+id)
-		syncStructure(p)
-		p.Log("ui", "Struktur project: "+id)
-		return nil
-	})
-}
-
-func syncStructure(p *core.Project) {
-	if st := p.Structure; st != nil && st.Mode == core.StructureNew && !st.Approved && p.Stack != nil {
-		st.Template, st.Layout, st.Reason = stack.StructureFrom(p.Stack, p.Features, p.Blueprint)
-	}
-}
-
 // SetTheme picks the design's theme ("" lets Foundry select one from the
 // requirement). A draft design follows it at once: its tokens and style
 // change, its pages (Design IR) do not.
@@ -409,6 +361,9 @@ func (s *Service) ApproveDesign() error {
 		if err := stackReady(p); err != nil {
 			return err
 		}
+		if err := structureReady(p); err != nil {
+			return err
+		}
 		p.Design.Status = core.DesignApproved
 		p.Design.Revision = nil // approving keeps any pending change
 		p.Platform.Approved = true
@@ -469,6 +424,8 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 		return work.ReferencePrompt(p)
 	case work.KindStack:
 		return work.StackPrompt(p)
+	case work.KindStructure:
+		return work.StructurePrompt(p)
 	}
 	return ""
 }
@@ -545,6 +502,8 @@ func jobMessage(kind string) string {
 		return "Menganalisis referensi desain"
 	case work.KindStack:
 		return "Memahami permintaan perubahan teknologi"
+	case work.KindStructure:
+		return "Memahami permintaan perubahan struktur"
 	}
 	return kind
 }
@@ -642,6 +601,10 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			if err := work.ApplyStackChange(p, raw); err != nil {
 				return err
 			}
+		case work.KindStructure:
+			if err := work.ApplyStructureChange(p, raw); err != nil {
+				return err
+			}
 		case work.KindDesignQA:
 			again, err := work.ApplyQA(p, raw)
 			if err != nil {
@@ -665,6 +628,9 @@ func (s *Service) applyAI(kind, raw, source string) error {
 	}
 	if kind == work.KindStack && err != nil {
 		return s.dropStackRequest(err)
+	}
+	if kind == work.KindStructure && err != nil {
+		return s.dropStructureRequest(err)
 	}
 	if err != nil {
 		return err
@@ -707,6 +673,10 @@ func (s *Service) RetryJob() error {
 	case work.KindStack:
 		if p.Stack != nil && p.Stack.Request != "" {
 			return s.startAI(work.KindStack)
+		}
+	case work.KindStructure:
+		if p.Structure != nil && p.Structure.Request != "" {
+			return s.startAI(work.KindStructure)
 		}
 	case work.KindPlan:
 		return s.continueApproval()

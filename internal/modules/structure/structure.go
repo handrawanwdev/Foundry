@@ -1,9 +1,9 @@
 // Package structure decides the project layout. Existing projects keep their
-// own architecture (detected by scan); new projects get a template.
+// own architecture (detected by scan); new projects get a Structure IR that
+// Foundry recommends and the user edits and approves (decision.go).
 package structure
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,18 +16,18 @@ type Template struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
-	Layout      []string `json:"layout"`
+	Layout      []string `json:"layout"` // an example; the real one comes from the project
 }
 
 var Templates = []Template{
-	{ID: "simple", Name: "Simple", Description: "Cocok untuk aplikasi kecil",
-		Layout: []string{"src/", "tests/", "docs/"}},
-	{ID: "modular", Name: "Modular", Description: "Cocok untuk aplikasi bisnis: backend per modul + web",
-		Layout: []string{"services/api/", "apps/web/", "docs/"}},
-	{ID: "monorepo", Name: "Monorepo", Description: "Web + Mobile + Backend dengan kode bersama",
-		Layout: []string{"apps/web/", "apps/mobile/", "services/api/", "packages/shared/", "packages/ui/", "docs/"}},
-	{ID: "microservices", Name: "Microservices", Description: "Layanan terpisah per domain; hanya untuk skala dan deployment independen",
-		Layout: []string{"apps/web/", "services/", "docs/"}},
+	{ID: core.StructSimple, Name: "Simple", Description: "Aplikasi kecil, kompleksitas rendah; tanpa batas modul",
+		Layout: []string{"web/", "backend/", "docs/"}},
+	{ID: core.StructModular, Name: "Modular", Description: "Aplikasi bisnis dengan domain jelas; satu backend, tiap domain jadi modul",
+		Layout: []string{"apps/web/", "backend/<domain>/", "docs/"}},
+	{ID: core.StructMonorepo, Name: "Monorepo", Description: "Beberapa aplikasi berbagi kode, type, UI atau tooling",
+		Layout: []string{"apps/web/", "apps/mobile/", "services/api/<domain>/", "packages/types/", "docs/"}},
+	{ID: core.StructMicroservices, Name: "Microservices", Description: "Hanya bila perlu deploy/skala independen, ownership dan isolasi failure per domain",
+		Layout: []string{"apps/web/", "services/<domain>/", "docs/"}},
 }
 
 func TemplateByID(id string) (Template, bool) {
@@ -39,7 +39,8 @@ func TemplateByID(id string) (Template, bool) {
 	return Template{}, false
 }
 
-// Detect scans dir. Existing code wins over any template.
+// Detect scans dir. Existing code wins over any recommendation; a new
+// project's IR is filled by Sync once the technology is decided.
 func Detect(dir string, platform *core.PlatformPlan) *core.Structure {
 	r := scan.Scan(dir)
 	if r.Existing {
@@ -50,57 +51,20 @@ func Detect(dir string, platform *core.PlatformPlan) *core.Structure {
 			Reason:     "Foundry akan mengikuti struktur project yang sudah ada.",
 		}
 	}
-	t, reason := Suggest(platform)
-	return &core.Structure{
-		Mode:     core.StructureNew,
-		Template: t.ID,
-		Layout:   t.Layout,
-		Reason:   reason,
-	}
+	return &core.Structure{Mode: core.StructureNew}
 }
 
-// Suggest picks a template from platform needs.
-func Suggest(p *core.PlatformPlan) (Template, string) {
-	kinds := map[string]bool{}
-	if p != nil {
-		for _, t := range p.Targets {
-			kinds[t.Kind] = true
-		}
-	}
-	mobile := kinds[core.PlatformAndroid] || kinds[core.PlatformIOS] || kinds[core.PlatformDesktop]
-	switch {
-	case mobile:
-		t, _ := TemplateByID("monorepo")
-		return t, "Struktur ini dipilih agar Web, Mobile, dan Backend tetap terpisah tetapi dapat berbagi kode yang diperlukan."
-	case kinds[core.PlatformBackend] && kinds[core.PlatformWeb]:
-		t, _ := TemplateByID("modular")
-		return t, "Backend dan Web dipisah; backend dibagi per modul bisnis agar mudah dikembangkan."
-	default:
-		t, _ := TemplateByID("simple")
-		return t, "Aplikasi kecil cukup satu folder sumber agar sederhana."
-	}
-}
-
-// Apply switches a new-project structure to another template.
-func Apply(s *core.Structure, templateID string) error {
-	if s.Mode == core.StructureExisting {
-		return fmt.Errorf("project existing: struktur tidak diganti template")
-	}
-	t, ok := TemplateByID(templateID)
-	if !ok {
-		return fmt.Errorf("template %q tidak dikenal", templateID)
-	}
-	s.Template, s.Layout = t.ID, t.Layout
-	return nil
-}
-
-// Scaffold creates the template folders for a new project. It never touches
-// an existing project and never overwrites files.
+// Scaffold creates the folders of the structure IR for a new project. It
+// never touches an existing project and never overwrites files.
 func Scaffold(dir string, s *core.Structure) error {
 	if s.Mode != core.StructureNew {
 		return nil
 	}
-	for _, l := range s.Layout {
+	layout := s.Layout
+	if s.IR != nil {
+		layout = Layout(s.IR)
+	}
+	for _, l := range layout {
 		p := filepath.Join(dir, filepath.FromSlash(strings.TrimSuffix(l, "/")))
 		if err := os.MkdirAll(p, 0o755); err != nil {
 			return err

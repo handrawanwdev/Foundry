@@ -19,6 +19,7 @@ import (
 	"github.com/handrawanw/foundry/internal/modules/agent"
 	"github.com/handrawanw/foundry/internal/modules/pipeline"
 	"github.com/handrawanw/foundry/internal/modules/stack"
+	"github.com/handrawanw/foundry/internal/modules/structure"
 	"github.com/handrawanw/foundry/internal/modules/work"
 )
 
@@ -324,8 +325,11 @@ func TestEndToEndAgent(t *testing.T) {
 		t.Fatalf("handoff = %+v", h)
 	}
 
-	// User override: template.
-	if _, err := s.SetTemplate("modular"); err != nil {
+	// User override: structure type, applied after its impact.
+	if _, err := s.ProposeStructure([]core.StructureOp{{Op: "type", Name: "modular"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ApplyStructureProposal(); err != nil {
 		t.Fatal(err)
 	}
 	// Tasks must not exist before approval.
@@ -341,7 +345,7 @@ func TestEndToEndAgent(t *testing.T) {
 	if p.Stage != core.StageBuild {
 		t.Fatalf("stage = %s", p.Stage)
 	}
-	if _, err := os.Stat(filepath.Join(p.Dir, "apps", "api", "modules", "janji-temu")); err != nil {
+	if _, err := os.Stat(filepath.Join(p.Dir, "backend", "janji-temu")); err != nil {
 		t.Fatalf("scaffold missing: %v", err)
 	}
 	// Coverage filler adds a test task for FEAT-002 and UI tasks for pages.
@@ -759,7 +763,7 @@ func TestExistingProjectKeepsStructure(t *testing.T) {
 	if !npmTest {
 		t.Fatalf("commands = %+v", p.Structure.Commands)
 	}
-	if _, err := s.SetTemplate("simple"); err == nil {
+	if _, err := s.ProposeStructure([]core.StructureOp{{Op: "type", Name: "simple"}}); err == nil {
 		t.Fatal("template must not replace existing structure")
 	}
 }
@@ -1457,7 +1461,7 @@ func TestTechStack(t *testing.T) {
 	if p.Stack.State() != core.TechImpactChecked || p.Stack.Version() != 2 || len(p.Stack.History[1].Changes) != 2 {
 		t.Fatalf("applied = %+v", p.Stack)
 	}
-	if p.Structure.Template != "simple" || !slices.Equal(p.Structure.Layout, []string{"frontend/", "mobile/", "backend/", "docs/"}) {
+	if p.Structure.Template != "simple" || !slices.Equal(p.Structure.Layout, []string{"web/", "mobile/", "backend/", "docs/"}) {
 		t.Fatalf("structure = %+v", p.Structure)
 	}
 	// A platform change decides again but keeps the user's choices.
@@ -1510,6 +1514,12 @@ func TestTechStack(t *testing.T) {
 		t.Fatalf("unreviewed design err = %v", err)
 	}
 	if _, err := s.AckTechReview(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrStructureNotApproved) {
+		t.Fatalf("unapproved structure err = %v", err)
+	}
+	if _, err := s.ApproveStructure(); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.ApproveDesign(); err != nil {
@@ -1571,6 +1581,127 @@ func TestStackRequest(t *testing.T) {
 	}
 }
 
+func TestStructureDecision(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
+		t.Fatal(err)
+	}
+	// Recommendation: web + mobile + backend sharing code is a monorepo;
+	// domains are modules of one API, shared packages have a consumer.
+	p := load(t, s)
+	st := p.Structure
+	ir := st.IR
+	if ir == nil || ir.Type != core.StructMonorepo || st.State() != core.TechRecommended || st.Version() != 1 ||
+		len(ir.Services) != 1 || ir.Services[0].Path != "services/api/" || !slices.Contains(ir.Services[0].Modules, "identity") ||
+		!slices.ContainsFunc(ir.Packages, func(x core.StructurePart) bool { return x.Name == "types" }) {
+		t.Fatalf("structure = %+v", ir)
+	}
+	domains := ir.Services[0].Modules
+	other := domains[len(domains)-1]
+
+	// Microservices: one service per domain, never per operation; the
+	// architecture change it needs is shown before it is applied.
+	p, err := s.ProposeStructure([]core.StructureOp{{Op: "type", Name: "microservices"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr := p.Structure.Proposal
+	if pr == nil || p.Structure.IR.Type != core.StructMonorepo || len(pr.Tech) != 1 || pr.Tech[0].To != core.ArchMicroservices ||
+		len(pr.IR.Services) != len(domains) || !slices.ContainsFunc(pr.Impact, func(i core.StructureImpact) bool { return i.Area == "Deployment" }) ||
+		!slices.ContainsFunc(pr.Issues, func(i core.TechIssue) bool { return strings.Contains(i.Message, "Modular biasanya cukup") }) {
+		t.Fatalf("proposal = %+v", pr)
+	}
+	if p.Stack.Choice(core.TechArchitecture) == core.ArchMicroservices {
+		t.Fatal("technology changed before apply")
+	}
+	if _, err := s.ApproveStructure(); !errors.Is(err, structure.ErrPending) {
+		t.Fatalf("approve with proposal err = %v", err)
+	}
+	p, err = s.ApplyStructureProposal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Structure.Version() != 2 || p.Structure.State() != core.TechImpactChecked || p.Stack.Choice(core.TechArchitecture) != core.ArchMicroservices ||
+		!slices.Contains(p.Structure.Layout, "services/"+other+"/") || len(p.Structure.Errors()) != 0 {
+		t.Fatalf("applied = %+v %+v", p.Structure, p.Structure.Issues)
+	}
+	// "Reporting jangan jadi service sendiri, jadikan modul di identity."
+	if _, err := s.ProposeStructure([]core.StructureOp{{Op: "move", Kind: "service", Name: other, To: "identity"}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err = s.ApplyStructureProposal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(p.Structure.Layout, "services/identity/"+other+"/") || slices.Contains(p.Structure.Layout, "services/"+other+"/") {
+		t.Fatalf("layout = %v", p.Structure.Layout)
+	}
+	// A CRUD boundary is flagged.
+	p, err = s.ProposeStructure([]core.StructureOp{{Op: "add", Kind: "service", Name: "create-booking"}})
+	if err != nil || !slices.ContainsFunc(p.Structure.Proposal.Issues, func(i core.TechIssue) bool { return strings.Contains(i.Message, "CRUD") }) {
+		t.Fatalf("crud: %v %+v", err, p.Structure.Proposal)
+	}
+	if _, err := s.DiscardStructureProposal(); err != nil {
+		t.Fatal(err)
+	}
+	// The technology moves away from the user's structure: the structure
+	// is not rewritten, it is flagged and cannot be approved.
+	if _, err := s.ProposeStack([]stack.Change{{Area: core.TechArchitecture, Value: core.ArchModular}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err = s.ApplyStackProposal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Structure.IR.Type != core.StructMicroservices || len(p.Structure.Errors()) == 0 {
+		t.Fatalf("structure after tech change = %+v %+v", p.Structure.IR, p.Structure.Issues)
+	}
+	if _, err := s.ApproveStructure(); err == nil {
+		t.Fatal("inconsistent structure approved")
+	}
+	// Natural language through the AI host becomes a proposal.
+	if err := s.RequestStructureChange("Jadikan modular saja, backend satu."); err != nil {
+		t.Fatal(err)
+	}
+	w, _ := s.NextWork("")
+	if w.Kind != work.KindStructure || !strings.Contains(w.Prompt, "Jadikan modular saja") || !strings.Contains(w.Prompt, "service identity (modules: identity, "+other) {
+		t.Fatalf("work = %+v", w)
+	}
+	if err := s.SubmitWork(work.KindStructure, `{"ops":[{"op":"type","name":"modular"}],"note":"Diubah ke modular."}`); err != nil {
+		t.Fatal(err)
+	}
+	p = load(t, s)
+	if pr := p.Structure.Proposal; pr == nil || pr.Source != "ai" || pr.IR.Type != core.StructModular || p.Structure.Request != "" {
+		t.Fatalf("ai proposal = %+v", p.Structure)
+	}
+	if p, err = s.ApplyStructureProposal(); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(p.Structure.Layout, "backend/"+other+"/") || len(p.Structure.Errors()) != 0 {
+		t.Fatalf("modular = %v %+v", p.Structure.Layout, p.Structure.Issues)
+	}
+	if p, err = s.ApproveStructure(); err != nil || p.Structure.State() != core.TechApproved || p.Structure.Version() != 4 {
+		t.Fatalf("approve: %v %+v", err, p.Structure)
+	}
+	// The plan follows the approved structure.
+	if err := approve(s); err != nil {
+		t.Fatal(err)
+	}
+	w, _ = s.NextWork("")
+	if w.Kind != work.KindPlan || !strings.Contains(w.Prompt, "PROJECT STRUCTURE (approved by the user, type modular)") || !strings.Contains(w.Prompt, "backend/") {
+		t.Fatalf("plan = %+v", w)
+	}
+	if _, err := os.Stat(filepath.Join(load(t, s).Dir, "backend", other)); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+}
+
 func TestRegenerateDesign(t *testing.T) {
 	s := newService(t, fakeAI{mcp: true}, "")
 	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
@@ -1616,9 +1747,12 @@ func TestRegenerateDesign(t *testing.T) {
 	}
 }
 
-// approve approves the technology decision, then the design.
+// approve approves the technology decision and structure, then the design.
 func approve(s *pipeline.Service) error {
 	if _, err := s.ApproveStack(); err != nil && !errors.Is(err, pipeline.ErrWrongStage) {
+		return err
+	}
+	if _, err := s.ApproveStructure(); err != nil && !errors.Is(err, pipeline.ErrWrongStage) && !errors.Is(err, structure.ErrExisting) {
 		return err
 	}
 	return s.ApproveDesign()

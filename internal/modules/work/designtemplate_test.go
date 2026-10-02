@@ -96,8 +96,8 @@ func TestTemplateSelection(t *testing.T) {
 	}
 }
 
-// structure is a preview without its words: component types and the tree.
-func structure(pg core.Page) string {
+// previewShape is a preview without its words: component types and the tree.
+func previewShape(pg core.Page) string {
 	var types []string
 	for _, c := range pg.Components {
 		types = append(types, c.ID+":"+c.Type)
@@ -112,7 +112,7 @@ func TestTemplateAdaptation(t *testing.T) {
 	if reflect.DeepEqual(ticket, ops) {
 		t.Fatal("same template in another domain must adapt its content")
 	}
-	if structure(ticket) != structure(ops) {
+	if previewShape(ticket) != previewShape(ops) {
 		t.Fatal("adaptation must keep the template's structure")
 	}
 	if ticket.Components[3].Label != "Percakapan tiket #1042" || ops.Components[3].Label != "Permintaan PO-2210" {

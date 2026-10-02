@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/modules/structure"
 )
 
 // Markdown renders the project documentation from the single context:
@@ -48,6 +49,13 @@ func Markdown(p *core.Project) string {
 		if s.Mode == core.StructureExisting {
 			for _, c := range s.Components {
 				fmt.Fprintf(&b, "- %s: `%s` %s\n", c.Kind, c.Path, c.Tech)
+			}
+		} else if s.IR != nil {
+			fmt.Fprintf(&b, "Tipe: %s (v%d)\n\n```text\n%s```\n\n", s.IR.Type, s.Version(), structure.Tree(s.IR))
+			for _, ps := range [][]core.StructurePart{s.IR.Apps, s.IR.Services, s.IR.Workers, s.IR.Packages} {
+				for _, x := range ps {
+					fmt.Fprintf(&b, "- `%s` %s\n", x.Path, x.Reason)
+				}
 			}
 		} else {
 			fmt.Fprintf(&b, "Template: %s\n\n", s.Template)

@@ -127,39 +127,3 @@ func TestOverride(t *testing.T) {
 		t.Fatalf("carry = %+v", next.Decision(core.TechDatabase))
 	}
 }
-
-func TestStructure(t *testing.T) {
-	feats := []core.Feature{{Name: "Tiket"}, {Name: "Pembayaran & Invoice"}, {Name: "Tiket"}}
-	s := Recommend(project("Aplikasi tiket", "web", "android", "backend"))
-	tpl, layout, _ := Structure(s, feats)
-	if tpl != "monorepo" || !slices.Equal(layout, []string{"apps/web/", "apps/mobile/", "services/api/", "services/api/modules/tiket/",
-		"services/api/modules/pembayaran-invoice/", "packages/ui/", "packages/types/", "docs/"}) {
-		t.Fatalf("%s %v", tpl, layout)
-	}
-	_ = Override(s, core.TechArchitecture, core.ArchSimple, "")
-	if _, layout, _ = Structure(s, feats); slices.Contains(layout, "services/api/modules/tiket/") {
-		t.Fatalf("modules = %v", layout)
-	}
-	_ = Override(s, core.TechArchitecture, core.ArchModular, "")
-	_ = Override(s, core.TechRepository, core.RepoSimple, "")
-	if tpl, layout, _ = Structure(s, feats); tpl != "modular" || layout[2] != "apps/api/" {
-		t.Fatalf("%s %v", tpl, layout)
-	}
-	_ = Override(s, core.TechArchitecture, core.ArchMicroservices, "")
-	if tpl, layout, _ = Structure(s, feats); tpl != "microservices" || !slices.Contains(layout, "services/tiket/") {
-		t.Fatalf("%s %v", tpl, layout)
-	}
-	calc := project("Kalkulator", "web")
-	calc.Features = nil
-	web := Recommend(calc)
-	if _, layout, _ = Structure(web, nil); !slices.Equal(layout, []string{"src/", "tests/", "docs/"}) {
-		t.Fatalf("%v", layout)
-	}
-	_ = Override(s, core.TechArchitecture, core.ArchModular, "")
-	_ = Override(s, core.TechRepository, core.RepoMonorepo, "")
-	bp := &core.Blueprint{Modules: []core.Module{{ID: "identity"}, {ID: "appointment"}}}
-	if _, layout, _ = StructureFrom(s, feats, bp); !slices.Contains(layout, "services/api/modules/identity/") ||
-		!slices.Contains(layout, "services/api/modules/appointment/") || slices.Contains(layout, "services/api/modules/tiket/") {
-		t.Fatalf("blueprint modules = %v", layout)
-	}
-}

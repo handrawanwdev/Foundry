@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, CanvasOp, CanvasResult, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, StackCatalog, TechArea, Prototype, TaskStatus, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
+import type { AgentOptions, AIState, Browse, CanvasOp, CanvasResult, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, StackCatalog, StructureOp, TechArea, Prototype, TaskStatus, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -41,7 +41,13 @@ export const api = {
   retry: () => call("POST", "/project/retry", {}),
   dismissJob: () => call("POST", "/project/job/dismiss", {}),
   setPlatform: (targets: PlatformTarget[]) => call<Project>("PUT", "/project/platform", { targets }),
-  setTemplate: (template: string) => call<Project>("PUT", "/project/structure", { template }),
+  // Structure edits become a proposal; applyStructure/discardStructure decide it.
+  proposeStructure: (ops: StructureOp[]) => call<Project>("PUT", "/project/structure", { ops }),
+  requestStructure: (text: string) => call("POST", "/project/structure/request", { text }),
+  applyStructure: () => call<Project>("POST", "/project/structure/apply", {}),
+  discardStructure: () => call<Project>("POST", "/project/structure/discard", {}),
+  approveStructure: () => call<Project>("POST", "/project/structure/approve", {}),
+  recommendStructure: () => call<Project>("POST", "/project/structure/recommend", {}),
   // value "" returns the area to Foundry's recommendation.
   // Technology changes become a proposal; applyStack/discardStack decide it.
   proposeStack: (changes: { area: TechArea; value: string; reason?: string }[]) => call<Project>("PUT", "/project/stack", { changes }),

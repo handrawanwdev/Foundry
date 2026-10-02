@@ -111,7 +111,7 @@ func (s *Service) ApplyStackProposal() (*core.Project, error) {
 		}
 		work.ResetBlueprintTech(p, v.Changes)
 		work.CompleteBlueprint(p)
-		syncStructure(p)
+		syncStructure(p, "Teknologi diubah: "+changeText(v.Changes))
 		p.Log("ui", fmt.Sprintf("Teknologi v%d diterapkan: %s", v.Version, changeText(v.Changes)))
 		return nil
 	})
@@ -221,7 +221,7 @@ func decideStack(p *core.Project, why string) {
 		}
 	}
 	work.CompleteBlueprint(p)
-	syncStructure(p)
+	syncStructure(p, why)
 }
 
 // stackChanged saves a version after the decisions changed from before;

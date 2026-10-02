@@ -210,13 +210,32 @@ func (s *Server) Handler() http.Handler {
 		}
 		return svc.SetPlatform(in.Targets)
 	}))
+	// Structure edits become a proposal; apply/discard decide it. A bare
+	// template is a change of the structure type.
 	api("PUT /api/v1/project/structure", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct{ Template string }
+		var in struct {
+			Ops      []core.StructureOp
+			Template string
+		}
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		return svc.SetTemplate(in.Template)
+		if in.Template != "" {
+			in.Ops = append(in.Ops, core.StructureOp{Op: "type", Name: in.Template})
+		}
+		return svc.ProposeStructure(in.Ops)
 	}))
+	api("POST /api/v1/project/structure/request", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Text string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.RequestStructureChange(in.Text))
+	}))
+	api("POST /api/v1/project/structure/apply", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.ApplyStructureProposal() }))
+	api("POST /api/v1/project/structure/discard", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.DiscardStructureProposal() }))
+	api("POST /api/v1/project/structure/approve", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.ApproveStructure() }))
+	api("POST /api/v1/project/structure/recommend", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.RecommendStructure() }))
 	// Technology changes become a proposal; apply/discard decide it.
 	api("PUT /api/v1/project/stack", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct{ Changes []stack.Change }

@@ -149,12 +149,25 @@ const (
 type Structure struct {
 	Mode       StructureMode `json:"mode"`
 	Components []Component   `json:"components"` // detected (existing) or planned (new)
-	Template   string        `json:"template,omitempty"`
-	Layout     []string      `json:"layout,omitempty"`
-	Reason     string        `json:"reason"`
-	Commands   []Command     `json:"commands"`
-	Approved   bool          `json:"approved"`
-	Scaffolded bool          `json:"scaffolded"`
+	// Template is the structure type of a new project (IR.Type); Layout
+	// the folders derived from IR.
+	Template string    `json:"template,omitempty"`
+	Layout   []string  `json:"layout,omitempty"`
+	Reason   string    `json:"reason"`
+	Commands []Command `json:"commands"`
+	// IR is the structure decision of a new project, the build contract.
+	IR *StructureIR `json:"ir,omitempty"`
+	// Recommended is the type Foundry recommends for the current needs.
+	Recommended string             `json:"recommended,omitempty"`
+	Status      TechStatus         `json:"status,omitempty"`
+	Issues      []TechIssue        `json:"issues,omitempty"`
+	Proposal    *StructureProposal `json:"proposal,omitempty"`
+	// Request is a natural-language change waiting for the AI.
+	Request string             `json:"request,omitempty"`
+	History []StructureVersion `json:"history,omitempty"`
+	// Approved mirrors Status == approved for older readers.
+	Approved   bool `json:"approved"`
+	Scaffolded bool `json:"scaffolded"`
 	// UI is what the existing frontend already has; nil for new projects
 	// or when no frontend was found.
 	UI *ExistingUI `json:"ui,omitempty"`

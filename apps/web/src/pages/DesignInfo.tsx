@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
 import { api } from "../api";
 import { PLATFORM_LABEL } from "../flow";
+import { StructurePanel } from "../components/StructurePanel";
 import { TechStackPanel } from "../components/TechStack";
 import { useProject } from "../store/project";
-import type { Blueprint, ExistingUI, PlatformKind, PlatformTarget, Project, Template } from "../types";
+import type { Blueprint, ExistingUI, PlatformKind, PlatformTarget, Project } from "../types";
 
 // Secondary views of the design workspace: what the pages are built from.
 
@@ -35,9 +35,7 @@ const KINDS: PlatformKind[] = ["web", "android", "ios", "desktop", "backend"];
 
 export function PlatformStructure({ project }: { project: Project }) {
   const { run } = useProject();
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const locked = project.design?.status === "approved" || !!project.structure?.approved;
-  useEffect(() => { void api.templates().then(setTemplates); }, []);
+  const locked = project.design?.status === "approved" || !!project.platform?.approved;
   const targets = project.platform?.targets ?? [];
   const has = (k: PlatformKind) => targets.some((t) => t.kind === k);
 
@@ -67,10 +65,9 @@ export function PlatformStructure({ project }: { project: Project }) {
         {project.platform?.reason && <p className="small"><strong>Alasan:</strong> {project.platform.reason}</p>}
       </section>
       <TechStackPanel project={project} />
-      <section className="info-sec">
-        <h3>Struktur project</h3>
-        {s?.mode === "existing" ? (
-          <>
+      {s?.mode === "existing" ? (
+        <section className="info-sec">
+          <h3>Struktur project</h3>
             {(s.components ?? []).map((c, i) => (
               <div key={i} className="small">✓ {c.kind} ditemukan <code>{c.path}</code> {c.tech && <span className="muted">({c.tech})</span>}</div>
             ))}
@@ -81,21 +78,9 @@ export function PlatformStructure({ project }: { project: Project }) {
                 {(s.commands ?? []).map((c, i) => <div key={i}><code>{c.argv.join(" ")}</code> <span className="muted">di {c.dir}</span></div>)}
               </details>
             )}
-          </>
-        ) : s ? (
-          <>
-            {templates.map((t) => (
-              <label key={t.id} className="check">
-                <input type="radio" name="tpl" checked={s.template === t.id} disabled={locked}
-                  onChange={() => void run("template", () => api.setTemplate(t.id))} />
-                <strong>{t.name}</strong> <span className="muted small">{t.description}</span>
-              </label>
-            ))}
-            <pre className="code small">{(s.layout ?? []).join("\n")}</pre>
-            <p className="small">{s.reason}</p>
-          </>
-        ) : <p className="muted">Belum ditentukan</p>}
-      </section>
+        </section>
+      ) : s?.ir ? <StructurePanel project={project} />
+        : <section className="info-sec"><h3>Struktur project</h3><p className="muted">Belum ditentukan</p></section>}
     </div>
   );
 }
