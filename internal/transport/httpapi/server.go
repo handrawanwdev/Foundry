@@ -72,7 +72,9 @@ func (s *Server) Open(dir, name string, create bool) (*core.Project, error) {
 	if s.Render != nil {
 		svc.Render = s.Render
 	}
-	svc.RecoverStale()
+	if err := svc.RecoverStale(); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	s.svc = svc
 	s.mu.Unlock()
@@ -745,7 +747,13 @@ func guard(next http.Handler) http.Handler {
 		if err != nil {
 			host = r.Host
 		}
-		if !isLocal(host) && os.Getenv("FOUNDRY_ALLOW_REMOTE") != "1" {
+		// The Host header is the client's word; the peer address is not.
+		// Both matter when --addr listens on more than loopback.
+		peer, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			peer = r.RemoteAddr
+		}
+		if (!isLocal(host) || !isLocal(peer)) && os.Getenv("FOUNDRY_ALLOW_REMOTE") != "1" {
 			http.Error(w, "host tidak diizinkan", http.StatusForbidden)
 			return
 		}

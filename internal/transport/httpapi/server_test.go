@@ -21,6 +21,7 @@ func TestGuardAndFlow(t *testing.T) {
 	h := s.Handler()
 	do := func(method, path, body, origin, host string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:50000"
 		r.Host = host
 		if origin != "" {
 			r.Header.Set("Origin", origin)
@@ -38,6 +39,14 @@ func TestGuardAndFlow(t *testing.T) {
 	if w := do("GET", "/api/v1/project", "", "", "evil.example"); w.Code != 403 {
 		t.Fatalf("rebinding host allowed: %d", w.Code)
 	}
+	// A LAN peer that claims Host: localhost is still refused.
+	r := httptest.NewRequest("GET", "/api/v1/project", nil)
+	r.Host, r.RemoteAddr = "localhost:8080", "192.168.1.9:40000"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 403 {
+		t.Fatalf("remote peer allowed: %d", w.Code)
+	}
 	// No AI connected → story rejected with 412.
 	if w := do("POST", "/api/v1/project/story", `{"story":"aplikasi klinik untuk pasien"}`, "http://localhost:5173", "127.0.0.1:8080"); w.Code != http.StatusPreconditionFailed {
 		t.Fatalf("story without AI: %d %s", w.Code, w.Body)
@@ -53,6 +62,7 @@ func TestOpenCloseBrowse(t *testing.T) {
 	h := s.Handler()
 	do := func(method, path, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:50000"
 		r.Host = "127.0.0.1:8080"
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
@@ -105,6 +115,7 @@ func TestProjectSchedule(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := httptest.NewRequest("GET", "/api/v1/project", nil)
+	r.RemoteAddr = "127.0.0.1:50000"
 	r.Host = "127.0.0.1:8080"
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, r)
@@ -140,6 +151,7 @@ func TestFileExplorer(t *testing.T) {
 	h := s.Handler()
 	get := func(path string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("GET", path, nil)
+		r.RemoteAddr = "127.0.0.1:50000"
 		r.Host = "127.0.0.1:8080"
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
@@ -172,6 +184,7 @@ func TestDesignVersionRoutes(t *testing.T) {
 	h := s.Handler()
 	do := func(method, path, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:50000"
 		r.Host = "127.0.0.1:8080"
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
@@ -202,6 +215,7 @@ func TestDesignTemplateRoute(t *testing.T) {
 	t.Setenv("FOUNDRY_HOME", t.TempDir())
 	h := New(nil, "/bin/foundry").Handler()
 	r := httptest.NewRequest("GET", "/api/v1/design-templates?theme=sakura-light&domain=ticketing", nil)
+	r.RemoteAddr = "127.0.0.1:50000"
 	r.Host = "127.0.0.1:8080"
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -224,6 +238,7 @@ func TestAIParallelSettings(t *testing.T) {
 	h := New(nil, "/bin/foundry").Handler()
 	do := func(method, path, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:50000"
 		r.Host = "127.0.0.1:8080"
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)

@@ -101,3 +101,36 @@ func TestIsolatedRejectsForeignFile(t *testing.T) {
 		t.Fatalf("TASK-002 = %s %v", p.Task("TASK-002").Status, p.Task("TASK-002").Notes)
 	}
 }
+
+// Two parallel tasks add the same file: the later merge conflicts, retries
+// from the newer tree, and the conflict does not count as a failed attempt.
+func TestIsolatedConflictRetriesFree(t *testing.T) {
+	t.Setenv("FOUNDRY_AGENTS", "2")
+	s := newService(t, fakeAI{}, "clash")
+	dir := s.Store.Dir
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/k\n\ngo 1.22\n"), 0o644)
+	gitRepo(t, dir)
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Stage = core.StageBuild
+		p.Tasks = []core.Task{
+			{ID: "TASK-001", Title: "a", Area: "api", Files: []string{"app/task_001.go", "app/task_001_test.go"}, AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo},
+			{ID: "TASK-002", Title: "b", Area: "api", Files: []string{"app/task_002.go", "app/task_002_test.go"}, AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StartBuild(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	if !strings.Contains(strings.Join(logTexts(p), "\n"), "Konflik") {
+		t.Fatalf("no conflict happened: %v", logTexts(p))
+	}
+	for _, tk := range p.Tasks {
+		if tk.Status != core.TaskDone || tk.Attempts != 1 {
+			t.Fatalf("%s = %s attempts %d notes %v", tk.ID, tk.Status, tk.Attempts, tk.Notes)
+		}
+	}
+}

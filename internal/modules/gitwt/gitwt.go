@@ -22,8 +22,12 @@ import (
 // ErrConflict means a patch does not apply cleanly.
 var ErrConflict = errors.New("patch tidak bisa diterapkan bersih")
 
-// depDirs are dependency directories shared into worktrees via symlink.
+// depDirs are dependency directories shared into worktrees via symlink, as
+// are .env files: both are usually gitignored, so the snapshot lacks them,
+// yet builds and tests need them.
 var depDirs = []string{"node_modules", ".venv", "venv", "vendor"}
+
+func isEnv(n string) bool { return n == ".env" || strings.HasPrefix(n, ".env.") }
 
 // Tree is one agent worktree.
 type Tree struct {
@@ -105,7 +109,9 @@ func Snapshot(ctx context.Context, repo string, exclude ...string) (string, erro
 		"GIT_AUTHOR_NAME=Foundry", "GIT_AUTHOR_EMAIL=foundry@localhost",
 		"GIT_COMMITTER_NAME=Foundry", "GIT_COMMITTER_EMAIL=foundry@localhost",
 	}
-	if hasHead(ctx, repo) {
+	// Starting from a copy of the user's index reuses its stat data: add -A
+	// then hashes only files changed since, not the whole tree.
+	if copyIndex(ctx, repo, filepath.Join(tmp, "index")) != nil && hasHead(ctx, repo) {
 		if _, err := git(ctx, repo, env, nil, "read-tree", "HEAD"); err != nil {
 			return "", err
 		}
@@ -125,6 +131,23 @@ func Snapshot(ctx context.Context, repo string, exclude ...string) (string, erro
 	return strings.TrimSpace(string(out)), nil
 }
 
+// copyIndex copies repo's index file to dst.
+func copyIndex(ctx context.Context, repo, dst string) error {
+	out, err := git(ctx, repo, nil, nil, "rev-parse", "--git-path", "index")
+	if err != nil {
+		return err
+	}
+	src := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(src) {
+		src = filepath.Join(repo, src)
+	}
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, b, 0o644)
+}
+
 func hasHead(ctx context.Context, repo string) bool {
 	_, err := git(ctx, repo, nil, nil, "rev-parse", "--verify", "-q", "HEAD")
 	return err == nil
@@ -140,7 +163,8 @@ func TreeOf(ctx context.Context, repo, commit string) (string, error) {
 }
 
 // Add creates a detached worktree of commit in a temp dir and symlinks
-// untracked dependency dirs (node_modules, .venv, venv, vendor) from repo.
+// untracked dependency dirs (node_modules, .venv, venv, vendor) and .env
+// files from repo.
 func Add(ctx context.Context, repo, commit, name string) (*Tree, error) {
 	repo, err := filepath.Abs(repo)
 	if err != nil {
@@ -150,7 +174,7 @@ func Add(ctx context.Context, repo, commit, name string) (*Tree, error) {
 	if _, err := rand.Read(rb[:]); err != nil {
 		return nil, err
 	}
-	parent := filepath.Join(os.TempDir(), "foundry-wt", hex.EncodeToString(rb[:]))
+	parent := filepath.Join(wtRoot(), hex.EncodeToString(rb[:]))
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return nil, err
 	}
@@ -179,7 +203,8 @@ func Add(ctx context.Context, repo, commit, name string) (*Tree, error) {
 	return t, nil
 }
 
-// findDeps lists dependency dirs in repo at depth 0..2 (slash-separated).
+// findDeps lists dependency dirs and .env files in repo at depth 0..2
+// (slash-separated).
 func findDeps(repo string) []string {
 	var found []string
 	var walk func(rel string, depth int)
@@ -189,13 +214,16 @@ func findDeps(repo string) []string {
 			return
 		}
 		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
 			n := e.Name()
 			p := n
 			if rel != "" {
 				p = rel + "/" + n
+			}
+			if !e.IsDir() {
+				if isEnv(n) && e.Type().IsRegular() {
+					found = append(found, p)
+				}
+				continue
 			}
 			if isDep(n) {
 				found = append(found, p)
@@ -311,9 +339,35 @@ func (t *Tree) Remove() {
 	git(ctx, t.Repo, nil, nil, "worktree", "prune")
 }
 
-// Prune runs `git worktree prune` to clean stale entries from crashed runs.
+// wtRoot holds every Foundry worktree, one random parent each.
+func wtRoot() string { return filepath.Join(os.TempDir(), "foundry-wt") }
+
+// Prune removes repo's Foundry worktrees left by a crashed run, then stale
+// git entries. Call it only while no task of repo runs in a worktree.
+// Worktrees of other repos are left alone.
 func Prune(repo string) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+	out, _ := git(ctx, repo, nil, nil, "worktree", "list", "--porcelain")
+	root := canon(wtRoot()) + string(filepath.Separator)
+	for _, line := range strings.Split(string(out), "\n") {
+		dir, ok := strings.CutPrefix(line, "worktree ")
+		if !ok || !strings.HasPrefix(canon(dir), root) {
+			continue
+		}
+		dropLinks(dir)
+		(&Tree{Dir: dir, Repo: repo}).Remove()
+	}
 	git(ctx, repo, nil, nil, "worktree", "prune")
+}
+
+// dropLinks removes every symlink under dir (never its target), so nothing
+// removing the tree afterwards can reach the project through one.
+func dropLinks(dir string) {
+	filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err == nil && d.Type()&os.ModeSymlink != 0 {
+			os.Remove(p)
+		}
+		return nil
+	})
 }

@@ -89,3 +89,21 @@ func TestParsePatchesAndOwner(t *testing.T) {
 		t.Fatalf("own file must not resolve to another owner, got %s", o.ID)
 	}
 }
+
+// Dependency manifests and lockfiles are never owned: adding a dependency
+// is not an edit of another task's file.
+func TestForeignOwnerSkipsDependencyFiles(t *testing.T) {
+	p := &core.Project{Tasks: []core.Task{
+		{ID: "TASK-001", Status: core.TaskInProgress},
+		{ID: "TASK-002", Status: core.TaskTodo, Files: []string{"package.json", "apps/web/package-lock.json", "src/db.ts"}},
+	}}
+	me := &p.Tasks[0]
+	for _, f := range []string{"package.json", "apps/web/package-lock.json", "go.sum"} {
+		if o := ForeignOwner(p, me, f); o != nil {
+			t.Errorf("%s owned by %s", f, o.ID)
+		}
+	}
+	if o := ForeignOwner(p, me, "src/db.ts"); o == nil || o.ID != "TASK-002" {
+		t.Errorf("src/db.ts owner = %v", o)
+	}
+}

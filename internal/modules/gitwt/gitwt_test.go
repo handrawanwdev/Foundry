@@ -327,3 +327,59 @@ func TestSnapshotExcludeIgnored(t *testing.T) {
 		t.Fatalf("files = %s", files)
 	}
 }
+
+// Gitignored .env files are linked in, never carried in the diff.
+func TestAddLinksEnv(t *testing.T) {
+	needGit(t)
+	repo := newRepo(t)
+	write(t, repo, ".gitignore", ".env\n.env.*\n")
+	write(t, repo, ".env", "DB=x\n")
+	write(t, repo, ".env.test", "DB=t\n")
+	write(t, repo, "a.txt", "a1\n")
+	wt := addTree(t, repo)
+	for _, f := range []string{".env", ".env.test"} {
+		fi, err := os.Lstat(filepath.Join(wt.Dir, f))
+		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("%s bukan symlink: %v", f, err)
+		}
+	}
+	if read(t, wt.Dir, ".env") != "DB=x\n" {
+		t.Error("isi .env salah")
+	}
+	write(t, wt.Dir, "a.txt", "A\n")
+	_, files, err := wt.Diff(context.Background())
+	if err != nil || !reflect.DeepEqual(files, []string{"a.txt"}) {
+		t.Fatalf("files=%v err=%v", files, err)
+	}
+	wt.Remove()
+	if read(t, repo, ".env") != "DB=x\n" {
+		t.Error(".env project terhapus")
+	}
+}
+
+// Prune removes worktrees a crashed run left behind, links first.
+func TestPruneOrphans(t *testing.T) {
+	needGit(t)
+	ctx := context.Background()
+	repo := newRepo(t)
+	write(t, repo, "node_modules/pkg/index.js", "dep\n")
+	snap, err := Snapshot(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := Add(ctx, repo, snap, "orphan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Symlink(filepath.Join(repo, ".git"), filepath.Join(wt.Dir, "state")) // like the .foundry link
+	Prune(repo)                                                             // no Remove: the run "crashed"
+	if _, err := os.Lstat(filepath.Dir(wt.Dir)); !os.IsNotExist(err) {
+		t.Fatal("worktree yatim masih ada")
+	}
+	if strings.Contains(run(t, repo, "worktree", "list"), wt.Dir) {
+		t.Error("worktree masih terdaftar")
+	}
+	if read(t, repo, "node_modules/pkg/index.js") != "dep\n" || !Usable(repo) {
+		t.Error("isi project ikut terhapus")
+	}
+}

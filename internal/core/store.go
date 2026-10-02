@@ -121,8 +121,13 @@ func (s *Store) write(p *Project) error {
 	return os.Rename(tmp, s.path())
 }
 
+// staleLock is when a lock file counts as left by a crashed process. The
+// wait outlasts it, so a lock left by a crash is broken instead of failing
+// the caller.
+const staleLock = 30 * time.Second
+
 func (s *Store) withLock(fn func() error) error {
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(staleLock + 10*time.Second)
 	for {
 		f, err := os.OpenFile(s.lockPath(), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {
@@ -134,7 +139,7 @@ func (s *Store) withLock(fn func() error) error {
 			return err
 		}
 		// Break locks left behind by a crashed process.
-		if st, serr := os.Stat(s.lockPath()); serr == nil && time.Since(st.ModTime()) > 30*time.Second {
+		if st, serr := os.Stat(s.lockPath()); serr == nil && time.Since(st.ModTime()) > staleLock {
 			os.Remove(s.lockPath())
 			continue
 		}

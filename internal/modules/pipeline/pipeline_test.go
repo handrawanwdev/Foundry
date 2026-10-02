@@ -181,6 +181,9 @@ func fakeAgent() {
 		}
 		os.MkdirAll("app", 0o755)
 		os.WriteFile(filepath.Join("app", id+".go"), []byte("package app\n\nfunc F_"+id+"() int { return 1 }\n"), 0o644)
+		if mode == "clash" { // every task adds the same file
+			os.WriteFile("notes.txt", []byte(id+"\n"), 0o644)
+		}
 		if mode == "cross" && id == "task_001" {
 			os.MkdirAll("b", 0o755)
 			os.WriteFile(filepath.Join("b", "y.go"), []byte("package b\n"), 0o644)
@@ -810,7 +813,7 @@ func TestMCPHostFlow(t *testing.T) {
 		t.Fatalf("work = %+v", w)
 	}
 	// Host claims done without writing code: build fails (no go.mod) → TODO.
-	tk, b, err := s.SubmitTask("TASK-001", []work.Verdict{{Index: 1, Met: true, Evidence: "x"}}, nil)
+	tk, b, err := s.SubmitTask("TASK-001", "", []work.Verdict{{Index: 1, Met: true, Evidence: "x"}}, nil)
 	if err != nil || b.Passed || tk.Status != core.TaskTodo {
 		t.Fatalf("task=%v build=%v err=%v", tk.Status, b.Passed, err)
 	}
@@ -819,12 +822,12 @@ func TestMCPHostFlow(t *testing.T) {
 	dir := s.Store.Dir
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/k\n\ngo 1.22\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)
-	tk, _, _ = s.SubmitTask(w.TaskID, []work.Verdict{{Index: 1, Met: true}}, nil)
+	tk, _, _ = s.SubmitTask(w.TaskID, "", []work.Verdict{{Index: 1, Met: true}}, nil)
 	if tk.Status == core.TaskDone {
 		t.Fatal("DONE without evidence")
 	}
 	w, _ = s.NextWork("")
-	tk, b, _ = s.SubmitTask(w.TaskID, []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod dibuat"}}, nil)
+	tk, b, _ = s.SubmitTask(w.TaskID, "", []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod dibuat"}}, nil)
 	if tk.Status != core.TaskDone || !b.Passed {
 		t.Fatalf("task = %s build %+v", tk.Status, b)
 	}
@@ -995,7 +998,7 @@ func TestParallelWorkersQueueOnLocks(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)
 	s.Store.Update(func(p *core.Project) error { p.Task("TASK-002").Files = []string{"services/api/main.go"}; return nil })
 	patches := []work.Patch{{File: "services/api/main.go", Change: "daftarkan route /health"}, {File: "", Change: "x"}}
-	if tk, _, err := s.SubmitTask("TASK-001", []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod"}}, patches); err != nil || tk.Status != core.TaskDone {
+	if tk, _, err := s.SubmitTask("TASK-001", "", []work.Verdict{{Index: 1, Met: true, Evidence: "go.mod"}}, patches); err != nil || tk.Status != core.TaskDone {
 		t.Fatalf("task = %v err %v", tk, err)
 	}
 	// The host's patch for a file TASK-002 owns becomes TASK-002's feedback.
@@ -1017,6 +1020,24 @@ func TestParallelWorkersQueueOnLocks(t *testing.T) {
 	p := load(t, s)
 	if p.Task("TASK-002").Owner != "a" || p.Task("TASK-004").Owner != "b" || len(p.ActiveTasks()) != 2 {
 		t.Fatalf("active = %d", len(p.ActiveTasks()))
+	}
+	// Host a goes silent past the lease: c gets its task, a can no longer
+	// submit it; b stays alive through next_work.
+	s.Store.Update(func(p *core.Project) error {
+		p.Task("TASK-002").Seen = time.Now().Add(-pipeline.HostLease - time.Minute)
+		return nil
+	})
+	if w, _ := s.NextWork("b"); w.TaskID != "TASK-004" {
+		t.Fatalf("b again = %+v", w)
+	}
+	if w, _ := s.NextWork("c"); w.TaskID != "TASK-002" {
+		t.Fatalf("c after lease = %+v", w)
+	}
+	if tk := load(t, s).Task("TASK-002"); tk.Owner != "c" || tk.Attempts != 1 {
+		t.Fatalf("reclaimed = %+v", tk)
+	}
+	if _, _, err := s.SubmitTask("TASK-002", "a", nil, nil); err == nil || !strings.Contains(err.Error(), "dipegang c") {
+		t.Fatalf("stale submit err = %v", err)
 	}
 }
 

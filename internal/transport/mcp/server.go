@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -184,13 +185,13 @@ var tools = []tool{
 	{Name: "get_task", perm: PermRead, Description: "One task with its full brief.", InputSchema: obj(map[string]any{"task_id": str}, "task_id")},
 	{Name: "get_verification", perm: PermRead, Description: "Latest verification: checks, issues, requirement traceability.", InputSchema: obj(nil)},
 	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, plan, a support question or a task). Claims a task when building. " +
-		"When several hosts build in parallel, each passes its own worker name. also_ready lists other independent tasks another worker can claim; a task whose page or files another worker holds waits (kind \"wait\": call again shortly).",
+		"worker defaults to this connection; hosts sharing one connection pass distinct worker names. A task whose host stays silent (no next_work/update_task) for 30 minutes is released to other workers. also_ready lists other independent tasks another worker can claim; a task whose page or files another worker holds waits (kind \"wait\": call again shortly).",
 		InputSchema: obj(map[string]any{"worker": str})},
 	{Name: "submit_work", perm: PermWrite, Description: "Hand back a discovery/design/plan/design_qa/support result (the JSON object requested by next_work).",
 		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "plan", "design_qa", "support"}}, "result": str}, "kind", "result")},
 	{Name: "submit_task", perm: PermExecute, Description: "Report a task as implemented. Foundry runs build/test; DONE only if checks pass and every acceptance criterion is met with evidence. " +
-		"patches (optional): changes you need in files another task owns; do not edit them, Foundry hands each to its owner.",
-		InputSchema: obj(map[string]any{"task_id": str, "criteria": map[string]any{"type": "array", "items": obj(map[string]any{
+		"patches (optional): changes you need in files another task owns; do not edit them, Foundry hands each to its owner. worker: the same as given to next_work.",
+		InputSchema: obj(map[string]any{"task_id": str, "worker": str, "criteria": map[string]any{"type": "array", "items": obj(map[string]any{
 			"index": map[string]any{"type": "integer"}, "met": map[string]any{"type": "boolean"}, "evidence": str}, "index", "met", "evidence")},
 			"patches": map[string]any{"type": "array", "items": obj(map[string]any{"file": str, "change": str}, "file", "change")}}, "task_id", "criteria")},
 	{Name: "update_task", perm: PermModify, Description: "Set a short live progress line on the Kanban (progress), add lasting feedback (note), or mark the task BLOCKED.",
@@ -198,6 +199,15 @@ var tools = []tool{
 }
 
 func toolList() []tool { return tools }
+
+// worker names this connection when the host gave no name, so two hosts on
+// separate connections never share a claimed task.
+func (s *Server) worker(w string) string {
+	if w = strings.TrimSpace(w); w != "" {
+		return w
+	}
+	return fmt.Sprintf("host-%d", os.Getpid())
+}
 
 func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 	var t *tool
@@ -274,7 +284,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 	case "get_verification":
 		return p.Verification, nil
 	case "next_work":
-		return s.Svc.NextWork(args.Worker)
+		return s.Svc.NextWork(s.worker(args.Worker))
 	case "submit_work":
 		// Accept the result as a JSON object or as a string containing JSON.
 		result := string(args.Result)
@@ -288,7 +298,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		np, _ := s.Svc.Store.Load()
 		return map[string]any{"accepted": true, "stage": np.Stage, "job": np.Job, "next": "Panggil next_work untuk pekerjaan berikutnya."}, nil
 	case "submit_task":
-		t, b, err := s.Svc.SubmitTask(args.TaskID, args.Criteria, args.Patches)
+		t, b, err := s.Svc.SubmitTask(args.TaskID, s.worker(args.Worker), args.Criteria, args.Patches)
 		if err != nil {
 			return nil, err
 		}

@@ -172,6 +172,7 @@ func claim(p *core.Project, t *core.Task, owner, source string) {
 	t.Status = core.TaskInProgress
 	t.Attempts++
 	t.Owner = owner
+	t.Seen = time.Now().UTC()
 	if source == "mcp" {
 		t.Progress = "Host mengerjakan"
 	} else {

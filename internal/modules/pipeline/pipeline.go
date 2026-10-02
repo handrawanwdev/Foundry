@@ -166,8 +166,8 @@ func New(store *core.Store, ai AI) *Service {
 
 // RecoverStale marks jobs left "running" by a dead process as failed. Only
 // the process that runs agent jobs (the HTTP server) should call this.
-func (s *Service) RecoverStale() {
-	s.Store.Update(func(p *core.Project) error {
+func (s *Service) RecoverStale() error {
+	_, err := s.Store.Update(func(p *core.Project) error {
 		recoverSupport(p)
 		if p.Job != nil && p.Job.Status == core.JobRunning {
 			p.Job.Status, p.Job.Error = core.JobFailed, "Proses terhenti sebelum selesai. Jalankan ulang."
@@ -179,6 +179,7 @@ func (s *Service) RecoverStale() {
 		}
 		return nil
 	})
+	return err
 }
 
 // Wait blocks until background jobs finish (tests, shutdown).

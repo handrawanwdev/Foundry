@@ -296,6 +296,9 @@ func PatchOwner(p *core.Project, from, file string) *core.Task {
 // ForeignOwner is the pending task owning file when file is outside t's own
 // files: an edit there crosses an ownership boundary.
 func ForeignOwner(p *core.Project, t *core.Task, file string) *core.Task {
+	if DependencyFile(file) {
+		return nil
+	}
 	k := normPath(file)
 	for _, f := range t.Files {
 		if m := normPath(f); m != "" && (k == m || strings.HasPrefix(k, m+"/")) {
@@ -303,4 +306,20 @@ func ForeignOwner(p *core.Project, t *core.Task, file string) *core.Task {
 		}
 	}
 	return PatchOwner(p, t.ID, file)
+}
+
+// depFiles are dependency manifests and lockfiles: any task adding a
+// dependency edits them, so they are never owned; parallel edits meet at
+// merge instead.
+var depFiles = map[string]bool{
+	"package.json": true, "package-lock.json": true, "yarn.lock": true, "pnpm-lock.yaml": true, "bun.lockb": true, "bun.lock": true,
+	"go.mod": true, "go.sum": true, "cargo.toml": true, "cargo.lock": true,
+	"pyproject.toml": true, "poetry.lock": true, "uv.lock": true, "requirements.txt": true,
+	"composer.json": true, "composer.lock": true, "gemfile": true, "gemfile.lock": true,
+	"pubspec.yaml": true, "pubspec.lock": true,
+}
+
+// DependencyFile reports whether file is a dependency manifest or lockfile.
+func DependencyFile(file string) bool {
+	return depFiles[path.Base(normPath(file))]
 }

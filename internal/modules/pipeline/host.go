@@ -1,9 +1,12 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/work"
@@ -40,6 +43,23 @@ func (s *Service) NextWork(worker string) (*WorkItem, error) {
 		return &WorkItem{Kind: p.Job.Kind, Prompt: s.promptFor(p, p.Job.Kind),
 			Submit: fmt.Sprintf(`submit_work {"kind": %q, "result": "<the JSON object>"}`, p.Job.Kind)}, nil
 	case "build":
+		now := time.Now().UTC()
+		if np, err := s.Store.Update(func(p *core.Project) error {
+			touched := false
+			for i := range p.Tasks {
+				if t := &p.Tasks[i]; t.Status == core.TaskInProgress && t.Owner == worker {
+					t.Seen, touched = now, true
+				}
+			}
+			if !reclaimSilent(p, now) && !touched {
+				return errUnchanged
+			}
+			return nil
+		}); err == nil {
+			p = np
+		} else if !errors.Is(err, errUnchanged) {
+			return nil, err
+		}
 		for i := range p.Tasks {
 			if t := &p.Tasks[i]; t.Status == core.TaskInProgress && t.Owner == worker {
 				return taskItem(s, p, t), nil
@@ -64,6 +84,32 @@ func (s *Service) NextWork(worker string) (*WorkItem, error) {
 		return &WorkItem{Kind: "none", Prompt: "Semua task yang bisa dikerjakan sudah selesai. Foundry menjalankan verifikasi."}, nil
 	}
 	return &WorkItem{Kind: "none", Prompt: nothingMessage(p)}, nil
+}
+
+// HostLease is how long an MCP host may stay silent (no next_work,
+// update_task or submit_task) on a claimed task before another worker may
+// take it: a host that died must not hold its files forever.
+const HostLease = 30 * time.Minute
+
+var errUnchanged = errors.New("tidak ada perubahan")
+
+// reclaimSilent returns tasks of hosts silent past HostLease to TODO; the
+// attempt does not count against the task.
+func reclaimSilent(p *core.Project, now time.Time) bool {
+	changed := false
+	for i := range p.Tasks {
+		t := &p.Tasks[i]
+		if t.Status != core.TaskInProgress || now.Sub(t.Seen) < HostLease {
+			continue
+		}
+		p.Log("system", fmt.Sprintf("%s dilepas: %s tidak aktif lebih dari %s", t.ID, cmp.Or(t.Owner, "host"), HostLease))
+		t.Status, t.Owner, t.Progress = core.TaskTodo, "", ""
+		if t.Attempts > 0 {
+			t.Attempts--
+		}
+		changed = true
+	}
+	return changed
 }
 
 func taskItem(s *Service, p *core.Project, t *core.Task) *WorkItem {
@@ -114,19 +160,31 @@ func (s *Service) SubmitWork(kind, result string) error {
 // SubmitTask is called by the MCP host after implementing a task. Foundry
 // runs build/test itself; DONE requires passing checks and every criterion
 // met with evidence. patches are changes the host needed in files other
-// tasks own; they go to the owner whatever the outcome.
-func (s *Service) SubmitTask(id string, verdicts []work.Verdict, patches []work.Patch) (*core.Task, *core.BuildRun, error) {
-	p, err := s.Store.Load()
+// tasks own; they go to the owner whatever the outcome. A non-empty worker
+// must be the task's owner: a task reclaimed from a silent host is not
+// submitted by it.
+func (s *Service) SubmitTask(id, worker string, verdicts []work.Verdict, patches []work.Patch) (*core.Task, *core.BuildRun, error) {
+	worker = strings.TrimSpace(worker)
+	p, err := s.Store.Update(func(p *core.Project) error {
+		t := p.Task(id)
+		if t == nil || t.Status != core.TaskInProgress {
+			return fmt.Errorf("task %s tidak sedang IN_PROGRESS", id)
+		}
+		if worker != "" && t.Owner != worker {
+			return fmt.Errorf("task %s dipegang %s, bukan %s", id, cmp.Or(t.Owner, "host lain"), worker)
+		}
+		t.Seen = time.Now().UTC()
+		return nil
+	})
 	if err != nil {
 		return nil, nil, err
 	}
 	t := p.Task(id)
-	if t == nil || t.Status != core.TaskInProgress {
-		return nil, nil, fmt.Errorf("task %s tidak sedang IN_PROGRESS", id)
-	}
 	s.handOffPatches(id, work.CleanPatches(patches))
 	s.setProgress(id, "Menjalankan build & tes")
+	stop := s.keepSeen(id)
 	build := s.runChecks(context.Background(), id, p.Dir)
+	stop()
 	if !build.Passed {
 		s.rejectTask(id, "Verifikasi gagal: "+build.Reason+"\n"+lastOutput(build))
 	} else {
@@ -148,6 +206,30 @@ func (s *Service) SubmitTask(id string, verdicts []work.Verdict, patches []work.
 	return p.Task(id), p.Build(build.ID), nil
 }
 
+// keepSeen refreshes the task's Seen while Foundry itself works on it, so
+// long checks never look like a silent host.
+func (s *Service) keepSeen(id string) func() {
+	done := make(chan struct{})
+	go func() {
+		tick := time.NewTicker(time.Minute)
+		defer tick.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-tick.C:
+				s.Store.Update(func(p *core.Project) error {
+					if t := p.Task(id); t != nil {
+						t.Seen = time.Now().UTC()
+					}
+					return nil
+				})
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
 // UpdateTaskNote lets the host record a short live progress line, lasting
 // feedback, or a blocker. progress replaces the Kanban line; note is kept.
 func (s *Service) UpdateTaskNote(id, note, progress string, blocked bool) (*core.Task, error) {
@@ -156,6 +238,7 @@ func (s *Service) UpdateTaskNote(id, note, progress string, blocked bool) (*core
 		if t == nil {
 			return fmt.Errorf("task %s tidak ada", id)
 		}
+		t.Seen = time.Now().UTC()
 		if progress != "" {
 			t.Progress = clipProgress(progress)
 		} else if note != "" && t.Active() && !blocked {

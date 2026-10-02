@@ -526,6 +526,9 @@ type Task struct {
 	Attempts           int        `json:"attempts"`
 	// Owner is the agent or MCP worker that claimed the task last.
 	Owner string `json:"owner,omitempty"`
+	// Seen is the owner's last sign of life (claim, next_work, update_task);
+	// an MCP host silent past the lease loses the task.
+	Seen time.Time `json:"seen,omitempty"`
 	// Progress is a short live line on the Kanban while the task is active.
 	Progress    string      `json:"progress,omitempty"`
 	Notes       []string    `json:"notes"`

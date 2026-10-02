@@ -52,6 +52,9 @@ func runOne(ctx context.Context, dir string, c core.Command) core.StepResult {
 	cmd := exec.CommandContext(ctx, c.Argv[0], c.Argv[1:]...)
 	cmd.Dir = filepath.Join(dir, c.Dir)
 	cmd.Env = append(os.Environ(), "CI=true") // one-shot test runners, no watch mode
+	// A background process the command started (a test server) keeps the
+	// output pipe open; bound the wait so checks — serialized — never hang.
+	cmd.WaitDelay = 5 * time.Second
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()
@@ -59,7 +62,7 @@ func runOne(ctx context.Context, dir string, c core.Command) core.StepResult {
 	st.Output = tail(out.String())
 	var ee *exec.ExitError
 	switch {
-	case err == nil:
+	case err == nil, errors.Is(err, exec.ErrWaitDelay): // exited 0, a child kept the pipe
 	case errors.As(err, &ee):
 		st.ExitCode = ee.ExitCode()
 		if st.ExitCode == 0 {

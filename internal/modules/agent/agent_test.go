@@ -1,8 +1,11 @@
 package agent
 
 import (
+	"context"
+	"os/exec"
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestPresetArgs(t *testing.T) {
@@ -27,5 +30,21 @@ func TestPresetArgs(t *testing.T) {
 		if _, err := claude.args(Options{Model: m}); (err == nil) != (m == "") {
 			t.Fatalf("model %q: err = %v", m, err)
 		}
+	}
+}
+
+// An agent that leaves a child holding stdout must not hang the run.
+func TestRunNotHeldByBackgroundChild(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh tidak ada")
+	}
+	r, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo done; sleep 60 &"}, Options{})
+	start := time.Now()
+	out, err := r.Run(context.Background(), Execute, t.TempDir(), "hi")
+	if d := time.Since(start); d > 20*time.Second {
+		t.Fatalf("Run tertahan %s", d)
+	}
+	if err != nil || out != "done\n" {
+		t.Fatalf("out=%q err=%v", out, err)
 	}
 }

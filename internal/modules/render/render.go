@@ -117,9 +117,10 @@ func (c *Chrome) run(ctx context.Context, vp [2]int, args ...string) (string, er
 		argv = append([]string{"--no-sandbox"}, argv...)
 	}
 	cmd := exec.CommandContext(ctx, c.Binary, argv...)
+	cmd.WaitDelay = 5 * time.Second // chrome helpers may outlive the browser and hold the pipes
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Run(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		msg := strings.TrimSpace(stderr.String())
 		if len(msg) > 300 {
 			msg = msg[len(msg)-300:]

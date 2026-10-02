@@ -153,6 +153,10 @@ func NewRunner(id string, custom []string, opt Options) (*Runner, error) {
 
 var ErrAgentFailed = errors.New("agent gagal")
 
+// WaitDelay bounds how long Run waits for output after the agent exited or
+// was stopped.
+const WaitDelay = 5 * time.Second
+
 // Run sends prompt to the agent with dir as working directory.
 func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string, error) {
 	argv := r.argvThink
@@ -182,6 +186,9 @@ func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string
 		cmd.Stdin = strings.NewReader(prompt)
 	}
 	cmd.Dir = dir
+	// A child the agent left running (dev server, MCP server) keeps the
+	// output pipes open; without a bound, Run would wait for it forever.
+	cmd.WaitDelay = WaitDelay
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
@@ -189,7 +196,7 @@ func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string
 	if ctx.Err() == context.DeadlineExceeded {
 		return out.String(), fmt.Errorf("%w: timeout setelah %s", ErrAgentFailed, r.Timeout)
 	}
-	if err != nil {
+	if err != nil && !errors.Is(err, exec.ErrWaitDelay) { // ErrWaitDelay: the agent itself exited 0
 		return out.String(), fmt.Errorf("%w: %v: %s", ErrAgentFailed, err, tail(errb.String(), 600))
 	}
 	return out.String(), nil

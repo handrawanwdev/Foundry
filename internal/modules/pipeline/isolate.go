@@ -92,15 +92,25 @@ func (s *Service) runIsolated(ctx context.Context, runner *agent.Runner, p *core
 		return s.concludeTask(id, crit, build.ID, "agent") // rejects with the missing criteria
 	}
 	s.setProgress(id, "Menggabungkan ke project")
-	buildID, note := s.merge(ctx, id, p.Dir, tree, patch, build.ID)
+	buildID, note, conflict := s.merge(ctx, id, p.Dir, tree, patch, build.ID)
+	if note == "" { // in the project now, even when Stop came meanwhile
+		return s.concludeTask(id, crit, buildID, "agent")
+	}
 	if ctx.Err() != nil {
 		return s.releaseTask(ctx, id)
 	}
-	if note != "" {
-		s.rejectTask(id, note)
-		return nil
+	if conflict {
+		// Another task landed first; the work was fine. The next attempt
+		// starts from the newer tree and does not count.
+		s.Store.Update(func(p *core.Project) error {
+			if t := p.Task(id); t != nil && t.Attempts > 0 {
+				t.Attempts--
+			}
+			return nil
+		})
 	}
-	return s.concludeTask(id, crit, buildID, "agent")
+	s.rejectTask(id, note)
+	return nil
 }
 
 // isolationFailed falls back to the shared tree when git cannot give the
@@ -137,32 +147,34 @@ func (s *Service) crossedOwnership(id string, changed []string) string {
 // and checks never interleave. When the tree changed since the worktree's
 // snapshot, the patch is replayed on a fresh snapshot and tested there
 // first, so what lands is exactly what passed. It returns the build that
-// gates DONE, or a note when the task must try again.
-func (s *Service) merge(ctx context.Context, id, dir string, tree *gitwt.Tree, patch []byte, buildID string) (string, string) {
+// gates DONE, or a note when the task must try again; conflict tells a
+// clash with changes merged meanwhile from a failure of the task itself.
+func (s *Service) merge(ctx context.Context, id, dir string, tree *gitwt.Tree, patch []byte, buildID string) (string, string, bool) {
 	s.checkMu.Lock()
 	defer s.checkMu.Unlock()
 	now, err := gitwt.Snapshot(ctx, dir, core.StateDir)
 	if err != nil {
-		return "", "Gagal membaca project untuk digabung: " + err.Error()
+		return "", "Gagal membaca project untuk digabung: " + err.Error(), false
 	}
 	if !sameTree(ctx, dir, now, tree.Base) {
 		if err := tree.Rebase(ctx, now, patch); err != nil {
-			return "", conflictNote(err)
+			return "", conflictNote(err), errors.Is(err, gitwt.ErrConflict)
 		}
 		build := s.runChecksLocked(ctx, id, tree.Dir)
 		if !build.Passed {
-			return "", "Verifikasi gagal setelah digabung dengan perubahan task lain: " + build.Reason + "\n" + lastOutput(build)
+			return "", "Verifikasi gagal setelah digabung dengan perubahan task lain: " + build.Reason + "\n" + lastOutput(build), false
 		}
 		buildID = build.ID
 	}
-	if err := gitwt.Apply(ctx, dir, patch); err != nil {
-		return "", conflictNote(err)
+	// Not cancellable: Stop must not leave the project half patched.
+	if err := gitwt.Apply(context.WithoutCancel(ctx), dir, patch); err != nil {
+		return "", conflictNote(err), errors.Is(err, gitwt.ErrConflict)
 	}
 	s.Store.Update(func(p *core.Project) error {
 		p.Log("system", id+" digabung ke project")
 		return nil
 	})
-	return buildID, ""
+	return buildID, "", false
 }
 
 func sameTree(ctx context.Context, dir, a, b string) bool {
