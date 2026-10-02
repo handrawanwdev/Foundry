@@ -281,6 +281,7 @@ func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, p 
 		return err
 	}
 	stopWatch()
+	s.handOffPatches(id, work.ParsePatches(out))
 	changed := checks.Changed(p.Dir, before)
 	if len(changed) == 0 {
 		s.rejectTask(id, "Tidak ada file yang berubah; implementasi belum dibuat")
@@ -315,6 +316,30 @@ func (s *Service) runTaskWithAgent(ctx context.Context, runner *agent.Runner, p 
 		return nil
 	}
 	return s.concludeTask(id, crit, build.ID, "agent")
+}
+
+// handOffPatches gives changes an agent needed outside its ownership to the
+// task that owns the file, as feedback for its next run. A file no pending
+// task owns is only logged: the user decides.
+func (s *Service) handOffPatches(from string, patches []work.Patch) {
+	if len(patches) == 0 {
+		return
+	}
+	s.Store.Update(func(p *core.Project) error {
+		for _, pt := range patches {
+			o := work.PatchOwner(p, from, pt.File)
+			if o == nil {
+				p.Log("system", fmt.Sprintf("%s minta perubahan di %s (tanpa pemilik): %s", from, pt.File, firstLine(pt.Change)))
+				continue
+			}
+			o.Notes = append(o.Notes, fmt.Sprintf("Patch dari %s untuk %s: %s", from, pt.File, pt.Change))
+			if len(o.Notes) > 5 {
+				o.Notes = o.Notes[len(o.Notes)-5:]
+			}
+			p.Log("system", fmt.Sprintf("%s minta perubahan di %s, diteruskan ke %s", from, pt.File, o.ID))
+		}
+		return nil
+	})
 }
 
 // runChecks re-detects commands (a scaffold task may have created tooling)

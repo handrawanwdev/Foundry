@@ -2,6 +2,7 @@ package work
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
@@ -50,22 +51,107 @@ func TaskPrompt(p *core.Project, t *core.Task) string {
 	if len(t.TestRequirements) > 0 {
 		b.WriteString("\nTEST REQUIREMENTS:\n- " + strings.Join(t.TestRequirements, "\n- ") + "\n")
 	}
-	if len(t.Files) > 0 {
-		b.WriteString("\nLIKELY FILES:\n- " + strings.Join(t.Files, "\n- ") + "\n")
-	}
+	b.WriteString(ownership(p, t))
 	if len(t.Notes) > 0 {
 		b.WriteString("\nFEEDBACK FROM PREVIOUS ATTEMPTS (fix these):\n- " + strings.Join(t.Notes, "\n- ") + "\n")
 	}
 	b.WriteString("\nWhile working, a few times call update_task with a short progress line (≤80 characters) so the user sees what you are doing. Example: {\"task_id\":\"" + t.ID + "\",\"progress\":\"Menulis skema user\"}.\n")
 	b.WriteString("When you finish, include a ```json block so Foundry can skip a second review pass: " +
-		`{"criteria": [{"index": 1, "met": true, "evidence": "path + what it does"}]}` +
-		". Every criterion needs evidence. Do not implement other tasks.\n")
+		`{"criteria": [{"index": 1, "met": true, "evidence": "path + what it does"}], "patches": [{"file": "", "change": ""}]}` +
+		". Every criterion needs evidence. \"patches\" is optional: only changes you need in files you do not own. Do not implement other tasks.\n")
 	b.WriteString("\n" + structureBrief(p))
 	if brief := ArchitectureBrief(p); brief != "" {
 		b.WriteString("\n" + brief)
 		b.WriteString("Follow the blueprint: put code in the owning module, keep layers, use the API/auth/storage/worker rules. Do not add a new framework, database, or folder layout.\n")
 	}
 	return b.String()
+}
+
+// maxOwned bounds the "owned by other tasks" list.
+const maxOwned = 30
+
+// ownership tells the agent which files it may edit, which another running
+// agent is changing now, and which belong to other pending tasks.
+func ownership(p *core.Project, t *core.Task) string {
+	var b strings.Builder
+	b.WriteString("\nOWNERSHIP:\nYou own:\n")
+	mine := map[string]bool{}
+	for _, f := range t.Files {
+		if k := normPath(f); k != "" {
+			mine[k] = true
+			b.WriteString("- " + f + "\n")
+		}
+	}
+	if len(mine) == 0 {
+		if t.Area == "scaffold" || t.Area == "integration" {
+			b.WriteString("- the whole project, but other agents may be running: respect the lists below\n")
+		} else {
+			b.WriteString("- the feature and pages of this task\n")
+		}
+	}
+	owned := func(f string) bool {
+		k := normPath(f)
+		for m := range mine {
+			if k == m || strings.HasPrefix(k, m+"/") {
+				return true
+			}
+		}
+		return false
+	}
+	seen := map[string]bool{}
+	var running []string
+	for _, o := range p.ActiveTasks() {
+		if o.ID == t.ID {
+			continue
+		}
+		for _, f := range o.Files {
+			if k := normPath(f); k != "" && !seen[k] {
+				seen[k] = true
+				running = append(running, fmt.Sprintf("- %s (%s)", f, o.ID))
+			}
+		}
+		for _, pg := range o.PageIDs {
+			if k := "page:" + pg; !seen[k] {
+				seen[k] = true
+				running = append(running, fmt.Sprintf("- page %s (%s)", pg, o.ID))
+			}
+		}
+	}
+	if len(running) > 0 {
+		b.WriteString("Running now (do NOT edit, another agent is changing them):\n" + strings.Join(running, "\n") + "\n")
+	}
+	var other []string
+	for i := range p.Tasks {
+		o := &p.Tasks[i]
+		if o.ID == t.ID || o.Status == core.TaskDone || o.Active() {
+			continue
+		}
+		for _, f := range o.Files {
+			if k := normPath(f); k != "" && !seen[k] && !owned(f) {
+				seen[k] = true
+				other = append(other, fmt.Sprintf("- %s (%s)", f, o.ID))
+			}
+		}
+	}
+	if len(other) > 0 {
+		b.WriteString("Owned by other tasks (do not edit):\n")
+		if len(other) > maxOwned {
+			b.WriteString(strings.Join(other[:maxOwned], "\n") + fmt.Sprintf("\n- … and %d more\n", len(other)-maxOwned))
+		} else {
+			b.WriteString(strings.Join(other, "\n") + "\n")
+		}
+	}
+	b.WriteString("Edit only files you own or new files inside your task's module/page. If you need a change in a file you do not own, do not edit it: describe the exact change under \"patches\" in your final JSON (file + change) so Foundry hands it to the owner.\n")
+	return b.String()
+}
+
+// normPath is a file path as a comparable key (same rules as Task.Locks).
+func normPath(f string) string {
+	f = strings.TrimPrefix(path.Clean(strings.ReplaceAll(strings.TrimSpace(f), "\\", "/")), "./")
+	if f == "" || f == "." || f == "/" {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSuffix(f, "/"))
 }
 
 // uiRules is how a coding agent builds a designed page.
@@ -160,4 +246,44 @@ func AllMet(cs []core.Criterion) bool {
 		}
 	}
 	return true
+}
+
+// Patch is a change an agent needs in a file it does not own.
+type Patch struct {
+	File   string `json:"file"`
+	Change string `json:"change"`
+}
+
+// ParsePatches reads the optional "patches" from an agent's final JSON.
+func ParsePatches(raw string) []Patch {
+	var out struct {
+		Patches []Patch `json:"patches"`
+	}
+	if ExtractJSONFunc(raw, &out, func() bool { return len(out.Patches) > 0 }) != nil {
+		return nil
+	}
+	var res []Patch
+	for _, pt := range out.Patches {
+		if normPath(pt.File) != "" && strings.TrimSpace(pt.Change) != "" {
+			res = append(res, pt)
+		}
+	}
+	return res
+}
+
+// PatchOwner is the not-DONE task (other than from) whose files hold file.
+func PatchOwner(p *core.Project, from, file string) *core.Task {
+	k := normPath(file)
+	for i := range p.Tasks {
+		o := &p.Tasks[i]
+		if o.ID == from || o.Status == core.TaskDone {
+			continue
+		}
+		for _, f := range o.Files {
+			if m := normPath(f); m != "" && (k == m || strings.HasPrefix(k, m+"/")) {
+				return o
+			}
+		}
+	}
+	return nil
 }

@@ -43,3 +43,49 @@ func TestTaskPromptAsksSelfReview(t *testing.T) {
 		t.Fatalf("task prompt missing self-review: %s", got)
 	}
 }
+
+func TestTaskPromptOwnership(t *testing.T) {
+	p := &core.Project{Name: "Demo", Tasks: []core.Task{
+		{ID: "TASK-001", Area: "api", Status: core.TaskInProgress, Files: []string{"api/users.go"}},
+		{ID: "TASK-002", Area: "ui", Status: core.TaskInProgress, Files: []string{"apps/web/src/App.tsx"}, PageIDs: []string{"PAGE-002"}},
+		{ID: "TASK-003", Area: "api", Status: core.TaskDone, Files: []string{"api/done.go"}},
+		{ID: "TASK-004", Area: "api", Status: core.TaskTodo, Files: []string{"api/orders.go", "api/users.go/x.go"}},
+	}}
+	got := TaskPrompt(p, &p.Tasks[0])
+	for _, want := range []string{
+		"You own:\n- api/users.go\n",
+		"Running now (do NOT edit, another agent is changing them):",
+		"- apps/web/src/App.tsx (TASK-002)",
+		"- page PAGE-002 (TASK-002)",
+		"Owned by other tasks (do not edit):\n- api/orders.go (TASK-004)\n",
+		`"patches"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in:\n%s", want, got)
+		}
+	}
+	for _, bad := range []string{"(TASK-001)", "api/done.go", "x.go (TASK-004)", "LIKELY FILES"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("unexpected %q in:\n%s", bad, got)
+		}
+	}
+}
+
+func TestParsePatchesAndOwner(t *testing.T) {
+	raw := "done\n```json\n{\"criteria\": [{\"index\": 1, \"met\": true, \"evidence\": \"x\"}], \"patches\": [{\"file\": \"./Web/App.tsx\", \"change\": \"add route /orders\"}, {\"file\": \"\", \"change\": \"x\"}]}\n```"
+	ps := ParsePatches(raw)
+	if len(ps) != 1 || ps[0].Change != "add route /orders" {
+		t.Fatalf("patches = %+v", ps)
+	}
+	p := &core.Project{Tasks: []core.Task{
+		{ID: "TASK-001", Status: core.TaskDone, Files: []string{"web/App.tsx"}},
+		{ID: "TASK-002", Status: core.TaskTodo, Files: []string{"web"}},
+		{ID: "TASK-003", Status: core.TaskInProgress, Files: []string{"api/x.go"}},
+	}}
+	if o := PatchOwner(p, "TASK-003", ps[0].File); o == nil || o.ID != "TASK-002" {
+		t.Fatalf("owner = %+v", o)
+	}
+	if o := PatchOwner(p, "TASK-002", "web/App.tsx"); o != nil {
+		t.Fatalf("own file must not resolve to another owner, got %s", o.ID)
+	}
+}

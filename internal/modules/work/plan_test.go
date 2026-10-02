@@ -57,3 +57,68 @@ func TestApplyPlanNormalizesFilesAndPages(t *testing.T) {
 		t.Fatal("PAGE-002 not filled")
 	}
 }
+
+func ownershipProject() *core.Project {
+	return &core.Project{
+		Requirements: []core.Requirement{{ID: "REQ-001", Text: "x"}},
+		Features: []core.Feature{{ID: "FEAT-001", Name: "A", Description: "d", RequirementIDs: []string{"REQ-001"},
+			SubFeatures: []core.SubFeature{{Name: "s"}}}},
+	}
+}
+
+func TestApplyPlanSharedFileGetsOwner(t *testing.T) {
+	p := ownershipProject()
+	raw := `{"tasks":[
+	  {"id":"T1","title":"Router","area":"api","feature_id":"FEAT-001","acceptance_criteria":["ok"],"files":["web/src/router.ts"]},
+	  {"id":"T2","title":"Page","area":"api","feature_id":"FEAT-001","acceptance_criteria":["ok"],"files":["web/src/router.ts","web/src/pages/A.tsx"]}
+	]}`
+	if err := ApplyPlan(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Task("TASK-002").DependsOn; !slices.Equal(got, []string{"TASK-001"}) {
+		t.Fatalf("TASK-002 deps = %v", got)
+	}
+	if got := p.Task("TASK-001").DependsOn; len(got) != 0 {
+		t.Fatalf("TASK-001 deps = %v", got)
+	}
+}
+
+func TestApplyPlanOwnershipKeepsTransitiveOrder(t *testing.T) {
+	p := ownershipProject()
+	raw := `{"tasks":[
+	  {"id":"A","title":"A","area":"api","feature_id":"FEAT-001","acceptance_criteria":["ok"],"files":["db/schema.sql"]},
+	  {"id":"B","title":"B","area":"api","feature_id":"FEAT-001","acceptance_criteria":["ok"],"files":["b.go"],"depends_on":["A"]},
+	  {"id":"C","title":"C","area":"test","feature_id":"FEAT-001","acceptance_criteria":["ok"],"files":["db/schema.sql"],"depends_on":["B"]}
+	]}`
+	if err := ApplyPlan(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Task("TASK-003").DependsOn; !slices.Equal(got, []string{"TASK-002"}) {
+		t.Fatalf("TASK-003 deps = %v", got)
+	}
+}
+
+func TestApplyPlanDisjointFilesStayParallel(t *testing.T) {
+	p := ownershipProject()
+	raw := `{"tasks":[
+	  {"id":"T1","title":"A","area":"api","feature_id":"FEAT-001","acceptance_criteria":["ok"],"files":["a/x.go"]},
+	  {"id":"T2","title":"B","area":"test","feature_id":"FEAT-001","acceptance_criteria":["ok"],"files":["a/xy.go"]}
+	]}`
+	if err := ApplyPlan(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"TASK-001", "TASK-002"} {
+		if got := p.Task(id).DependsOn; len(got) != 0 {
+			t.Fatalf("%s deps = %v", id, got)
+		}
+	}
+}
+
+func TestPlanPromptAsksOwnership(t *testing.T) {
+	got := PlanPrompt(&core.Project{Platform: &core.PlatformPlan{}})
+	for _, s := range []string{"exactly ONE owner task", "Build the dependency graph first", "must not edit owner files"} {
+		if !strings.Contains(got, s) {
+			t.Fatalf("plan prompt missing %q", s)
+		}
+	}
+}

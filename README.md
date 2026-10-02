@@ -75,6 +75,7 @@ Loop host: `next_work` → kerjakan → `submit_work` / `submit_task`. Izin: `--
 ## Aturan penting
 
 - **Bangun paralel**: saat list task ada, Foundry menganalisa TODO yang dependensinya selesai, file/halamannya tidak dipegang agent lain, dan tidak bentrok satu sama lain, lalu mengerjakannya paralel (default 3 agent, maks 8). Jumlah agent diatur di halaman Hubungkan AI / Bangun, tersimpan di koneksi, bisa diubah saat build; `FOUNDRY_AGENTS` menimpa setting itu. Coding agent yang mengirim JSON `criteria` di akhir skip review kedua; bila tidak, review memakai effort `low`. Kanban menandai task siap paralel vs yang menunggu dependensi atau file.
+- **Ownership file**: plan membangun graf dependensi dulu — fondasi bersama (schema/migrasi, shared types/utilities, API contract, router/menu/registrasi modul) dikerjakan berurutan oleh satu task pemilik, konsumen bergantung padanya dan berjalan paralel. Dua task yang berbagi file/halaman tanpa urutan otomatis diurutkan (task lebih awal = pemilik). Prompt agent memuat batas ownership: file miliknya, file yang sedang dipegang agent lain (dilarang diedit), dan file milik task lain; perubahan di luar ownership dikirim sebagai `patches`, bukan diedit langsung.
 - Task `DONE` hanya jika build/test project lulus (exit code) **dan** semua acceptance criteria terpenuhi dengan bukti.
 - Command verifikasi hanya dari tooling project: Go → `go build/vet/test ./...`; Node → script `typecheck/lint/build/test` yang ada; Flutter → `flutter analyze/test` bila terpasang.
 - Project existing tidak pernah diganti template.

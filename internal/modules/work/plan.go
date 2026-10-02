@@ -3,6 +3,7 @@ package work
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
@@ -47,6 +48,11 @@ depends_on lists task ids that must be DONE first — only true prerequisites (s
 Do not chain independent features, pages, or modules.
 files lists the fewest concrete file paths this task will create or change (e.g. apps/web/src/pages/Login.tsx). Never a whole tree
 (src, app, packages, services, packages/ui). Two tasks that can run in parallel must not share files or the same page.
+Build the dependency graph first. Shared foundations run sequentially before their consumers: database schema/migrations,
+shared types/models, shared utilities, API contracts (route/DTO definitions, API client) and app wiring (router, navigation menu, DI/module registration).
+Each shared file has exactly ONE owner task. The owner creates every entry later tasks need (e.g. registers every planned route and menu item up front).
+Consumer tasks depend_on the owner and list only their own files; they must not edit owner files.
+Everything else (independent pages, modules, tests) must be parallel: no depends_on between them.
 UI tasks: one page per task (page_ids length 1). Two pages = two tasks.
 Only area "scaffold" may touch the whole project. Do not use area "integration" unless the work truly spans every package.
 
@@ -158,6 +164,7 @@ func ApplyPlan(p *core.Project, raw string) error {
 	if c := findCycle(tasks); c != "" {
 		return fmt.Errorf("dependency task melingkar di %s", c)
 	}
+	resolveOwnership(tasks)
 	p.Tasks = tasks
 	FillCoverage(p)
 	p.Verification = nil
@@ -314,6 +321,74 @@ func NextTaskID(p *core.Project) string {
 		}
 	}
 	return fmt.Sprintf("TASK-%03d", max+1)
+}
+
+// resolveOwnership makes file/page ownership explicit: when two tasks hold an
+// overlapping "file:" or "page:" lock and neither depends on the other, the
+// earlier task (plan order) owns it and the later one waits for it. The
+// Kanban then shows the dependency instead of an unexplained lock wait.
+// Project-wide and feature locks are ignored. Edges only point from a later
+// task to an earlier one that does not reach it, so no cycle is created.
+func resolveOwnership(tasks []core.Task) {
+	idx := map[string]int{}
+	for i, t := range tasks {
+		idx[t.ID] = i
+	}
+	// reaches reports whether task a transitively depends on task b.
+	reaches := func(a, b int) bool {
+		seen := map[int]bool{}
+		stack := []int{a}
+		for len(stack) > 0 {
+			n := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			for _, d := range tasks[n].DependsOn {
+				j, ok := idx[d]
+				if !ok || seen[j] {
+					continue
+				}
+				if j == b {
+					return true
+				}
+				seen[j] = true
+				stack = append(stack, j)
+			}
+		}
+		return false
+	}
+	locks := make([][]string, len(tasks))
+	for i := range tasks {
+		for _, l := range tasks[i].Locks() {
+			if strings.HasPrefix(l, "file:") || strings.HasPrefix(l, "page:") {
+				locks[i] = append(locks[i], l)
+			}
+		}
+	}
+	for j := range tasks {
+		for i := 0; i < j; i++ {
+			if !ownedOverlap(locks[i], locks[j]) || reaches(j, i) || reaches(i, j) {
+				continue
+			}
+			if !slices.Contains(tasks[j].DependsOn, tasks[i].ID) {
+				tasks[j].DependsOn = append(tasks[j].DependsOn, tasks[i].ID)
+			}
+		}
+	}
+}
+
+// ownedOverlap mirrors core lock overlap for file and page locks only.
+func ownedOverlap(a, b []string) bool {
+	for _, x := range a {
+		for _, y := range b {
+			if x == y {
+				return true
+			}
+			if strings.HasPrefix(x, "file:") && strings.HasPrefix(y, "file:") &&
+				(strings.HasPrefix(x, y+"/") || strings.HasPrefix(y, x+"/")) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func findCycle(tasks []core.Task) string {
