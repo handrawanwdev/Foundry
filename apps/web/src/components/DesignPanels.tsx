@@ -355,7 +355,7 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
   const { run, pending } = useProject();
   const findings = designChecks(project);
   const d = project.design!;
-  const pages = d.pages;
+  const pages = d.pages ?? [];
   const flows = (project.flows ?? []).map((f) => ({ f, ps: flowPages(f, pages) })).filter((x) => x.ps.length > 0);
   const components = pages.reduce((n, p) => n + (p.components?.length ?? 0), 0);
   const uncovered = featuresWithoutPage(project);
@@ -430,7 +430,7 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
 
       {!approved && (blockers.length > 0 || findings.length > 0) && (
         <button className="review-fix" disabled={working || !!d.revision || pending === "revise"} title={d.revision ? "Simpan atau batalkan perubahan terakhir dulu" : undefined}
-          onClick={() => run("revise", async () => api.reviseDesign(fixRequest(blockers, findings), await screensOf(d.pages, project.name),
+          onClick={() => run("revise", async () => api.reviseDesign(fixRequest(blockers, findings), await screensOf(pages, project.name),
             { open: true, fields: true, general: fixRequest(blockers, findings) }))}>✦ Perbaiki otomatis</button>
       )}
 

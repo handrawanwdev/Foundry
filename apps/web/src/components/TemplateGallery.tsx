@@ -42,10 +42,10 @@ export function TemplateLibrary({ project }: { project: Project }) {
           Dipakai: <strong>{chosen.name}</strong>{chosen.secondary ? ` + ${g?.templates?.find((t) => t.id === chosen.secondary)?.name ?? chosen.secondary}` : ""} ({SOURCE[chosen.source]})
           {chosen.reasons?.length ? ` — ${chosen.reasons.join("; ")}` : ""}
         </p>
-      ) : project.design?.pages.length ? <p className="small muted">Rancangan ini tidak memakai template.</p> : null}
+      ) : project.design?.pages?.length ? <p className="small muted">Rancangan ini tidak memakai template.</p> : null}
       <h4>Template awal</h4>
       <TemplatePicker project={project} templates={g?.templates ?? []} />
-      {project.design?.pages.length && project.design.status !== "approved" ? (
+      {project.design?.pages?.length && project.design.status !== "approved" ? (
         <p className="small"><RegenerateButton project={project} label="↻ Buat ulang rancangan" /> <span className="muted">Menyusun ulang semua halaman dari fitur yang sama dengan template awal di atas.</span></p>
       ) : null}
       {rec && (!chosen || chosen.id !== rec.id) && (

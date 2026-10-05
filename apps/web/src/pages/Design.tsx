@@ -32,14 +32,14 @@ const MIN_SCALE = 0.65;
 export function DesignPage() {
   const { project } = useProject();
   if (!project) return null;
-  if (!project.design?.pages.length) return <Designing project={project} />;
+  if (!project.design?.pages?.length) return <Designing project={project} />;
   return <Workspace project={project} />;
 }
 
 function Workspace({ project }: { project: Project }) {
   const [params] = useSearchParams();
   const design = project.design!;
-  const pages = design.pages;
+  const pages = design.pages ?? [];
   const flows = project.flows ?? [];
   const groups = useMemo(() => groupPages(pages, flows), [pages, flows]);
   const order = useMemo(() => pageOrder(groups), [groups]);

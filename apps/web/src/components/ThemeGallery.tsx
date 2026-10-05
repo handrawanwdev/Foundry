@@ -33,7 +33,7 @@ export function ThemeGallery({ project, compact = false }: { project: Project; c
           Dipakai: <strong className="fg">{used.name}</strong> ({SOURCE_LABEL[used.source]}){used.reasons?.length ? ` — ${used.reasons.join("; ")}` : ""}
         </p>
       )}
-      {!used && d?.pages.length ? <p className="small muted">Rancangan ini dibuat sebelum ada theme; memilih theme menerapkan token dan gayanya.</p> : null}
+      {!used && d?.pages?.length ? <p className="small muted">Rancangan ini dibuat sebelum ada theme; memilih theme menerapkan token dan gayanya.</p> : null}
       {error && <p className="warn-text small">{error}</p>}
       <div className="theme-grid">
         <button className={`theme-card auto ${picked === "" ? "on" : ""}`} disabled={locked} title={why} onClick={() => pick("")}>

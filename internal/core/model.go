@@ -4,6 +4,7 @@
 package core
 
 import (
+	"encoding/json"
 	"path"
 	"strings"
 	"time"
@@ -213,6 +214,15 @@ const (
 	DesignChanges  DesignStatus = "changes_requested"
 	DesignApproved DesignStatus = "approved"
 )
+
+// MarshalJSON writes nil Pages as [] so clients never see "pages": null.
+func (d Design) MarshalJSON() ([]byte, error) {
+	if d.Pages == nil {
+		d.Pages = []Page{}
+	}
+	type plain Design
+	return json.Marshal(plain(d))
+}
 
 type Design struct {
 	// System is the design system every page and the build follow.
@@ -836,6 +846,15 @@ type DesignVersion struct {
 	Theme    *ThemeContext       `json:"theme,omitempty"`
 	Flows    map[string][]string `json:"flows,omitempty"`
 	Template *TemplateChoice     `json:"template,omitempty"`
+}
+
+// MarshalJSON writes nil Pages as [] so clients never see "pages": null.
+func (v DesignVersion) MarshalJSON() ([]byte, error) {
+	if v.Pages == nil {
+		v.Pages = []Page{}
+	}
+	type plain DesignVersion
+	return json.Marshal(plain(v))
 }
 
 // LockAll is held by a task that may touch anything in the project.

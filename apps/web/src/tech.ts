@@ -32,7 +32,7 @@ const DESIGN_AREAS = new Set<TechArea>(["frontend", "mobile", "desktop", "backen
 // affect it (core.Project.TechReview).
 export function techReview(p: Project): TechChange[] {
   const d = p.design, s = p.stack;
-  if (!d || !d.pages.length || d.status === "approved" || !s) return [];
+  if (!d || !d.pages?.length || d.status === "approved" || !s) return [];
   const since = d.tech_version ?? 0;
   return (s.history ?? []).filter((v) => v.version > since && v.design)
     .flatMap((v) => (v.changes ?? []).filter((c) => DESIGN_AREAS.has(c.area)));

@@ -80,7 +80,7 @@ function TaskDetail({ project, task, onClose }: { project: Project; task: Task; 
   const { run } = useProject();
   const build = project.builds?.find((b) => b.id === task.last_build_id);
   const reqs = (task.requirement_ids ?? []).map((id) => project.requirements?.find((r) => r.id === id)).filter(Boolean);
-  const pages = (task.page_ids ?? []).map((id) => project.design?.pages.find((p) => p.id === id)?.name ?? id);
+  const pages = (task.page_ids ?? []).map((id) => project.design?.pages?.find((p) => p.id === id)?.name ?? id);
   const move = (s: Task["status"]) => run("move", () => api.moveTask(task.id, s));
   const waiting = (task.depends_on ?? []).filter((id) => project.tasks?.find((t) => t.id === id)?.status !== "DONE");
   const queue = task.status === "TODO" ? queueLabel(queueItem(project, task.id)) : "";

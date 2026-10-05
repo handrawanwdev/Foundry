@@ -206,7 +206,7 @@ export interface DesignSystem {
 }
 export interface Design {
   system?: DesignSystem;
-  pages: Page[]; status: "draft" | "changes_requested" | "approved"; feedback: string[] | null;
+  pages: Page[] | null; status: "draft" | "changes_requested" | "approved"; feedback: string[] | null;
   revision?: DesignRevision;
   rejected?: string; // why the last patch was refused
   tech_version?: number; // technology version the design was last checked against

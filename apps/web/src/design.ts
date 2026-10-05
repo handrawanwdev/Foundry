@@ -93,7 +93,7 @@ export function featuresWithoutPage(project: Project) {
 export function requirementsOf(pageIds: string[], project: Project): string[] {
   const out = new Set<string>();
   for (const id of pageIds) {
-    const page = project.design?.pages.find((p) => p.id === id);
+    const page = project.design?.pages?.find((p) => p.id === id);
     const f = project.features?.find((x) => x.id === page?.feature_id);
     f?.requirement_ids.forEach((r) => out.add(r));
   }
