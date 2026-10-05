@@ -506,7 +506,7 @@ func (s *Service) MoveTask(id string, to core.TaskStatus) (*core.Project, error)
 			if t.Status == core.TaskInProgress && p.Busy() {
 				return ErrBusy
 			}
-			t.Attempts = 0
+			t.Attempts, t.Conflicts = 0, 0
 			t.Progress = ""
 		case core.TaskBlocked:
 			if t.Status == core.TaskInProgress && p.Busy() {
@@ -592,7 +592,7 @@ func (s *Service) Fix() error {
 		}
 		for i := range p.Tasks {
 			if p.Tasks[i].Status == core.TaskBlocked || p.Tasks[i].Status == core.TaskReview {
-				p.Tasks[i].Status, p.Tasks[i].Attempts = core.TaskTodo, 0
+				p.Tasks[i].Status, p.Tasks[i].Attempts, p.Tasks[i].Conflicts = core.TaskTodo, 0, 0
 			}
 		}
 		added := work.FillCoverage(p)

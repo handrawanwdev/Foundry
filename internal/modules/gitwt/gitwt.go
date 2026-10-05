@@ -292,14 +292,7 @@ func (t *Tree) Diff(ctx context.Context) (patch []byte, files []string, err erro
 
 // Rebase resets the worktree to commit and re-applies patch.
 func (t *Tree) Rebase(ctx context.Context, commit string, patch []byte) error {
-	if _, err := git(ctx, t.Dir, nil, nil, "reset", "-q", "--hard", commit); err != nil {
-		return err
-	}
-	args := []string{"clean", "-ffdq"}
-	for _, l := range t.links {
-		args = append(args, "-e", "/"+l)
-	}
-	if _, err := git(ctx, t.Dir, nil, nil, args...); err != nil {
+	if err := t.reset(ctx, commit); err != nil {
 		return err
 	}
 	if len(patch) > 0 {
@@ -309,6 +302,86 @@ func (t *Tree) Rebase(ctx context.Context, commit string, patch []byte) error {
 	}
 	t.Base = commit
 	return nil
+}
+
+// Merge resets the worktree to commit and applies patch with a three-way
+// merge. Hunks git cannot merge stay in the files as conflict markers; their
+// paths are returned so an agent can resolve them in place instead of
+// redoing the task. Base becomes commit either way.
+func (t *Tree) Merge(ctx context.Context, commit string, patch []byte) ([]string, error) {
+	if err := t.reset(ctx, commit); err != nil {
+		return nil, err
+	}
+	t.Base = commit
+	if len(patch) == 0 {
+		return nil, nil
+	}
+	_, err := git(ctx, t.Dir, nil, patch, "apply", "--binary", "--3way")
+	if err == nil {
+		return nil, nil
+	}
+	out, uerr := git(ctx, t.Dir, nil, nil, "diff", "--name-only", "--diff-filter=U", "-z")
+	if uerr != nil {
+		return nil, uerr
+	}
+	var files []string
+	for _, n := range splitZ(out) {
+		if n != "" {
+			files = append(files, n)
+		}
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("%w: %v", ErrConflict, err)
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+// reset moves the worktree to commit and removes everything else except the
+// dependency links.
+func (t *Tree) reset(ctx context.Context, commit string) error {
+	if _, err := git(ctx, t.Dir, nil, nil, "reset", "-q", "--hard", commit); err != nil {
+		return err
+	}
+	args := []string{"clean", "-ffdq"}
+	for _, l := range t.links {
+		args = append(args, "-e", "/"+l)
+	}
+	_, err := git(ctx, t.Dir, nil, nil, args...)
+	return err
+}
+
+// Drop restores files to Base in the worktree and index; a file Base does
+// not have is deleted. Call it after Diff, which stages every change.
+func (t *Tree) Drop(ctx context.Context, files []string) error {
+	if len(files) == 0 {
+		return nil
+	}
+	args := append([]string{"restore", "--source=" + t.Base, "--staged", "--worktree", "--"}, files...)
+	_, err := git(ctx, t.Dir, []string{"GIT_LITERAL_PATHSPECS=1"}, nil, args...)
+	return err
+}
+
+// FileDiff is the staged diff of one file against Base (after Diff).
+func (t *Tree) FileDiff(ctx context.Context, file string) string {
+	out, _ := git(ctx, t.Dir, []string{"GIT_LITERAL_PATHSPECS=1"}, nil,
+		"diff", "--cached", "--no-renames", "--no-ext-diff", "--no-color", t.Base, "--", file)
+	return string(out)
+}
+
+// TopLevel lists the names at the root of Base.
+func (t *Tree) TopLevel(ctx context.Context) map[string]bool {
+	out, err := git(ctx, t.Dir, nil, nil, "ls-tree", "--name-only", "-z", t.Base)
+	if err != nil {
+		return nil
+	}
+	names := map[string]bool{}
+	for _, n := range splitZ(out) {
+		if n != "" {
+			names[n] = true
+		}
+	}
+	return names
 }
 
 // Apply applies patch to repo's working tree only; on conflict nothing changes.
@@ -370,4 +443,9 @@ func dropLinks(dir string) {
 		}
 		return nil
 	})
+}
+
+// splitZ splits NUL-separated git output.
+func splitZ(out []byte) []string {
+	return strings.Split(string(out), string(rune(0)))
 }

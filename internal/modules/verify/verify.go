@@ -38,10 +38,11 @@ func Report(p *core.Project, lastBuild *core.BuildRun) *core.Verification {
 					tr.FeatureIDs = append(tr.FeatureIDs, f.ID)
 					tr.PageIDs = append(tr.PageIDs, pagesByFeature[f.ID]...)
 					for _, t := range tasksByFeature[f.ID] {
-						if t.Area == "test" {
-							tr.TestTaskIDs = append(tr.TestTaskIDs, t.ID)
-						} else {
+						if t.Area != "test" {
 							tr.TaskIDs = append(tr.TaskIDs, t.ID)
+						}
+						if t.Area == "test" || len(t.TestRequirements) > 0 {
+							tr.TestTaskIDs = append(tr.TestTaskIDs, t.ID)
 						}
 						if t.Status != core.TaskDone {
 							tr.Done = false
@@ -69,11 +70,14 @@ func Report(p *core.Project, lastBuild *core.BuildRun) *core.Verification {
 		if uiFeature[f.ID] && len(pagesByFeature[f.ID]) == 0 {
 			issue("missing_page", f.ID, fmt.Sprintf("%s %s belum punya halaman", f.ID, f.Name))
 		}
+		// Tests usually ship with the task that writes the code
+		// (test_requirements); a separate test task also counts.
 		var impl, test int
 		for _, t := range tasksByFeature[f.ID] {
-			if t.Area == "test" {
+			if t.Area == "test" || len(t.TestRequirements) > 0 {
 				test++
-			} else {
+			}
+			if t.Area != "test" {
 				impl++
 			}
 		}
@@ -81,7 +85,7 @@ func Report(p *core.Project, lastBuild *core.BuildRun) *core.Verification {
 			issue("missing_task", f.ID, fmt.Sprintf("%s %s belum punya task implementasi", f.ID, f.Name))
 		}
 		if test == 0 {
-			issue("missing_test", f.ID, fmt.Sprintf("%s %s belum punya task test", f.ID, f.Name))
+			issue("missing_test", f.ID, fmt.Sprintf("%s %s belum punya test", f.ID, f.Name))
 		}
 	}
 

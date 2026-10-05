@@ -20,8 +20,12 @@ func PlanPrompt(p *core.Project) string {
 	var b strings.Builder
 	b.WriteString(`You are the tech lead of Foundry. Turn the APPROVED design into executable engineering tasks for a coding agent.
 Tasks are derived from requirements, features, sub-features, flows, pages, platforms and the project structure below.
-A task must be small enough for one agent run, concrete (never generic like "Build appointment"), and verifiable.
-Each feature needs implementation tasks AND at least one task with area "test". Write text in the same language as the features.
+Every task is a separate agent run that re-reads the project, so plan the FEWEST tasks that still fit one run each:
+one task per module slice (its data + API + their tests together), one task per page. Do not split a module per endpoint,
+CRUD operation or layer, and do not make a separate task for the tests of code another task writes.
+A task is concrete (never generic like "Build appointment") and verifiable.
+Tests are written in the same task as the code they test (test_requirements). Use area "test" only for end-to-end tests
+that span several features. Write text in the same language as the features.
 Do not write code. Do not modify files.
 
 `)
@@ -189,7 +193,8 @@ func ApplyPlan(p *core.Project, raw string) error {
 }
 
 // FillCoverage adds tasks for features lacking implementation or tests, and
-// pages no task touches. Generated tasks are derived from the feature data so
+// pages no task touches. A feature counts as tested when one of its tasks
+// writes tests: a separate test task costs another agent run. Generated tasks are derived from the feature data so
 // they stay concrete and traceable.
 func FillCoverage(p *core.Project) int {
 	added := 0
@@ -206,14 +211,16 @@ func FillCoverage(p *core.Project) int {
 		}
 	}
 	for _, f := range p.Features {
-		var impl, test []string
+		var impl []string
+		tested := false
 		for _, t := range p.Tasks {
 			if t.FeatureID != f.ID {
 				continue
 			}
-			if t.Area == "test" {
-				test = append(test, t.ID)
-			} else {
+			if t.Area == "test" || len(t.TestRequirements) > 0 {
+				tested = true
+			}
+			if t.Area != "test" {
 				impl = append(impl, t.ID)
 			}
 		}
@@ -240,8 +247,9 @@ func FillCoverage(p *core.Project) int {
 				Status: core.TaskTodo})
 			impl = append(impl, id)
 			added++
+			tested = true
 		}
-		if len(test) == 0 {
+		if !tested {
 			p.Tasks = append(p.Tasks, core.Task{ID: NextTaskID(p), Title: "Test " + f.Name, Area: "test",
 				Description:    "Tulis test otomatis yang membuktikan feature " + f.Name + " bekerja sesuai sub-feature.",
 				RequirementIDs: f.RequirementIDs, FeatureID: f.ID, Platform: platform, DependsOn: impl,

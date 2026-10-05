@@ -383,3 +383,69 @@ func TestPruneOrphans(t *testing.T) {
 		t.Error("isi project ikut terhapus")
 	}
 }
+
+// Merge keeps both sides where it can and leaves conflict markers where it
+// cannot, so an agent resolves them in place.
+func TestMergeLeavesMarkers(t *testing.T) {
+	needGit(t)
+	ctx := context.Background()
+	repo := newRepo(t)
+	wt := addTree(t, repo)
+	write(t, wt.Dir, "a.txt", "a1\nAGENT\na3\n")
+	write(t, wt.Dir, "c.txt", "new")
+	patch, _, err := wt.Diff(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, repo, "a.txt", "a1\nUSER\na3\n")
+	snap, err := Snapshot(ctx, repo, ".foundry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := wt.Merge(ctx, snap, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(files, []string{"a.txt"}) || wt.Base != snap {
+		t.Fatalf("files=%v base=%s", files, wt.Base)
+	}
+	if a := read(t, wt.Dir, "a.txt"); !strings.Contains(a, "<<<<<<<") || !strings.Contains(a, "AGENT") || !strings.Contains(a, "USER") {
+		t.Errorf("a.txt = %q", a)
+	}
+	if read(t, wt.Dir, "c.txt") != "new" {
+		t.Error("clean part of the patch lost")
+	}
+	if _, files, err = wt.Diff(ctx); err != nil || !reflect.DeepEqual(files, []string{"a.txt", "c.txt"}) {
+		t.Errorf("diff files=%v err=%v", files, err)
+	}
+}
+
+// Drop restores changed files to Base and deletes files Base lacks.
+func TestDrop(t *testing.T) {
+	needGit(t)
+	ctx := context.Background()
+	repo := newRepo(t)
+	wt := addTree(t, repo)
+	write(t, wt.Dir, "b.txt", "AGENT")
+	write(t, wt.Dir, "x/new.txt", "new")
+	write(t, wt.Dir, "c.txt", "keep")
+	if _, _, err := wt.Diff(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(wt.FileDiff(ctx, "b.txt"), "+AGENT") {
+		t.Errorf("FileDiff = %q", wt.FileDiff(ctx, "b.txt"))
+	}
+	if err := wt.Drop(ctx, []string{"b.txt", "x/new.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(wt.Dir, "x", "new.txt")); err == nil {
+		t.Error("new file not deleted")
+	}
+	_, files, err := wt.Diff(ctx)
+	if err != nil || !reflect.DeepEqual(files, []string{"c.txt"}) {
+		t.Errorf("files=%v err=%v", files, err)
+	}
+	if top := wt.TopLevel(ctx); !top["a.txt"] || !top[".gitignore"] || top["c.txt"] {
+		t.Errorf("TopLevel = %v", top)
+	}
+}

@@ -184,14 +184,18 @@ func fakeAgent() {
 		os.MkdirAll("app", 0o755)
 		os.WriteFile(filepath.Join("app", id+".go"), []byte("package app\n\nfunc F_"+id+"() int { return 1 }\n"), 0o644)
 		if mode == "clash" { // every task adds the same file
-			os.WriteFile("notes.txt", []byte(id+"\n"), 0o644)
+			os.WriteFile(filepath.Join("app", "shared.txt"), []byte(id+"\n"), 0o644)
 		}
 		if mode == "cross" && id == "task_001" {
 			os.MkdirAll("b", 0o755)
 			os.WriteFile(filepath.Join("b", "y.go"), []byte("package b\n"), 0o644)
 		}
+		if mode == "stray" {
+			os.WriteFile("NOTES.md", []byte("ringkasan"), 0o644)
+			os.WriteFile(filepath.Join("app", "debug.log"), []byte("log"), 0o644)
+		}
 		want := "1"
-		if mode == "fail_test" {
+		if mode == "fail_test" || mode == "fail_once" && !strings.Contains(prompt, "PROBLEM TO FIX") {
 			want = "2"
 		}
 		os.WriteFile(filepath.Join("app", id+"_test.go"), []byte("package app\n\nimport \"testing\"\n\nfunc Test_"+id+"(t *testing.T) {\n\tif F_"+id+"() != "+want+" {\n\t\tt.Fatal(\"salah\")\n\t}\n}\n"), 0o644)
@@ -348,7 +352,8 @@ func TestEndToEndAgent(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(p.Dir, "backend", "janji-temu")); err != nil {
 		t.Fatalf("scaffold missing: %v", err)
 	}
-	// Coverage filler adds a test task for FEAT-002 and UI tasks for pages.
+	// Coverage filler adds UI tasks for pages; FEAT-002 is tested by T4's own
+	// test requirements, so no separate test task (another agent run).
 	var feat2Test, uiTasks int
 	for _, tk := range p.Tasks {
 		if tk.FeatureID == "FEAT-002" && tk.Area == "test" {
@@ -361,7 +366,7 @@ func TestEndToEndAgent(t *testing.T) {
 			t.Fatalf("%s has no acceptance criteria", tk.ID)
 		}
 	}
-	if feat2Test != 1 || uiTasks != 3 {
+	if feat2Test != 0 || uiTasks != 3 {
 		t.Fatalf("coverage: feat2Test=%d uiTasks=%d", feat2Test, uiTasks)
 	}
 	// DONE is gated.

@@ -67,20 +67,17 @@ func TestIsolatedBuildMergesIntoProject(t *testing.T) {
 	}
 }
 
-// An edit to a file another pending task owns is rejected and never reaches
-// the project tree.
-func TestIsolatedRejectsForeignFile(t *testing.T) {
-	t.Setenv("FOUNDRY_AGENTS", "1")
-	s := newService(t, fakeAI{}, "cross")
+// buildIsolated runs tasks in a git project with the fake agent in mode.
+func buildIsolated(t *testing.T, mode, agents string, tasks []core.Task) (*core.Project, string) {
+	t.Helper()
+	t.Setenv("FOUNDRY_AGENTS", agents)
+	s := newService(t, fakeAI{}, mode)
 	dir := s.Store.Dir
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/k\n\ngo 1.22\n"), 0o644)
 	gitRepo(t, dir)
 	if _, err := s.Store.Update(func(p *core.Project) error {
 		p.Stage = core.StageBuild
-		p.Tasks = []core.Task{
-			{ID: "TASK-001", Title: "a", Area: "api", Files: []string{"app/task_001.go", "app/task_001_test.go"}, AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo},
-			{ID: "TASK-002", Title: "b", Area: "api", Files: []string{"b/y.go"}, AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo},
-		}
+		p.Tasks = tasks
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -89,16 +86,62 @@ func TestIsolatedRejectsForeignFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Wait()
-	p := load(t, s)
-	t1 := p.Task("TASK-001")
-	if t1.Status != core.TaskBlocked || !strings.Contains(strings.Join(t1.Notes, "\n"), "b/y.go (TASK-002)") {
-		t.Fatalf("TASK-001 = %s %v", t1.Status, t1.Notes)
+	return load(t, s), dir
+}
+
+func apiTask(id string, files ...string) core.Task {
+	return core.Task{ID: id, Title: id, Area: "api", Files: files, AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo}
+}
+
+// An edit to a file another pending task owns is dropped from the attempt
+// and handed to the owner; the rest of the work still lands.
+func TestIsolatedDropsForeignFile(t *testing.T) {
+	p, dir := buildIsolated(t, "cross", "1", []core.Task{
+		apiTask("TASK-001", "app/task_001.go", "app/task_001_test.go"),
+		apiTask("TASK-002", "b/y.go"),
+	})
+	for _, tk := range p.Tasks {
+		if tk.Status != core.TaskDone || tk.Attempts != 1 {
+			t.Fatalf("%s = %s attempts %d notes %v", tk.ID, tk.Status, tk.Attempts, tk.Notes)
+		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, "app", "task_001.go")); err == nil {
-		t.Fatal("rejected work reached the project tree")
+	if _, err := os.Stat(filepath.Join(dir, "app", "task_001.go")); err != nil {
+		t.Fatal("TASK-001 work did not land")
 	}
-	if p.Task("TASK-002").Status != core.TaskDone {
-		t.Fatalf("TASK-002 = %s %v", p.Task("TASK-002").Status, p.Task("TASK-002").Notes)
+	if _, err := os.Stat(filepath.Join(dir, "b", "y.go")); err == nil {
+		t.Fatal("foreign edit reached the project tree")
+	}
+	if !strings.Contains(strings.Join(logTexts(p), "\n"), "b/y.go, diteruskan ke TASK-002") {
+		t.Fatalf("log = %v", logTexts(p))
+	}
+}
+
+// A failing build is repaired in place by the same attempt instead of
+// redoing the task from scratch.
+func TestIsolatedRepairsInPlace(t *testing.T) {
+	p, _ := buildIsolated(t, "fail_once", "1", []core.Task{apiTask("TASK-001", "app/task_001.go", "app/task_001_test.go")})
+	tk := p.Task("TASK-001")
+	if tk.Status != core.TaskDone || tk.Attempts != 1 {
+		t.Fatalf("TASK-001 = %s attempts %d notes %v", tk.Status, tk.Attempts, tk.Notes)
+	}
+	if !strings.Contains(strings.Join(logTexts(p), "\n"), "diperbaiki di tempat (1/") {
+		t.Fatalf("log = %v", logTexts(p))
+	}
+}
+
+// Notes at the root and junk files never land in the project.
+func TestIsolatedDropsStrayFiles(t *testing.T) {
+	p, dir := buildIsolated(t, "stray", "1", []core.Task{apiTask("TASK-001", "app/task_001.go", "app/task_001_test.go")})
+	if tk := p.Task("TASK-001"); tk.Status != core.TaskDone {
+		t.Fatalf("TASK-001 = %s notes %v", tk.Status, tk.Notes)
+	}
+	for _, f := range []string{"NOTES.md", filepath.Join("app", "debug.log")} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			t.Fatalf("%s reached the project tree", f)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app", "task_001.go")); err != nil {
+		t.Fatal("task work did not land")
 	}
 }
 

@@ -540,6 +540,8 @@ type Task struct {
 	TestRequirements   []string   `json:"test_requirements"`
 	Status             TaskStatus `json:"status"`
 	Attempts           int        `json:"attempts"`
+	// Conflicts counts merge clashes that were not charged as attempts.
+	Conflicts int `json:"conflicts,omitempty"`
 	// Owner is the agent or MCP worker that claimed the task last.
 	Owner string `json:"owner,omitempty"`
 	// Seen is the owner's last sign of life (claim, next_work, update_task);

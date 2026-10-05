@@ -14,7 +14,8 @@ func TaskPrompt(p *core.Project, t *core.Task) string {
 	fmt.Fprintf(&b, "You are a coding agent working for Foundry on project %q in the current directory.\n", p.Name)
 	b.WriteString("Implement ONLY the task below. Write production-quality code and the tests it requires.\n")
 	b.WriteString("Follow the project structure. Never delete or restructure existing architecture.\n")
-	b.WriteString("Foundry runs the build/test commands itself after you finish; the task is DONE only when they pass and every acceptance criterion is met.\n\n")
+	b.WriteString("Foundry runs the build/test commands itself after you finish; the task is DONE only when they pass and every acceptance criterion is met.\n")
+	b.WriteString(workRules + "\n")
 	fmt.Fprintf(&b, "TASK %s: %s\nArea: %s  Platform: %s\n\n%s\n\n", t.ID, t.Title, t.Area, t.Platform, t.Description)
 	if f := p.Feature(t.FeatureID); f != nil {
 		fmt.Fprintf(&b, "FEATURE %s %s: %s\nSub-features:\n", f.ID, f.Name, f.Description)
@@ -55,7 +56,7 @@ func TaskPrompt(p *core.Project, t *core.Task) string {
 	if len(t.Notes) > 0 {
 		b.WriteString("\nFEEDBACK FROM PREVIOUS ATTEMPTS (fix these):\n- " + strings.Join(t.Notes, "\n- ") + "\n")
 	}
-	b.WriteString("\nWhile working, a few times call update_task with a short progress line (≤80 characters) so the user sees what you are doing. Example: {\"task_id\":\"" + t.ID + "\",\"progress\":\"Menulis skema user\"}.\n")
+	b.WriteString("\nWhile working, at most 3 times call update_task with a short progress line (≤80 characters) so the user sees what you are doing. Example: {\"task_id\":\"" + t.ID + "\",\"progress\":\"Menulis skema user\"}.\n")
 	b.WriteString("When you finish, include a ```json block so Foundry can skip a second review pass: " +
 		`{"criteria": [{"index": 1, "met": true, "evidence": "path + what it does"}], "patches": [{"file": "", "change": ""}]}` +
 		". Every criterion needs evidence. \"patches\" is optional: only changes you need in files you do not own. Do not implement other tasks.\n")
@@ -141,7 +142,38 @@ func ownership(p *core.Project, t *core.Task) string {
 			b.WriteString(strings.Join(other, "\n") + "\n")
 		}
 	}
-	b.WriteString("Edit only files you own or new files inside your task's module/page. If you need a change in a file you do not own, do not edit it: describe the exact change under \"patches\" in your final JSON (file + change) so Foundry hands it to the owner.\n")
+	b.WriteString("Edit only files you own. Create new files only next to the files you own or inside this feature's module folder of the PROJECT STRUCTURE. If you need a change in a file you do not own, do not edit it: describe the exact change under \"patches\" in your final JSON (file + change) so Foundry hands it to the owner.\n")
+	return b.String()
+}
+
+// workRules keep runs cheap and the tree tidy; the stray-file guard in the
+// build enforces the last one.
+const workRules = `WORK RULES:
+- Keep context small: read only the files you need (files you own, what they import, the shared contracts). Do not scan the whole repository.
+- Reuse before you create: look for an existing helper, component, type or client in the shared folders and use it. Never duplicate one.
+- Tests go next to the code they test, following the project's test convention.
+- Do not create notes, summaries, reports or TODO markdown, scratch scripts, logs or backup files, nor new top-level folders: Foundry discards them.
+`
+
+// RepairPrompt asks an agent to fix its own attempt in place: the worktree
+// still holds the changes, so it repairs them instead of starting over.
+func RepairPrompt(p *core.Project, t *core.Task, problem string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "You are a coding agent working for Foundry on project %q in the current directory.\n", p.Name)
+	b.WriteString("Your implementation of the task below is already in this directory but is not accepted yet. Fix ONLY the problem below, in place.\n")
+	b.WriteString("Do not start over, do not rewrite working code, do not implement other tasks. Read only the files the problem points to.\n\n")
+	fmt.Fprintf(&b, "TASK %s: %s\nArea: %s  Platform: %s\n\n%s\n", t.ID, t.Title, t.Area, t.Platform, t.Description)
+	b.WriteString("\nACCEPTANCE CRITERIA:\n")
+	for i, c := range t.AcceptanceCriteria {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, c)
+	}
+	if len(t.Files) > 0 {
+		b.WriteString("\nFILES YOU OWN:\n- " + strings.Join(t.Files, "\n- ") + "\n")
+	}
+	b.WriteString("\nPROBLEM TO FIX:\n" + problem + "\n")
+	b.WriteString("\nWhen you finish, include a ```json block: " +
+		`{"criteria": [{"index": 1, "met": true, "evidence": "path + what it does"}], "patches": [{"file": "", "change": ""}]}` +
+		". Every criterion needs evidence.\n")
 	return b.String()
 }
 
