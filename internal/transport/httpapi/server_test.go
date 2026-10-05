@@ -245,26 +245,26 @@ func TestAIParallelSettings(t *testing.T) {
 		return w
 	}
 	w := do("GET", "/api/v1/ai", "")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"max":8`) || !strings.Contains(w.Body.String(), `"default":3`) {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"max":2`) || !strings.Contains(w.Body.String(), `"default":2`) {
 		t.Fatalf("get ai: %d %s", w.Code, w.Body)
 	}
 	if w := do("PATCH", "/api/v1/ai", `{"agents":5}`); w.Code != http.StatusPreconditionFailed {
 		t.Fatalf("patch without connection: %d %s", w.Code, w.Body)
 	}
-	if w := do("POST", "/api/v1/ai/connect-mcp", `{"agents":5}`); w.Code != 200 {
+	if w := do("POST", "/api/v1/ai/connect-mcp", `{"agents":1}`); w.Code != 200 {
 		t.Fatalf("mcp: %d %s", w.Code, w.Body)
 	}
 	w = do("GET", "/api/v1/ai", "")
-	if !strings.Contains(w.Body.String(), `"agents":5`) {
+	if !strings.Contains(w.Body.String(), `"agents":1`) {
 		t.Fatalf("stored agents: %s", w.Body)
 	}
 	if w := do("PATCH", "/api/v1/ai", `{"agents":2}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"agents":2`) {
 		t.Fatalf("patch: %s", w.Body)
 	}
-	if w := do("PATCH", "/api/v1/ai", `{"agents":99}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"agents":8`) {
+	if w := do("PATCH", "/api/v1/ai", `{"agents":99}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"agents":2`) {
 		t.Fatalf("cap: %s", w.Body)
 	}
-	if w := do("POST", "/api/v1/ai/connect-mcp", `{}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"agents":8`) {
+	if w := do("POST", "/api/v1/ai/connect-mcp", `{}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"agents":2`) {
 		t.Fatalf("reconnect keeps agents: %s", w.Body)
 	}
 }

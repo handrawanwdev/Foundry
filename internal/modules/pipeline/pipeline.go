@@ -51,8 +51,8 @@ type Parallel interface {
 // says otherwise; MaxAgents caps it. CheapReviewEffort is used for the
 // acceptance-criteria pass when the coding agent did not self-review.
 const (
-	DefaultAgents     = 3
-	MaxAgents         = 8
+	DefaultAgents     = 2
+	MaxAgents         = 2
 	CheapReviewEffort = "low"
 )
 

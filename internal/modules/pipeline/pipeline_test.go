@@ -617,8 +617,8 @@ func TestClampAgents(t *testing.T) {
 		t.Fatalf("env override = %d %v", n, fromEnv)
 	}
 	t.Setenv("FOUNDRY_AGENTS", "")
-	n, fromEnv = pipeline.ParallelInfo(5)
-	if n != 5 || fromEnv {
+	n, fromEnv = pipeline.ParallelInfo(1)
+	if n != 1 || fromEnv {
 		t.Fatalf("stored = %d %v", n, fromEnv)
 	}
 }

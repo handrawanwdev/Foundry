@@ -16,9 +16,9 @@ export function ConnectPage() {
   const [picked, setPicked] = useState<string | null>(null);
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
-  const [agents, setAgents] = useState(state?.parallel?.default ?? 3);
+  const [agents, setAgents] = useState(state?.parallel?.default ?? 2);
   const parallel = state?.parallel;
-  const maxAgents = parallel?.max ?? 8;
+  const maxAgents = parallel?.max ?? 2;
   const chosen = state?.agents.find((a) => a.id === picked);
   // Models come from the CLI when it can list them, so new ones show up
   // without a Foundry update; the preset list shows until then.
