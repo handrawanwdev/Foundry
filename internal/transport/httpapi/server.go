@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/handrawanw/foundry/internal/config"
 	"github.com/handrawanw/foundry/internal/core"
@@ -427,8 +428,48 @@ func (s *Server) Handler() http.Handler {
 	}))
 
 	mux.HandleFunc("GET /api/v1/events", s.events)
+	mux.HandleFunc("GET /api/v1/project/prd.md", s.downloadPRD)
 	mux.HandleFunc("/", s.spa)
 	return guard(mux)
+}
+
+func (s *Server) downloadPRD(w http.ResponseWriter, r *http.Request) {
+	svc, err := s.service()
+	if err != nil {
+		writeJSON(w, statusFor(err), map[string]string{"error": err.Error()})
+		return
+	}
+	p, err := svc.Store.Load()
+	if err != nil {
+		writeJSON(w, statusFor(err), map[string]string{"error": err.Error()})
+		return
+	}
+	if p.PRD == nil || strings.TrimSpace(p.PRD.Markdown) == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "PRD belum dibuat"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+prdDownloadName(p.Name)+`"`)
+	w.Write([]byte(p.PRD.Markdown))
+}
+
+func prdDownloadName(name string) string {
+	var b strings.Builder
+	b.WriteString("PRD")
+	dash := true
+	for _, r := range strings.TrimSpace(name) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			if dash && b.Len() > 0 {
+				b.WriteByte('-')
+			}
+			b.WriteRune(r)
+			dash = false
+			continue
+		}
+		dash = true
+	}
+	b.WriteString(".md")
+	return b.String()
 }
 
 func (s *Server) withSvc(fn func(*pipeline.Service, *http.Request) (any, error)) func(*http.Request) (any, error) {

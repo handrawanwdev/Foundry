@@ -61,9 +61,12 @@ export function BuildPage() {
             </button>
           )}
           {project.prd && (
-            <button className={showPRD ? "primary" : ""} onClick={() => setShowPRD(!showPRD)}>
-              {showPRD ? "Tutup PRD" : "Lihat PRD"}
-            </button>
+            <>
+              <button className={showPRD ? "primary" : ""} onClick={() => setShowPRD(!showPRD)}>
+                {showPRD ? "Tutup PRD" : "Lihat PRD"}
+              </button>
+              <a className="button" href="/api/v1/project/prd.md" download>Unduh PRD</a>
+            </>
           )}
           {!working && (
             <button disabled={pending === "verify"} onClick={() => run("verify", api.verify)}>Verifikasi</button>
@@ -104,7 +107,10 @@ function PRDPanel({ prd }: { prd: NonNullable<Project["prd"]> }) {
     <section className="card prd-panel">
       <div className="row between">
         <h3>PRD</h3>
-        <span className="muted small">{findings.length} temuan</span>
+        <div className="row">
+          <span className="muted small">{findings.length} temuan</span>
+          <a className="button" href="/api/v1/project/prd.md" download>Unduh .md</a>
+        </div>
       </div>
       {findings.length > 0 && (
         <ul className="small prd-findings">

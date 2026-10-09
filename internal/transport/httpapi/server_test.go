@@ -133,6 +133,56 @@ func TestProjectSchedule(t *testing.T) {
 	}
 }
 
+func TestDownloadPRD(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	dir := t.TempDir()
+	s := New(nil, "/bin/foundry")
+	if _, err := s.Open(dir, "Klinik Sehat", true); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	do := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.RemoteAddr = "127.0.0.1:50000"
+		r.Host = "127.0.0.1:8080"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if w := do("/api/v1/project/prd.md"); w.Code != http.StatusNotFound {
+		t.Fatalf("missing prd: %d %s", w.Code, w.Body)
+	}
+	st, err := core.NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Update(func(p *core.Project) error {
+		p.PRD = &core.PRD{Markdown: "# 1. Product Overview\nKlinik\n"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w := do("/api/v1/project/prd.md")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "Product Overview") {
+		t.Fatalf("download: %d %s", w.Code, w.Body)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "text/markdown") {
+		t.Fatalf("type = %s", ct)
+	}
+	if cd := w.Header().Get("Content-Disposition"); !strings.Contains(cd, "PRD-Klinik-Sehat.md") {
+		t.Fatalf("disposition = %s", cd)
+	}
+}
+
+func TestPrdDownloadName(t *testing.T) {
+	if got := prdDownloadName(""); got != "PRD.md" {
+		t.Fatalf("empty = %s", got)
+	}
+	if got := prdDownloadName("Klinik Sehat"); got != "PRD-Klinik-Sehat.md" {
+		t.Fatalf("name = %s", got)
+	}
+}
+
 func TestFileExplorer(t *testing.T) {
 	t.Setenv("FOUNDRY_HOME", t.TempDir())
 	root := t.TempDir()
