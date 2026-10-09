@@ -108,7 +108,7 @@ type PRD struct {
 	Generated time.Time    `json:"generated"`
 }
 
-// PRDFinding kinds: GAP | MISSING_TASK | DUPLICATE | OVERLAP | INVALID_DEPENDENCY.
+// PRDFinding kinds: GAP | UNASSIGNED | MISSING_TASK | DUPLICATE | OVERLAP | INVALID_DEPENDENCY.
 type PRDFinding struct {
 	Kind    string `json:"kind"`
 	Ref     string `json:"ref"`

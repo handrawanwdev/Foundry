@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Foundry — PRD</title>
+  <link rel="stylesheet" href="../../apps/web/src/styles.css" />
+  <style>
+    .preview-ico { width: 22px; height: 22px; }
+    .task-strip::after { animation: none; width: 42%; transform: translateX(70%); }
+  </style>
+</head>
+<body>
+<div class="wb">
+  <div class="menubar">
+    <span class="menubar-logo">Foundry</span>
+    <button class="menu-btn">Berkas</button>
+    <span class="menubar-title">klinik-antrian</span>
+  </div>
+  <div class="wb-main">
+    <div class="activitybar">
+      <button class="act active" title="Bangun"><svg class="preview-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4h5v16H3z M10 4h5v10h-5z M17 4h4v7h-4z"/></svg></button>
+    </div>
+    <div class="editor">
+      <div class="tabbar"><div class="tab-item active"><span>Bangun</span></div></div>
+      <div class="editor-content">
+        <div class="build">
+          <div class="build-toolbar">
+            <div class="progress">
+              <div class="bar" aria-hidden><div style="transform: scaleX(0.36)"></div></div>
+              <span class="small"><strong>4</strong>/11 selesai</span>
+            </div>
+            <div class="build-actions">
+              <div class="prd-control open">
+                <button type="button" class="prd-main" aria-pressed="true">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 3h9l5 5v13H4z M13 3v5h5"/></svg>
+                  PRD
+                  <span class="prd-badge">3</span>
+                </button>
+                <details class="prd-more" open>
+                  <summary aria-label="Aksi PRD">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 9l6 6 6-6"/></svg>
+                  </summary>
+                  <div class="prd-menu" role="menu">
+                    <button type="button" role="menuitem">Tutup panel</button>
+                    <a class="prd-menu-item" role="menuitem" href="#">Unduh .md</a>
+                    <button type="button" role="menuitem">Buat ulang</button>
+                  </div>
+                </details>
+              </div>
+              <button type="button">Verifikasi</button>
+              <button type="button" class="primary">Mulai Bangun</button>
+            </div>
+          </div>
+          <div class="build-stage open">
+            <div class="kanban" role="list">
+              <section class="column col-TODO" aria-label="Antrian">
+                <header class="column-head"><span class="col-swatch"></span><span class="col-label">Antrian</span><span class="col-count">4</span></header>
+                <div class="column-body">
+                  <button type="button" class="task task-ready"><div class="task-title">Schema antrian + migrasi</div><div class="task-meta"><span class="task-id">T1</span></div><div class="task-queue ok">siap paralel</div></button>
+                  <button type="button" class="task"><div class="task-title">API tiket poli</div><div class="task-meta"><span class="task-id">T3</span></div><div class="task-queue">menunggu T1</div></button>
+                </div>
+              </section>
+              <section class="column col-IN_PROGRESS col-live" aria-label="Dikerjakan">
+                <header class="column-head"><span class="col-swatch"></span><span class="col-label">Dikerjakan</span><span class="col-count">1</span></header>
+                <div class="column-body">
+                  <button type="button" class="task working"><div class="task-title">Komponen kartu tiket</div><span class="task-strip" aria-hidden></span></button>
+                </div>
+              </section>
+            </div>
+            <aside class="build-inspect" aria-label="PRD">
+              <div class="build-inspect-head">
+                <strong>PRD</strong>
+                <button type="button" class="icon-btn" aria-label="Tutup panel">×</button>
+              </div>
+              <div class="build-inspect-body">
+                <div class="prd-panel">
+                  <div class="prd-panel-head">
+                    <span class="muted small">9 Okt 2026, 22.10</span>
+                    <a class="button" href="#">Unduh</a>
+                  </div>
+                  <ul class="small prd-findings">
+                    <li><span class="tag">GAP</span> REQ-012 tanpa requirement</li>
+                    <li><span class="tag">MISSING_TASK</span> FEAT-003 belum ada task</li>
+                    <li><span class="tag">OVERLAP</span> T3 T6 berbagi file/halaman</li>
+                  </ul>
+                  <pre class="doc"># Klinik Antrian
+
+Sistem antrian poli: petugas panggil, pasien lihat nomor.
+
+## Kebutuhan
+- REQ-001 Petugas login
+- REQ-004 Papan panggil per poli
+</pre>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="statusbar"><span class="sb-item">Bangun</span></div>
+</div>
+</body>
+</html>

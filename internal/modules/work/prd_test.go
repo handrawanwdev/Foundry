@@ -61,17 +61,23 @@ func TestAnalyzePRDFindsGaps(t *testing.T) {
 	if !has(FindMissing, "REQ-003") {
 		t.Fatalf("REQ-003 should be MISSING_TASK: %+v", a.Findings)
 	}
-	if !has(FindMissing, "FEAT-002") {
-		t.Fatalf("FEAT-002 should be MISSING_TASK: %+v", a.Findings)
+	if !has(FindMissing, "REQ-002") {
+		t.Fatalf("REQ-002 should be MISSING_TASK: %+v", a.Findings)
 	}
-	if !has(FindMissing, "PAGE-002") {
-		t.Fatalf("PAGE-002 should be MISSING_TASK: %+v", a.Findings)
+	if has(FindMissing, "FEAT-002") {
+		t.Fatal("FEAT-002 is covered by REQ-002 MISSING_TASK")
+	}
+	if has(FindMissing, "PAGE-002") {
+		t.Fatal("PAGE-002 is covered by REQ-002 MISSING_TASK")
 	}
 	if has(FindGAP, "TASK-001") {
 		t.Fatal("scaffold must not be GAP")
 	}
 	if has(FindMissing, "REQ-001") {
 		t.Fatal("REQ-001 is implemented")
+	}
+	if has(FindMissing, "TASK-001") {
+		t.Fatal("existing task is not MISSING_TASK")
 	}
 	var linked bool
 	for _, l := range a.Links {
@@ -119,12 +125,44 @@ func TestAnalyzePRDFlagsOverlapAndInvalidDep(t *testing.T) {
 	}
 }
 
+func TestAnalyzePRDMissingUIWhenAPIExists(t *testing.T) {
+	p := prdProject()
+	p.Tasks = p.Tasks[:2]
+	a := AnalyzePRD(p)
+	has := func(kind, ref string) bool {
+		for _, f := range a.Findings {
+			if f.Kind == kind && f.Ref == ref {
+				return true
+			}
+		}
+		return false
+	}
+	if has(FindMissing, "REQ-001") {
+		t.Fatal("REQ-001 still has API task")
+	}
+	if !has(FindMissing, "PAGE-001") {
+		t.Fatalf("PAGE-001 needs UI task: %+v", a.Findings)
+	}
+}
+
+func TestAnalyzePRDEmptyDependsOnIsNotInvalid(t *testing.T) {
+	p := prdProject()
+	p.Tasks[0].DependsOn = nil
+	a := AnalyzePRD(p)
+	for _, f := range a.Findings {
+		if f.Kind == FindInvalidDep && f.Ref == "TASK-001" {
+			t.Fatalf("null depends_on flagged: %+v", a.Findings)
+		}
+	}
+}
+
 func TestPRDPromptUsesAnalysisNotTaskFirst(t *testing.T) {
 	got := PRDPrompt(prdProject())
 	for _, s := range []string{
 		"product analyst of Foundry", "TRACEABILITY ANALYSIS", "Product → Capability",
 		"TASK-001 (area scaffold) is technical foundation", "1. Product Overview", "18. Task Breakdown",
-		"Do not invent", "REQ-003",
+		"Do not invent", "REQ-003", "UNASSIGNED", "never MISSING_TASK",
+		"Empty or null depends_on is not INVALID_DEPENDENCY",
 	} {
 		if !strings.Contains(got, s) {
 			t.Fatalf("prompt missing %q", s)
@@ -138,14 +176,14 @@ func TestApplyPRDMergesFindingsAndRejectsGaps(t *testing.T) {
 		t.Fatal("short markdown accepted")
 	}
 	md := prdMarkdown()
-	raw := "```json\n" + `{"markdown":` + jsonString(md) + `,"findings":[{"kind":"GAP","ref":"TASK-999","message":"invented"},{"kind":"GAP","ref":"TASK-002","message":"API harus validasi jadwal bentrok"}]}` + "\n```"
+	raw := "```json\n" + `{"markdown":` + jsonString(md) + `,"findings":[{"kind":"GAP","ref":"TASK-999","message":"invented"},{"kind":"GAP","ref":"TASK-002","message":"API harus validasi jadwal bentrok"},{"kind":"MISSING_TASK","ref":"TASK-001","message":"wire.go task komposisi"},{"kind":"UNASSIGNED","ref":"TASK-001","message":"wire.go bagian scaffold"}]}` + "\n```"
 	if err := ApplyPRD(p, raw); err != nil {
 		t.Fatal(err)
 	}
 	if p.PRD == nil || !strings.Contains(p.PRD.Markdown, "1. Product Overview") {
 		t.Fatalf("prd = %+v", p.PRD)
 	}
-	var sawMissing, sawInvented, sawAI bool
+	var sawMissing, sawInvented, sawAI, sawWireMissing, sawUnassigned bool
 	for _, f := range p.PRD.Findings {
 		if f.Kind == FindMissing && f.Ref == "REQ-003" {
 			sawMissing = true
@@ -156,6 +194,12 @@ func TestApplyPRDMergesFindingsAndRejectsGaps(t *testing.T) {
 		if f.Ref == "TASK-002" && strings.Contains(f.Message, "jadwal") {
 			sawAI = true
 		}
+		if f.Kind == FindMissing && f.Ref == "TASK-001" {
+			sawWireMissing = true
+		}
+		if f.Kind == FindUnassigned && f.Ref == "TASK-001" && strings.Contains(f.Message, "wire.go") {
+			sawUnassigned = true
+		}
 	}
 	if !sawMissing {
 		t.Fatalf("deterministic finding dropped: %+v", p.PRD.Findings)
@@ -165,6 +209,12 @@ func TestApplyPRDMergesFindingsAndRejectsGaps(t *testing.T) {
 	}
 	if !sawAI {
 		t.Fatalf("valid AI finding dropped: %+v", p.PRD.Findings)
+	}
+	if sawWireMissing {
+		t.Fatal("MISSING_TASK on existing TASK-ID kept")
+	}
+	if !sawUnassigned {
+		t.Fatalf("UNASSIGNED wire.go dropped: %+v", p.PRD.Findings)
 	}
 }
 

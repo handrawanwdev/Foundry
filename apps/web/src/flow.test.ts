@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isWorking, queueItem, queueLabel, reachable, stepFor, taskCounts } from "./flow";
+import { COLUMNS, COLUMN_EMPTY, isWorking, queueItem, queueLabel, reachable, stepFor, taskCounts } from "./flow";
 import type { Project } from "./types";
 
 describe("flow", () => {
@@ -16,6 +16,11 @@ describe("flow", () => {
   it("locks steps the project has not reached", () => {
     expect(reachable("DESIGN", 1)).toBe(true);
     expect(reachable("DESIGN", 2)).toBe(false);
+  });
+
+  it("names columns in the product language", () => {
+    expect(COLUMNS.map((c) => c.label)).toEqual(["Antrian", "Dikerjakan", "Review", "Selesai", "Terblokir"]);
+    expect(COLUMN_EMPTY.IN_PROGRESS).toMatch(/dikerjakan/);
   });
 
   it("counts tasks per column and detects work in progress", () => {

@@ -15,6 +15,8 @@ const PATHS: Record<IconName, string> = {
   chevron: "M6 9l6 6 6-6",
   terminal: "M5 8l5 4-5 4 M12 16h7",
   host: "M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18z M3 12h18 M12 3c2.5 3 2.5 15 0 18 M12 3c-2.5 3-2.5 15 0 18",
+  download: "M12 4v12 M7 12l5 5 5-5 M5 20h14",
+  warn: "M12 3l9 16H3z M12 10v4 M12 16.5v.5",
 };
 
 export function Icon({ name, size = 22 }: { name: IconName; size?: number }) {

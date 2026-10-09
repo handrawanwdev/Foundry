@@ -28,12 +28,20 @@ export function reachable(stage: Stage, step: number): boolean {
 }
 
 export const COLUMNS: { status: TaskStatus; label: string }[] = [
-  { status: "TODO", label: "TODO" },
-  { status: "IN_PROGRESS", label: "IN PROGRESS" },
-  { status: "REVIEW", label: "REVIEW" },
-  { status: "DONE", label: "DONE" },
-  { status: "BLOCKED", label: "BLOCKED" },
+  { status: "TODO", label: "Antrian" },
+  { status: "IN_PROGRESS", label: "Dikerjakan" },
+  { status: "REVIEW", label: "Review" },
+  { status: "DONE", label: "Selesai" },
+  { status: "BLOCKED", label: "Terblokir" },
 ];
+
+export const COLUMN_EMPTY: Record<TaskStatus, string> = {
+  TODO: "Tidak ada antrian",
+  IN_PROGRESS: "Tidak ada yang dikerjakan",
+  REVIEW: "Tidak ada yang menunggu review",
+  DONE: "Belum ada yang selesai",
+  BLOCKED: "Tidak ada yang terblokir",
+};
 
 export function taskCounts(p: Project): Record<TaskStatus, number> {
   const c: Record<TaskStatus, number> = { TODO: 0, IN_PROGRESS: 0, REVIEW: 0, DONE: 0, BLOCKED: 0 };
@@ -78,7 +86,8 @@ export const VIEWS: Record<string, { label: string; icon: IconName }> = {
 
 export type IconName =
   | "files" | "chat" | "design" | "board" | "check" | "plug" | "help" | "close"
-  | "copy" | "plus" | "minus" | "chevron" | "terminal" | "host";
+  | "copy" | "plus" | "minus" | "chevron" | "terminal" | "host"
+  | "download" | "warn";
 
 // Project files open as tabs at /files/<relative path>.
 export const FILE_PREFIX = "/files/";

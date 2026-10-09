@@ -13,13 +13,14 @@ const KindPRD = "prd"
 const (
 	FindGAP        = "GAP"
 	FindMissing    = "MISSING_TASK"
+	FindUnassigned = "UNASSIGNED"
 	FindDuplicate  = "DUPLICATE"
 	FindOverlap    = "OVERLAP"
 	FindInvalidDep = "INVALID_DEPENDENCY"
 )
 
 var prdFindingKinds = map[string]bool{
-	FindGAP: true, FindMissing: true, FindDuplicate: true, FindOverlap: true, FindInvalidDep: true,
+	FindGAP: true, FindMissing: true, FindUnassigned: true, FindDuplicate: true, FindOverlap: true, FindInvalidDep: true,
 }
 
 // prdSections are the required headings of the product document. Order is
@@ -185,41 +186,87 @@ func AnalyzePRD(p *core.Project) prdAnalysis {
 		a.Findings = append(a.Findings, core.PRDFinding{Kind: kind, Ref: ref, Message: msg})
 	}
 
+	coverFeat := func(f *core.Feature) []core.Task {
+		if f == nil {
+			return nil
+		}
+		out := append([]core.Task{}, tasksByFeat[f.ID]...)
+		for _, rid := range f.RequirementIDs {
+			out = append(out, tasksByReq[rid]...)
+		}
+		return uniqueTasks(out)
+	}
+
+	missingReq := map[string]bool{}
 	for _, r := range p.Requirements {
 		if len(reqFeatures[r.ID]) == 0 {
 			find(FindGAP, r.ID, r.ID+" tidak punya capability/feature")
 		}
-		if len(uniqueTasks(append(tasksByReq[r.ID], tasksOfFeatures(reqFeatures[r.ID], tasksByFeat)...))) == 0 {
+		impl := uniqueTasks(append(tasksByReq[r.ID], tasksOfFeatures(reqFeatures[r.ID], tasksByFeat)...))
+		if !hasImplTask(impl) {
 			find(FindMissing, r.ID, r.ID+" tidak punya task implementasi")
+			missingReq[r.ID] = true
 		}
 	}
-	for _, f := range p.Features {
-		var impl int
-		for _, t := range tasksByFeat[f.ID] {
-			if t.Area != "test" {
-				impl++
+	allMissing := func(ids []string) bool {
+		if len(ids) == 0 {
+			return false
+		}
+		for _, id := range ids {
+			if !missingReq[id] {
+				return false
 			}
 		}
-		if impl == 0 {
+		return true
+	}
+	for _, f := range p.Features {
+		if allMissing(f.RequirementIDs) {
+			continue
+		}
+		if !hasImplTask(coverFeat(&f)) {
 			find(FindMissing, f.ID, f.ID+" "+f.Name+" tidak punya task implementasi")
 		}
 	}
 	for _, fl := range p.Flows {
+		feat := featByID[fl.FeatureID]
+		if feat != nil && allMissing(feat.RequirementIDs) {
+			continue
+		}
+		covering := coverFeat(feat)
+		if feat == nil {
+			covering = tasksByFeat[fl.FeatureID]
+		}
 		served := false
-		for _, t := range tasksByFeat[fl.FeatureID] {
+		for _, t := range covering {
 			if flowServesTask(fl, t) {
 				served = true
 				break
 			}
 		}
-		if !served && len(tasksByFeat[fl.FeatureID]) == 0 {
+		if !served {
 			find(FindMissing, fl.ID, fl.ID+" "+fl.Name+" tidak punya implementasi")
 		}
 	}
 	if p.Design != nil {
+		pageInFlow := map[string]bool{}
+		for _, fl := range p.Flows {
+			for _, pid := range fl.PageIDs {
+				pageInFlow[pid] = true
+			}
+		}
 		for _, pg := range p.Design.Pages {
-			if len(pageTasks[pg.ID]) == 0 {
+			if len(pageTasks[pg.ID]) > 0 {
+				continue
+			}
+			feat := featByID[pg.FeatureID]
+			if feat != nil && allMissing(feat.RequirementIDs) {
+				continue
+			}
+			needed := pageInFlow[pg.ID] || hasImplTask(coverFeat(feat))
+			if needed {
 				find(FindMissing, pg.ID, pg.ID+" "+pg.Name+" tidak punya task UI")
+			} else {
+				find(FindUnassigned, pg.ID, pg.ID+" tidak jelas dimiliki task mana pun")
 			}
 		}
 	}
@@ -283,6 +330,15 @@ func AnalyzePRD(p *core.Project) prdAnalysis {
 		}
 	}
 	return a
+}
+
+func hasImplTask(in []core.Task) bool {
+	for _, t := range in {
+		if t.Area != "test" {
+			return true
+		}
+	}
+	return false
 }
 
 func uniqueTasks(in []core.Task) []core.Task {
@@ -369,6 +425,22 @@ Do not invent requirements, APIs, entities, flows, pages, workers, or business r
 Do not create a requirement only because a task exists.
 TASK-001 (area scaffold) is technical foundation, not a business capability.
 
+Audit traceability reports only problems that affect requirement completeness or consistency.
+
+MISSING_TASK: only when a product/business requirement needs implementation, no task covers it, and that work must be a separate task.
+Do not mark internal technical details (file, function, helper, wire.go, config, sub-component) as MISSING_TASK when they reasonably belong to an existing task.
+Do not create a task per file. Example: wire.go that fills moduleRegistrars belongs to the scaffold task already in the list. If there is no evidence it is a separate work unit, treat it as part of that task or GAP/UNASSIGNED — never MISSING_TASK.
+Skipped TASK numbers are not MISSING_TASK.
+
+INVALID_DEPENDENCY: only when a task explicitly depends_on a TASK-ID that is absent from the task list.
+Empty or null depends_on is not INVALID_DEPENDENCY.
+
+GAP / UNASSIGNED: implementation work whose owning task is unclear, without enough evidence that a new task is required. Do not invent a new TASK-ID.
+
+Priority: (1) missing business requirement (2) missing capability (3) missing business flow implementation (4) missing API/UI/worker required by a flow (5) invalid task dependency (6) overlapping ownership of the same work (7) duplicate traceability.
+Do not treat a file or function as a task unit.
+One task covering related capabilities in one bounded context is not OVERLAP. OVERLAP is two tasks owning the same files/pages without a dependency.
+
 Analyze the inventory and TRACEABILITY ANALYSIS first, then write the document.
 
 Write human-readable text in the same language as the features. Keep the 18 English section headings exactly.
@@ -392,7 +464,7 @@ Write human-readable text in the same language as the features. Keep the 18 Engl
 		b.WriteString(structureBrief(p) + "\n")
 	}
 	b.WriteString("TASKS:\n" + mustJSON(prdTasks(p)) + "\n\n")
-	b.WriteString("TRACEABILITY ANALYSIS (computed; include every finding; do not drop or contradict it):\n")
+	b.WriteString("TRACEABILITY ANALYSIS (computed; include every finding. Do not add MISSING_TASK on an existing TASK-ID. Do not invent TASK-IDs):\n")
 	b.WriteString(mustJSON(AnalyzePRD(p)) + "\n\n")
 	b.WriteString(`Required sections, in this order:
 
@@ -462,7 +534,7 @@ TASK-001 scaffold is the technical foundation when present.
 Implementation plan derived from the PRD, not the other way around. For every existing task:
 TASK-ID, Type (area), Capability, Objective, Depends On, Business Requirement, Technical Scope, Acceptance Criteria, Tests, Files / Area, Status.
 Do not delete a task because it looks unused; explain why it exists (scaffold = foundation).
-Mark: GAP, MISSING_TASK, DUPLICATE, OVERLAP, INVALID_DEPENDENCY as specified in the analysis.
+Mark: GAP, UNASSIGNED, MISSING_TASK, DUPLICATE, OVERLAP, INVALID_DEPENDENCY as specified in the analysis and the audit rules above.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {"markdown": "# 1. Product Overview\n...", "findings": [{"kind": "GAP", "ref": "TASK-002", "message": ""}]}`)
@@ -537,6 +609,9 @@ func ApplyPRD(p *core.Project, raw string) error {
 		f.Ref = strings.TrimSpace(f.Ref)
 		f.Message = strings.TrimSpace(f.Message)
 		if !prdFindingKinds[f.Kind] || f.Message == "" {
+			return
+		}
+		if f.Kind == FindMissing && strings.HasPrefix(f.Ref, "TASK-") {
 			return
 		}
 		if f.Ref != "" && !known[f.Ref] {

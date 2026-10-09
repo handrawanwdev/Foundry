@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Foundry — Bangun</title>
+  <link rel="stylesheet" href="../../apps/web/src/styles.css" />
+  <style>
+    .preview-ico { width: 22px; height: 22px; }
+    .task-strip::after { animation: none; width: 42%; transform: translateX(70%); }
+  </style>
+</head>
+<body>
+<div class="wb">
+  <div class="menubar">
+    <span class="menubar-logo">Foundry</span>
+    <button class="menu-btn">Berkas</button>
+    <span class="menubar-title">klinik-antrian</span>
+  </div>
+  <div class="wb-main">
+    <div class="activitybar">
+      <button class="act" title="Ceritakan"><svg class="preview-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5h16v11H9l-5 4z"/></svg></button>
+      <button class="act" title="Rancang"><svg class="preview-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4h18v14H3z M3 8h18 M8 8v10"/></svg></button>
+      <button class="act active" title="Bangun"><svg class="preview-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4h5v16H3z M10 4h5v10h-5z M17 4h4v7h-4z"/></svg></button>
+      <button class="act" title="Siap"><svg class="preview-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12l5 5L20 6"/></svg></button>
+    </div>
+    <aside class="explorer">
+      <div class="explorer-title"><span>EXPLORER</span></div>
+      <div class="explorer-project">klinik-antrian</div>
+      <button class="tree-head">Pipeline</button>
+      <button class="tree-head">Task <span class="tree-count">11</span></button>
+    </aside>
+    <div class="editor">
+      <div class="tabbar">
+        <div class="tab-item active"><span>Bangun</span></div>
+      </div>
+      <div class="editor-content">
+        <div class="build">
+          <div class="build-toolbar">
+            <div class="progress">
+              <div class="bar" aria-hidden><div style="transform: scaleX(0.36)"></div></div>
+              <span class="small"><strong>4</strong>/11 selesai · 1 dikerjakan · 2 review · 3 siap paralel</span>
+            </div>
+            <div class="build-actions">
+              <label class="small agents-field">Agent paralel
+                <span class="stepper">
+                  <button type="button" aria-label="Kurangi">−</button>
+                  <input type="number" value="2" min="1" max="2" />
+                  <button type="button" aria-label="Tambah">+</button>
+                </span>
+                <span class="muted">1–2</span>
+              </label>
+              <div class="prd-control">
+                <button type="button" class="prd-main">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 3h9l5 5v13H4z M13 3v5h5"/></svg>
+                  PRD
+                  <span class="prd-badge">3</span>
+                </button>
+                <details class="prd-more">
+                  <summary aria-label="Aksi PRD">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 9l6 6 6-6"/></svg>
+                  </summary>
+                </details>
+              </div>
+              <button type="button">Verifikasi</button>
+              <button type="button" class="primary">Mulai Bangun</button>
+            </div>
+          </div>
+          <div class="build-stage open">
+            <div class="kanban" role="list">
+              <section class="column col-TODO" aria-label="Antrian">
+                <header class="column-head"><span class="col-swatch"></span><span class="col-label">Antrian</span><span class="col-count">4</span></header>
+                <div class="column-body">
+                  <button type="button" class="task task-ready" aria-pressed="false">
+                    <div class="task-title">Schema antrian + migrasi</div>
+                    <div class="task-meta"><span class="task-id">T1</span><span>data</span><span>Backend</span></div>
+                    <div class="task-feature">Fondasi</div>
+                    <div class="task-queue ok">siap paralel</div>
+                  </button>
+                  <button type="button" class="task task-ready" aria-pressed="false">
+                    <div class="task-title">Halaman login petugas</div>
+                    <div class="task-meta"><span class="task-id">T4</span><span>web</span><span>Web</span></div>
+                    <div class="task-feature">Autentikasi</div>
+                    <div class="task-queue ok">siap paralel</div>
+                  </button>
+                  <button type="button" class="task" aria-pressed="false">
+                    <div class="task-title">API tiket poli</div>
+                    <div class="task-meta"><span class="task-id">T3</span><span>api</span><span>Backend</span></div>
+                    <div class="task-feature">Antrian</div>
+                    <div class="task-queue">menunggu T1</div>
+                  </button>
+                  <button type="button" class="task" aria-pressed="false">
+                    <div class="task-title">Papan panggil di ruang tunggu</div>
+                    <div class="task-meta"><span class="task-id">T6</span><span>web</span><span>Web</span></div>
+                    <div class="task-feature">Antrian</div>
+                    <div class="task-queue">dipakai T2 (file packages/ui)</div>
+                  </button>
+                </div>
+              </section>
+              <section class="column col-IN_PROGRESS col-live" aria-label="Dikerjakan">
+                <header class="column-head"><span class="col-swatch"></span><span class="col-label">Dikerjakan</span><span class="spinner"></span><span class="col-count">1</span></header>
+                <div class="column-body">
+                  <button type="button" class="task working active" aria-pressed="true">
+                    <div class="task-title"><span class="spinner"></span> Komponen kartu tiket</div>
+                    <div class="task-meta"><span class="task-id">T2</span><span>web</span><span>Web</span></div>
+                    <div class="task-feature">Antrian · claude</div>
+                    <div class="task-progress">Menulis TicketCard.tsx</div>
+                    <span class="task-strip" aria-hidden></span>
+                  </button>
+                </div>
+              </section>
+              <section class="column col-REVIEW" aria-label="Review">
+                <header class="column-head"><span class="col-swatch"></span><span class="col-label">Review</span><span class="col-count">2</span></header>
+                <div class="column-body">
+                  <button type="button" class="task" aria-pressed="false">
+                    <div class="task-title">Theme + token warna klinik</div>
+                    <div class="task-meta"><span class="task-id">T5</span><span>web</span><span>Web</span></div>
+                    <div class="task-feature">Desain</div>
+                    <div class="task-progress">Test lulus, menunggu persetujuan</div>
+                  </button>
+                  <button type="button" class="task" aria-pressed="false">
+                    <div class="task-title">Seed data poli</div>
+                    <div class="task-meta"><span class="task-id">T7</span><span>data</span><span>Backend</span></div>
+                    <div class="task-feature">Fondasi</div>
+                  </button>
+                </div>
+              </section>
+              <section class="column col-DONE" aria-label="Selesai">
+                <header class="column-head"><span class="col-swatch"></span><span class="col-label">Selesai</span><span class="col-count">4</span></header>
+                <div class="column-body">
+                  <button type="button" class="task" aria-pressed="false">
+                    <div class="task-title">Scaffold monorepo</div>
+                    <div class="task-meta"><span class="task-id">T0</span><span>tooling</span><span>Backend</span></div>
+                    <div class="task-feature">Fondasi</div>
+                  </button>
+                  <button type="button" class="task" aria-pressed="false">
+                    <div class="task-title">Auth session cookie</div>
+                    <div class="task-meta"><span class="task-id">T8</span><span>api</span><span>Backend</span></div>
+                    <div class="task-feature">Autentikasi</div>
+                  </button>
+                  <button type="button" class="task" aria-pressed="false">
+                    <div class="task-title">Layout app shell</div>
+                    <div class="task-meta"><span class="task-id">T9</span><span>web</span><span>Web</span></div>
+                    <div class="task-feature">Desain</div>
+                  </button>
+                  <button type="button" class="task" aria-pressed="false">
+                    <div class="task-title">Konfigurasi lint + test</div>
+                    <div class="task-meta"><span class="task-id">T10</span><span>tooling</span><span>Backend</span></div>
+                    <div class="task-feature">Fondasi</div>
+                  </button>
+                </div>
+              </section>
+            </div>
+            <aside class="build-inspect" aria-label="Detail task">
+              <div class="build-inspect-head">
+                <strong>Task</strong>
+                <button type="button" class="icon-btn" aria-label="Tutup panel">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 6l12 12 M18 6L6 18"/></svg>
+                </button>
+              </div>
+              <div class="build-inspect-body">
+                <div class="inspect-id">
+                  <span class="status-pill st-IN_PROGRESS">IN PROGRESS</span>
+                  <span class="task-id">T2</span>
+                </div>
+                <h3>Komponen kartu tiket</h3>
+                <p class="small pre">Kartu tiket untuk papan antrian: nomor, poli, status panggil.</p>
+                <div class="small"><span class="tag">REQ-004</span> Petugas melihat nomor antrian per poli.</div>
+                <div class="small">Halaman: Papan Antrian</div>
+                <div class="small">Dikerjakan claude</div>
+                <div class="task-progress"><span class="spinner"></span> Menulis TicketCard.tsx</div>
+                <h4>Acceptance criteria</h4>
+                <ul class="small inspect-list">
+                  <li>Kartu menampilkan nomor, poli, dan status</li>
+                  <li>Status panggil berubah tanpa reload halaman</li>
+                </ul>
+                <h4>Test</h4>
+                <ul class="small inspect-list"><li>render kartu dengan tiga status</li></ul>
+                <div class="small muted">File: apps/web/src/components/TicketCard.tsx</div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="statusbar">
+    <span class="sb-item">claude</span>
+    <span class="sb-item">Bangun</span>
+    <span class="sb-item">4/11 task</span>
+  </div>
+</div>
+</body>
+</html>

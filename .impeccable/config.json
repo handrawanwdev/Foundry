@@ -17,6 +17,150 @@
         "value": "inter",
         "createdAt": "2026-10-01T18:38:08.743Z",
         "reason": "Inter is the wireframe/preview face for designed pages (.wf-screen); Foundry chrome stays system-ui"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview.html"
+        ],
+        "createdAt": "2026-10-09T15:46:39.152Z",
+        "reason": "screenshot fixture of incumbent VS Code Dark+ tokens, not shipping UI"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-inspect.html"
+        ],
+        "createdAt": "2026-10-09T15:49:10.903Z",
+        "reason": "screenshot fixture of incumbent VS Code Dark+ tokens, not shipping UI"
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-inspect.html"
+        ],
+        "createdAt": "2026-10-09T15:49:10.910Z",
+        "reason": "screenshot fixture of incumbent VS Code Dark+ tokens, not shipping UI"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-prd.html"
+        ],
+        "createdAt": "2026-10-09T15:49:10.916Z",
+        "reason": "screenshot fixture of incumbent VS Code Dark+ tokens, not shipping UI"
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-prd.html"
+        ],
+        "createdAt": "2026-10-09T15:49:10.922Z",
+        "reason": "screenshot fixture of incumbent VS Code Dark+ tokens, not shipping UI"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-empty.html"
+        ],
+        "createdAt": "2026-10-09T15:49:10.929Z",
+        "reason": "screenshot fixture of incumbent VS Code Dark+ tokens, not shipping UI"
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-empty.html"
+        ],
+        "createdAt": "2026-10-09T15:49:10.935Z",
+        "reason": "screenshot fixture of incumbent VS Code Dark+ tokens, not shipping UI"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview.html"
+        ],
+        "createdAt": "2026-10-09T16:03:34.859Z",
+        "reason": "screenshot fixture of incumbent VS Code menubar/tabbar/statusbar chrome, not shipping Kanban"
+      },
+      {
+        "rule": "marquee",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview.html"
+        ],
+        "createdAt": "2026-10-09T16:03:34.866Z",
+        "reason": "fixture loads shipping task-strip; indeterminate IN_PROGRESS bar is state, not content marquee"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-prd.html"
+        ],
+        "createdAt": "2026-10-09T16:03:34.872Z",
+        "reason": "screenshot fixture of incumbent VS Code menubar/tabbar/statusbar chrome, not shipping Kanban"
+      },
+      {
+        "rule": "marquee",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-prd.html"
+        ],
+        "createdAt": "2026-10-09T16:03:34.878Z",
+        "reason": "fixture loads shipping task-strip; indeterminate IN_PROGRESS bar is state, not content marquee"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-inspect.html"
+        ],
+        "createdAt": "2026-10-09T16:03:34.885Z",
+        "reason": "screenshot fixture of incumbent VS Code menubar/tabbar/statusbar chrome, not shipping Kanban"
+      },
+      {
+        "rule": "marquee",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-inspect.html"
+        ],
+        "createdAt": "2026-10-09T16:03:34.892Z",
+        "reason": "fixture loads shipping task-strip; indeterminate IN_PROGRESS bar is state, not content marquee"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-empty.html"
+        ],
+        "createdAt": "2026-10-09T16:03:34.898Z",
+        "reason": "screenshot fixture of incumbent VS Code menubar/tabbar/statusbar chrome, not shipping Kanban"
+      },
+      {
+        "rule": "marquee",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-empty.html"
+        ],
+        "createdAt": "2026-10-09T16:03:34.905Z",
+        "reason": "fixture loads shipping task-strip; indeterminate IN_PROGRESS bar is state, not content marquee"
+      },
+      {
+        "rule": "flat-type-hierarchy",
+        "value": "*",
+        "files": [
+          ".impeccable/review/preview-inspect.html"
+        ],
+        "createdAt": "2026-10-09T16:03:34.912Z",
+        "reason": "screenshot fixture of Operate type scale, not a new hierarchy"
       }
     ]
   }
