@@ -133,6 +133,60 @@ func TestProjectSchedule(t *testing.T) {
 	}
 }
 
+func TestPatchTaskClosed(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	dir := t.TempDir()
+	s := New(nil, "/bin/foundry")
+	if _, err := s.Open(dir, "demo", true); err != nil {
+		t.Fatal(err)
+	}
+	st, err := core.NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Update(func(p *core.Project) error {
+		p.Stage = core.StageBuild
+		p.Tasks = []core.Task{
+			{ID: "T1", Area: "data", Files: []string{"a.go"}, Status: core.TaskTodo},
+			{ID: "T2", Area: "data", Files: []string{"b.go"}, Status: core.TaskTodo},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:50000"
+		r.Host = "127.0.0.1:8080"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	w := do("PATCH", "/api/v1/project/tasks/T2", `{"closed":true}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"closed":true`) {
+		t.Fatalf("close: %d %s", w.Code, w.Body)
+	}
+	w = do("GET", "/api/v1/project", "")
+	if w.Code != 200 {
+		t.Fatalf("get: %d %s", w.Code, w.Body)
+	}
+	if !strings.Contains(w.Body.String(), `"id":"T2"`) || !strings.Contains(w.Body.String(), `"closed":true`) {
+		t.Fatalf("persisted = %s", w.Body)
+	}
+	if strings.Contains(w.Body.String(), `"independent":["T1","T2"]`) {
+		t.Fatalf("closed T2 still independent: %s", w.Body)
+	}
+	w = do("PATCH", "/api/v1/project/tasks/T2", `{"closed":false}`)
+	if w.Code != 200 || strings.Contains(w.Body.String(), `"closed":true`) {
+		t.Fatalf("open: %d %s", w.Code, w.Body)
+	}
+	w = do("PATCH", "/api/v1/project/tasks/T2", `{}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("empty patch: %d %s", w.Code, w.Body)
+	}
+}
+
 func TestDownloadPRD(t *testing.T) {
 	t.Setenv("FOUNDRY_HOME", t.TempDir())
 	dir := t.TempDir()

@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { Kanban } from "../components/Kanban";
 import { IssueList } from "../components/IssueList";
-import { isWorking, queueItem, queueLabel, taskCounts } from "../flow";
+import { formatElapsed, formatWhen, isWorking, openTodos, queueItem, queueLabel, taskCounts, validTime } from "../flow";
 import { AgentsField } from "../components/AgentsField";
 import { Icon } from "../components/Icon";
 import { useAI } from "../store/ai";
@@ -65,6 +65,7 @@ export function BuildPage() {
 
   const c = taskCounts(project);
   const working = isWorking(project);
+  const openTodo = openTodos(project);
   const v = project.verification;
   const task = tasks.find((t) => t.id === selected);
   const independent = project.schedule?.independent ?? [];
@@ -116,7 +117,7 @@ export function BuildPage() {
           {!working && (
             <button type="button" disabled={pending === "verify"} onClick={() => run("verify", api.verify)}>Verifikasi</button>
           )}
-          {!working && c.TODO > 0 && (
+          {!working && openTodo > 0 && (
             <button type="button" className="primary" disabled={pending === "build"} onClick={() => run("build", api.startBuild)}>
               {c.DONE > 0 ? "Lanjutkan Bangun" : "Mulai Bangun"}
             </button>
@@ -143,7 +144,12 @@ export function BuildPage() {
       )}
 
       <div className={`build-stage${inspectOpen ? " open" : ""}`}>
-        <Kanban project={project} selected={selected} onSelect={pickTask} />
+        <Kanban
+          project={project}
+          selected={selected}
+          onSelect={pickTask}
+          onSetClosed={(id, closed) => void run("gate", () => api.setTaskClosed(id, closed))}
+        />
         {inspectOpen && (
           <aside className="build-inspect" aria-label={inspectTab === "prd" ? "PRD" : "Detail task"}>
             <div className="build-inspect-head">
@@ -261,12 +267,6 @@ const FINDING_LABEL: Record<PRDFinding["kind"], string> = {
   INVALID_DEPENDENCY: "dependensi salah",
 };
 
-function formatWhen(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-}
-
 function PRDPanel({ prd }: { prd: NonNullable<Project["prd"]> }) {
   const findings = prd.findings ?? [];
   return (
@@ -314,6 +314,7 @@ function TaskDetail({ project, task }: { project: Project; task: Task }) {
       {task.progress && (task.status === "IN_PROGRESS" || task.status === "REVIEW") && (
         <div className="task-progress">{task.status === "IN_PROGRESS" && <span className="spinner" />} {task.progress}</div>
       )}
+      <TaskTiming task={task} />
 
       <h4>Acceptance criteria</h4>
       <ul className="small inspect-list">
@@ -349,6 +350,18 @@ function TaskDetail({ project, task }: { project: Project; task: Task }) {
       )}
     </>
   );
+}
+
+function TaskTiming({ task }: { task: Task }) {
+  const live = (task.status === "IN_PROGRESS" || task.status === "REVIEW") && validTime(task.started_at);
+  if (live) {
+    return <div className="small">Pengerjaan {formatElapsed(Date.now() - Date.parse(task.started_at!))}</div>;
+  }
+  if (task.status === "DONE" && validTime(task.finished_at)) {
+    const dur = validTime(task.started_at) ? formatElapsed(Date.parse(task.finished_at!) - Date.parse(task.started_at!)) : "";
+    return <div className="small">Selesai {formatWhen(task.finished_at)}{dur ? ` · ${dur}` : ""}</div>;
+  }
+  return null;
 }
 
 function TaskActions({ project, task }: { project: Project; task: Task }) {

@@ -584,12 +584,19 @@ blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding-left: 1
 .task {
   text-align: left; display: flex; flex-direction: column; gap: .32rem;
   background: var(--card); color: var(--text); width: 100%; padding: .65rem .7rem;
+  border: 1px solid var(--line); border-radius: 8px;
   transition: background .15s ease-out, border-color .15s ease-out;
 }
-.task:hover:not(:disabled) { background: var(--hover); }
-.task:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.task:hover { background: var(--hover); }
 .task.active { border-color: var(--accent); background: var(--accent-soft); }
 .task.working { position: relative; border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); padding-bottom: .8rem; }
+.task.closed { opacity: .78; }
+.task-hit {
+  display: flex; flex-direction: column; gap: .32rem; width: 100%;
+  padding: 0; border: none; border-radius: 0; background: transparent;
+  color: inherit; text-align: left; cursor: pointer;
+}
+.task-hit:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 .task-strip {
   position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
   background: var(--accent-soft); overflow: hidden; border-radius: 0 0 7px 7px;
@@ -612,6 +619,20 @@ blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding-left: 1
 }
 .task-queue.ok { background: var(--ok-soft); color: var(--ok); }
 .task-progress { font-size: .75rem; color: var(--accent); display: flex; align-items: center; gap: .35rem; }
+.task-time { font-size: .72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.task-time.live { color: var(--accent); }
+.task-time.done { color: var(--ok); }
+.task-gate {
+  display: inline-flex; align-self: flex-start; gap: 2px;
+  background: var(--select); border-radius: 6px; padding: 2px;
+}
+.task-gate button {
+  border: none; background: none; padding: .12rem .45rem;
+  font-size: .68rem; font-weight: 600; border-radius: 4px; color: var(--muted);
+}
+.task-gate button:hover { color: var(--text); }
+.task-gate button.on.open { background: var(--ok-soft); color: var(--ok); }
+.task-gate button.on.shut { background: var(--bad-soft); color: var(--bad); }
 
 /* PRD split control: generate / open / menu. Secondary to Mulai Bangun. */
 .prd-control {

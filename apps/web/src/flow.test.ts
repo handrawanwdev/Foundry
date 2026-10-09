@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COLUMNS, COLUMN_EMPTY, isWorking, queueItem, queueLabel, reachable, stepFor, taskCounts } from "./flow";
+import { COLUMNS, COLUMN_EMPTY, formatElapsed, isWorking, openTodos, queueItem, queueLabel, reachable, stepFor, taskCounts, validTime } from "./flow";
 import type { Project } from "./types";
 
 describe("flow", () => {
@@ -47,5 +47,23 @@ describe("flow", () => {
     expect(queueLabel(queueItem(p, "T2"))).toBe("siap paralel");
     expect(queueLabel(queueItem(p, "T3"))).toBe("dipakai T2 (file packages/ui)");
     expect(queueLabel(queueItem(p, "T6"))).toBe("menunggu T4");
+  });
+
+  it("counts only open TODO tasks and formats elapsed time", () => {
+    const p = {
+      tasks: [
+        { status: "TODO" },
+        { status: "TODO", closed: true },
+        { status: "DONE" },
+      ],
+    } as unknown as Project;
+    expect(openTodos(p)).toBe(1);
+    expect(formatElapsed(0)).toBe("0s");
+    expect(formatElapsed(1500)).toBe("1s");
+    expect(formatElapsed(65_000)).toBe("1m 5s");
+    expect(formatElapsed(3_661_000)).toBe("1j 1m 1s");
+    expect(validTime(undefined)).toBe(false);
+    expect(validTime("0001-01-01T00:00:00Z")).toBe(false);
+    expect(validTime("2026-10-09T16:47:59Z")).toBe(true);
   });
 });

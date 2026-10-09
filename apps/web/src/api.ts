@@ -85,6 +85,7 @@ export const api = {
   startBuild: () => call("POST", "/project/build/start", {}),
   stopBuild: () => call("POST", "/project/build/stop", {}),
   moveTask: (id: string, status: TaskStatus) => call<Project>("PATCH", `/project/tasks/${id}`, { status }),
+  setTaskClosed: (id: string, closed: boolean) => call<Project>("PATCH", `/project/tasks/${id}`, { closed }),
   verify: () => call("POST", "/project/verify", {}),
   fix: () => call("POST", "/project/fix", {}),
   files: (path = "") => call<FileEntry[]>("GET", `/project/files?path=${encodeURIComponent(path)}`),

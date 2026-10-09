@@ -3,6 +3,7 @@ package pipeline
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/agent"
@@ -56,4 +57,94 @@ func TestUpdateTaskProgress(t *testing.T) {
 	if err != nil || tk.Progress != "Menambah tes login" || len(tk.Notes) != 0 {
 		t.Fatalf("note-as-progress = %+v", tk)
 	}
+}
+
+func TestClaimSetsStartedAt(t *testing.T) {
+	p := &core.Project{Tasks: []core.Task{{ID: "T1", Title: "x", Status: core.TaskTodo}}}
+	before := time.Now().UTC().Add(-time.Second)
+	claim(p, &p.Tasks[0], "agent-1", "agent")
+	got := p.Tasks[0].StartedAt
+	if got.IsZero() || got.Before(before) {
+		t.Fatalf("started_at = %v", got)
+	}
+	if p.Tasks[0].Status != core.TaskInProgress {
+		t.Fatalf("status = %s", p.Tasks[0].Status)
+	}
+}
+
+func TestConcludeTaskStampsFinishedAt(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	st, err := core.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Init("t"); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().UTC().Add(-2 * time.Minute)
+	if _, err := st.Update(func(p *core.Project) error {
+		p.Tasks = []core.Task{{
+			ID: "T1", Title: "x", Status: core.TaskReview, StartedAt: start,
+			AcceptanceCriteria: []string{"ok"}, LastBuildID: "B1",
+		}}
+		p.Builds = []core.BuildRun{{ID: "B1", Passed: true}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st, mcpAI{})
+	if err := s.concludeTask("T1", []core.Criterion{{Text: "ok", Met: true, Evidence: "file.go"}}, "B1", "agent"); err != nil {
+		t.Fatal(err)
+	}
+	tk := mustLoad(t, st).Task("T1")
+	if tk.Status != core.TaskDone || tk.FinishedAt.IsZero() || tk.FinishedAt.Before(start) {
+		t.Fatalf("done stamp = %s start=%v finish=%v", tk.Status, tk.StartedAt, tk.FinishedAt)
+	}
+}
+
+func TestSetTaskClosed(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	st, err := core.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Init("t"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Update(func(p *core.Project) error {
+		p.Tasks = []core.Task{
+			{ID: "T1", Title: "a", Area: "data", Files: []string{"a.go"}, Status: core.TaskTodo},
+			{ID: "T2", Title: "b", Area: "data", Files: []string{"b.go"}, Status: core.TaskTodo},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st, mcpAI{})
+	p, err := s.SetTaskClosed("T2", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Task("T2").Closed {
+		t.Fatal("T2 not closed")
+	}
+	if n := len(p.ReadyTasks()); n != 1 || p.ReadyTasks()[0].ID != "T1" {
+		t.Fatalf("ready = %v", p.ReadyTasks())
+	}
+	p, err = s.SetTaskClosed("T2", false)
+	if err != nil || p.Task("T2").Closed {
+		t.Fatalf("reopen = closed=%v err=%v", p.Task("T2").Closed, err)
+	}
+	if _, err := s.SetTaskClosed("NOPE", true); err == nil {
+		t.Fatal("missing task")
+	}
+}
+
+func mustLoad(t *testing.T, st *core.Store) *core.Project {
+	t.Helper()
+	p, err := st.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

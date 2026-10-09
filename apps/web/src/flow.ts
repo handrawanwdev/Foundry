@@ -49,6 +49,31 @@ export function taskCounts(p: Project): Record<TaskStatus, number> {
   return c;
 }
 
+export function openTodos(p: Project): number {
+  return (p.tasks ?? []).filter((t) => t.status === "TODO" && !t.closed).length;
+}
+
+export function formatElapsed(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}j ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+export function validTime(iso?: string): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) && t > Date.parse("2000-01-01T00:00:00Z");
+}
+
+export function formatWhen(iso?: string): string {
+  if (!validTime(iso)) return "";
+  return new Date(iso!).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
+}
+
 export function isWorking(p: Project | null): boolean {
   return !!p?.job && (p.job.status === "running" || p.job.status === "waiting_host");
 }

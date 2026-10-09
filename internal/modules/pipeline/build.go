@@ -185,10 +185,12 @@ func (s *Service) claimNext(owner, source string, queued map[string]string) (*co
 }
 
 func claim(p *core.Project, t *core.Task, owner, source string) {
+	now := time.Now().UTC()
 	t.Status = core.TaskInProgress
 	t.Attempts++
 	t.Owner = owner
-	t.Seen = time.Now().UTC()
+	t.Seen = now
+	t.StartedAt = now
 	if source == "mcp" {
 		t.Progress = "Host mengerjakan"
 	} else {
@@ -491,6 +493,7 @@ func (s *Service) concludeTask(id string, crit []core.Criterion, buildID, source
 		t.Status = core.TaskDone
 		t.Notes = nil
 		t.Progress = ""
+		stampFinished(t)
 		p.Log(source, id+" DONE")
 		return nil
 	})
@@ -535,6 +538,7 @@ func (s *Service) MoveTask(id string, to core.TaskStatus) (*core.Project, error)
 				return ErrGate
 			}
 			t.Progress = ""
+			stampFinished(t)
 		default:
 			return fmt.Errorf("status %s tidak bisa dipindah manual", to)
 		}
@@ -542,6 +546,32 @@ func (s *Service) MoveTask(id string, to core.TaskStatus) (*core.Project, error)
 		p.Log("ui", fmt.Sprintf("%s dipindah ke %s", id, to))
 		return nil
 	})
+}
+
+// SetTaskClosed is the Open|Closed gate on a Kanban card. A closed task is
+// skipped by the build queue; a running attempt is not aborted.
+func (s *Service) SetTaskClosed(id string, closed bool) (*core.Project, error) {
+	return s.Store.Update(func(p *core.Project) error {
+		t := p.Task(id)
+		if t == nil {
+			return fmt.Errorf("task %s tidak ada", id)
+		}
+		t.Closed = closed
+		if closed {
+			p.Log("ui", id+" ditutup")
+		} else {
+			p.Log("ui", id+" dibuka")
+		}
+		return nil
+	})
+}
+
+func stampFinished(t *core.Task) {
+	now := time.Now().UTC()
+	t.FinishedAt = now
+	if t.StartedAt.IsZero() {
+		t.StartedAt = now
+	}
 }
 
 // finishBuild runs the full verification once the queue is empty.

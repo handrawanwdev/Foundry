@@ -264,7 +264,9 @@ export interface Task {
   id: string; title: string; description: string; area: string; requirement_ids: string[] | null;
   feature_id: string; page_ids: string[] | null; platform: string; depends_on: string[] | null;
   acceptance_criteria: string[]; files: string[] | null; test_requirements: string[] | null;
-  status: TaskStatus; attempts: number; owner?: string; progress?: string; notes: string[] | null; last_build_id?: string; criteria?: Criterion[];
+  status: TaskStatus; attempts: number; owner?: string; progress?: string;
+  started_at?: string; finished_at?: string; closed?: boolean;
+  notes: string[] | null; last_build_id?: string; criteria?: Criterion[];
 }
 export interface PRDFinding { kind: "GAP" | "UNASSIGNED" | "MISSING_TASK" | "DUPLICATE" | "OVERLAP" | "INVALID_DEPENDENCY"; ref: string; message: string }
 export interface PRD { markdown: string; findings?: PRDFinding[] | null; generated: string }

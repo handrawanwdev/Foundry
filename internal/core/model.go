@@ -577,7 +577,13 @@ type Task struct {
 	// an MCP host silent past the lease loses the task.
 	Seen time.Time `json:"seen,omitempty"`
 	// Progress is a short live line on the Kanban while the task is active.
-	Progress    string      `json:"progress,omitempty"`
+	Progress string `json:"progress,omitempty"`
+	// StartedAt is when the current (or last) work attempt was claimed.
+	StartedAt time.Time `json:"started_at,omitempty"`
+	// FinishedAt is when the task last became DONE.
+	FinishedAt time.Time `json:"finished_at,omitempty"`
+	// Closed is a user gate: a closed task is skipped by the build queue.
+	Closed      bool        `json:"closed,omitempty"`
 	Notes       []string    `json:"notes"`
 	LastBuildID string      `json:"last_build_id,omitempty"`
 	Criteria    []Criterion `json:"criteria,omitempty"`
@@ -827,7 +833,7 @@ func (p *Project) ReadyTasks() []*Task {
 	var out []*Task
 	for i := range p.Tasks {
 		t := &p.Tasks[i]
-		if t.Status != TaskTodo {
+		if t.Status != TaskTodo || t.Closed {
 			continue
 		}
 		ok := true
@@ -998,7 +1004,7 @@ func (p *Project) Schedule() Schedule {
 	var items []QueueItem
 	for i := range p.Tasks {
 		t := &p.Tasks[i]
-		if t.Status != TaskTodo {
+		if t.Status != TaskTodo || t.Closed {
 			continue
 		}
 		if in[t.ID] != nil {

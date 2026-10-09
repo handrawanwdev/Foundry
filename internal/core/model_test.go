@@ -80,6 +80,35 @@ func TestIndependentTasks(t *testing.T) {
 	}
 }
 
+func TestClosedTasksSkipped(t *testing.T) {
+	p := &Project{Tasks: []Task{
+		{ID: "T1", Area: "data", Files: []string{"a.go"}, Status: TaskTodo},
+		{ID: "T2", Area: "data", Files: []string{"b.go"}, Status: TaskTodo, Closed: true},
+		{ID: "T3", Area: "data", Files: []string{"c.go"}, Status: TaskTodo, DependsOn: []string{"T2"}},
+	}}
+	got := idsOf(p.ReadyTasks())
+	if len(got) != 1 || got[0] != "T1" {
+		t.Fatalf("ready = %v, want T1 (T2 closed, T3 waits on T2)", got)
+	}
+	if got = idsOf(p.IndependentTasks()); len(got) != 1 || got[0] != "T1" {
+		t.Fatalf("independent = %v", got)
+	}
+	s := p.Schedule()
+	if len(s.Independent) != 1 || s.Independent[0] != "T1" {
+		t.Fatalf("schedule independent = %v", s.Independent)
+	}
+	for _, it := range s.Items {
+		if it.ID == "T2" {
+			t.Fatalf("closed T2 in schedule: %+v", it)
+		}
+	}
+	p.Task("T2").Closed = false
+	got = idsOf(p.ReadyTasks())
+	if len(got) != 2 || got[0] != "T1" || got[1] != "T2" {
+		t.Fatalf("ready after open = %v, want T1 T2", got)
+	}
+}
+
 func idsOf(ts []*Task) []string {
 	out := make([]string, len(ts))
 	for i, t := range ts {

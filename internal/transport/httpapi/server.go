@@ -390,11 +390,21 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/v1/project/build/start", s.action(func(svc *pipeline.Service) error { return svc.StartBuild() }))
 	api("POST /api/v1/project/build/stop", s.action(func(svc *pipeline.Service) error { return svc.StopBuild() }))
 	api("PATCH /api/v1/project/tasks/{id}", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct{ Status core.TaskStatus }
+		var in struct {
+			Status *core.TaskStatus `json:"status"`
+			Closed *bool            `json:"closed"`
+		}
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		return svc.MoveTask(r.PathValue("id"), in.Status)
+		id := r.PathValue("id")
+		if in.Closed != nil {
+			return svc.SetTaskClosed(id, *in.Closed)
+		}
+		if in.Status == nil {
+			return nil, badRequest("status atau closed wajib")
+		}
+		return svc.MoveTask(id, *in.Status)
 	}))
 	api("POST /api/v1/project/prd", s.action(func(svc *pipeline.Service) error { return svc.GeneratePRD() }))
 	api("POST /api/v1/project/verify", s.action(func(svc *pipeline.Service) error { return svc.Verify() }))
