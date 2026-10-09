@@ -76,6 +76,10 @@ func (s *Server) Open(dir, name string, create bool) (*core.Project, error) {
 	if err := svc.RecoverStale(); err != nil {
 		return nil, err
 	}
+	p, err = svc.DetectStructure()
+	if err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	s.svc = svc
 	s.mu.Unlock()

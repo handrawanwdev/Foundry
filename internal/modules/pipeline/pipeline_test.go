@@ -809,6 +809,41 @@ func TestExistingProjectKeepsStructure(t *testing.T) {
 	}
 }
 
+func TestDetectStructureKeepsNewIR(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Structure = &core.Structure{Mode: core.StructureNew, Template: "modular", IR: &core.StructureIR{Type: core.StructModular}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.DetectStructure()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Structure == nil || p.Structure.Template != "modular" || p.Structure.IR == nil || p.Structure.IR.Type != core.StructModular {
+		t.Fatalf("new IR wiped: %+v", p.Structure)
+	}
+}
+
+func TestSubmitStoryDetectsExistingBeforeDiscovery(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if err := os.WriteFile(filepath.Join(s.Store.Dir, "package.json"), []byte(`{"name":"dompetku","dependencies":{"react-native":"0.76.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.SubmitStory("Saya ingin menambahkan anggaran bulanan ke aplikasi keuangan yang sudah ada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Structure == nil || p.Structure.Mode != core.StructureExisting {
+		t.Fatalf("structure after story = %+v", p.Structure)
+	}
+	prompt := work.DiscoveryPrompt(p)
+	if !strings.Contains(prompt, "EXISTING PROJECT COMPONENTS") || !strings.Contains(prompt, "package.json") {
+		t.Fatalf("discovery prompt misses existing project: %s", prompt)
+	}
+}
+
 func TestMCPHostFlow(t *testing.T) {
 	s := newService(t, fakeAI{mcp: true}, "")
 	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {

@@ -197,6 +197,7 @@ func (s *Service) SubmitStory(story string) (*core.Project, error) {
 		}
 		p.Story = story
 		p.Stage = core.StageDiscovery
+		attachStructure(p)
 		p.Log("ui", "Cerita diterima")
 		return nil
 	})
@@ -204,6 +205,24 @@ func (s *Service) SubmitStory(story string) (*core.Project, error) {
 		return nil, err
 	}
 	return p, s.startAI(work.KindDiscovery)
+}
+
+// DetectStructure records whether the folder already has a codebase, so
+// Tell/Discovery copy and the discovery prompt can follow it.
+func (s *Service) DetectStructure() (*core.Project, error) {
+	return s.Store.Update(func(p *core.Project) error {
+		attachStructure(p)
+		return nil
+	})
+}
+
+// attachStructure scans the project dir. An existing codebase wins; a new
+// project's IR is kept if it is already there.
+func attachStructure(p *core.Project) {
+	d := structure.Detect(p.Dir, p.Platform)
+	if d.Mode == core.StructureExisting || p.Structure == nil {
+		p.Structure = d
+	}
 }
 
 // ---------- Design ----------
