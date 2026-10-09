@@ -59,6 +59,35 @@ func TestUpdateTaskProgress(t *testing.T) {
 	}
 }
 
+func TestDraftRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if hasDraft(dir, "T1") {
+		t.Fatal("empty dir")
+	}
+	markResume(dir, "T1")
+	if !hasDraft(dir, "T1") {
+		t.Fatal("mark")
+	}
+	clearDraft(dir, "T1")
+	if hasDraft(dir, "T1") {
+		t.Fatal("clear")
+	}
+}
+
+func TestClaimKeepsStartedAtOnResume(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Millisecond)
+	markResume(dir, "T1")
+	p := &core.Project{Dir: dir, Tasks: []core.Task{{ID: "T1", Title: "x", Status: core.TaskTodo, StartedAt: start}}}
+	claim(p, &p.Tasks[0], "agent-1", "agent")
+	if !p.Tasks[0].StartedAt.Equal(start) {
+		t.Fatalf("started_at reset: %v", p.Tasks[0].StartedAt)
+	}
+	if p.Tasks[0].Progress != "Melanjutkan" {
+		t.Fatalf("progress = %q", p.Tasks[0].Progress)
+	}
+}
+
 func TestClaimSetsStartedAt(t *testing.T) {
 	p := &core.Project{Tasks: []core.Task{{ID: "T1", Title: "x", Status: core.TaskTodo}}}
 	before := time.Now().UTC().Add(-time.Second)
@@ -99,6 +128,37 @@ func TestConcludeTaskStampsFinishedAt(t *testing.T) {
 	tk := mustLoad(t, st).Task("T1")
 	if tk.Status != core.TaskDone || tk.FinishedAt.IsZero() || tk.FinishedAt.Before(start) {
 		t.Fatalf("done stamp = %s start=%v finish=%v", tk.Status, tk.StartedAt, tk.FinishedAt)
+	}
+}
+
+func TestMoveTaskClearsDraft(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	st, err := core.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Init("t"); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().UTC().Add(-time.Minute)
+	if _, err := st.Update(func(p *core.Project) error {
+		p.Tasks = []core.Task{{ID: "T1", Title: "x", Status: core.TaskBlocked, StartedAt: start}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	markResume(st.Dir, "T1")
+	s := New(st, mcpAI{})
+	p, err := s.MoveTask("T1", core.TaskTodo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk := p.Task("T1")
+	if tk.Status != core.TaskTodo || !tk.StartedAt.IsZero() {
+		t.Fatalf("todo = %s start=%v", tk.Status, tk.StartedAt)
+	}
+	if hasDraft(st.Dir, "T1") {
+		t.Fatal("draft tetap")
 	}
 }
 

@@ -186,14 +186,20 @@ func (s *Service) claimNext(owner, source string, queued map[string]string) (*co
 
 func claim(p *core.Project, t *core.Task, owner, source string) {
 	now := time.Now().UTC()
+	resume := hasDraft(p.Dir, t.ID) || !t.StartedAt.IsZero()
 	t.Status = core.TaskInProgress
 	t.Attempts++
 	t.Owner = owner
 	t.Seen = now
-	t.StartedAt = now
-	if source == "mcp" {
+	if t.StartedAt.IsZero() {
+		t.StartedAt = now
+	}
+	switch {
+	case resume:
+		t.Progress = "Melanjutkan"
+	case source == "mcp":
 		t.Progress = "Host mengerjakan"
-	} else {
+	default:
 		t.Progress = "Menulis kode"
 	}
 	if p.Job != nil {
@@ -303,7 +309,7 @@ func (s *Service) runShared(ctx context.Context, runner *agent.Runner, p *core.P
 	// diff below may include their files too; the reviewer judges criteria.
 	before := checks.Take(p.Dir)
 	stopWatch := s.watchProgress(ctx, id, p.Dir, before)
-	out, err := runner.Run(ctx, agent.Execute, p.Dir, work.TaskPrompt(p, t))
+	out, err := runner.Run(ctx, agent.Execute, p.Dir, s.taskPrompt(p, t))
 	if err != nil {
 		stopWatch()
 		if ctx.Err() != nil {
@@ -440,6 +446,7 @@ func (s *Service) releaseTask(ctx context.Context, id string) error {
 		}
 		return nil
 	})
+	markResume(s.Store.Dir, id)
 	return ctx.Err()
 }
 
@@ -465,6 +472,7 @@ func (s *Service) rejectTask(id, note string) {
 		}
 		return nil
 	})
+	markResume(s.Store.Dir, id)
 }
 
 // concludeTask applies the DONE gate: passing build + all criteria met.
@@ -494,6 +502,7 @@ func (s *Service) concludeTask(id string, crit []core.Criterion, buildID, source
 		t.Notes = nil
 		t.Progress = ""
 		stampFinished(t)
+		clearDraft(p.Dir, id)
 		p.Log(source, id+" DONE")
 		return nil
 	})
@@ -527,6 +536,8 @@ func (s *Service) MoveTask(id string, to core.TaskStatus) (*core.Project, error)
 			}
 			t.Attempts, t.Conflicts = 0, 0
 			t.Progress = ""
+			t.StartedAt = time.Time{}
+			clearDraft(p.Dir, id)
 		case core.TaskBlocked:
 			if t.Status == core.TaskInProgress && p.Busy() {
 				return ErrBusy

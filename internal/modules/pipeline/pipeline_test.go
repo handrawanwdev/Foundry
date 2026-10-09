@@ -204,7 +204,13 @@ func fakeAgent() {
 			os.WriteFile("go.mod", []byte("module example.com/klinik\n\ngo 1.22\n"), 0o644)
 		}
 		os.MkdirAll("app", 0o755)
-		os.WriteFile(filepath.Join("app", id+".go"), []byte("package app\n\nfunc F_"+id+"() int { return 1 }\n"), 0o644)
+		goPath := filepath.Join("app", id+".go")
+		prev, _ := os.ReadFile(goPath)
+		src := "package app\n\nfunc F_" + id + "() int { return 1 }\n"
+		if mode == "fail_until_resume" {
+			src = "package app\n\n// foundry-draft\nfunc F_" + id + "() int { return 1 }\n"
+		}
+		os.WriteFile(goPath, []byte(src), 0o644)
 		if mode == "clash" { // every task adds the same file
 			os.WriteFile(filepath.Join("app", "shared.txt"), []byte(id+"\n"), 0o644)
 		}
@@ -219,6 +225,14 @@ func fakeAgent() {
 		want := "1"
 		if mode == "fail_test" || mode == "fail_once" && !strings.Contains(prompt, "PROBLEM TO FIX") {
 			want = "2"
+		}
+		if mode == "fail_until_resume" {
+			if !strings.Contains(prompt, "CONTINUE FROM PARTIAL") {
+				want = "2"
+			} else if !strings.Contains(string(prev), "foundry-draft") {
+				os.WriteFile(filepath.Join("app", "restarted.txt"), []byte("restarted"), 0o644)
+				want = "2"
+			}
 		}
 		os.WriteFile(filepath.Join("app", id+"_test.go"), []byte("package app\n\nimport \"testing\"\n\nfunc Test_"+id+"(t *testing.T) {\n\tif F_"+id+"() != "+want+" {\n\t\tt.Fatal(\"salah\")\n\t}\n}\n"), 0o644)
 		if mode == "self_review" {

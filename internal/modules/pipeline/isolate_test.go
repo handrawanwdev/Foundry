@@ -116,6 +116,25 @@ func TestIsolatedDropsForeignFile(t *testing.T) {
 	}
 }
 
+// A task that returns to the queue keeps its worktree diff and continues
+// on the next claim instead of starting over.
+func TestIsolatedResumesDraft(t *testing.T) {
+	p, dir := buildIsolated(t, "fail_until_resume", "1", []core.Task{apiTask("TASK-001", "app/task_001.go", "app/task_001_test.go")})
+	tk := p.Task("TASK-001")
+	if tk.Status != core.TaskDone || tk.Attempts != 2 {
+		t.Fatalf("TASK-001 = %s attempts %d notes %v", tk.Status, tk.Attempts, tk.Notes)
+	}
+	if !strings.Contains(strings.Join(logTexts(p), "\n"), "melanjutkan draf") {
+		t.Fatalf("log = %v", logTexts(p))
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app", "restarted.txt")); err == nil {
+		t.Fatal("second claim started over")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app", "task_001.go")); err != nil {
+		t.Fatal("task work did not land")
+	}
+}
+
 // A failing build is repaired in place by the same attempt instead of
 // redoing the task from scratch.
 func TestIsolatedRepairsInPlace(t *testing.T) {

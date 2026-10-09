@@ -254,6 +254,26 @@ func TestRebase(t *testing.T) {
 	}
 }
 
+func TestApplyPatchResumesDiff(t *testing.T) {
+	needGit(t)
+	ctx := context.Background()
+	repo := newRepo(t)
+	wt := addTree(t, repo)
+	write(t, wt.Dir, "app/partial.go", "package app\n")
+	patch, files, err := wt.Diff(ctx)
+	if err != nil || !reflect.DeepEqual(files, []string{"app/partial.go"}) {
+		t.Fatalf("diff files=%v err=%v", files, err)
+	}
+
+	wt2 := addTree(t, repo)
+	if err := wt2.ApplyPatch(ctx, patch); err != nil {
+		t.Fatal(err)
+	}
+	if read(t, wt2.Dir, "app/partial.go") != "package app\n" {
+		t.Fatal("patch tidak diterapkan")
+	}
+}
+
 func TestRemove(t *testing.T) {
 	needGit(t)
 	ctx := context.Background()

@@ -54,7 +54,8 @@ type settled struct {
 // files, must pass build/test and criteria, and is then applied to the
 // project tree — tested again first when the tree moved on meanwhile. A
 // failing round is repaired in place by the agent up to RepairRounds times;
-// a rejected attempt leaves the project tree untouched.
+// a rejected attempt leaves the project tree untouched but saves the
+// worktree diff so the next claim continues instead of starting over.
 func (s *Service) runIsolated(ctx context.Context, runner *agent.Runner, p *core.Project, t *core.Task) error {
 	id := t.ID
 	base, err := gitwt.Snapshot(ctx, p.Dir, core.StateDir)
@@ -65,9 +66,16 @@ func (s *Service) runIsolated(ctx context.Context, runner *agent.Runner, p *core
 	if err != nil {
 		return s.isolationFailed(ctx, runner, p, t, err)
 	}
-	defer tree.Remove()
+	defer func() {
+		s.persistDraft(context.WithoutCancel(ctx), id, tree)
+		tree.Remove()
+	}()
 
 	prompt, out := work.TaskPrompt(p, t), ""
+	if s.applyDraft(ctx, id, tree) {
+		prompt = work.ContinuePrompt(p, t)
+		s.setProgress(id, "Melanjutkan")
+	}
 	var crit []core.Criterion // met criteria kept across a clean re-merge
 	for round := 0; ; round++ {
 		if prompt != "" {
@@ -334,4 +342,76 @@ func conflictNote(err error) string {
 		return "Konflik saat digabung dengan perubahan lain; ulangi dari kondisi project terbaru: " + firstLine(err.Error())
 	}
 	return "Gagal menggabungkan: " + err.Error()
+}
+
+func draftPath(dir, id string) string {
+	id = strings.NewReplacer("/", "_", "\\", "_").Replace(id)
+	return filepath.Join(dir, core.StateDir, "drafts", id+".patch")
+}
+
+func hasDraft(dir, id string) bool {
+	_, err := os.Stat(draftPath(dir, id))
+	return err == nil
+}
+
+func clearDraft(dir, id string) {
+	os.Remove(draftPath(dir, id))
+}
+
+// markResume records that id left IN_PROGRESS and should continue next claim.
+// An existing patch is kept.
+func markResume(dir, id string) {
+	p := draftPath(dir, id)
+	if hasDraft(dir, id) {
+		return
+	}
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, nil, 0o644)
+}
+
+func (s *Service) persistDraft(ctx context.Context, id string, tree *gitwt.Tree) {
+	p, err := s.Store.Load()
+	if err != nil || p.Task(id) == nil || p.Task(id).Status == core.TaskDone {
+		clearDraft(s.Store.Dir, id)
+		return
+	}
+	patch, _, err := tree.Diff(ctx)
+	if err != nil {
+		markResume(s.Store.Dir, id)
+		return
+	}
+	path := draftPath(s.Store.Dir, id)
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	if err := os.WriteFile(path, patch, 0o644); err != nil {
+		markResume(s.Store.Dir, id)
+	}
+}
+
+func (s *Service) applyDraft(ctx context.Context, id string, tree *gitwt.Tree) bool {
+	b, err := os.ReadFile(draftPath(s.Store.Dir, id))
+	if err != nil {
+		return false
+	}
+	if len(b) == 0 {
+		return true
+	}
+	if err := tree.ApplyPatch(ctx, b); err != nil {
+		s.Store.Update(func(p *core.Project) error {
+			p.Log("system", fmt.Sprintf("%s draf tidak bersih diterapkan: %s", id, firstLine(err.Error())))
+			return nil
+		})
+		return true
+	}
+	s.Store.Update(func(p *core.Project) error {
+		p.Log("system", id+" melanjutkan draf")
+		return nil
+	})
+	return true
+}
+
+func (s *Service) taskPrompt(p *core.Project, t *core.Task) string {
+	if hasDraft(p.Dir, t.ID) {
+		return work.ContinuePrompt(p, t)
+	}
+	return work.TaskPrompt(p, t)
 }

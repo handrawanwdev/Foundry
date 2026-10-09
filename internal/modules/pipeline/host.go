@@ -107,6 +107,7 @@ func reclaimSilent(p *core.Project, now time.Time) bool {
 		if t.Attempts > 0 {
 			t.Attempts--
 		}
+		markResume(p.Dir, t.ID)
 		changed = true
 	}
 	return changed
@@ -122,7 +123,7 @@ func taskItem(s *Service, p *core.Project, t *core.Task) *WorkItem {
 		also = append(also, x.ID)
 		slots--
 	}
-	return &WorkItem{Kind: work.KindTask, TaskID: t.ID, Prompt: work.TaskPrompt(p, t), AlsoReady: also,
+	return &WorkItem{Kind: work.KindTask, TaskID: t.ID, Prompt: s.taskPrompt(p, t), AlsoReady: also,
 		Submit: fmt.Sprintf(`submit_task {"task_id": %q, "criteria": [{"index": 1, "met": true, "evidence": "file + what it does"}], "patches": [{"file": "", "change": ""}]}`, t.ID)}
 }
 

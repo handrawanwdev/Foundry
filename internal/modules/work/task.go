@@ -197,6 +197,31 @@ const workRules = `WORK RULES:
 - No notes, summaries, reports, TODO md, scratch scripts, logs, backups, or new top-level folders. Foundry discards them.
 `
 
+// ContinuePrompt asks an agent to finish a partial attempt already in cwd.
+// Used when a task returns to the queue and is claimed again.
+func ContinuePrompt(p *core.Project, t *core.Task) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "You are a coding agent for Foundry on project %q (cwd).\n", p.Name)
+	b.WriteString("CONTINUE FROM PARTIAL work. This directory already has a partial implementation of this task.\n")
+	b.WriteString("Do not start over or rewrite working code. Finish remaining work until every acceptance criterion is met.\n")
+	b.WriteString("Follow project structure. Do not delete or restructure architecture.\n")
+	b.WriteString("Foundry runs build/test after you finish. DONE = they pass AND every acceptance criterion is met.\n")
+	b.WriteString(workRules + "\n")
+	fmt.Fprintf(&b, "TASK %s: %s\nArea: %s  Platform: %s\n\n%s\n\n", t.ID, t.Title, t.Area, t.Platform, t.Description)
+	b.WriteString("ACCEPTANCE CRITERIA:\n")
+	for i, c := range t.AcceptanceCriteria {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, c)
+	}
+	if len(t.Files) > 0 {
+		b.WriteString("\nFILES YOU OWN:\n- " + strings.Join(t.Files, "\n- ") + "\n")
+	}
+	if len(t.Notes) > 0 {
+		b.WriteString("\nFEEDBACK (fix):\n- " + strings.Join(t.Notes, "\n- ") + "\n")
+	}
+	b.WriteString("\nWhen you finish, include a ```json block: " + finishJSON + ". Every criterion needs evidence.\n")
+	return b.String()
+}
+
 // RepairPrompt asks an agent to fix its own attempt in place: the worktree
 // still holds the changes, so it repairs them instead of starting over.
 func RepairPrompt(p *core.Project, t *core.Task, problem string) string {

@@ -384,6 +384,21 @@ func (t *Tree) TopLevel(ctx context.Context) map[string]bool {
 	return names
 }
 
+// ApplyPatch puts a Diff from an earlier worktree onto this one. A clean
+// apply keeps the files; a clash is three-way merged so conflict markers
+// stay for the agent to finish. Empty patch is a no-op.
+func (t *Tree) ApplyPatch(ctx context.Context, patch []byte) error {
+	if len(patch) == 0 {
+		return nil
+	}
+	if _, err := git(ctx, t.Dir, nil, patch, "apply", "--binary", "--check"); err == nil {
+		_, err = git(ctx, t.Dir, nil, patch, "apply", "--binary", "--index")
+		return err
+	}
+	_, err := t.Merge(ctx, t.Base, patch)
+	return err
+}
+
 // Apply applies patch to repo's working tree only; on conflict nothing changes.
 func Apply(ctx context.Context, repo string, patch []byte) error {
 	if len(patch) == 0 {

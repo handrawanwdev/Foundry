@@ -35,6 +35,21 @@ func TestSelfReviewNeedsCriteria(t *testing.T) {
 	}
 }
 
+func TestContinuePromptKeepsPartial(t *testing.T) {
+	p := &core.Project{Name: "Demo"}
+	tk := &core.Task{ID: "TASK-001", Title: "x", Description: "d", Area: "api",
+		AcceptanceCriteria: []string{"ok"}, Files: []string{"app/x.go"}, Notes: []string{"tes gagal"}}
+	got := ContinuePrompt(p, tk)
+	for _, want := range []string{"CONTINUE FROM PARTIAL", "Do not start over", "TASK-001", "app/x.go", "FEEDBACK", "tes gagal"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "PROBLEM TO FIX") || strings.Contains(got, "Implement ONLY this task") {
+		t.Fatalf("continue prompt looks like a fresh start:\n%s", got)
+	}
+}
+
 func TestTaskPromptAsksSelfReview(t *testing.T) {
 	p := &core.Project{Name: "Demo"}
 	tk := &core.Task{ID: "TASK-001", Title: "x", Description: "d", Area: "api", AcceptanceCriteria: []string{"ok"}}
