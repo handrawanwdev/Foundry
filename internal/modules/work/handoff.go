@@ -252,7 +252,8 @@ func componentSpec(c core.PageComponent) string {
 			ls = append(ls, f.Label)
 		}
 		s += " isian: " + strings.Join(ls, ", ")
-	case c.Type == "nav" && len(c.Items) > 0:
+	}
+	if len(c.Items) > 0 {
 		s += ": " + strings.Join(c.Items, ", ")
 	}
 	return s

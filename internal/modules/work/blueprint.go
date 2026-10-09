@@ -740,7 +740,7 @@ func ArchitectureBrief(p *core.Project) string {
 		return ""
 	}
 	var s strings.Builder
-	s.WriteString("ARCHITECTURE BLUEPRINT (source of truth; do not invent another architecture, stack, or folder layout):\n")
+	s.WriteString("ARCHITECTURE BLUEPRINT (do not invent another architecture, stack, or folder layout):\n")
 	if b.Overview.Goal != "" {
 		fmt.Fprintf(&s, "Goal: %s\n", b.Overview.Goal)
 	}

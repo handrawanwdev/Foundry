@@ -7,7 +7,7 @@ import { isWorking, queueItem, queueLabel, taskCounts } from "../flow";
 import { AgentsField } from "../components/AgentsField";
 import { useAI } from "../store/ai";
 import { useProject } from "../store/project";
-import type { Project, Task } from "../types";
+import type { PRDFinding, Project, Task } from "../types";
 
 export function BuildPage() {
   const { project, run, pending } = useProject();
@@ -15,9 +15,11 @@ export function BuildPage() {
   const parallel = ai?.parallel;
   const [params] = useSearchParams();
   const [selected, setSelected] = useState<string | undefined>(params.get("task") ?? undefined);
+  const [showPRD, setShowPRD] = useState(params.get("prd") === "1");
   useEffect(() => {
     const t = params.get("task");
     if (t) setSelected(t);
+    if (params.get("prd") === "1") setShowPRD(true);
   }, [params]);
   if (!project) return null;
 
@@ -54,6 +56,16 @@ export function BuildPage() {
             </button>
           )}
           {!working && (
+            <button disabled={pending === "prd"} onClick={() => void run("prd", api.generatePRD).then((ok) => { if (ok) setShowPRD(true); })}>
+              {project.prd ? "Buat ulang PRD" : "Generate PRD"}
+            </button>
+          )}
+          {project.prd && (
+            <button className={showPRD ? "primary" : ""} onClick={() => setShowPRD(!showPRD)}>
+              {showPRD ? "Tutup PRD" : "Lihat PRD"}
+            </button>
+          )}
+          {!working && (
             <button disabled={pending === "verify"} onClick={() => run("verify", api.verify)}>Verifikasi</button>
           )}
         </div>
@@ -68,11 +80,41 @@ export function BuildPage() {
       )}
       {v?.ready && <div className="card ok-card">🎉 Semua terverifikasi. <Link to="/simple/siap">Lihat hasil</Link></div>}
 
+      {showPRD && project.prd && <PRDPanel prd={project.prd} />}
+
       <div className={task ? "split build-split" : ""}>
         <Kanban project={project} selected={selected} onSelect={setSelected} />
         {task && <TaskDetail project={project} task={task} onClose={() => setSelected(undefined)} />}
       </div>
     </div>
+  );
+}
+
+const FINDING_LABEL: Record<PRDFinding["kind"], string> = {
+  GAP: "tanpa requirement",
+  MISSING_TASK: "belum ada task",
+  DUPLICATE: "tumpang tindih",
+  OVERLAP: "berbagi file/halaman",
+  INVALID_DEPENDENCY: "dependensi salah",
+};
+
+function PRDPanel({ prd }: { prd: NonNullable<Project["prd"]> }) {
+  const findings = prd.findings ?? [];
+  return (
+    <section className="card prd-panel">
+      <div className="row between">
+        <h3>PRD</h3>
+        <span className="muted small">{findings.length} temuan</span>
+      </div>
+      {findings.length > 0 && (
+        <ul className="small prd-findings">
+          {findings.map((f, i) => (
+            <li key={i}><span className="tag">{f.kind}</span> {f.ref} {f.message || FINDING_LABEL[f.kind]}</li>
+          ))}
+        </ul>
+      )}
+      <pre className="doc">{prd.markdown}</pre>
+    </section>
   );
 }
 

@@ -256,9 +256,9 @@ func (s *TechStack) Brief() string {
 	}
 	var b strings.Builder
 	if s.Mode == StructureExisting {
-		b.WriteString("TECHNOLOGY STACK (read from the existing code; keep it, do not add another framework or language):\n")
+		b.WriteString("TECHNOLOGY STACK (existing; keep it, no extra framework/language):\n")
 	} else {
-		b.WriteString("TECHNOLOGY STACK (decided with the user; use exactly these, do not substitute another framework, language or database):\n")
+		b.WriteString("TECHNOLOGY STACK (use exactly these; no substitute framework/language/database):\n")
 	}
 	for _, d := range s.Decisions {
 		fmt.Fprintf(&b, "- %s: %s", d.Area, d.Choice())

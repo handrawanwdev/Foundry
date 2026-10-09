@@ -16,7 +16,7 @@ func existingUIBrief(p *core.Project, forCode bool) string {
 	}
 	ui := p.Structure.UI
 	var b strings.Builder
-	b.WriteString("EXISTING UI (the product already has this frontend; new pages must fit into it, not beside it):\n")
+	b.WriteString("EXISTING UI (product already has this frontend; new pages fit into it, not beside it):\n")
 	if len(ui.Routes) > 0 {
 		b.WriteString("- Existing routes: " + strings.Join(ui.Routes, ", ") + "\n")
 	}
@@ -36,9 +36,9 @@ func existingUIBrief(p *core.Project, forCode bool) string {
 	if ui.ThemeID != "" {
 		fmt.Fprintf(&b, "- Design tokens (theme %q) read from: %s\n", ui.ThemeID, strings.Join(ui.ThemeSources, ", "))
 	}
-	b.WriteString("Do not redesign or re-create the existing pages; design only the pages the features need. " +
+	b.WriteString("Do not redesign or re-create existing pages; design only pages the features need. " +
 		"New pages sit in the same layout shell and navigation: add them as items of the existing menu. " +
-		"Follow the style of the existing routes and never give a new page an existing route.\n")
+		"Follow existing route style; never give a new page an existing route.\n")
 	if forCode {
 		b.WriteString("Build new pages inside the existing layout shell, register their routes in the existing router and their menu items in the existing navigation, " +
 			"and reuse the shared components above before creating new ones.\n")

@@ -81,8 +81,7 @@ func structureBrief(p *core.Project) string {
 		}
 		b.WriteString(existingUIBrief(p, true))
 	} else if ir := s.IR; ir != nil {
-		fmt.Fprintf(&b, "PROJECT STRUCTURE (approved by the user, type %s) — the contract: put code only in these folders, "+
-			"do not add top-level folders, services or packages; modules are domain boundaries, never split per endpoint or CRUD operation:\n", ir.Type)
+		fmt.Fprintf(&b, "PROJECT STRUCTURE (approved by the user, type %s) — put code only in these folders; no extra top-level folders/services/packages; modules are domain boundaries, never split per endpoint or CRUD:\n", ir.Type)
 		b.WriteString(structure.Tree(ir))
 		for _, ps := range [][]core.StructurePart{ir.Apps, ir.Services, ir.Workers, ir.Packages} {
 			for _, x := range ps {

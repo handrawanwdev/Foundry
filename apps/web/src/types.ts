@@ -266,6 +266,8 @@ export interface Task {
   acceptance_criteria: string[]; files: string[] | null; test_requirements: string[] | null;
   status: TaskStatus; attempts: number; owner?: string; progress?: string; notes: string[] | null; last_build_id?: string; criteria?: Criterion[];
 }
+export interface PRDFinding { kind: "GAP" | "MISSING_TASK" | "DUPLICATE" | "OVERLAP" | "INVALID_DEPENDENCY"; ref: string; message: string }
+export interface PRD { markdown: string; findings?: PRDFinding[] | null; generated: string }
 export interface StepResult { name: string; command: string; dir: string; exit_code: number; output: string; millis: number }
 export interface BuildRun { id: string; task_id?: string; steps: StepResult[] | null; passed: boolean; reason?: string; at: string }
 export interface Check { name: string; ok: boolean; info: string }
@@ -310,7 +312,7 @@ export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string;
   discovery?: Discovery; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
   platform?: PlatformPlan; structure?: Structure; stack?: TechStack; design?: Design; theme?: string; design_template?: string; reference?: DesignReference; tasks: Task[] | null;
-  builds: BuildRun[] | null; verification?: Verification; job?: Job; support?: Support; events: Event[] | null; updated_at: string;
+  prd?: PRD; builds: BuildRun[] | null; verification?: Verification; job?: Job; support?: Support; events: Event[] | null; updated_at: string;
   schedule?: Schedule;
 }
 

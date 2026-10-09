@@ -327,6 +327,9 @@ func DocsFiles(p *core.Project) map[string]string {
 		"deployment.md":     "# Deployment\n\n" + deploymentDoc(p),
 		"adr/0001-stack.md": adrStack(p),
 	}
+	if p.PRD != nil && strings.TrimSpace(p.PRD.Markdown) != "" {
+		out["PRD.md"] = p.PRD.Markdown
+	}
 	return out
 }
 

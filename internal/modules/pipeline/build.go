@@ -20,6 +20,22 @@ import (
 
 // ---------- Build (Kanban + agent) ----------
 
+// GeneratePRD reconstructs the product PRD from current requirements,
+// capabilities, flows, contracts and tasks. The kanban must already exist.
+func (s *Service) GeneratePRD() error {
+	p, err := s.Store.Load()
+	if err != nil {
+		return err
+	}
+	if p.Busy() || (p.Job != nil && p.Job.Status == core.JobWaiting) {
+		return ErrBusy
+	}
+	if len(p.Tasks) == 0 {
+		return ErrWrongStage
+	}
+	return s.startAI(work.KindPRD)
+}
+
 // StartBuild runs ready tasks until none is left, then verifies.
 func (s *Service) StartBuild() error {
 	runner, isMCP, err := s.AI.Runner()

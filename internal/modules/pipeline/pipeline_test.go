@@ -91,6 +91,22 @@ const planJSON = `{"tasks": [
   {"id": "T4", "title": "API jadwal", "description": "CRUD jadwal", "area": "api", "feature_id": "FEAT-002", "depends_on": ["T1"],
    "acceptance_criteria": ["CRUD jadwal"], "test_requirements": ["unit test"]}]}`
 
+var prdJSON = func() string {
+	var md strings.Builder
+	for _, s := range []string{
+		"1. Product Overview", "2. Goals", "3. Non-Goals", "4. Actors", "5. Core Capabilities",
+		"6. Business Flows", "7. UI", "8. API Contract", "9. Data Model", "10. Authorization",
+		"11. Background Workers", "12. Security", "13. Non-Functional", "14. Product Acceptance",
+		"15. Technical Constraints", "16. Task Traceability", "17. Dependency", "18. Task Breakdown",
+	} {
+		md.WriteString("# " + s + "\nisi\n\n")
+	}
+	b, _ := json.Marshal(map[string]any{"markdown": md.String(), "findings": []map[string]string{
+		{"kind": "MISSING_TASK", "ref": "REQ-003", "message": "pengingat belum ada task"},
+	}})
+	return "```json\n" + string(b) + "\n```"
+}()
+
 const supportJSON = `{"kind": "flow", "summary": "Pasien memilih dokter lalu mengonfirmasi janji.",
  "flow": {"flow_id": "FLOW-001", "name": "Buat janji", "steps": [{"name": "Pilih dokter"}, {"name": "Pilih jadwal"}, {"name": "Konfirmasi"}]},
  "sources": ["FLOW-001", "FEAT-404"]}`
@@ -162,6 +178,12 @@ func fakeAgent() {
 			return
 		}
 		fmt.Println(`{"status": "pass"}`)
+	case strings.Contains(prompt, "product analyst of Foundry"):
+		if mode == "prd_fail" {
+			fmt.Println("maaf, saya tidak bisa")
+			return
+		}
+		fmt.Println(prdJSON)
 	case strings.Contains(prompt, "tech lead"):
 		if mode == "plan_fail" {
 			fmt.Println("maaf, saya tidak bisa")
@@ -1749,6 +1771,66 @@ func TestRegenerateDesign(t *testing.T) {
 	}
 	if err := s.RegenerateDesign(); !errors.Is(err, pipeline.ErrWrongStage) {
 		t.Fatalf("approved err = %v", err)
+	}
+}
+
+func TestGeneratePRD(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	if err := s.GeneratePRD(); !errors.Is(err, pipeline.ErrWrongStage) {
+		t.Fatalf("no tasks: %v", err)
+	}
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Stage = core.StageBuild
+		p.Name = "Klinik"
+		p.Story = "Aplikasi klinik"
+		p.Requirements = []core.Requirement{{ID: "REQ-001", Text: "Pasien membuat janji", Priority: "MUST"}}
+		p.Features = []core.Feature{{ID: "FEAT-001", Name: "Janji Temu", Description: "buat janji", RequirementIDs: []string{"REQ-001"}}}
+		p.Tasks = []core.Task{
+			{ID: "TASK-001", Title: "Scaffold", Area: "scaffold", AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo},
+			{ID: "TASK-002", Title: "API", Area: "api", FeatureID: "FEAT-001", RequirementIDs: []string{"REQ-001"},
+				AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.GeneratePRD(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindPRD, core.JobDone)
+	if p.PRD == nil || !strings.Contains(p.PRD.Markdown, "1. Product Overview") {
+		t.Fatalf("prd = %+v", p.PRD)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "docs", "PRD.md")); err != nil {
+		t.Fatalf("PRD.md: %v", err)
+	}
+}
+
+func TestGeneratePRDRetry(t *testing.T) {
+	s := newService(t, fakeAI{}, "prd_fail")
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Stage = core.StageBuild
+		p.Tasks = []core.Task{{ID: "TASK-001", Title: "Scaffold", Area: "scaffold", AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.GeneratePRD(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	mustJob(t, load(t, s), work.KindPRD, core.JobFailed)
+	t.Setenv("FAKE_MODE", "")
+	if err := s.RetryJob(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindPRD, core.JobDone)
+	if p.PRD == nil {
+		t.Fatal("prd missing after retry")
 	}
 }
 

@@ -426,6 +426,8 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 		return work.StackPrompt(p)
 	case work.KindStructure:
 		return work.StructurePrompt(p)
+	case work.KindPRD:
+		return work.PRDPrompt(p)
 	}
 	return ""
 }
@@ -504,6 +506,8 @@ func jobMessage(kind string) string {
 		return "Memahami permintaan perubahan teknologi"
 	case work.KindStructure:
 		return "Memahami permintaan perubahan struktur"
+	case work.KindPRD:
+		return "Menyusun PRD"
 	}
 	return kind
 }
@@ -615,6 +619,13 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			if again {
 				next = work.KindDesignQA
 			}
+		case work.KindPRD:
+			if err := work.ApplyPRD(p, raw); err != nil {
+				return err
+			}
+			if err := verify.WriteDocs(p.Dir, p); err != nil {
+				return fmt.Errorf("gagal menulis PRD: %w", err)
+			}
 		default:
 			return fmt.Errorf("jenis pekerjaan %q tidak dikenal", kind)
 		}
@@ -680,6 +691,8 @@ func (s *Service) RetryJob() error {
 		}
 	case work.KindPlan:
 		return s.continueApproval()
+	case work.KindPRD:
+		return s.startAI(work.KindPRD)
 	case "build":
 		return s.StartBuild()
 	case "verify":

@@ -42,6 +42,18 @@ func TestTaskPromptAsksSelfReview(t *testing.T) {
 	if !strings.Contains(got, "skip a second review pass") || !strings.Contains(got, `"criteria"`) {
 		t.Fatalf("task prompt missing self-review: %s", got)
 	}
+	if !strings.Contains(got, "coding agent") {
+		t.Fatalf("task prompt missing coding agent: %s", got)
+	}
+}
+
+func TestTaskPromptPointsToPRD(t *testing.T) {
+	p := &core.Project{Name: "Demo", PRD: &core.PRD{Markdown: "# 1. Product Overview\n"}}
+	tk := &core.Task{ID: "TASK-002", Title: "x", Description: "d", Area: "api", AcceptanceCriteria: []string{"ok"}}
+	got := TaskPrompt(p, tk)
+	if !strings.Contains(got, "docs/PRD.md") {
+		t.Fatalf("task prompt missing PRD: %s", got)
+	}
 }
 
 func TestTaskPromptOwnership(t *testing.T) {

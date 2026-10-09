@@ -395,6 +395,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		return svc.MoveTask(r.PathValue("id"), in.Status)
 	}))
+	api("POST /api/v1/project/prd", s.action(func(svc *pipeline.Service) error { return svc.GeneratePRD() }))
 	api("POST /api/v1/project/verify", s.action(func(svc *pipeline.Service) error { return svc.Verify() }))
 	api("POST /api/v1/project/fix", s.action(func(svc *pipeline.Service) error { return svc.Fix() }))
 	api("GET /api/v1/project/files", s.listFiles)

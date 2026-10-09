@@ -81,6 +81,7 @@ export const api = {
   compareVersions: (from: number, to = 0) => call<VersionComparison>("GET", `/project/design/versions/compare?from=${from}&to=${to}`),
   restoreVersion: (id: number) => call<Project>("POST", `/project/design/versions/${id}/restore`),
   approveDesign: () => call("POST", "/project/design/approve", {}),
+  generatePRD: () => call("POST", "/project/prd", {}),
   startBuild: () => call("POST", "/project/build/start", {}),
   stopBuild: () => call("POST", "/project/build/stop", {}),
   moveTask: (id: string, status: TaskStatus) => call<Project>("PATCH", `/project/tasks/${id}`, { status }),

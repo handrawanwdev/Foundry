@@ -21,7 +21,7 @@ export const useAI = create<AIStore>((set, get) => ({
   error: null,
   load: async () => {
     try {
-      set({ state: await api.ai(), loading: false });
+      set({ state: await api.ai(), loading: false, error: null });
     } catch (e) {
       set({ error: (e as Error).message, loading: false });
     }

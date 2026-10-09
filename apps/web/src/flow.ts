@@ -76,7 +76,9 @@ export const VIEWS: Record<string, { label: string; icon: IconName }> = {
   "/simple/support": { label: "Support", icon: "help" },
 };
 
-export type IconName = "files" | "chat" | "design" | "board" | "check" | "plug" | "help" | "close";
+export type IconName =
+  | "files" | "chat" | "design" | "board" | "check" | "plug" | "help" | "close"
+  | "copy" | "plus" | "minus" | "chevron" | "terminal" | "host";
 
 // Project files open as tabs at /files/<relative path>.
 export const FILE_PREFIX = "/files/";

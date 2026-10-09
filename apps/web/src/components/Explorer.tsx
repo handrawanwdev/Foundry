@@ -79,6 +79,17 @@ export function Explorer() {
         ))}
       </Section>
 
+      {project.prd && (
+        <Section title="PRD" count={project.prd.findings?.length} defaultOpen={(project.prd.findings?.length ?? 0) > 0}>
+          <Leaf onClick={() => nav("/simple/bangun?prd=1")}>Lihat PRD</Leaf>
+          {(project.prd.findings ?? []).map((f, i) => (
+            <Leaf key={i} title={f.message} onClick={() => nav("/simple/bangun?prd=1")}>
+              <span className="leaf-id">{f.kind}</span> {f.ref} {f.message}
+            </Leaf>
+          ))}
+        </Section>
+      )}
+
       <Section title="Task" count={tasks.length}>
         {COLUMNS.map((col) => {
           const items = tasks.filter((t) => t.status === col.status);

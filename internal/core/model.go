@@ -61,9 +61,12 @@ type Project struct {
 	DesignTemplate string `json:"design_template,omitempty"`
 	// Reference is the website or app the design takes inspiration from.
 	Reference    *DesignReference `json:"reference,omitempty"`
-	Tasks        []Task           `json:"tasks"`
-	Builds       []BuildRun       `json:"builds"`
-	Verification *Verification    `json:"verification,omitempty"`
+	Tasks []Task `json:"tasks"`
+	// PRD is the product source of truth: capability → business flow →
+	// technical contract → task. Generated from the project context.
+	PRD          *PRD          `json:"prd,omitempty"`
+	Builds       []BuildRun    `json:"builds"`
+	Verification *Verification `json:"verification,omitempty"`
 	Job          *Job             `json:"job,omitempty"`
 	Support      *Support         `json:"support,omitempty"`
 	Events       []Event          `json:"events"`
@@ -94,6 +97,22 @@ type Requirement struct {
 	ID       string `json:"id"`
 	Text     string `json:"text"`
 	Priority string `json:"priority"` // MUST | SHOULD | COULD
+}
+
+// PRD is the product requirements document derived from the project
+// context. Markdown is the document humans and agents read; Findings
+// are gaps between requirement, flow and task.
+type PRD struct {
+	Markdown  string       `json:"markdown"`
+	Findings  []PRDFinding `json:"findings,omitempty"`
+	Generated time.Time    `json:"generated"`
+}
+
+// PRDFinding kinds: GAP | MISSING_TASK | DUPLICATE | OVERLAP | INVALID_DEPENDENCY.
+type PRDFinding struct {
+	Kind    string `json:"kind"`
+	Ref     string `json:"ref"`
+	Message string `json:"message"`
 }
 
 type Feature struct {

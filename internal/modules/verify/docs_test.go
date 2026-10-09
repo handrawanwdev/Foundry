@@ -46,3 +46,18 @@ func TestWriteDocs(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteDocsIncludesPRD(t *testing.T) {
+	dir := t.TempDir()
+	p := &core.Project{Name: "Klinik", Dir: dir, PRD: &core.PRD{Markdown: "# 1. Product Overview\nKlinik\n"}}
+	if err := WriteDocs(dir, p); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "docs", "PRD.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "Product Overview") {
+		t.Fatalf("PRD.md = %s", b)
+	}
+}

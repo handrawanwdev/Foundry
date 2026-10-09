@@ -184,11 +184,12 @@ var tools = []tool{
 		InputSchema: obj(map[string]any{"status": map[string]any{"type": "string", "enum": []string{"TODO", "IN_PROGRESS", "REVIEW", "DONE", "BLOCKED"}}})},
 	{Name: "get_task", perm: PermRead, Description: "One task with its full brief.", InputSchema: obj(map[string]any{"task_id": str}, "task_id")},
 	{Name: "get_verification", perm: PermRead, Description: "Latest verification: checks, issues, requirement traceability.", InputSchema: obj(nil)},
-	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, plan, a support question or a task). Claims a task when building. " +
+	{Name: "get_prd", perm: PermRead, Description: "Product PRD: capability, business flow, API/UI contract, task traceability. Source of truth for why a task exists.", InputSchema: obj(nil)},
+	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, plan, prd, a support question or a task). Claims a task when building. " +
 		"worker defaults to this connection; hosts sharing one connection pass distinct worker names. A task whose host stays silent (no next_work/update_task) for 30 minutes is released to other workers. also_ready lists other independent tasks another worker can claim; a task whose page or files another worker holds waits (kind \"wait\": call again shortly).",
 		InputSchema: obj(map[string]any{"worker": str})},
 	{Name: "submit_work", perm: PermWrite, Description: "Hand back a discovery/design/plan/design_qa/support/stack result (the JSON object requested by next_work).",
-		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "plan", "design_qa", "support", "stack", "structure"}}, "result": str}, "kind", "result")},
+		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "plan", "design_qa", "support", "stack", "structure", "prd"}}, "result": str}, "kind", "result")},
 	{Name: "submit_task", perm: PermExecute, Description: "Report a task as implemented. Foundry runs build/test; DONE only if checks pass and every acceptance criterion is met with evidence. " +
 		"patches (optional): changes you need in files another task owns; do not edit them, Foundry hands each to its owner. worker: the same as given to next_work.",
 		InputSchema: obj(map[string]any{"task_id": str, "worker": str, "criteria": map[string]any{"type": "array", "items": obj(map[string]any{
@@ -283,6 +284,11 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		return map[string]any{"task": t, "brief": work.TaskPrompt(p, t)}, nil
 	case "get_verification":
 		return p.Verification, nil
+	case "get_prd":
+		if p.PRD == nil {
+			return map[string]any{"prd": nil}, nil
+		}
+		return p.PRD, nil
 	case "next_work":
 		return s.Svc.NextWork(s.worker(args.Worker))
 	case "submit_work":

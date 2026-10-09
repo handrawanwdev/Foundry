@@ -8,21 +8,27 @@ import (
 	"github.com/handrawanw/foundry/internal/core"
 )
 
+const finishJSON = `{"criteria": [{"index": 1, "met": true, "evidence": "path + what it does"}], "patches": [{"file": "", "change": ""}]}`
+
 // TaskPrompt is the brief an agent receives to implement one task.
 func TaskPrompt(p *core.Project, t *core.Task) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are a coding agent working for Foundry on project %q in the current directory.\n", p.Name)
-	b.WriteString("Implement ONLY the task below. Write production-quality code and the tests it requires.\n")
-	b.WriteString("Follow the project structure. Never delete or restructure existing architecture.\n")
-	b.WriteString("Foundry runs the build/test commands itself after you finish; the task is DONE only when they pass and every acceptance criterion is met.\n")
+	fmt.Fprintf(&b, "You are a coding agent for Foundry on project %q (cwd).\n", p.Name)
+	b.WriteString("Implement ONLY this task. Production code + its tests.\n")
+	b.WriteString("Follow project structure. Do not delete or restructure architecture.\n")
+	b.WriteString("Foundry runs build/test after you finish. DONE = they pass AND every acceptance criterion is met.\n")
 	b.WriteString(workRules + "\n")
 	fmt.Fprintf(&b, "TASK %s: %s\nArea: %s  Platform: %s\n\n%s\n\n", t.ID, t.Title, t.Area, t.Platform, t.Description)
 	if f := p.Feature(t.FeatureID); f != nil {
-		fmt.Fprintf(&b, "FEATURE %s %s: %s\nSub-features:\n", f.ID, f.Name, f.Description)
-		for _, s := range f.SubFeatures {
-			b.WriteString("- " + s.Name + "\n")
+		fmt.Fprintf(&b, "FEATURE %s %s: %s\n", f.ID, f.Name, f.Description)
+		if len(f.SubFeatures) > 0 {
+			names := make([]string, len(f.SubFeatures))
+			for i, s := range f.SubFeatures {
+				names[i] = s.Name
+			}
+			b.WriteString("Sub-features: " + strings.Join(names, "; ") + "\n")
 		}
-		b.WriteString("\n")
+		b.WriteByte('\n')
 	}
 	for _, rid := range t.RequirementIDs {
 		for _, r := range p.Requirements {
@@ -35,15 +41,17 @@ func TaskPrompt(p *core.Project, t *core.Task) string {
 	for _, pid := range t.PageIDs {
 		if pg := p.Page(pid); pg != nil {
 			ui = true
-			fmt.Fprintf(&b, "\nPAGE %s %s (%s): %s\nComponents:\n%s\n", pg.ID, pg.Name, pg.Platform, pg.Purpose, mustJSON(pg.Components))
-			b.WriteString("Handoff:\n" + mustJSON(handoff(p, *pg, p.Design.Pages)) + "\n")
+			b.WriteString("\n" + mustJSON(handoff(p, *pg, p.Design.Pages)) + "\n")
 		}
 	}
 	if ui {
 		if p.Design != nil && p.Design.System != nil {
-			b.WriteString("\nDESIGN SYSTEM:\n" + mustJSON(p.Design.System) + "\n")
+			b.WriteString("\n" + systemBrief(p.Design.System))
 		}
 		b.WriteString("\n" + uiRules)
+	}
+	if p.PRD != nil && strings.TrimSpace(p.PRD.Markdown) != "" {
+		b.WriteString("\nPRODUCT PRD (source of truth): docs/PRD.md. Trace this task through Capability → Business Flow → this TASK-ID. Do not implement beyond that capability.\n")
 	}
 	b.WriteString("\nACCEPTANCE CRITERIA:\n")
 	for i, c := range t.AcceptanceCriteria {
@@ -54,17 +62,51 @@ func TaskPrompt(p *core.Project, t *core.Task) string {
 	}
 	b.WriteString(ownership(p, t))
 	if len(t.Notes) > 0 {
-		b.WriteString("\nFEEDBACK FROM PREVIOUS ATTEMPTS (fix these):\n- " + strings.Join(t.Notes, "\n- ") + "\n")
+		b.WriteString("\nFEEDBACK (fix):\n- " + strings.Join(t.Notes, "\n- ") + "\n")
 	}
-	b.WriteString("\nWhile working, at most 3 times call update_task with a short progress line (≤80 characters) so the user sees what you are doing. Example: {\"task_id\":\"" + t.ID + "\",\"progress\":\"Menulis skema user\"}.\n")
-	b.WriteString("When you finish, include a ```json block so Foundry can skip a second review pass: " +
-		`{"criteria": [{"index": 1, "met": true, "evidence": "path + what it does"}], "patches": [{"file": "", "change": ""}]}` +
-		". Every criterion needs evidence. \"patches\" is optional: only changes you need in files you do not own. Do not implement other tasks.\n")
+	b.WriteString("\nWhile working, call update_task ≤3 times, progress ≤80 chars. Example: {\"task_id\":\"" + t.ID + "\",\"progress\":\"Menulis skema user\"}.\n")
+	b.WriteString("When you finish, include a ```json block so Foundry can skip a second review pass: " + finishJSON +
+		". Every criterion needs evidence. \"patches\" is optional: foreign-file changes only. Do not implement other tasks.\n")
 	b.WriteString("\n" + structureBrief(p))
 	if brief := ArchitectureBrief(p); brief != "" {
 		b.WriteString("\n" + brief)
-		b.WriteString("Follow the blueprint: put code in the owning module, keep layers, use the API/auth/storage/worker rules. Do not add a new framework, database, or folder layout.\n")
 	}
+	return b.String()
+}
+
+// systemBrief is the design tokens as compact lines (cheaper than JSON objects).
+func systemBrief(s *core.DesignSystem) string {
+	if s == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("DESIGN SYSTEM:\n")
+	if s.Direction != "" {
+		b.WriteString(s.Direction + "\n")
+	}
+	tok := func(kind string, xs []core.Token) {
+		if len(xs) == 0 {
+			return
+		}
+		b.WriteString(kind + ":")
+		for i, t := range xs {
+			if i > 0 {
+				b.WriteByte(';')
+			}
+			fmt.Fprintf(&b, " %s=%s", t.Name, t.Value)
+			if t.Use != "" {
+				b.WriteString(" (" + t.Use + ")")
+			}
+		}
+		b.WriteByte('\n')
+	}
+	tok("colors", s.Colors)
+	tok("typography", s.Typography)
+	tok("spacing", s.Spacing)
+	tok("radius", s.Radius)
+	tok("shadow", s.Shadow)
+	tok("breakpoints", s.Breakpoints)
+	tok("components", s.Components)
 	return b.String()
 }
 
@@ -142,26 +184,26 @@ func ownership(p *core.Project, t *core.Task) string {
 			b.WriteString(strings.Join(other, "\n") + "\n")
 		}
 	}
-	b.WriteString("Edit only files you own. Create new files only next to the files you own or inside this feature's module folder of the PROJECT STRUCTURE. If you need a change in a file you do not own, do not edit it: describe the exact change under \"patches\" in your final JSON (file + change) so Foundry hands it to the owner.\n")
+	b.WriteString("Edit only owned files. New files: next to owned files or this feature's module in PROJECT STRUCTURE. Foreign file needed → do not edit; put {file, change} under \"patches\" in final JSON.\n")
 	return b.String()
 }
 
 // workRules keep runs cheap and the tree tidy; the stray-file guard in the
 // build enforces the last one.
 const workRules = `WORK RULES:
-- Keep context small: read only the files you need (files you own, what they import, the shared contracts). Do not scan the whole repository.
-- Reuse before you create: look for an existing helper, component, type or client in the shared folders and use it. Never duplicate one.
-- Tests go next to the code they test, following the project's test convention.
-- Do not create notes, summaries, reports or TODO markdown, scratch scripts, logs or backup files, nor new top-level folders: Foundry discards them.
+- Read only owned files + their imports + shared contracts. No full-repo scan.
+- Reuse existing helper/component/type/client in shared folders. Never duplicate.
+- Tests next to the code they test, project convention.
+- No notes, summaries, reports, TODO md, scratch scripts, logs, backups, or new top-level folders. Foundry discards them.
 `
 
 // RepairPrompt asks an agent to fix its own attempt in place: the worktree
 // still holds the changes, so it repairs them instead of starting over.
 func RepairPrompt(p *core.Project, t *core.Task, problem string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are a coding agent working for Foundry on project %q in the current directory.\n", p.Name)
-	b.WriteString("Your implementation of the task below is already in this directory but is not accepted yet. Fix ONLY the problem below, in place.\n")
-	b.WriteString("Do not start over, do not rewrite working code, do not implement other tasks. Read only the files the problem points to.\n\n")
+	fmt.Fprintf(&b, "You are a coding agent for Foundry on project %q (cwd).\n", p.Name)
+	b.WriteString("This directory already has your implementation; it is not accepted yet. Fix ONLY the problem below, in place.\n")
+	b.WriteString("Do not start over, rewrite working code, or implement other tasks. Read only files the problem points to.\n\n")
 	fmt.Fprintf(&b, "TASK %s: %s\nArea: %s  Platform: %s\n\n%s\n", t.ID, t.Title, t.Area, t.Platform, t.Description)
 	b.WriteString("\nACCEPTANCE CRITERIA:\n")
 	for i, c := range t.AcceptanceCriteria {
@@ -171,9 +213,7 @@ func RepairPrompt(p *core.Project, t *core.Task, problem string) string {
 		b.WriteString("\nFILES YOU OWN:\n- " + strings.Join(t.Files, "\n- ") + "\n")
 	}
 	b.WriteString("\nPROBLEM TO FIX:\n" + problem + "\n")
-	b.WriteString("\nWhen you finish, include a ```json block: " +
-		`{"criteria": [{"index": 1, "met": true, "evidence": "path + what it does"}], "patches": [{"file": "", "change": ""}]}` +
-		". Every criterion needs evidence.\n")
+	b.WriteString("\nWhen you finish, include a ```json block: " + finishJSON + ". Every criterion needs evidence.\n")
 	return b.String()
 }
 
@@ -188,14 +228,14 @@ func normPath(f string) string {
 
 // uiRules is how a coding agent builds a designed page.
 const uiRules = `UI RULES:
-- Build with the DESIGN SYSTEM tokens: map them once onto the project's styling (CSS variables, theme, Tailwind config) and reuse them. No arbitrary colors, font sizes, spacing, radius or shadows where a token fits.
-- Reuse existing components (Button, Input, FormField, Card, Table, Modal, Tabs, Badge, Alert, EmptyState, LoadingState, ErrorState, PageHeader). Create one only when none fits, and make it reusable.
-- Visual hierarchy follows the handoff "hierarchy", first item most prominent. At most one primary CTA per context (the primary action); secondary actions are visually lower. Never render the same action twice.
-- Implement every state in the handoff: loading keeps the layout (skeleton, no jump), empty says what happened, why and what to do, error says what failed and how to recover.
-- Layout as the handoff "layout" (Design IR) says: the same frame, nav placement, content width, component tree (stack, row, grid, split, sidebar, center, full, overlay) and per-device changes (hide, order, type, columns, swap); component "#id"s map to the tree. Resolve its semantic tokens (space.*, surface.*, action.*, text.*, status.*) from the design system. Do not invent another layout.
-- Responsive as the handoff "responsive" and "layout.devices" say, on desktop, tablet and mobile: no horizontal page overflow on mobile, touch targets at least 44px, important information not hidden.
-- Accessibility: semantic HTML, a label for every input, visible focus state, keyboard navigation, WCAG AA contrast, form errors tied to their field, accessible names on icon buttons.
-- Do not change APIs or business logic for visuals, add routes beyond the handoff, use mock data where real data exists, or remove existing functionality. No extra features, animations or decoration.
+- Map DESIGN SYSTEM tokens once onto project styling (CSS vars, theme, Tailwind). No arbitrary color/size/space/radius/shadow where a token fits.
+- Reuse existing components (Button, Input, FormField, Card, Table, Modal, Tabs, Badge, Alert, EmptyState, LoadingState, ErrorState, PageHeader). Create only if none fits; make it reusable.
+- Hierarchy follows handoff "hierarchy" (first = most prominent). At most one primary CTA per context; secondary visually lower. Never render the same action twice.
+- Every handoff state: loading keeps layout (skeleton, no jump); empty says what/why/next; error says what failed + how to recover.
+- Layout = handoff "layout" (Design IR): same frame, nav, width, tree (stack, row, grid, split, sidebar, center, full, overlay), per-device (hide, order, type, columns, swap). Component "#id"s map to the tree. Resolve semantic tokens (space.*, surface.*, action.*, text.*, status.*) from the design system. Do not invent another layout.
+- Responsive as handoff "responsive" + "layout.devices": desktop, tablet, mobile. No horizontal page overflow on mobile. Touch targets ≥44px. Do not hide important info.
+- A11y: semantic HTML, label every input, visible focus, keyboard nav, WCAG AA, field-tied form errors, accessible names on icon buttons.
+- Do not change APIs/business logic for visuals, add routes beyond the handoff, use mock data where real data exists, or remove existing functionality. No extra features, animations or decoration.
 `
 
 // Verdict is a reviewer's judgement of one acceptance criterion (1-based).
@@ -212,8 +252,7 @@ type reviewOut struct {
 // ReviewPrompt asks the AI to judge acceptance criteria against the changes.
 func ReviewPrompt(p *core.Project, t *core.Task, changes string, build *core.BuildRun) string {
 	var b strings.Builder
-	b.WriteString("You are the reviewer of Foundry. Judge strictly whether each acceptance criterion is met by the code changes.\n")
-	b.WriteString("A criterion is met only with concrete evidence in the code (file + what it does). Do not modify files.\n\n")
+	b.WriteString("You are the reviewer of Foundry. Judge strictly: each acceptance criterion is met only with concrete code evidence (file + what it does). Do not modify files.\n\n")
 	fmt.Fprintf(&b, "TASK %s: %s\n%s\n\nACCEPTANCE CRITERIA:\n", t.ID, t.Title, t.Description)
 	for i, c := range t.AcceptanceCriteria {
 		fmt.Fprintf(&b, "%d. %s\n", i+1, c)

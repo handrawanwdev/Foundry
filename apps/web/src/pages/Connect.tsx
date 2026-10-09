@@ -1,47 +1,126 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { useNavigate } from "react-router-dom";
 import { AgentsField } from "../components/AgentsField";
+import { Icon } from "../components/Icon";
 import { ModelPicker } from "../components/ModelPicker";
 import { stepFor } from "../flow";
 import { agentName, agentOptions, useAI } from "../store/ai";
 import { useProject } from "../store/project";
+import type { AgentInfo } from "../types";
+
+const MARK: Record<string, string> = {
+  claude: "CC",
+  codex: "CX",
+  qwen: "QW",
+  grok: "GK",
+  gemini: "GM",
+};
+
+function AgentMark({ id, name }: { id: string; name: string }) {
+  return (
+    <span className={`agent-mark agent-mark-${id}`} aria-hidden>
+      {MARK[id] ?? name.slice(0, 2).toUpperCase()}
+    </span>
+  );
+}
 
 export function ConnectPage() {
-  const { state, connecting, error, connectAgent, connectMCP, disconnect, setAgents: saveAgents } = useAI();
+  const { state, connecting, error, connectAgent, connectMCP, disconnect, setAgents: saveAgents, load } = useAI();
   const project = useProject((s) => s.project);
   const nav = useNavigate();
   const [custom, setCustom] = useState("");
-  const [showMCP, setShowMCP] = useState(state?.connection?.mode === "mcp");
+  const waitingMCP = state?.connection?.mode === "mcp" && !state.ready;
+  const noneDetected = !!state && !state.agents.some((a) => a.detected);
+  const [showMCP, setShowMCP] = useState(waitingMCP || noneDetected);
+  const [showCustom, setShowCustom] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
   const [agents, setAgents] = useState(state?.parallel?.default ?? 2);
+  const [copied, setCopied] = useState(false);
+  const mcpPre = useRef<HTMLPreElement>(null);
   const parallel = state?.parallel;
   const maxAgents = parallel?.max ?? 2;
   const chosen = state?.agents.find((a) => a.id === picked);
-  // Models come from the CLI when it can list them, so new ones show up
-  // without a Foundry update; the preset list shows until then.
   const [models, setModels] = useState<{ agent: string; list: string[] | null } | null>(null);
+
   useEffect(() => {
     if (!picked) return;
     let live = true;
     api.models(picked).then((r) => { if (live) setModels({ agent: picked, list: r.models ?? [] }); }).catch(() => { if (live) setModels({ agent: picked, list: null }); });
     return () => { live = false; };
   }, [picked]);
-  const loadingModels = !!picked && models?.agent !== picked;
-  const pick = (id: string) => { setPicked(id); setModel(""); setEffort(""); };
 
-  if (state?.ready) {
+  useEffect(() => {
+    if (picked || showMCP || waitingMCP || !state) return;
+    const found = state.agents.filter((a) => a.detected);
+    if (found.length === 1) setPicked(found[0].id);
+  }, [state, picked, showMCP, waitingMCP]);
+
+  const loadingModels = !!picked && models?.agent !== picked;
+  const pick = (id: string) => {
+    if (picked === id) { setPicked(null); return; }
+    setPicked(id);
+    setModel("");
+    setEffort("");
+    setShowMCP(false);
+  };
+
+  const copyMCP = async () => {
+    const text = JSON.stringify(state?.mcp_config, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      const pre = mcpPre.current;
+      if (!pre) return;
+      const range = document.createRange();
+      range.selectNodeContents(pre);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
+  };
+
+  if (!state) {
     return (
-      <section className="card narrow center-text">
-        <h1>✓ AI siap digunakan</h1>
-        <p>Agent: <strong>{agentName(state)}</strong>{agentOptions(state) && <span className="muted"> · {agentOptions(state)}</span>}</p>
-        <div className="agent-opts ready-agents">
-          <AgentsField value={parallel?.agents ?? agents} max={maxAgents} fromEnv={parallel?.from_env}
-            onChange={(n) => { setAgents(n); void saveAgents(n); }} />
+      <section className="connect">
+        <header className="connect-head">
+          <h1>Hubungkan AI</h1>
+          <p className="muted">{error ?? "Gagal memuat daftar agent."}</p>
+        </header>
+        <button className="primary" onClick={() => void load()}>Coba lagi</button>
+      </section>
+    );
+  }
+
+  if (state.ready) {
+    const connected = state.agents.find((a) => a.id === state.connection?.agent_id);
+    return (
+      <section className="connect">
+        <header className="connect-head">
+          <h1>AI siap digunakan</h1>
+          <p className="muted">Foundry memakai agent ini untuk memahami ide, merancang, dan membangun project.</p>
+        </header>
+        <div className="connect-list">
+          <div className="connect-item on">
+            <div className="connect-row">
+              <AgentMark id={connected?.id ?? state.connection?.mode ?? "host"} name={agentName(state)} />
+              <span className="agent-meta">
+                <strong>{agentName(state)}</strong>
+                {agentOptions(state) && <span className="agent-sub">{agentOptions(state)}</span>}
+              </span>
+              <span className="agent-status ok">Terhubung</span>
+            </div>
+            <div className="connect-config">
+              <AgentsField value={parallel?.agents ?? agents} max={maxAgents} fromEnv={parallel?.from_env}
+                onChange={(n) => { setAgents(n); void saveAgents(n); }} />
+            </div>
+          </div>
         </div>
-        <div className="row center">
+        <div className="connect-actions">
           <button className="primary big" onClick={() => nav(project ? stepFor(project.stage).path : "/")}>Mulai</button>
           <button className="ghost" onClick={disconnect}>Ganti AI</button>
         </div>
@@ -49,85 +128,175 @@ export function ConnectPage() {
     );
   }
 
-  const waitingMCP = state?.connection?.mode === "mcp";
+  const mcpJSON = JSON.stringify(state.mcp_config, null, 2);
 
   return (
-    <section className="card narrow">
-      <h1>Hubungkan AI</h1>
-      <p className="muted">
-        Foundry membutuhkan AI untuk membantu memahami ide, merancang aplikasi, dan membangun project.
-      </p>
+    <section className="connect">
+      <header className="connect-head">
+        <h1>Hubungkan AI</h1>
+        <p className="muted">Foundry memakai AI untuk memahami ide, merancang aplikasi, dan membangun project.</p>
+      </header>
 
-      <div className="agent-grid">
-        {state?.agents.map((a) => (
-          <button
-            key={a.id}
-            className={`agent ${picked === a.id ? "on" : ""}`}
-            disabled={!a.detected || !!connecting}
-            title={a.detected ? a.path : `${a.binary} tidak ditemukan di PATH`}
-            onClick={() => pick(a.id)}
-          >
-            <strong>{a.name}</strong>
-            <span className="small muted">
-              {connecting === a.id ? "Menguji koneksi…" : a.detected ? "Terdeteksi" : "Belum terpasang"}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {chosen && (
-        <form className="agent-opts" onSubmit={(e) => {
-          e.preventDefault();
-          void connectAgent(chosen.id, undefined, { model: model.trim() || undefined, effort: effort || undefined, agents });
-        }}>
-          <div className="small mp-field">Model
-            <ModelPicker models={(models?.agent === chosen.id && models.list?.length ? models.list : chosen.models) ?? []} loading={loadingModels} value={model} onChange={setModel} />
-          </div>
-          {!!chosen.efforts?.length && (
-            <label className="small">Effort
-              <select value={effort} onChange={(e) => setEffort(e.target.value)}>
-                <option value="">default</option>
-                {chosen.efforts.map((e) => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </label>
-          )}
-          <AgentsField value={agents} max={maxAgents} fromEnv={parallel?.from_env} disabled={!!connecting} onChange={setAgents} />
-          <button type="submit" className="primary" disabled={!!connecting}>Hubungkan {chosen.name}</button>
-        </form>
+      {noneDetected && (
+        <p className="connect-empty">Tidak ada CLI AI di PATH. Pasang salah satu, atau hubungkan lewat MCP.</p>
       )}
 
-      <details className="custom">
-        <summary className="muted small">Agent lain (perintah sendiri)</summary>
-        <form className="inline" onSubmit={(e) => {
-          e.preventDefault();
-          const argv = custom.trim().split(/\s+/).filter(Boolean);
-          if (argv.length) void connectAgent("custom", argv, { agents });
-        }}>
-          <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="mis. my-agent --headless (prompt via stdin)" size={40} />
-          <button type="submit" disabled={!!connecting}>Hubungkan</button>
-        </form>
-      </details>
+      <ul className="connect-list">
+        {state.agents.map((a) => (
+          <AgentRow
+            key={a.id}
+            agent={a}
+            picked={picked === a.id}
+            connecting={connecting === a.id}
+            disabled={!!connecting}
+            onPick={() => pick(a.id)}
+          >
+            {chosen?.id === a.id && (
+              <form className="connect-config" id="agent-config" onSubmit={(e) => {
+                e.preventDefault();
+                void connectAgent(chosen.id, undefined, { model: model.trim() || undefined, effort: effort || undefined, agents });
+              }}>
+                <div className="small mp-field">Model
+                  <ModelPicker models={(models?.agent === chosen.id && models.list?.length ? models.list : chosen.models) ?? []} loading={loadingModels} value={model} onChange={setModel} />
+                </div>
+                {!!chosen.efforts?.length && (
+                  <fieldset className="effort-field">
+                    <legend className="small">Effort</legend>
+                    <div className="seg">
+                      <button type="button" className={!effort ? "on" : ""} onClick={() => setEffort("")}>default</button>
+                      {chosen.efforts.map((e) => (
+                        <button type="button" key={e} className={effort === e ? "on" : ""} onClick={() => setEffort(e)}>{e}</button>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
+                <div className="connect-config-foot">
+                  <AgentsField value={agents} max={maxAgents} fromEnv={parallel?.from_env} disabled={!!connecting} onChange={setAgents} />
+                  <button type="submit" className="primary" disabled={!!connecting}>
+                    {connecting === chosen.id ? <><span className="spinner" /> Menguji koneksi…</> : `Hubungkan ${chosen.name}`}
+                  </button>
+                </div>
+              </form>
+            )}
+          </AgentRow>
+        ))}
+      </ul>
 
-      <div className="divider">atau</div>
-
-      {!showMCP && !waitingMCP ? (
-        <button className="wide" onClick={() => setShowMCP(true)}>Hubungkan AI Host lewat MCP</button>
-      ) : (
-        <div className="mcp-box">
-          <p>Tambahkan Foundry ke konfigurasi MCP di AI Host kamu (Claude, Codex, Qwen, Gemini, dll):</p>
-          <pre className="code">{JSON.stringify(state?.mcp_config, null, 2)}</pre>
-          <div className="agent-opts">
-            <AgentsField value={agents} max={maxAgents} fromEnv={parallel?.from_env} disabled={!!connecting} onChange={setAgents} />
-          </div>
-          {!waitingMCP ? (
-            <button className="primary" disabled={connecting === "mcp"} onClick={() => connectMCP(agents)}>Sudah ditambahkan</button>
-          ) : (
-            <p className="waiting"><span className="spinner" /> Menunggu AI Host terhubung… buka AI Host dan panggil tool <code>get_project</code>.</p>
+      <h2 className="connect-alt-title">Cara lain</h2>
+      <div className="connect-list">
+        <div className={`connect-item ${showCustom ? "on" : ""}`}>
+          <button type="button" className="connect-row" aria-expanded={showCustom} onClick={() => setShowCustom((v) => !v)}>
+            <span className="agent-mark agent-mark-custom" aria-hidden><Icon name="terminal" size={16} /></span>
+            <span className="agent-meta">
+              <strong>Agent lain</strong>
+              <span className="agent-sub">Perintah sendiri, prompt lewat stdin</span>
+            </span>
+            <span className="connect-chevron"><Icon name="chevron" size={16} /></span>
+          </button>
+          {showCustom && (
+            <form className="connect-config" onSubmit={(e) => {
+              e.preventDefault();
+              const argv = custom.trim().split(/\s+/).filter(Boolean);
+              if (argv.length) void connectAgent("custom", argv, { agents });
+            }}>
+              <label className="small mp-field">Perintah
+                <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="mis. my-agent --headless" spellCheck={false} />
+              </label>
+              <div className="connect-config-foot">
+                <AgentsField value={agents} max={maxAgents} fromEnv={parallel?.from_env} disabled={!!connecting} onChange={setAgents} />
+                <button type="submit" className="primary" disabled={!!connecting || !custom.trim()}>Hubungkan</button>
+              </div>
+            </form>
           )}
         </div>
-      )}
 
-      {error && <p className="error-text">{error}</p>}
+        <div className={`connect-item ${showMCP || waitingMCP ? "on" : ""}`}>
+          <button type="button" className="connect-row" aria-expanded={showMCP || waitingMCP}
+            onClick={() => { setShowMCP((v) => !v); setPicked(null); }}>
+            <span className="agent-mark agent-mark-mcp" aria-hidden><Icon name="host" size={16} /></span>
+            <span className="agent-meta">
+              <strong>AI Host lewat MCP</strong>
+              <span className="agent-sub">Claude, Codex, Qwen, Gemini, dan host lain</span>
+            </span>
+            {waitingMCP
+              ? <span className="agent-status ok">Menunggu</span>
+              : <span className="connect-chevron"><Icon name="chevron" size={16} /></span>}
+          </button>
+          {(showMCP || waitingMCP) && (
+            <div className="connect-config">
+              {waitingMCP
+                ? <p className="connect-wait"><span className="spinner" /> Buka AI Host dan panggil tool <code>get_project</code>.</p>
+                : <p className="connect-mcp-copy">Tambahkan Foundry ke konfigurasi MCP di AI Host, lalu konfirmasi.</p>}
+              <div className="connect-config-foot">
+                <AgentsField value={agents} max={maxAgents} fromEnv={parallel?.from_env} disabled={!!connecting} onChange={setAgents} />
+                {!waitingMCP && (
+                  <button className="primary" disabled={connecting === "mcp"} onClick={() => connectMCP(agents)}>
+                    {connecting === "mcp" ? <><span className="spinner" /> Menghubungkan…</> : "Sudah ditambahkan"}
+                  </button>
+                )}
+              </div>
+              <div className="code-head">
+                <span className="muted small">mcp.json</span>
+                <button type="button" className="ghost small" onClick={() => void copyMCP()}>
+                  <Icon name="copy" size={14} /> {copied ? "Disalin" : "Salin"}
+                </button>
+              </div>
+              <pre className="code" ref={mcpPre}>{mcpJSON}</pre>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="connect-refresh">
+        Baru memasang CLI? <button type="button" className="link" onClick={() => void load()}>Periksa lagi</button>
+      </p>
+
+      {error && <p className="connect-error" role="alert">{error}</p>}
     </section>
+  );
+}
+
+function AgentRow({
+  agent, picked, connecting, disabled, onPick, children,
+}: {
+  agent: AgentInfo; picked: boolean; connecting: boolean; disabled: boolean;
+  onPick: () => void; children?: ReactNode;
+}) {
+  if (!agent.detected) {
+    return (
+      <li className="connect-item off">
+        <div className="connect-row">
+          <AgentMark id={agent.id} name={agent.name} />
+          <span className="agent-meta">
+            <strong>{agent.name}</strong>
+            <span className="agent-sub">{agent.binary} tidak ada di PATH</span>
+          </span>
+          <span className="agent-status">Belum terpasang</span>
+        </div>
+      </li>
+    );
+  }
+  return (
+    <li className={`connect-item ${picked ? "on" : ""}`}>
+      <button
+        type="button"
+        className="connect-row"
+        disabled={disabled}
+        aria-expanded={picked}
+        aria-controls={picked ? "agent-config" : undefined}
+        title={agent.path}
+        onClick={onPick}
+      >
+        <AgentMark id={agent.id} name={agent.name} />
+        <span className="agent-meta">
+          <strong>{agent.name}</strong>
+          <span className="agent-sub">{connecting ? "Menguji koneksi…" : agent.binary}</span>
+        </span>
+        {connecting
+          ? <span className="agent-status ok"><span className="spinner" /> Menguji</span>
+          : <span className="agent-status ok">Terdeteksi</span>}
+      </button>
+      {children}
+    </li>
   );
 }
