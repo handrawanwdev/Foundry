@@ -2,7 +2,18 @@
 
 export type Stage = "TELL" | "DISCOVERY" | "DESIGN" | "PLAN" | "BUILD" | "VERIFY" | "READY";
 export type TaskStatus = "TODO" | "IN_PROGRESS" | "REVIEW" | "DONE" | "BLOCKED";
-export type PlatformKind = "web" | "android" | "ios" | "desktop" | "backend";
+export type PlatformKind = "web" | "android" | "ios" | "desktop" | "backend" | "cli";
+export type SurveyKind = "web" | "mobile" | "desktop" | "cli" | "api" | "bot";
+export interface Survey {
+  what?: string;
+  kinds?: SurveyKind[];
+  users?: "self" | "team" | "public";
+  stage?: "prototype" | "mvp" | "production";
+  latency?: "500" | "200" | "100";
+  webhook?: "none" | "in" | "out" | "both";
+  services?: "one" | "many";
+  stack?: string;
+}
 
 export interface Role { name: string; description: string; platform: string }
 export interface Discovery {
@@ -31,9 +42,10 @@ export interface Blueprint {
   auth?: { method?: string; hashing?: string; tokens?: string; session?: string; refresh?: string };
   authz?: { model?: string; convention?: string; permissions?: string[] };
   realtime?: { needed?: boolean; broker?: string; events?: string[]; retry?: string };
+  events?: { durable?: string; ephemeral?: string; outbox?: string; envelope?: string; events?: { type: string; producer?: string; consumers?: string[]; durable?: boolean }[] };
   workers?: BlueprintWorker[];
   aggregation?: { needed?: boolean; approach?: string; reads?: string[] };
-  performance: { pagination?: string; caching?: string; avoid?: string[]; indexing?: string };
+  performance: { budget?: string; health?: string; pagination?: string; caching?: string; avoid?: string[]; indexing?: string };
   coding: { backend?: string[]; frontend?: string[]; api?: { style?: string; versioning?: string; errors?: string; pagination?: string } };
   docs?: string[]; workflow?: string[]; change_flow?: string[]; ai_guidelines?: string[];
 }
@@ -311,7 +323,7 @@ export interface Support { messages: SupportMessage[] | null; escalations?: Esca
 export interface Event { at: string; source: string; message: string }
 
 export interface Project {
-  version: number; name: string; dir: string; stage: Stage; story: string;
+  version: number; name: string; dir: string; stage: Stage; story: string; survey?: Survey;
   discovery?: Discovery; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
   platform?: PlatformPlan; structure?: Structure; stack?: TechStack; design?: Design; theme?: string; design_template?: string; reference?: DesignReference; tasks: Task[] | null;
   prd?: PRD; builds: BuildRun[] | null; verification?: Verification; job?: Job; support?: Support; events: Event[] | null; updated_at: string;

@@ -234,6 +234,7 @@ func DesignPrompt(p *core.Project) string {
 	b.WriteString(`You are the product designer of Foundry. Create the UI pages for this product as simple wireframes.
 Pages MUST come from the features, sub-features and user flows below. Do not invent features. Backend-only features need no page.
 Write labels in the same language as the features. Do not write code. Do not modify files.
+Follow FOUNDRY.md bagian 7: bukan AI slop. Tokens, state loading/kosong/error/sukses, satu aksi utama, konten realistis, WCAG AA. Foundry menulis docs/design-brief.md dari hasil ini.
 
 `)
 	if d := p.Design; d != nil && d.Rejected != "" {

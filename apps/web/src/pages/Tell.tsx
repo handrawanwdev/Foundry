@@ -4,7 +4,8 @@ import { TemplatePicker } from "../components/TemplateGallery";
 import { ThemeGallery } from "../components/ThemeGallery";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
-import { existingComponents, isExistingProject, TELL_ANALYSIS, tellIntro, tellPlaceholder, tellTitle, tellWaiting } from "../tell";
+import type { Survey, SurveyKind } from "../types";
+import { defaultSurvey, existingComponents, isExistingProject, SURVEY_KINDS, surveySummary, TELL_ANALYSIS, tellIntro, tellPlaceholder, tellTitle, tellWaiting } from "../tell";
 
 const EXAMPLES = [
   "Aplikasi klinik: pasien membuat janji temu dari HP, admin mengatur jadwal dokter dan tagihan dari web.",
@@ -16,6 +17,7 @@ const EXAMPLES = [
 export function TellPage() {
   const { project, run, pending } = useProject();
   const [story, setStory] = useState(project?.story ?? "");
+  const [survey, setSurvey] = useState<Survey>(() => defaultSurvey(project?.survey));
   const [confirmReset, setConfirmReset] = useState(false);
   if (!project) return null;
 
@@ -42,7 +44,7 @@ export function TellPage() {
       return;
     }
     setConfirmReset(false);
-    await run("story", () => api.story(story));
+    await run("story", () => api.story(story, { ...survey, what: story }));
   };
 
   return (
@@ -64,6 +66,62 @@ export function TellPage() {
           ))}
         </div>
       )}
+      <details className="theme-pick" open={!hasDownstream}>
+        <summary className="muted small">Survey FOUNDRY: {surveySummary(survey)}</summary>
+        <p className="muted small">Jawaban mengikat stack, latency, event, dan struktur. Kosong = default MVP.</p>
+        <div className="survey-kinds">
+          {SURVEY_KINDS.map((k) => {
+            const on = (survey.kinds ?? []).includes(k.id);
+            return (
+              <button key={k.id} type="button" className={on ? "chip on" : "chip"} onClick={() => {
+                const cur = survey.kinds ?? [];
+                const next = on ? cur.filter((x) => x !== k.id) : [...cur, k.id];
+                setSurvey({ ...survey, kinds: next as SurveyKind[] });
+              }}>{k.label}</button>
+            );
+          })}
+        </div>
+        <div className="survey">
+          <label>Pengguna
+            <select value={survey.users} onChange={(e) => setSurvey({ ...survey, users: e.target.value as Survey["users"] })}>
+              <option value="self">hanya saya</option>
+              <option value="team">tim kecil</option>
+              <option value="public">publik</option>
+            </select>
+          </label>
+          <label>Tahap
+            <select value={survey.stage} onChange={(e) => setSurvey({ ...survey, stage: e.target.value as Survey["stage"] })}>
+              <option value="prototype">prototipe</option>
+              <option value="mvp">MVP</option>
+              <option value="production">produksi</option>
+            </select>
+          </label>
+          <label>Latency p95
+            <select value={survey.latency} onChange={(e) => setSurvey({ ...survey, latency: e.target.value as Survey["latency"] })}>
+              <option value="500">&lt; 500 ms</option>
+              <option value="200">&lt; 200 ms</option>
+              <option value="100">&lt; 100 ms</option>
+            </select>
+          </label>
+          <label>Webhook
+            <select value={survey.webhook} onChange={(e) => setSurvey({ ...survey, webhook: e.target.value as Survey["webhook"] })}>
+              <option value="none">tidak</option>
+              <option value="in">terima</option>
+              <option value="out">kirim</option>
+              <option value="both">keduanya</option>
+            </select>
+          </label>
+          <label>Service
+            <select value={survey.services} onChange={(e) => setSurvey({ ...survey, services: e.target.value as Survey["services"] })}>
+              <option value="one">satu aplikasi modular</option>
+              <option value="many">beberapa service terpisah</option>
+            </select>
+          </label>
+          <label>Stack (kosong = Foundry pilih)
+            <input value={survey.stack ?? ""} onChange={(e) => setSurvey({ ...survey, stack: e.target.value })} placeholder="opsional" />
+          </label>
+        </div>
+      </details>
       <details className="theme-pick" open={!hasDownstream && !existing}>
         <summary className="muted small">Theme visual (opsional): {project.theme || (existing ? "dari UI yang ada" : "otomatis")}</summary>
         <ThemeGallery project={project} compact />

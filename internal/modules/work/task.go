@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/modules/standard"
 )
 
 const finishJSON = `{"criteria": [{"index": 1, "met": true, "evidence": "path + what it does"}], "patches": [{"file": "", "change": ""}]}`
@@ -15,8 +16,9 @@ func TaskPrompt(p *core.Project, t *core.Task) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are a coding agent for Foundry on project %q (cwd).\n", p.Name)
 	b.WriteString("Implement ONLY this task. Production code + its tests.\n")
-	b.WriteString("Follow project structure. Do not delete or restructure architecture.\n")
+	b.WriteString("Follow project structure, FOUNDRY.md, and docs/foundry-profile.md. Do not delete or restructure architecture.\n")
 	b.WriteString("Foundry runs build/test after you finish. DONE = they pass AND every acceptance criterion is met.\n")
+	b.WriteString(standard.Rules + "\n")
 	b.WriteString(workRules + "\n")
 	fmt.Fprintf(&b, "TASK %s: %s\nArea: %s  Platform: %s\n\n%s\n\n", t.ID, t.Title, t.Area, t.Platform, t.Description)
 	if f := p.Feature(t.FeatureID); f != nil {
@@ -194,7 +196,8 @@ const workRules = `WORK RULES:
 - Read only owned files + their imports + shared contracts. No full-repo scan.
 - Reuse existing helper/component/type/client in shared folders. Never duplicate.
 - Tests next to the code they test, project convention.
-- No notes, summaries, reports, TODO md, scratch scripts, logs, backups, or new top-level folders. Foundry discards them.
+- ORM only in repository. Cross-module side effects via events. Function ≤ 40 lines, file ≤ 300.
+- No notes, summaries, reports, TODO md, scratch scripts, logs, backups, or new top-level folders. Foundry discards them. Keep FOUNDRY.md and AGENTS.md.
 `
 
 // ContinuePrompt asks an agent to finish a partial attempt already in cwd.

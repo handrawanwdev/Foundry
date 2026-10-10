@@ -187,6 +187,10 @@ func (s *Service) Wait() { s.wg.Wait() }
 // ---------- Tell / Discovery ----------
 
 func (s *Service) SubmitStory(story string) (*core.Project, error) {
+	return s.SubmitStoryWith(story, nil)
+}
+
+func (s *Service) SubmitStoryWith(story string, survey *core.Survey) (*core.Project, error) {
 	story = strings.TrimSpace(story)
 	if len(story) < 10 {
 		return nil, errors.New("ceritakan idenya sedikit lebih lengkap")
@@ -196,6 +200,17 @@ func (s *Service) SubmitStory(story string) (*core.Project, error) {
 			return ErrBusy
 		}
 		p.Story = story
+		if survey != nil {
+			survey.FillDefaults()
+			if survey.What == "" {
+				survey.What = story
+			}
+			p.Survey = survey
+		} else if p.Survey == nil {
+			s := &core.Survey{What: story}
+			s.FillDefaults()
+			p.Survey = s
+		}
 		p.Stage = core.StageDiscovery
 		attachStructure(p)
 		p.Log("ui", "Cerita diterima")

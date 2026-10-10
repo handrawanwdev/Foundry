@@ -85,6 +85,17 @@ func TestRecommend(t *testing.T) {
 	if s := Recommend(p); s.Choice(core.TechArchitecture) != core.ArchSimple || s.Decision(core.TechBackend) != nil {
 		t.Fatalf("stack = %+v", s)
 	}
+	// FOUNDRY: Redis always; latency <100 ms picks Go.
+	ticket := Recommend(project("Aplikasi tiket", "web", "backend"))
+	if ticket.Choice(core.TechCache) != "Redis" || ticket.Choice(core.TechMessaging) != "Redis Streams" {
+		t.Fatalf("foundry stack = %+v", ticket)
+	}
+	fast := project("Aplikasi tiket", "web", "backend")
+	fast.Survey = &core.Survey{Latency: core.SurveyLatency100}
+	fast.Survey.FillDefaults()
+	if s := Recommend(fast); s.Choice(core.TechBackend) != "Go + Gin" {
+		t.Fatalf("latency 100 backend = %s", s.Choice(core.TechBackend))
+	}
 }
 
 func TestExisting(t *testing.T) {

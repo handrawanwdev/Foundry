@@ -40,9 +40,20 @@ func TestWriteDocs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range []string{"README.md", "architecture.md", "database.md", "api.md", "security.md",
-		"storage.md", "performance.md", "workflow.md", "deployment.md", "adr/0001-stack.md"} {
+		"storage.md", "performance.md", "workflow.md", "deployment.md", "adr/0001-stack.md",
+		"foundry-profile.md", "requirements.md", "design-brief.md"} {
 		if _, err := os.Stat(filepath.Join(dir, "docs", f)); err != nil {
 			t.Errorf("%s: %v", f, err)
+		}
+	}
+	for _, f := range []string{"FOUNDRY.md", "AGENTS.md", "CLAUDE.md"} {
+		b, err := os.ReadFile(filepath.Join(dir, f))
+		if err != nil {
+			t.Errorf("%s: %v", f, err)
+			continue
+		}
+		if !strings.Contains(string(b), "FOUNDRY") {
+			t.Errorf("%s missing FOUNDRY", f)
 		}
 	}
 }

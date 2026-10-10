@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, CanvasOp, CanvasResult, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, StackCatalog, StructureOp, TechArea, Prototype, TaskStatus, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
+import type { AgentOptions, AIState, Browse, CanvasOp, CanvasResult, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Prototype, TaskStatus, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -37,7 +37,7 @@ export const api = {
   themes: () => call<{ themes: Theme[] | null; invalid: ThemeProblem[] | null }>("GET", "/themes"),
 
   project: () => call<Project>("GET", "/project"),
-  story: (story: string) => call<Project>("POST", "/project/story", { story }),
+  story: (story: string, survey?: Survey) => call<Project>("POST", "/project/story", { story, survey }),
   retry: () => call("POST", "/project/retry", {}),
   dismissJob: () => call("POST", "/project/job/dismiss", {}),
   setPlatform: (targets: PlatformTarget[]) => call<Project>("PUT", "/project/platform", { targets }),

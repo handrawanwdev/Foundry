@@ -153,7 +153,7 @@ func TestCompleteBlueprintKeepsAIAndOverridesPattern(t *testing.T) {
 	if p.Blueprint.Overview.Goal != "Jadwal klinik tanpa antrian kertas" {
 		t.Fatalf("goal overwritten: %s", p.Blueprint.Overview.Goal)
 	}
-	if p.Blueprint.Database.ORM != "sqlc" { // empty ORM filled from Go stack
+	if p.Blueprint.Database.ORM != "GORM" { // empty ORM filled from Go stack
 		t.Fatalf("orm = %s", p.Blueprint.Database.ORM)
 	}
 	if p.Blueprint.Storage.Strategy != "object" {
@@ -164,7 +164,7 @@ func TestCompleteBlueprintKeepsAIAndOverridesPattern(t *testing.T) {
 func TestDiscoveryPromptAsksForBlueprint(t *testing.T) {
 	p := &core.Project{Story: "Aplikasi klinik pasien buat janji"}
 	got := DiscoveryPrompt(p)
-	for _, want := range []string{"discovery analyst", "blueprint", "modules", "tech_needs", "files", p.Story} {
+	for _, want := range []string{"discovery analyst", "blueprint", "modules", "tech_needs", "files", "FOUNDRY RULES", p.Story} {
 		if !strings.Contains(got, want) {
 			t.Errorf("prompt missing %q", want)
 		}

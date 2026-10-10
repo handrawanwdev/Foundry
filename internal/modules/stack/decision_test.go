@@ -12,7 +12,7 @@ import (
 func TestRecommendInfra(t *testing.T) {
 	plain := Recommend(project("Aplikasi tiket", "web", "backend"))
 	for area, want := range map[string]string{
-		core.TechMessaging: core.TechNone, core.TechStorage: core.TechNone, core.TechSearch: core.TechNone,
+		core.TechMessaging: "Redis Streams", core.TechStorage: core.TechNone, core.TechSearch: core.TechNone,
 		core.TechWorkers: "Job in-process", core.TechDeployment: "Docker Compose (satu server)",
 		core.TechObservability: "Log terstruktur + health check",
 	} {
@@ -25,7 +25,7 @@ func TestRecommendInfra(t *testing.T) {
 	}
 	trading := Recommend(project("Platform trading kripto realtime dengan upload dokumen KYC dan pencarian teks", "web", "backend"))
 	for area, want := range map[string]string{
-		core.TechMessaging: "Redis Pub/Sub", core.TechStorage: "S3-compatible (S3 / MinIO)", core.TechSearch: "PostgreSQL full-text search",
+		core.TechMessaging: "Redis Streams", core.TechStorage: "S3-compatible (S3 / MinIO)", core.TechSearch: "PostgreSQL full-text search",
 		core.TechWorkers: "Worker terpisah + antrean", core.TechObservability: "OpenTelemetry + Prometheus + Grafana",
 	} {
 		if got := trading.Choice(area); got != want {
@@ -52,6 +52,8 @@ func TestValidate(t *testing.T) {
 	must(core.TechSearch, "PostgreSQL full-text search")
 	must(core.TechDatabase, "MySQL")
 	must(core.TechDeployment, "Static hosting + CDN")
+	must(core.TechCache, core.CacheNone)
+	must(core.TechMessaging, core.TechNone)
 	must(core.TechWorkers, "Worker terpisah + antrean")
 	must(core.TechBackend, "Rust + Axum")
 	var errs, unknown []string

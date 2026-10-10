@@ -27,9 +27,9 @@ func TestDomainsFollowCapabilities(t *testing.T) {
 func TestRecommendAndEdit(t *testing.T) {
 	p := project("Booking", "Pembayaran")
 	ir, _ := Recommend(p)
-	// No stack: web + backend is modular; no shared packages outside a monorepo.
-	if ir.Type != core.StructModular || len(ir.Packages) != 0 ||
-		!slices.Equal(Layout(ir), []string{"apps/web/", "backend/", "backend/booking/", "backend/pembayaran/", "docs/"}) {
+	want := []string{"apps/web/", "apps/api/", "apps/api/modules/booking/", "apps/api/modules/pembayaran/",
+		"packages/domain/", "packages/contracts/", "packages/ui/", "docs/"}
+	if ir.Type != core.StructModular || !slices.Equal(Layout(ir), want) {
 		t.Fatalf("ir = %v", Layout(ir))
 	}
 	for _, op := range []core.StructureOp{
@@ -42,7 +42,8 @@ func TestRecommendAndEdit(t *testing.T) {
 			t.Fatalf("%+v: %v", op, err)
 		}
 	}
-	if !slices.Equal(Layout(ir), []string{"apps/web/", "services/booking/", "services/payment/", "services/payment/payment/", "services/payment/reporting/", "docs/"}) {
+	if !slices.Equal(Layout(ir), []string{"apps/web/", "services/booking/", "services/payment/", "services/payment/payment/", "services/payment/reporting/",
+		"packages/domain/", "packages/contracts/", "packages/ui/", "docs/"}) {
 		t.Fatalf("layout = %v", Layout(ir))
 	}
 	if err := ApplyOp(ir, core.StructureOp{Op: "add", Kind: "service", Name: "booking"}, p); err == nil {
@@ -52,10 +53,10 @@ func TestRecommendAndEdit(t *testing.T) {
 	if !slices.Equal(back.Services[0].Modules, []string{"booking", "payment", "reporting"}) {
 		t.Fatalf("modular = %+v", back.Services)
 	}
-	if d := strings.Join(Diff(ir, back), "; "); !strings.Contains(d, "Domain booking: service services/booking/ → modul di backend/") {
+	if d := strings.Join(Diff(ir, back), "; "); !strings.Contains(d, "Domain booking: service services/booking/ → modul di apps/api/") {
 		t.Fatalf("diff = %s", d)
 	}
-	if tree := Tree(back); !strings.Contains(tree, "backend/\n├── booking/\n├── payment/\n└── reporting/\n") {
+	if tree := Tree(back); !strings.Contains(tree, "api/\n    └── modules/\n        ├── booking/\n        ├── payment/\n        └── reporting/\n") {
 		t.Fatalf("tree = %s", tree)
 	}
 }

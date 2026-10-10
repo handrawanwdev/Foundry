@@ -20,6 +20,7 @@ type Blueprint struct {
 	Auth         AuthArch     `json:"auth,omitempty"`
 	Authz        AuthzArch    `json:"authz,omitempty"`
 	Realtime     RealtimeArch `json:"realtime,omitempty"`
+	Events       EventArch    `json:"events,omitempty"`
 	Workers      []Worker     `json:"workers,omitempty"`
 	Aggregation  AggArch      `json:"aggregation,omitempty"`
 	Performance  PerfArch     `json:"performance"`
@@ -141,6 +142,22 @@ type RealtimeArch struct {
 	Retry  string   `json:"retry,omitempty"`
 }
 
+// EventArch is FOUNDRY.md bagian 5: event antar-modul berformat seragam.
+type EventArch struct {
+	Durable   string      `json:"durable,omitempty"`   // Redis Streams + consumer group
+	Ephemeral string      `json:"ephemeral,omitempty"` // Redis Pub/Sub
+	Outbox    string      `json:"outbox,omitempty"`
+	Envelope  string      `json:"envelope,omitempty"`
+	Events    []EventSpec `json:"events,omitempty"`
+}
+
+type EventSpec struct {
+	Type      string   `json:"type"`
+	Producer  string   `json:"producer,omitempty"`
+	Consumers []string `json:"consumers,omitempty"`
+	Durable   bool     `json:"durable,omitempty"`
+}
+
 type Worker struct {
 	Name    string `json:"name"`
 	Trigger string `json:"trigger"` // event | cron | queue
@@ -154,6 +171,8 @@ type AggArch struct {
 }
 
 type PerfArch struct {
+	Budget     string   `json:"budget,omitempty"` // p95 from Survey #5
+	Health     string   `json:"health,omitempty"` // /health and /ready
 	Pagination string   `json:"pagination,omitempty"`
 	Caching    string   `json:"caching,omitempty"`
 	Avoid      []string `json:"avoid,omitempty"`

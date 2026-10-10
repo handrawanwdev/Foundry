@@ -12,7 +12,7 @@ const project = (s: Partial<Structure>) =>
 
 describe("structure", () => {
   it("draws the IR as a folder tree", () => {
-    expect(tree(ir)).toBe("apps/\n└── web/\nbackend/\n├── booking/\n└── payment/\ndocs/");
+    expect(tree(ir)).toBe("apps/\n└── web/\nbackend/\n└── modules/\n    ├── booking/\n    └── payment/\ndocs/");
   });
 
   it("gates the design approval on an approved structure without errors", () => {

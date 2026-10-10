@@ -1,9 +1,33 @@
-import type { Project } from "./types";
+import type { Project, Survey, SurveyKind } from "./types";
 
 export const TELL_ANALYSIS = [
   "Bisnis", "Pengguna & peran", "Fitur & sub-fitur", "Alur kerja", "Data", "Integrasi", "Keamanan",
   "Platform & perangkat", "Modul domain", "Auth & izin", "Penyimpanan file", "Worker", "Performa", "Struktur project",
+  "Survey FOUNDRY", "Event & Redis", "Anggaran latency",
 ];
+
+export const SURVEY_KINDS: { id: SurveyKind; label: string }[] = [
+  { id: "web", label: "Web" },
+  { id: "mobile", label: "Mobile" },
+  { id: "desktop", label: "Desktop" },
+  { id: "cli", label: "CLI" },
+  { id: "api", label: "API" },
+];
+
+export const defaultSurvey = (s?: Survey | null): Survey => ({
+  kinds: s?.kinds ?? [],
+  users: s?.users ?? "self",
+  stage: s?.stage ?? "mvp",
+  latency: s?.latency ?? "500",
+  webhook: s?.webhook ?? "none",
+  services: s?.services ?? "one",
+  stack: s?.stack ?? "",
+});
+
+export function surveySummary(s: Survey): string {
+  const kinds = (s.kinds ?? []).length ? s.kinds!.join(", ") : "otomatis";
+  return `${kinds} · ${s.stage} · p95 <${s.latency}ms · webhook ${s.webhook}`;
+}
 
 export function isExistingProject(p: Project | null | undefined): boolean {
   return p?.structure?.mode === "existing";

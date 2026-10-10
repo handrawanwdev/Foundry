@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/modules/standard"
 	"github.com/handrawanw/foundry/internal/modules/structure"
 )
 
@@ -19,6 +20,9 @@ var taskAreas = map[string]bool{"scaffold": true, "data": true, "api": true, "ui
 func PlanPrompt(p *core.Project) string {
 	var b strings.Builder
 	b.WriteString(`You are the tech lead of Foundry. Turn the APPROVED design into executable engineering tasks for a coding agent.
+`)
+	b.WriteString(standard.Rules)
+	b.WriteString(`
 Tasks are derived from requirements, features, sub-features, flows, pages, platforms and the project structure below.
 Every task is a separate agent run that re-reads the project, so plan the FEWEST tasks that still fit one run each:
 one task per module slice (its data + API + their tests together), one task per page. Do not split a module per endpoint,
@@ -43,7 +47,8 @@ Do not write code. Do not modify files.
 	}
 	b.WriteString(`Areas: scaffold, data, api, ui, test, integration. If the project is new, the first task (area "scaffold", feature_id "")
 must create the chosen layout with real build/test tooling (e.g. go.mod, package.json with build/test scripts) so Foundry can verify later tasks.
-Scaffold, data and api tasks follow the architecture blueprint: module folders, layering (controller → service → repository), auth, workers for slow jobs, object storage for files, pagination and indexes as specified.
+Scaffold also writes docker-compose.yml (PostgreSQL + Redis), .env.example, and keeps FOUNDRY.md / AGENTS.md at the repo root (Foundry already placed them).
+Scaffold, data and api tasks follow the architecture blueprint and FOUNDRY.md: apps/api/src/modules/{fitur}/{controller,service,repository,events,dto,mapper}, packages/domain + packages/contracts, ORM only in repository, events + outbox, Redis, /health and /ready.
 Do not plan a different architecture, stack, ORM or folder layout.
 UI tasks implement pages from their handoff: use its route, access, layout (Design IR), data/api, hierarchy, primary and secondary actions,
 interactions, states, validation and responsive behavior, and copy the handoff tests into test_requirements.

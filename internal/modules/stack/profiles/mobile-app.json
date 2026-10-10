@@ -9,7 +9,7 @@
     "frontend": {"value": "React + TypeScript + Vite", "reason": "UI web interaktif."},
     "backend": {"value": "NestJS + TypeScript", "reason": "API untuk aplikasi mobile dengan iterasi cepat."},
     "database": {"value": "PostgreSQL", "reason": "Data aplikasi relasional."},
-    "cache": {"value": "Tidak perlu", "reason": "Belum ada kebutuhan realtime atau beban tinggi."},
+    "cache": {"value": "Redis", "reason": "Cache, antrean, rate limit, dan event; database tetap sumber kebenaran."},
     "architecture": {"value": "Modular Monolith", "reason": "Beberapa domain dalam satu API yang sederhana."}
   }
 }

@@ -18,12 +18,20 @@ const (
 	maxDomains      = 16
 )
 
-type platform struct{ web, mobile, desktop, backend bool }
+type platform struct{ web, mobile, desktop, backend, cli bool }
 
 func platformOf(p *core.Project) platform {
 	if p.Stack != nil {
 		pl := p.Stack.Platform
-		return platform{pl.Web, pl.Mobile, pl.Desktop, pl.Backend}
+		out := platform{web: pl.Web, mobile: pl.Mobile, desktop: pl.Desktop, backend: pl.Backend}
+		if p.Platform != nil {
+			for _, t := range p.Platform.Targets {
+				if t.Kind == core.PlatformCLI {
+					out.cli = true
+				}
+			}
+		}
+		return out
 	}
 	var out platform
 	if p.Platform != nil {
@@ -37,6 +45,8 @@ func platformOf(p *core.Project) platform {
 				out.desktop = true
 			case core.PlatformBackend:
 				out.backend = true
+			case core.PlatformCLI:
+				out.cli = true
 			}
 		}
 	}
@@ -53,7 +63,7 @@ func Recommend(p *core.Project) (*core.StructureIR, string) {
 	for _, a := range []struct {
 		on         bool
 		name, what string
-	}{{pl.web, "web", "Aplikasi web"}, {pl.mobile, "mobile", "Aplikasi mobile (Android/iOS)"}, {pl.desktop, "desktop", "Aplikasi desktop"}} {
+	}{{pl.web, "web", "Aplikasi web"}, {pl.mobile, "mobile", "Aplikasi mobile (Android/iOS)"}, {pl.desktop, "desktop", "Aplikasi desktop"}, {pl.cli, "cli", "CLI/tools"}} {
 		if a.on {
 			ir.Apps = append(ir.Apps, core.StructurePart{Name: a.name, Reason: a.what + " ada di platform yang dipilih."})
 		}
@@ -99,11 +109,11 @@ func recommendType(p *core.Project) (string, string) {
 func servicesFor(t string, domains []string) []core.StructurePart {
 	switch t {
 	case core.StructSimple:
-		return []core.StructurePart{{Name: "backend", Reason: "Satu backend tanpa batas modul; cukup untuk fitur yang sedikit."}}
+		return []core.StructurePart{{Name: "api", Reason: "Satu API tanpa batas modul; cukup untuk fitur yang sedikit."}}
 	case core.StructModular:
-		return []core.StructurePart{{Name: "backend", Modules: domains, Reason: "Satu backend (modular monolith); tiap domain jadi modul, satu deploy."}}
+		return []core.StructurePart{{Name: "api", Modules: domains, Reason: "Satu API (modular monolith); tiap domain jadi modul di src/modules, satu deploy."}}
 	case core.StructMonorepo:
-		return []core.StructurePart{{Name: "api", Modules: domains, Reason: "Satu API di dalam monorepo; tiap domain jadi modul."}}
+		return []core.StructurePart{{Name: "api", Modules: domains, Reason: "Satu API di apps/api; tiap domain jadi modul."}}
 	}
 	if len(domains) == 0 {
 		return []core.StructurePart{{Name: "api", Reason: "Belum ada domain; satu service dulu."}}
@@ -193,55 +203,60 @@ func workersOf(p *core.Project) []core.StructurePart {
 	if p.Stack == nil || p.Stack.Choice(core.TechWorkers) != workersSeparate {
 		return nil
 	}
-	var out []core.StructurePart
-	if bp := p.Blueprint; bp != nil {
+	reason := "Consumer event dan job queue di luar request."
+	if bp := p.Blueprint; bp != nil && len(bp.Workers) > 0 {
+		var jobs []string
 		for _, w := range bp.Workers {
-			if n := Slug(w.Name); n != "" && !slices.ContainsFunc(out, func(x core.StructurePart) bool { return x.Name == n }) {
-				out = append(out, core.StructurePart{Name: n, Reason: w.Job})
+			if w.Job != "" {
+				jobs = append(jobs, w.Name+": "+w.Job)
+			} else if w.Name != "" {
+				jobs = append(jobs, w.Name)
 			}
 		}
+		if len(jobs) > 0 {
+			reason = strings.Join(jobs, "; ")
+		}
 	}
-	if len(out) == 0 {
-		out = append(out, core.StructurePart{Name: "jobs", Reason: "Job berat dikerjakan di luar request (teknologi worker: " + workersSeparate + ")."})
-	}
-	return out
+	return []core.StructurePart{{Name: "worker", Reason: reason}}
 }
 
 // packagesFor adds shared packages only where code is really shared: a
 // monorepo with more than one consumer.
 func packagesFor(ir *core.StructureIR, p *core.Project) []core.StructurePart {
-	if !shared(ir.Type, p.Stack) {
+	if ir.Type == core.StructSimple {
 		return nil
 	}
 	var out []core.StructurePart
-	var users []string
-	for _, a := range ir.Apps {
-		users = append(users, a.Name)
-	}
 	if len(ir.Services) > 0 {
-		users = append(users, "backend")
-	}
-	if len(users) >= 2 {
-		out = append(out, core.StructurePart{Name: "types", Reason: "Kontrak API dan type dipakai bersama oleh " + strings.Join(users, ", ") + "."})
+		out = append(out,
+			core.StructurePart{Name: "domain", Reason: "Entity, rule, dan kalkulasi murni tanpa I/O."},
+			core.StructurePart{Name: "contracts", Reason: "Skema input/output dan event; satu sumber kebenaran."},
+		)
 	}
 	if js := jsApps(ir, p.Stack); len(js) >= 2 {
-		out = append(out, core.StructurePart{Name: "ui", Reason: "Komponen UI dipakai bersama oleh " + strings.Join(js, ", ") + "."})
+		out = append(out, core.StructurePart{Name: "ui", Reason: "Komponen dan design tokens dipakai bersama oleh " + strings.Join(js, ", ") + "."})
+	} else if ir.Type != core.StructSimple && len(ir.Apps) > 0 {
+		out = append(out, core.StructurePart{Name: "ui", Reason: "Komponen dan design tokens frontend."})
+	}
+	if ir.Type == core.StructMonorepo || ir.Type == core.StructMicroservices {
+		out = append(out, core.StructurePart{Name: "config", Reason: "Lint, tsconfig, dan tooling bersama."})
 	}
 	return out
 }
 
-// shared: code can be shared through the repository workspace.
-func shared(t string, s *core.TechStack) bool {
-	return t == core.StructMonorepo || s.Choice(core.TechRepository) == core.RepoMonorepo
-}
-
 // jsApps are the apps whose UI is React-based and can share components.
 func jsApps(ir *core.StructureIR, s *core.TechStack) []string {
-	tech := map[string]string{"web": s.Choice(core.TechFrontend), "mobile": s.Choice(core.TechMobile), "desktop": s.Choice(core.TechDesktop)}
 	var out []string
 	for _, a := range ir.Apps {
+		if s == nil {
+			if a.Name == "web" || a.Name == "desktop" {
+				out = append(out, a.Name)
+			}
+			continue
+		}
+		tech := map[string]string{"web": s.Choice(core.TechFrontend), "mobile": s.Choice(core.TechMobile), "desktop": s.Choice(core.TechDesktop)}
 		t := strings.ToLower(tech[a.Name])
-		if strings.Contains(t, "react") || strings.Contains(t, "electron") || strings.Contains(t, "tauri") {
+		if strings.Contains(t, "react") || strings.Contains(t, "electron") || strings.Contains(t, "tauri") || strings.Contains(t, "vue") || strings.Contains(t, "next") {
 			out = append(out, a.Name)
 		}
 	}
@@ -254,12 +269,9 @@ func Normalize(ir *core.StructureIR) {
 	if ir.Docs == "" {
 		ir.Docs = "docs/"
 	}
-	appRoot, svcRoot := "apps/", "services/"
-	switch ir.Type {
-	case core.StructSimple:
-		appRoot, svcRoot = "", ""
-	case core.StructModular:
-		svcRoot = ""
+	appRoot, svcRoot := "apps/", "apps/"
+	if ir.Type == core.StructMicroservices {
+		svcRoot = "services/"
 	}
 	fix := func(ps []core.StructurePart, root string) []core.StructurePart {
 		var out []core.StructurePart
@@ -275,7 +287,7 @@ func Normalize(ir *core.StructureIR) {
 	}
 	ir.Apps = fix(ir.Apps, appRoot)
 	ir.Services = fix(ir.Services, svcRoot)
-	ir.Workers = fix(ir.Workers, "workers/")
+	ir.Workers = fix(ir.Workers, "apps/")
 	ir.Packages = fix(ir.Packages, "packages/")
 	seen := map[string]bool{}
 	for i := range ir.Apps {
@@ -301,8 +313,12 @@ func Layout(ir *core.StructureIR) []string {
 	}
 	for _, p := range ir.Services {
 		out = append(out, p.Path)
+		infix := ""
+		if generic(p.Name) {
+			infix = "modules/"
+		}
 		for _, m := range p.Modules {
-			out = append(out, p.Path+m+"/")
+			out = append(out, p.Path+infix+m+"/")
 		}
 	}
 	for _, ps := range [][]core.StructurePart{ir.Workers, ir.Packages} {
@@ -381,7 +397,9 @@ func Convert(ir *core.StructureIR, t string, p *core.Project) *core.StructureIR 
 	if len(ir.Services) > 0 && !(t == core.StructMicroservices && ir.Type == core.StructMicroservices) {
 		out.Services = servicesFor(t, domainsIn(ir))
 	}
-	if t == core.StructMonorepo && len(out.Packages) == 0 {
+	if t == core.StructSimple {
+		out.Packages = nil
+	} else if len(out.Packages) == 0 {
 		out.Packages = packagesFor(out, p)
 	}
 	Normalize(out)

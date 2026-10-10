@@ -21,13 +21,13 @@ type Template struct {
 
 var Templates = []Template{
 	{ID: core.StructSimple, Name: "Simple", Description: "Aplikasi kecil, kompleksitas rendah; tanpa batas modul",
-		Layout: []string{"web/", "backend/", "docs/"}},
-	{ID: core.StructModular, Name: "Modular", Description: "Aplikasi bisnis dengan domain jelas; satu backend, tiap domain jadi modul",
-		Layout: []string{"apps/web/", "backend/<domain>/", "docs/"}},
-	{ID: core.StructMonorepo, Name: "Monorepo", Description: "Beberapa aplikasi berbagi kode, type, UI atau tooling",
-		Layout: []string{"apps/web/", "apps/mobile/", "services/api/<domain>/", "packages/types/", "docs/"}},
+		Layout: []string{"apps/web/", "apps/api/", "docs/"}},
+	{ID: core.StructModular, Name: "Modular", Description: "Aplikasi bisnis dengan domain jelas; satu API, tiap domain jadi modul",
+		Layout: []string{"apps/web/", "apps/api/modules/<domain>/", "packages/domain/", "packages/contracts/", "docs/"}},
+	{ID: core.StructMonorepo, Name: "Monorepo", Description: "Beberapa aplikasi berbagi domain, kontrak, UI atau tooling",
+		Layout: []string{"apps/web/", "apps/mobile/", "apps/api/modules/<domain>/", "packages/domain/", "packages/contracts/", "docs/"}},
 	{ID: core.StructMicroservices, Name: "Microservices", Description: "Hanya bila perlu deploy/skala independen, ownership dan isolasi failure per domain",
-		Layout: []string{"apps/web/", "services/<domain>/", "docs/"}},
+		Layout: []string{"apps/web/", "services/<domain>/", "packages/domain/", "packages/contracts/", "docs/"}},
 }
 
 func TemplateByID(id string) (Template, bool) {

@@ -21,6 +21,8 @@ func TestStrayFile(t *testing.T) {
 		".github/workflows/ci.yml":       false,
 		"package.json":                   false,
 		"IMPLEMENTATION_SUMMARY.md":      true,
+		"FOUNDRY.md":                     false,
+		"AGENTS.md":                      false,
 		"notes.txt":                      true,
 		"apps/web/debug.log":             true,
 		"apps/web/src/App.tsx.orig":      true,

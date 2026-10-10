@@ -94,6 +94,9 @@ export function Summary({ project }: { project: Project }) {
       <section className="info-sec">
         <h3>Pemahaman Foundry</h3>
         <p>{o?.goal || d?.summary}</p>
+        {project.survey && (
+          <p className="small"><strong>Survey:</strong> {(project.survey.kinds ?? []).join(", ") || "otomatis"} · {project.survey.stage} · p95 &lt;{project.survey.latency}ms · webhook {project.survey.webhook}</p>
+        )}
         <p className="small"><strong>Bisnis:</strong> {d?.business}</p>
         {o?.core_domain && <p className="small"><strong>Domain:</strong> {o.core_domain}</p>}
         <p className="small"><strong>Peran:</strong> {d?.roles.map((r) => `${r.name} (${PLATFORM_LABEL[r.platform] ?? r.platform})`).join(", ")}</p>

@@ -300,8 +300,17 @@ func Validate(s *core.TechStack) []core.TechIssue {
 	if has("search") && present(core.TechSearch) && none(ch(core.TechSearch)) {
 		add("warning", core.TechSearch, "Ada kebutuhan pencarian teks, tapi search “Tidak perlu”; query LIKE lambat pada data besar.")
 	}
+	if present(core.TechBackend) && none(ch(core.TechCache)) {
+		add("warning", core.TechCache, "FOUNDRY mewajibkan Redis untuk cache, antrean, rate limit, dan event; cache “Tidak perlu”.")
+	}
+	if present(core.TechBackend) && none(ch(core.TechMessaging)) {
+		add("warning", core.TechMessaging, "FOUNDRY mewajibkan event antar modul; messaging “Tidak perlu” membuat efek samping lintas modul jadi panggilan langsung.")
+	}
 	if has("ai") && present(core.TechWorkers) && ch(core.TechWorkers) != "Worker terpisah + antrean" {
 		add("warning", core.TechWorkers, "Panggilan AI bisa puluhan detik; tanpa worker terpisah request HTTP tertahan.")
+	}
+	if has("webhook") && present(core.TechWorkers) && ch(core.TechWorkers) != "Worker terpisah + antrean" {
+		add("warning", core.TechWorkers, "Webhook diproses lewat queue, bukan sinkron di request; pilih worker terpisah.")
 	}
 	if (has("enterprise") || has("high_concurrency")) && present(core.TechObservability) && ch(core.TechObservability) == "Log terstruktur + health check" {
 		add("warning", core.TechObservability, "Kebutuhan audit/beban tinggi butuh metrics dan tracing terpusat, bukan hanya log.")

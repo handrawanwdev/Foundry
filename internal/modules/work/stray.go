@@ -32,6 +32,10 @@ func StrayFile(p *core.Project, base map[string]bool, file string) bool {
 		return false
 	}
 	if len(segs) == 1 {
+		switch k {
+		case "foundry.md", "agents.md", "claude.md", "docker-compose.yml", ".env.example", "readme.md":
+			return false
+		}
 		ext := path.Ext(k)
 		return ext == ".md" || ext == ".txt"
 	}

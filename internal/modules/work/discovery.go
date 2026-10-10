@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/modules/standard"
 )
 
 const (
@@ -47,6 +48,21 @@ STORY:
 `)
 	b.WriteString(p.Story)
 	b.WriteString("\n\n")
+	b.WriteString(standard.Rules)
+	b.WriteString("\n")
+	if s := p.Survey; s != nil {
+		s.FillDefaults()
+		b.WriteString("SURVEY (user answers; honor them):\n")
+		if len(s.Kinds) > 0 {
+			fmt.Fprintf(&b, "- Software kinds: %s. Do not drop a chosen kind.\n", strings.Join(s.Kinds, ", "))
+		}
+		fmt.Fprintf(&b, "- Users: %s. Stage: %s. Latency budget p95: <%s ms. Webhook: %s. Services: %s.\n",
+			s.Users, s.Stage, s.Latency, s.Webhook, s.Services)
+		if s.Stack != "" {
+			fmt.Fprintf(&b, "- Stack preference: %s (Foundry still decides the catalog pick; record this as a constraint).\n", s.Stack)
+		}
+		b.WriteString("\n")
+	}
 	if p.Structure != nil && p.Structure.Mode == core.StructureExisting {
 		b.WriteString("EXISTING PROJECT COMPONENTS (respect this architecture):\n")
 		for _, c := range p.Structure.Components {
@@ -57,10 +73,11 @@ STORY:
 	if p.Design != nil && len(p.Design.Feedback) > 0 {
 		b.WriteString("USER CORRECTIONS (must be applied):\n- " + strings.Join(p.Design.Feedback, "\n- ") + "\n\n")
 	}
-	b.WriteString(`Platform kinds allowed: web, android, ios, desktop, backend. Choose them from who uses the product and on which device.
+	b.WriteString(`Platform kinds allowed: web, android, ios, desktop, backend, cli. Choose them from who uses the product and on which device.
 tech_needs lists only the technical needs the product really has, from: realtime, offline, seo, ai, high_concurrency,
-flexible_schema, transactions, independent_scaling, enterprise, files. Foundry picks the technology stack from them;
+flexible_schema, transactions, independent_scaling, enterprise, files, webhook. Foundry picks the technology stack from them;
 do not choose frameworks, languages, or databases in the blueprint (Foundry decides those).
+List domain events (name domain.happened, producer module, consumers) in blueprint.events.events. Set performance.budget from the survey latency.
 Every requirement must be covered by at least one feature. Every feature needs 2-6 concrete sub-features.
 
 Blueprint rules:
@@ -91,7 +108,8 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
     "realtime": {"needed": false, "events": ["appointment.created"], "retry": ""},
     "workers": [{"name": "email", "trigger": "queue|cron|event", "job": ""}],
     "aggregation": {"needed": false, "approach": "", "reads": [""]},
-    "performance": {"pagination": "", "caching": "", "avoid": [""], "indexing": ""},
+    "events": {"events": [{"type": "appointment.created", "producer": "janji-temu", "consumers": ["identity"], "durable": true}]},
+    "performance": {"budget": "< 500 ms p95", "health": "GET /health and GET /ready", "pagination": "", "caching": "", "avoid": [""], "indexing": ""},
     "coding": {"backend": [""], "frontend": [""], "api": {"style": "REST", "versioning": "/api/v1", "errors": "", "pagination": ""}}
   },
   "requirements": [{"id": "REQ-001", "text": "", "priority": "MUST|SHOULD|COULD"}],
@@ -105,7 +123,7 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 
 var validPlatforms = map[string]bool{
 	core.PlatformWeb: true, core.PlatformAndroid: true, core.PlatformIOS: true,
-	core.PlatformDesktop: true, core.PlatformBackend: true,
+	core.PlatformDesktop: true, core.PlatformBackend: true, core.PlatformCLI: true,
 }
 
 // ApplyDiscovery validates the AI answer, renumbers IDs and writes the
@@ -186,6 +204,7 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	if len(targets) == 0 {
 		return fmt.Errorf("platform tidak ditentukan")
 	}
+	targets = applySurveyKinds(p.Survey, targets)
 
 	if out.Name != "" {
 		p.Name = out.Name
@@ -197,6 +216,39 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	p.Platform = &core.PlatformPlan{Targets: targets, Reason: out.Platform.Reason}
 	p.Design, p.Tasks, p.Verification = nil, nil, nil
 	return nil
+}
+
+func applySurveyKinds(s *core.Survey, targets []core.PlatformTarget) []core.PlatformTarget {
+	if s == nil || len(s.Kinds) == 0 {
+		return targets
+	}
+	have := map[string]bool{}
+	for _, t := range targets {
+		have[t.Kind] = true
+	}
+	add := func(kind string) {
+		if have[kind] {
+			return
+		}
+		have[kind] = true
+		targets = append(targets, core.PlatformTarget{Kind: kind, Rationale: "survey"})
+	}
+	for _, k := range s.Kinds {
+		switch strings.ToLower(strings.TrimSpace(k)) {
+		case core.SurveyKindWeb:
+			add(core.PlatformWeb)
+		case core.SurveyKindMobile:
+			add(core.PlatformAndroid)
+			add(core.PlatformIOS)
+		case core.SurveyKindDesktop:
+			add(core.PlatformDesktop)
+		case core.SurveyKindCLI:
+			add(core.PlatformCLI)
+		case core.SurveyKindAPI, core.SurveyKindBot:
+			add(core.PlatformBackend)
+		}
+	}
+	return targets
 }
 
 func mustJSON(v any) string {

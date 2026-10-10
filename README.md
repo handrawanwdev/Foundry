@@ -1,6 +1,6 @@
 # Foundry
 
-Satu pipeline dari ide sampai aplikasi siap diperiksa:
+Satu pipeline dari ide sampai aplikasi siap diperiksa. Project yang dihasilkan mengikuti `docs/FOUNDRY.md` (8 aturan wajib, Redis, ORM, event, survey):
 
 ```
 Hubungkan AI → Ceritakan → Rancang → Bangun → Siap

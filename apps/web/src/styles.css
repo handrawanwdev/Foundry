@@ -164,6 +164,15 @@ button.connect-row:not(:disabled):hover { background: var(--hover); }
 .theme-pick summary { cursor: pointer; padding: .25rem 0; }
 .theme-pick[open] summary { margin-bottom: .75rem; }
 .chip { border-radius: 999px; padding: .25rem .75rem; font-size: .85rem; }
+.chip.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.survey-kinds { display: flex; gap: .4rem; flex-wrap: wrap; margin: .4rem 0 .75rem; }
+.survey { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem .75rem; margin: 0 0 .5rem; }
+.survey label { display: flex; flex-direction: column; gap: .25rem; font-size: .8rem; color: var(--muted); }
+.survey select, .survey input {
+  appearance: none; font: inherit; padding: .4rem .55rem; border: 1px solid var(--line);
+  border-radius: 8px; background: #3c3c3c; color: var(--text);
+}
+@media (max-width: 560px) { .survey { grid-template-columns: 1fr; } }
 .checklist li { margin: .2rem 0; }
 blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding-left: 1rem; color: var(--muted); }
 

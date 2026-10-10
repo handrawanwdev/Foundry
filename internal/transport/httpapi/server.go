@@ -200,11 +200,14 @@ func (s *Server) Handler() http.Handler {
 		return withSchedule(p), nil
 	}))
 	api("POST /api/v1/project/story", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct{ Story string }
+		var in struct {
+			Story  string
+			Survey *core.Survey `json:"survey"`
+		}
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		return svc.SubmitStory(in.Story)
+		return svc.SubmitStoryWith(in.Story, in.Survey)
 	}))
 	api("POST /api/v1/project/retry", s.action(func(svc *pipeline.Service) error { return svc.RetryJob() }))
 	api("POST /api/v1/project/job/dismiss", s.action(func(svc *pipeline.Service) error { return svc.DismissJob() }))

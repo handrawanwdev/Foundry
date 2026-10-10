@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existingComponents, isExistingProject, tellIntro, tellPlaceholder, tellTitle, tellWaiting } from "./tell";
+import { defaultSurvey, existingComponents, isExistingProject, surveySummary, tellIntro, tellPlaceholder, tellTitle, tellWaiting } from "./tell";
 import type { Project } from "./types";
 
 const project = (mode?: "existing" | "new") =>
@@ -32,5 +32,14 @@ describe("tell copy", () => {
   it("names detected components", () => {
     expect(existingComponents(project("existing"))).toBe("mobile (React Native)");
     expect(existingComponents(project("new"))).toBe("");
+  });
+
+  it("fills survey defaults", () => {
+    const s = defaultSurvey();
+    expect(s.users).toBe("self");
+    expect(s.stage).toBe("mvp");
+    expect(s.latency).toBe("500");
+    expect(s.webhook).toBe("none");
+    expect(surveySummary(s)).toMatch(/otomatis/);
   });
 });

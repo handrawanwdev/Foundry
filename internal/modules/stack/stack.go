@@ -107,11 +107,12 @@ var Catalog = map[string][]Option{
 		{core.CacheNone, "", "tanpa cache terpisah"},
 	},
 	core.TechMessaging: {
-		{core.TechNone, "", "panggilan langsung antar modul cukup"},
-		{"Redis Pub/Sub", "", "event realtime ringan memakai Redis yang sudah ada"},
+		{"Redis Streams", "", "event antar modul yang tidak boleh hilang (consumer group, ack, retry)"},
+		{"Redis Pub/Sub", "", "notifikasi UI dan invalidasi cache yang boleh hilang"},
 		{"NATS", "", "event antar layanan, latency rendah"},
 		{"RabbitMQ", "", "antrean pesan dengan routing dan acknowledgement"},
-		{"Kafka", "", "event stream volume sangat tinggi, replay"},
+		{"Kafka", "", "event stream volume sangat tinggi, replay; butuh ADR"},
+		{core.TechNone, "", "hanya prototipe tanpa efek samping lintas modul"},
 	},
 	core.TechWorkers: {
 		{core.TechNone, "", "semua proses selesai di dalam request"},
@@ -167,7 +168,7 @@ func option(area, value string) *Option {
 
 // Needs Foundry recognizes. The analyst may report them in
 // discovery.tech_needs; keywords in the requirement add the rest.
-var KnownNeeds = []string{"realtime", "offline", "seo", "ai", "high_concurrency", "flexible_schema", "transactions", "independent_scaling", "enterprise", "files", "search"}
+var KnownNeeds = []string{"realtime", "offline", "seo", "ai", "high_concurrency", "flexible_schema", "transactions", "independent_scaling", "enterprise", "files", "search", "webhook"}
 
 var needWords = map[string][]string{
 	"realtime":            {"realtime", "real time", "live", "websocket", "streaming", "chat", "notifikasi instan", "push notification"},
@@ -181,6 +182,7 @@ var needWords = map[string][]string{
 	"enterprise":          {"sso", "audit", "rbac", "compliance", "kepatuhan", "ldap", "enterprise"},
 	"files":               {"upload", "lampiran", "attachment", "berkas", "object storage", "signed url"},
 	"search":              {"pencarian teks", "full text", "full text search", "search engine", "fuzzy search", "pencarian cepat"},
+	"webhook":             {"webhook", "callback http", "callback HTTP"},
 }
 
 // normalize lowercases text and turns punctuation into spaces, padded so
@@ -222,6 +224,14 @@ func Analyze(p *core.Project) []string {
 		}
 		if len(d.Roles) >= 4 {
 			found["enterprise"] = true
+		}
+	}
+	if p.Survey != nil {
+		if p.Survey.HasWebhook() {
+			found["webhook"] = true
+		}
+		if p.Survey.Services == core.SurveyServicesMany {
+			found["independent_scaling"] = true
 		}
 	}
 	text := requirementText(p)
@@ -313,6 +323,9 @@ func Recommend(p *core.Project) *core.TechStack {
 	}
 	if plat.Backend {
 		v, r := pick(core.TechBackend)
+		if p.Survey != nil && p.Survey.Latency == core.SurveyLatency100 {
+			v, r = "Go + Gin", "Target latency p95 < 100 ms."
+		}
 		add(core.TechBackend, v, r)
 		v, r = pick(core.TechDatabase)
 		if has("flexible_schema") && !has("transactions") {
@@ -320,6 +333,9 @@ func Recommend(p *core.Project) *core.TechStack {
 		}
 		add(core.TechDatabase, v, r)
 		v, r = pick(core.TechCache)
+		if v == "" || v == core.CacheNone {
+			v, r = "Redis", "Cache, antrean, rate limit, dan event; database tetap sumber kebenaran."
+		}
 		if has("realtime") || has("high_concurrency") {
 			v, r = "Redis", "State realtime, pub/sub, dan antrean."
 		}
@@ -329,6 +345,8 @@ func Recommend(p *core.Project) *core.TechStack {
 	switch {
 	case has("independent_scaling"):
 		v, r = core.ArchMicroservices, "Butuh skala dan deployment independen per layanan."
+	case p.Survey != nil && p.Survey.Stage == core.SurveyStagePrototype:
+		v, r = core.ArchSimple, "Tahap prototipe; struktur sederhana dulu."
 	case len(p.Features) <= 3:
 		v, r = core.ArchSimple, "Fiturnya sedikit; struktur sederhana cukup dan mudah dipelihara."
 	}
@@ -375,15 +393,16 @@ func infra(s *core.TechStack, add func(area, value, reason string), has func(str
 	switch {
 	case arch == core.ArchMicroservices:
 		add(core.TechMessaging, "NATS", "Layanan terpisah berkomunikasi lewat event.")
-	case has("realtime") && s.Choice(core.TechCache) == "Redis":
-		add(core.TechMessaging, "Redis Pub/Sub", "Event realtime ke klien memakai Redis yang sudah dipakai.")
+	case s.Choice(core.TechCache) == "Redis":
+		add(core.TechMessaging, "Redis Streams", "Event antar modul yang tidak boleh hilang; Redis Pub/Sub hanya untuk notifikasi UI.")
 	default:
-		add(core.TechMessaging, core.TechNone, "Belum ada event antar proses; panggilan langsung antar modul cukup.")
+		add(core.TechMessaging, "Redis Streams", "Event antar modul berformat seragam; Redis dipakai untuk stream.")
 	}
 	var why []string
 	for _, w := range []struct{ need, text string }{
 		{"ai", "panggilan AI yang lama"}, {"files", "pemrosesan file"},
 		{"transactions", "laporan dan rekonsiliasi terjadwal"}, {"high_concurrency", "agregasi data di luar jalur request"},
+		{"webhook", "penerimaan dan pengiriman webhook di luar request"},
 	} {
 		if has(w.need) {
 			why = append(why, w.text)

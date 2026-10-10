@@ -35,11 +35,13 @@ const (
 )
 
 type Project struct {
-	Version   int        `json:"version"`
-	Name      string     `json:"name"`
-	Dir       string     `json:"dir"`
-	Stage     Stage      `json:"stage"`
-	Story     string     `json:"story"`
+	Version int    `json:"version"`
+	Name    string `json:"name"`
+	Dir     string `json:"dir"`
+	Stage   Stage  `json:"stage"`
+	Story   string `json:"story"`
+	// Survey is FOUNDRY.md bagian 3: 8 pertanyaan yang mengikat keputusan.
+	Survey    *Survey    `json:"survey,omitempty"`
 	Discovery *Discovery `json:"discovery,omitempty"`
 	// Blueprint is the production architecture decided during discovery.
 	// Coding agents treat it as source of truth and do not invent another.
@@ -60,17 +62,82 @@ type Project struct {
 	// none. It applies when the design is generated.
 	DesignTemplate string `json:"design_template,omitempty"`
 	// Reference is the website or app the design takes inspiration from.
-	Reference    *DesignReference `json:"reference,omitempty"`
-	Tasks []Task `json:"tasks"`
+	Reference *DesignReference `json:"reference,omitempty"`
+	Tasks     []Task           `json:"tasks"`
 	// PRD is the product source of truth: capability → business flow →
 	// technical contract → task. Generated from the project context.
 	PRD          *PRD          `json:"prd,omitempty"`
 	Builds       []BuildRun    `json:"builds"`
 	Verification *Verification `json:"verification,omitempty"`
-	Job          *Job             `json:"job,omitempty"`
-	Support      *Support         `json:"support,omitempty"`
-	Events       []Event          `json:"events"`
-	UpdatedAt    time.Time        `json:"updated_at"`
+	Job          *Job          `json:"job,omitempty"`
+	Support      *Support      `json:"support,omitempty"`
+	Events       []Event       `json:"events"`
+	UpdatedAt    time.Time     `json:"updated_at"`
+}
+
+// Survey answers (FOUNDRY.md bagian 3). Empty fields use the ★ defaults.
+const (
+	SurveyUsersSelf      = "self"
+	SurveyUsersTeam      = "team"
+	SurveyUsersPublic    = "public"
+	SurveyStagePrototype = "prototype"
+	SurveyStageMVP       = "mvp"
+	SurveyStageProd      = "production"
+	SurveyLatency500     = "500"
+	SurveyLatency200     = "200"
+	SurveyLatency100     = "100"
+	SurveyWebhookNone    = "none"
+	SurveyWebhookIn      = "in"
+	SurveyWebhookOut     = "out"
+	SurveyWebhookBoth    = "both"
+	SurveyServicesOne    = "one"
+	SurveyServicesMany   = "many"
+)
+
+// SurveyKind values match FOUNDRY.md question 2.
+const (
+	SurveyKindWeb     = "web"
+	SurveyKindMobile  = "mobile"
+	SurveyKindDesktop = "desktop"
+	SurveyKindCLI     = "cli"
+	SurveyKindAPI     = "api"
+	SurveyKindBot     = "bot"
+)
+
+type Survey struct {
+	What     string   `json:"what,omitempty"`     // Q1; usually the story
+	Kinds    []string `json:"kinds,omitempty"`    // Q2: web, mobile, desktop, cli, api, bot
+	Users    string   `json:"users,omitempty"`    // self | team | public
+	Stage    string   `json:"stage,omitempty"`    // prototype | mvp | production
+	Latency  string   `json:"latency,omitempty"`  // 500 | 200 | 100 (p95 ms)
+	Webhook  string   `json:"webhook,omitempty"`  // none | in | out | both
+	Services string   `json:"services,omitempty"` // one | many
+	Stack    string   `json:"stack,omitempty"`    // empty = Foundry picks
+}
+
+func (s *Survey) FillDefaults() {
+	if s == nil {
+		return
+	}
+	if s.Users == "" {
+		s.Users = SurveyUsersSelf
+	}
+	if s.Stage == "" {
+		s.Stage = SurveyStageMVP
+	}
+	if s.Latency == "" {
+		s.Latency = SurveyLatency500
+	}
+	if s.Webhook == "" {
+		s.Webhook = SurveyWebhookNone
+	}
+	if s.Services == "" {
+		s.Services = SurveyServicesOne
+	}
+}
+
+func (s *Survey) HasWebhook() bool {
+	return s != nil && s.Webhook != "" && s.Webhook != SurveyWebhookNone
 }
 
 type Discovery struct {
@@ -145,6 +212,7 @@ const (
 	PlatformIOS     = "ios"
 	PlatformDesktop = "desktop"
 	PlatformBackend = "backend"
+	PlatformCLI     = "cli"
 )
 
 type PlatformPlan struct {

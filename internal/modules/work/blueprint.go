@@ -243,7 +243,8 @@ func CompleteBlueprint(p *core.Project) {
 		b.Workers = defaultWorkers(needs, b.Storage.Strategy)
 	}
 	completeAggregation(b, needs)
-	completePerformance(b, needs)
+	completeEvents(b)
+	completePerformance(b, p, needs)
 	completeCoding(b, p)
 	fillSlice(&b.Docs, defaultDocs)
 	fillSlice(&b.Workflow, defaultWorkflow)
@@ -297,7 +298,7 @@ func completeStack(b *core.Blueprint, p *core.Project, needs map[string]bool) {
 	if b.Cache.Use != "" && b.Cache.Use != core.CacheNone && b.Cache.Use != "none" {
 		fillSlice(&b.Cache.Store, []string{"session", "permission snapshot", "read-model / summary", "rate limit", "idempotency key"})
 		fillSlice(&b.Cache.Never, []string{"password hash", "refresh token mentah", "isi file", "data keuangan yang belum ter-commit", "PII mentah jangka panjang"})
-		fill(&b.Cache.Invalidation, "Write-through pada mutasi entity: hapus key by entity id dan daftar terkait. TTL pendek (30–300s) pada read-model.")
+		fill(&b.Cache.Invalidation, "Cache-aside di Redis dengan TTL. Invalidasi lewat event. Cache bukan sumber kebenaran.")
 	} else {
 		fill(&b.Cache.Use, "none")
 	}
@@ -458,13 +459,30 @@ func completeRealtime(b *core.Blueprint, needs map[string]bool, p *core.Project)
 		return
 	}
 	b.Realtime.Needed = true
-	broker := "Redis pub/sub"
-	if p.Stack != nil && p.Stack.Choice(core.TechCache) == "Redis" {
-		broker = "Redis pub/sub"
+	broker := "Redis Streams"
+	if p.Stack != nil {
+		if v := p.Stack.Choice(core.TechMessaging); v != "" && v != core.TechNone {
+			broker = v
+		}
 	}
 	fill(&b.Realtime.Broker, broker)
 	fillSlice(&b.Realtime.Events, []string{"<domain>.<entity>.<action> (contoh appointment.created)"})
-	fill(&b.Realtime.Retry, "At-least-once, consumer idempotent by event id, dead-letter setelah 5 percobaan")
+	fill(&b.Realtime.Retry, "At-least-once, consumer idempotent by eventId, dead-letter setelah 5 percobaan")
+}
+
+func completeEvents(b *core.Blueprint) {
+	fill(&b.Events.Durable, "Redis Streams + consumer group + ack + retry + dead-letter stream")
+	fill(&b.Events.Ephemeral, "Redis Pub/Sub untuk update UI dan cache invalidation")
+	fill(&b.Events.Outbox, "Event ditulis ke tabel outbox dalam transaksi yang sama, lalu relay ke Redis")
+	fill(&b.Events.Envelope, `{"eventId":"uuid","type":"domain.event","version":1,"occurredAt":"RFC3339","correlationId":"uuid","payload":{}}`)
+	if len(b.Events.Events) == 0 {
+		for _, e := range b.Realtime.Events {
+			if strings.HasPrefix(e, "<") {
+				continue
+			}
+			b.Events.Events = append(b.Events.Events, core.EventSpec{Type: e, Durable: true})
+		}
+	}
 }
 
 func completeAggregation(b *core.Blueprint, needs map[string]bool) {
@@ -478,9 +496,20 @@ func completeAggregation(b *core.Blueprint, needs map[string]bool) {
 	fillSlice(&b.Aggregation.Reads, []string{"dashboard summary", "laporan periode"})
 }
 
-func completePerformance(b *core.Blueprint, _ map[string]bool) {
+func completePerformance(b *core.Blueprint, p *core.Project, _ map[string]bool) {
+	budget := "< 500 ms p95"
+	if p != nil && p.Survey != nil {
+		switch p.Survey.Latency {
+		case core.SurveyLatency200:
+			budget = "< 200 ms p95"
+		case core.SurveyLatency100:
+			budget = "< 100 ms p95"
+		}
+	}
+	fill(&b.Performance.Budget, budget)
+	fill(&b.Performance.Health, "GET /health (proses hidup); GET /ready (DB dan Redis siap)")
 	fill(&b.Performance.Pagination, "Cursor pada list besar (id+created_at); limit default 20, max 100")
-	fill(&b.Performance.Caching, "Cache read-model dan opsi referensi; jangan cache hasil otorisasi per-user jangka panjang")
+	fill(&b.Performance.Caching, "Cache-aside di Redis dengan TTL; invalidasi lewat event; cache bukan sumber kebenaran")
 	fill(&b.Performance.Indexing, "Index mengikuti filter list API; EXPLAIN pada query > 50ms")
 	fillSlice(&b.Performance.Avoid, []string{
 		"N+1 query",
@@ -488,6 +517,7 @@ func completePerformance(b *core.Blueprint, _ map[string]bool) {
 		"SELECT * pada tabel lebar",
 		"file di dalam database",
 		"transaksi terbuka lintas I/O jaringan",
+		"pekerjaan berat sinkron di request HTTP",
 	})
 }
 
@@ -495,17 +525,23 @@ func completeCoding(b *core.Blueprint, p *core.Project) {
 	fillSlice(&b.Coding.Backend, []string{
 		"controller tidak berisi business logic",
 		"service menangani business rule dan transaksi",
-		"repository menangani akses data",
-		"DTO untuk input/output dan validasi",
-		"satu module = satu domain; dilarang import intern module lain kecuali lewat public interface",
+		"repository adalah satu-satunya tempat memakai ORM",
+		"DTO untuk input/output dan validasi; skema di packages/contracts",
+		"satu module = satu domain di src/modules/{fitur}/; dilarang import intern module lain kecuali lewat public interface atau event",
+		"efek samping lintas modul lewat event berformat seragam; consumer idempotent by eventId",
+		"fungsi ≤ 40 baris, parameter ≤ 4, nesting ≤ 3, file ≤ 300 baris",
 		"proses berat masuk queue, bukan request HTTP",
+		"domain di packages/domain tidak tahu framework, DB, atau UI",
 	})
 	fillSlice(&b.Coding.Frontend, []string{
 		"struktur per fitur, bukan per jenis file",
-		"komponen UI generik terpisah dari layar fitur",
+		"semua nilai visual dari token di packages/ui; dilarang warna/ukuran/spasi hardcode",
+		"setiap layar punya state loading, kosong, error, sukses",
+		"satu aksi utama per layar; konten realistis, bukan lorem ipsum",
 		"semua panggilan API lewat layer client typed",
 		"server state di TanStack Query / setara; UI state di store yang dipilih",
-		"ikuti design system; tidak menambah token baru tanpa keputusan",
+		"ikuti docs/design-brief.md; jika layar bisa tertukar dengan template generik, kembali ke brief",
+		"kontras WCAG AA, navigasi keyboard, label aksesibilitas",
 	})
 	if b.Coding.API.Style == "" {
 		b.Coding.API = core.APIStd{
@@ -629,6 +665,9 @@ func defaultWorkers(needs map[string]bool, storage string) []core.Worker {
 	if needs["enterprise"] || needs["transactions"] {
 		out = append(out, core.Worker{Name: "reports", Trigger: "cron", Job: "Agregasi laporan harian ke tabel summary"})
 	}
+	if needs["webhook"] {
+		out = append(out, core.Worker{Name: "webhook", Trigger: "queue", Job: "Proses inbound webhook dan kirim outbound (HMAC, retry, dead-letter)"})
+	}
 	return out
 }
 
@@ -646,7 +685,7 @@ func ormOf(backend, db string) string {
 	case strings.Contains(backend, "Go") && mongo:
 		return "mongo-driver"
 	case strings.Contains(backend, "Go"):
-		return "sqlc"
+		return "GORM"
 	default:
 		if mongo {
 			return "driver native"
@@ -655,14 +694,14 @@ func ormOf(backend, db string) string {
 	}
 }
 
-func cacheOf(choice string, needs map[string]bool) string {
-	if choice != "" && choice != core.CacheNone {
+func cacheOf(choice string, _ map[string]bool) string {
+	if choice == core.CacheNone {
+		return "none"
+	}
+	if choice != "" {
 		return choice
 	}
-	if needs["realtime"] || needs["high_concurrency"] {
-		return "Redis"
-	}
-	return "none"
+	return "Redis"
 }
 
 func offlineOf(needs map[string]bool) string {
@@ -704,6 +743,7 @@ func firstNonEmpty(xs ...string) string {
 }
 
 var defaultDocs = []string{
+	"FOUNDRY.md", "AGENTS.md", "docs/foundry-profile.md", "docs/requirements.md", "docs/design-brief.md",
 	"docs/README.md", "docs/architecture.md", "docs/database.md", "docs/api.md",
 	"docs/security.md", "docs/storage.md", "docs/performance.md", "docs/workflow.md",
 	"docs/deployment.md", "docs/adr/",
@@ -722,14 +762,16 @@ var defaultChangeFlow = []string{
 }
 
 var defaultAIGuidelines = []string{
+	"Ikuti FOUNDRY.md dan docs/foundry-profile.md; 8 aturan wajib tidak ditawar",
 	"Blueprint dan stack adalah source of truth; jangan ganti arsitektur, framework, atau database tanpa keputusan Foundry",
 	"Ikuti batas module: data dan logic milik module tidak diakses langsung dari module lain",
-	"Jangan membuat folder berdasarkan jenis file (controllers/, services/ global)",
+	"Jangan membuat folder berdasarkan jenis file (controllers/, services/ global) atau helpers/utils/misc/manager",
 	"Jangan menduplikasi logic; perluas yang sudah ada",
-	"Proses berat (laporan, export, resize, email, sync) lewat worker",
+	"Proses berat (laporan, export, resize, email, sync, webhook) lewat worker",
 	"Jangan simpan file besar di database",
 	"Update docs/ setelah mengubah kontrak API, skema, atau alur",
-	"Naming konsisten dengan konvensi blueprint (snake_case DB, resource:action permission, event domain.entity.action)",
+	"Naming konsisten dengan konvensi blueprint (snake_case DB, resource:action permission, event domain.kejadian)",
+	"Perubahan struktur, framework, atau migration lama: tulis ADR lalu berhenti menunggu persetujuan",
 }
 
 // ArchitectureBrief is the compact contract injected into plan and task
@@ -741,6 +783,7 @@ func ArchitectureBrief(p *core.Project) string {
 	}
 	var s strings.Builder
 	s.WriteString("ARCHITECTURE BLUEPRINT (do not invent another architecture, stack, or folder layout):\n")
+	s.WriteString("Follow FOUNDRY.md and docs/foundry-profile.md.\n")
 	if b.Overview.Goal != "" {
 		fmt.Fprintf(&s, "Goal: %s\n", b.Overview.Goal)
 	}
@@ -783,6 +826,12 @@ func ArchitectureBrief(p *core.Project) string {
 	}
 	if b.Cache.Use != "" && b.Cache.Use != "none" && b.Cache.Use != core.CacheNone {
 		fmt.Fprintf(&s, "Cache: %s. Store: %s. Never: %s\n", b.Cache.Use, strings.Join(b.Cache.Store, ", "), strings.Join(b.Cache.Never, ", "))
+	}
+	if b.Events.Envelope != "" {
+		fmt.Fprintf(&s, "Events: durable %s. Outbox: %s. Envelope %s\n", b.Events.Durable, b.Events.Outbox, b.Events.Envelope)
+	}
+	if b.Performance.Budget != "" {
+		fmt.Fprintf(&s, "Latency budget: %s. Health: %s\n", b.Performance.Budget, b.Performance.Health)
 	}
 	if b.Realtime.Needed {
 		fmt.Fprintf(&s, "Realtime: %s events %s retry %s\n", b.Realtime.Broker, strings.Join(b.Realtime.Events, ", "), b.Realtime.Retry)

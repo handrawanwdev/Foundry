@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/modules/standard"
 	"github.com/handrawanw/foundry/internal/modules/structure"
 )
 
@@ -212,6 +213,27 @@ func architectureMarkdown(p *core.Project) string {
 		}
 		b.WriteString("\n")
 	}
+	if ev := bp.Events; ev.Envelope != "" || ev.Durable != "" {
+		b.WriteString("### Event internal\n\n")
+		if ev.Durable != "" {
+			fmt.Fprintf(&b, "Durable: %s\n\n", ev.Durable)
+		}
+		if ev.Ephemeral != "" {
+			fmt.Fprintf(&b, "Ephemeral: %s\n\n", ev.Ephemeral)
+		}
+		if ev.Outbox != "" {
+			fmt.Fprintf(&b, "Outbox: %s\n\n", ev.Outbox)
+		}
+		if ev.Envelope != "" {
+			fmt.Fprintf(&b, "Envelope: `%s`\n\n", ev.Envelope)
+		}
+		for _, e := range ev.Events {
+			fmt.Fprintf(&b, "- `%s` producer %s\n", e.Type, e.Producer)
+		}
+		if len(ev.Events) > 0 {
+			b.WriteString("\n")
+		}
+	}
 	if len(bp.Workers) > 0 {
 		b.WriteString("### Workers\n\n")
 		for _, w := range bp.Workers {
@@ -291,8 +313,8 @@ func databaseMarkdown(bp *core.Blueprint) string {
 	return b.String()
 }
 
-// WriteDocs writes the architecture documentation into docs/, the contract
-// coding agents read on disk.
+// WriteDocs writes the architecture documentation into docs/, plus FOUNDRY.md
+// at the project root for new projects. Coding agents read these on disk.
 func WriteDocs(dir string, p *core.Project) error {
 	if dir == "" || p == nil {
 		return nil
@@ -306,6 +328,15 @@ func WriteDocs(dir string, p *core.Project) error {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
 		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			return err
+		}
+	}
+	if p.Structure != nil && p.Structure.Mode == core.StructureExisting {
+		return nil
+	}
+	for name, body := range RootFiles(p) {
+		path := filepath.Join(dir, name)
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			return err
 		}
@@ -330,7 +361,19 @@ func DocsFiles(p *core.Project) map[string]string {
 	if p.PRD != nil && strings.TrimSpace(p.PRD.Markdown) != "" {
 		out["PRD.md"] = p.PRD.Markdown
 	}
+	out["foundry-profile.md"] = standard.Profile(p)
+	out["requirements.md"] = standard.RequirementsDoc(p)
+	out["design-brief.md"] = standard.DesignBrief(p)
 	return out
+}
+
+// RootFiles are FOUNDRY.md and agent pointers at the project root.
+func RootFiles(p *core.Project) map[string]string {
+	return map[string]string{
+		"FOUNDRY.md": standard.Document(p),
+		"AGENTS.md":  standard.AgentsMD,
+		"CLAUDE.md":  standard.AgentsMD,
+	}
 }
 
 func databaseDoc(p *core.Project) string {
@@ -418,7 +461,7 @@ func performanceDoc(p *core.Project) string {
 	}
 	pf := p.Blueprint.Performance
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\nCache: %s\n\nIndex: %s\n\n", pf.Pagination, pf.Caching, pf.Indexing)
+	fmt.Fprintf(&b, "Anggaran: %s\n\nHealth: %s\n\n%s\n\nCache: %s\n\nIndex: %s\n\n", pf.Budget, pf.Health, pf.Pagination, pf.Caching, pf.Indexing)
 	if p.Blueprint.Aggregation.Needed {
 		fmt.Fprintf(&b, "\n## Read model\n\n%s\n\n%s\n", p.Blueprint.Aggregation.Approach, strings.Join(p.Blueprint.Aggregation.Reads, ", "))
 	}

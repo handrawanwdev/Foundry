@@ -334,19 +334,12 @@ func Validate(ir *core.StructureIR, p *core.Project, st *core.TechStack) []core.
 			add("warning", "structure", "Tidak ada kebutuhan deploy/skala independen; Microservices menambah biaya operasional, Modular biasanya cukup.")
 		}
 	}
-	if len(ir.Packages) > 0 && !shared(ir.Type, st) {
-		add("warning", core.PartPackage, "packages/ tanpa monorepo: kode bersama perlu dipublikasikan (registry) atau digenerate (OpenAPI); tidak otomatis dipakai bersama.")
-	}
-	consumers := len(ir.Apps)
-	if len(ir.Services) > 0 {
-		consumers++
+	if ir.Type == core.StructSimple && len(ir.Packages) > 0 {
+		add("warning", core.PartPackage, "Simple tidak memakai packages/; pindahkan ke app atau naikkan ke Modular.")
 	}
 	for _, pk := range ir.Packages {
-		switch {
-		case pk.Name == "ui" && len(ir.Apps) < 2:
-			add("warning", core.PartPackage, "packages/ui hanya dipakai satu app; taruh komponennya di app itu.")
-		case pk.Name == "types" && consumers < 2:
-			add("warning", core.PartPackage, "packages/types tidak dipakai bersama; taruh type-nya di bagian yang memakainya.")
+		if pk.Name == "ui" && len(ir.Apps) == 0 {
+			add("warning", core.PartPackage, "packages/ui tanpa app frontend.")
 		}
 	}
 	separate := st != nil && st.Choice(core.TechWorkers) == workersSeparate

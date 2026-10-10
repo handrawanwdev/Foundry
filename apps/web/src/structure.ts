@@ -18,7 +18,8 @@ export function layoutOf(ir: StructureIR): string[] {
   for (const p of ir.apps ?? []) out.push(p.path);
   for (const p of ir.services ?? []) {
     out.push(p.path);
-    for (const m of p.modules ?? []) out.push(`${p.path}${m}/`);
+    const infix = p.name === "api" || p.name === "backend" ? "modules/" : "";
+    for (const m of p.modules ?? []) out.push(`${p.path}${infix}${m}/`);
   }
   for (const p of [...(ir.workers ?? []), ...(ir.packages ?? [])]) out.push(p.path);
   out.push(ir.docs || "docs/");

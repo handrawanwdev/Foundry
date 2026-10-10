@@ -385,7 +385,7 @@ func TestEndToEndAgent(t *testing.T) {
 	if p.Stage != core.StageBuild {
 		t.Fatalf("stage = %s", p.Stage)
 	}
-	if _, err := os.Stat(filepath.Join(p.Dir, "backend", "janji-temu")); err != nil {
+	if _, err := os.Stat(filepath.Join(p.Dir, "apps", "api", "modules", "janji-temu")); err != nil {
 		t.Fatalf("scaffold missing: %v", err)
 	}
 	// Coverage filler adds UI tasks for pages; FEAT-002 is tested by T4's own
@@ -1537,7 +1537,7 @@ func TestTechStack(t *testing.T) {
 	if p.Stack.State() != core.TechImpactChecked || p.Stack.Version() != 2 || len(p.Stack.History[1].Changes) != 2 {
 		t.Fatalf("applied = %+v", p.Stack)
 	}
-	if p.Structure.Template != "simple" || !slices.Equal(p.Structure.Layout, []string{"web/", "mobile/", "backend/", "docs/"}) {
+	if p.Structure.Template != "simple" || !slices.Equal(p.Structure.Layout, []string{"apps/web/", "apps/mobile/", "apps/api/", "docs/"}) {
 		t.Fatalf("structure = %+v", p.Structure)
 	}
 	// A platform change decides again but keeps the user's choices.
@@ -1674,8 +1674,8 @@ func TestStructureDecision(t *testing.T) {
 	st := p.Structure
 	ir := st.IR
 	if ir == nil || ir.Type != core.StructMonorepo || st.State() != core.TechRecommended || st.Version() != 1 ||
-		len(ir.Services) != 1 || ir.Services[0].Path != "services/api/" || !slices.Contains(ir.Services[0].Modules, "identity") ||
-		!slices.ContainsFunc(ir.Packages, func(x core.StructurePart) bool { return x.Name == "types" }) {
+		len(ir.Services) != 1 || ir.Services[0].Path != "apps/api/" || !slices.Contains(ir.Services[0].Modules, "identity") ||
+		!slices.ContainsFunc(ir.Packages, func(x core.StructurePart) bool { return x.Name == "domain" }) {
 		t.Fatalf("structure = %+v", ir)
 	}
 	domains := ir.Services[0].Modules
@@ -1759,7 +1759,7 @@ func TestStructureDecision(t *testing.T) {
 	if p, err = s.ApplyStructureProposal(); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(p.Structure.Layout, "backend/"+other+"/") || len(p.Structure.Errors()) != 0 {
+	if !slices.Contains(p.Structure.Layout, "apps/api/modules/"+other+"/") || len(p.Structure.Errors()) != 0 {
 		t.Fatalf("modular = %v %+v", p.Structure.Layout, p.Structure.Issues)
 	}
 	if p, err = s.ApproveStructure(); err != nil || p.Structure.State() != core.TechApproved || p.Structure.Version() != 4 {
@@ -1770,10 +1770,10 @@ func TestStructureDecision(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, _ = s.NextWork("")
-	if w.Kind != work.KindPlan || !strings.Contains(w.Prompt, "PROJECT STRUCTURE (approved by the user, type modular)") || !strings.Contains(w.Prompt, "backend/") {
+	if w.Kind != work.KindPlan || !strings.Contains(w.Prompt, "PROJECT STRUCTURE (approved by the user, type modular)") || !strings.Contains(w.Prompt, "apps/api/") {
 		t.Fatalf("plan = %+v", w)
 	}
-	if _, err := os.Stat(filepath.Join(load(t, s).Dir, "backend", other)); err != nil {
+	if _, err := os.Stat(filepath.Join(load(t, s).Dir, "apps", "api", "modules", other)); err != nil {
 		t.Fatalf("scaffold: %v", err)
 	}
 }
