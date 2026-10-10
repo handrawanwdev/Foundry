@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/handrawanw/foundry/internal/core"
 )
@@ -53,6 +54,33 @@ func TestGuardAndFlow(t *testing.T) {
 	}
 	if w := do("GET", "/simple/tell", "", "", "localhost:8080"); w.Code != 200 {
 		t.Fatalf("spa fallback: %d", w.Code)
+	}
+}
+
+func TestSPAAssets(t *testing.T) {
+	ui := fstest.MapFS{
+		"index.html":    {Data: []byte("<!doctype html><title>Foundry</title>")},
+		"assets/app.js": {Data: []byte("console.log(1)")},
+	}
+	h := New(ui, "/bin/foundry").Handler()
+	get := func(handler http.Handler, path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.RemoteAddr, r.Host = "127.0.0.1:50000", "127.0.0.1:8080"
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	if w := get(h, "/assets/app.js"); w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), "javascript") || w.Body.String() != "console.log(1)" {
+		t.Fatalf("asset: %d %s %s", w.Code, w.Header().Get("Content-Type"), w.Body)
+	}
+	if w := get(h, "/assets/screen-missing.js"); w.Code != 404 || strings.Contains(w.Body.String(), "<!doctype html>") {
+		t.Fatalf("missing asset served as SPA: %d %s", w.Code, w.Body)
+	}
+	if w := get(h, "/simple/rancang"); w.Code != 200 || !strings.Contains(w.Body.String(), "<!doctype html>") || w.Header().Get("Cache-Control") != "no-cache" {
+		t.Fatalf("spa route: %d %q %s", w.Code, w.Header().Get("Cache-Control"), w.Body)
+	}
+	if w := get(New(nil, "/bin/foundry").Handler(), "/assets/screen-missing.js"); w.Code != 404 || strings.Contains(w.Body.String(), "UI belum") {
+		t.Fatalf("missing asset without UI: %d %s", w.Code, w.Body)
 	}
 }
 

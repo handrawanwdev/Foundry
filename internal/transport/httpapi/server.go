@@ -755,13 +755,8 @@ func (s *Server) spa(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
-	if s.UI == nil {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, `<!doctype html><title>Foundry</title><p>UI belum di-build. Jalankan <code>make web</code> lalu build ulang.</p>`)
-		return
-	}
 	name := strings.TrimPrefix(r.URL.Path, "/")
-	if name != "" {
+	if s.UI != nil && name != "" {
 		if f, err := s.UI.Open(name); err == nil {
 			st, _ := f.Stat()
 			f.Close()
@@ -771,6 +766,17 @@ func (s *Server) spa(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// Hashed Vite files must 404. Serving index.html as JS makes the browser
+	// report "error loading dynamically imported module".
+	if strings.HasPrefix(name, "assets/") {
+		http.NotFound(w, r)
+		return
+	}
+	if s.UI == nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><title>Foundry</title><p>UI belum di-build. Jalankan <code>make web</code> lalu build ulang.</p>`)
+		return
+	}
 	// Client-side routes (/simple/*) fall back to index.html.
 	b, err := fs.ReadFile(s.UI, "index.html")
 	if err != nil {
@@ -778,6 +784,7 @@ func (s *Server) spa(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
 	w.Write(b)
 }
 

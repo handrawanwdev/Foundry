@@ -8,6 +8,7 @@ import { STRUCTURE_TYPE, structureGate, structureVersion } from "../structure";
 import { changeText, TECH_STATUS, techGate, techReview, techState, techVersion } from "../tech";
 import type { Blocker, DesignQA, DesignQuality, DesignSystem, Page, PageHandoff, Project, QAIssue, ThemeContext, Token } from "../types";
 import type { Device } from "../design";
+import { screens } from "../screen";
 
 // ---------- Inspect ----------
 
@@ -265,10 +266,8 @@ export function ChangeBar({ project, onOpen }: { project: Project; onOpen: (page
 
 // ---------- Ask for change ----------
 
-// What the user sees on each page; loaded on demand (it pulls in the React
-// server renderer).
-async function screensOf(pages: Page[], app = "Aplikasi", devices?: Record<string, Device>) {
-  return (await import("../screen")).screens(pages, app, devices);
+function screensOf(pages: Page[], app = "Aplikasi", devices?: Record<string, Device>) {
+  return screens(pages, app, devices);
 }
 
 interface AskProps {
