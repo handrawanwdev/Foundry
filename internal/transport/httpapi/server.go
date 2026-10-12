@@ -148,10 +148,7 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/v1/ai/models", s.listModels)
 	api("POST /api/v1/ai/connect", s.connectAgent)
 	api("POST /api/v1/ai/connect-mcp", s.connectMCP)
-	api("POST /api/v1/ai/disconnect", func(r *http.Request) (any, error) {
-		_, err := config.Update(func(c *config.Config) { c.Connection = nil })
-		return map[string]bool{"ok": err == nil}, err
-	})
+	api("POST /api/v1/ai/disconnect", s.disconnectAI)
 
 	// Projects
 	api("GET /api/v1/projects", func(r *http.Request) (any, error) {
@@ -648,6 +645,24 @@ func (s *Server) connectAgent(r *http.Request) (any, error) {
 	return map[string]any{"connection": c.Connection, "agent": runner.Name}, nil
 }
 
+// disconnectAI drops the active connection. Disconnecting an MCP host also
+// forgets its heartbeat, so a host that is still attached no longer counts as
+// alive. {"all": true} additionally clears the heartbeat of a host that was
+// set up by hand and is not the active connection.
+func (s *Server) disconnectAI(r *http.Request) (any, error) {
+	var in struct {
+		All bool `json:"all"`
+	}
+	_ = decode(r, &in) // body is optional
+	_, err := config.Update(func(c *config.Config) {
+		if in.All || (c.Connection != nil && c.Connection.Mode == config.ModeMCP) {
+			c.MCP = nil
+		}
+		c.Connection = nil
+	})
+	return map[string]bool{"ok": err == nil}, err
+}
+
 func (s *Server) connectMCP(r *http.Request) (any, error) {
 	var in struct {
 		Agents int `json:"agents"`
@@ -744,7 +759,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ping.C:
-			fmt.Fprint(w, ": ping\n\n")
+			fmt.Fprint(w, "event: ping\ndata: 0\n\n") // a named event: the page can see it, a comment it cannot
 			fl.Flush()
 		case <-tick.C:
 		}

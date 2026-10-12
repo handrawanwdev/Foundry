@@ -33,6 +33,23 @@ func TestPresetArgs(t *testing.T) {
 	}
 }
 
+func TestOpenCodeArgv(t *testing.T) {
+	oc, ok := PresetByID("opencode")
+	if !ok {
+		t.Fatal("opencode preset missing")
+	}
+	opts, err := oc.args(Options{Model: "anthropic/claude-sonnet-4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := append(append([]string{oc.Binary}, oc.sub...), opts...)
+	got := append(slices.Clone(head), oc.think...)
+	want := []string{"opencode", "run", "--model", "anthropic/claude-sonnet-4", "--agent", "plan"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("think argv = %v", got)
+	}
+}
+
 // An agent that leaves a child holding stdout must not hang the run.
 func TestRunNotHeldByBackgroundChild(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {

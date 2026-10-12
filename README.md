@@ -16,7 +16,7 @@ cmd/foundry/                  entry: foundry serve | foundry mcp
 internal/core/              model Project (satu context) + Store (.foundry/project.json, lock lintas proses)
 internal/config/            koneksi AI + recent project (~/.foundry/foundry.json)
 internal/modules/
-  agent/                    runner CLI agent (Claude Code, Codex, Qwen Code, Grok, Gemini, custom)
+  agent/                    runner CLI agent (Claude Code, Codex, Qwen Code, Grok, Gemini, OpenCode, custom)
   scan/                     deteksi komponen + command build/test nyata
   uiscan/                   UI project existing: route, layout shell, navigasi, komponen, token desain → theme
   stack/                    keputusan teknologi: kebutuhan → profil (profiles/*.json) → aturan; override user

@@ -659,6 +659,34 @@ func TestClampAgents(t *testing.T) {
 	}
 }
 
+func TestStopBuildWaitingForHost(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Stage = core.StageBuild
+		p.Tasks = []core.Task{{ID: "T1", Title: "a", Area: "api", Files: []string{"a/x.go"}, AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StartBuild(); err != nil {
+		t.Fatal(err)
+	}
+	if w, err := s.NextWork("w1"); err != nil || w.TaskID != "T1" {
+		t.Fatalf("claim = %+v %v", w, err)
+	}
+	if err := s.StopBuild(); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	if tk := p.Task("T1"); tk.Status != core.TaskTodo || tk.Owner != "" {
+		t.Fatalf("task = %s owner %q", tk.Status, tk.Owner)
+	}
+	mustJob(t, p, "build", core.JobDone)
+	if err := s.StopBuild(); err == nil {
+		t.Fatal("second stop should find nothing to do")
+	}
+}
+
 func TestMCPAgentLimit(t *testing.T) {
 	t.Setenv("FOUNDRY_AGENTS", "1")
 	s := newService(t, fakeAI{mcp: true}, "")

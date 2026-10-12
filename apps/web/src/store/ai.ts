@@ -11,7 +11,7 @@ interface AIStore {
   connectAgent: (id: string, command?: string[], opts?: AgentOptions) => Promise<boolean>;
   connectMCP: (agents?: number) => Promise<void>;
   setAgents: (n: number) => Promise<void>;
-  disconnect: () => Promise<void>;
+  disconnect: (all?: boolean) => Promise<void>;
 }
 
 export const useAI = create<AIStore>((set, get) => ({
@@ -57,9 +57,16 @@ export const useAI = create<AIStore>((set, get) => ({
       set({ error: (e as Error).message });
     }
   },
-  disconnect: async () => {
-    await api.disconnect();
-    await get().load();
+  disconnect: async (all = false) => {
+    set({ connecting: "disconnect", error: null });
+    try {
+      await api.disconnect(all);
+      await get().load();
+    } catch (e) {
+      set({ error: (e as Error).message });
+    } finally {
+      set({ connecting: null });
+    }
   },
 }));
 

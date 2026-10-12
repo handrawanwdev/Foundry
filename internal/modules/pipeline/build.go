@@ -82,11 +82,40 @@ func (s *Service) StopBuild() error {
 	s.mu.Lock()
 	c := s.cancel
 	s.mu.Unlock()
-	if c == nil {
-		return ErrNothingToDo
+	if c != nil {
+		c()
+		return nil
 	}
-	c()
-	return nil
+	return s.stopHostBuild()
+}
+
+// stopHostBuild ends a build that waits for an MCP host: no goroutine runs it,
+// so the job is closed directly and tasks the host holds go back to TODO.
+func (s *Service) stopHostBuild() error {
+	var released []string
+	_, err := s.Store.Update(func(p *core.Project) error {
+		if p.Job == nil || p.Job.Kind != "build" || p.Job.Status != core.JobWaiting {
+			return ErrNothingToDo
+		}
+		for i := range p.Tasks {
+			t := &p.Tasks[i]
+			if t.Status != core.TaskInProgress {
+				continue
+			}
+			t.Status, t.Owner, t.Progress = core.TaskTodo, "", ""
+			if t.Attempts > 0 {
+				t.Attempts--
+			}
+			released = append(released, t.ID)
+			p.Log("system", t.ID+" dihentikan, kembali ke TODO")
+		}
+		p.Job = &core.Job{Kind: "build", Status: core.JobDone, Message: "Build dihentikan", Started: time.Now().UTC()}
+		return nil
+	})
+	for _, id := range released {
+		markResume(s.Store.Dir, id)
+	}
+	return err
 }
 
 // buildLoop runs up to s.agents() coding agents at once and re-reads that

@@ -117,7 +117,9 @@ button.connect-row:not(:disabled):hover { background: var(--hover); }
 .agent-mark-qwen { background: #2a2540; color: #b8a6f0; }
 .agent-mark-grok { background: #2c2c2c; color: #f0f0f0; }
 .agent-mark-gemini { background: #1e2a3d; color: #7eb6ff; }
+.agent-mark-opencode { background: #262626; color: #d6d6d6; }
 .agent-mark-custom, .agent-mark-mcp, .agent-mark-host { background: var(--select); color: var(--text); }
+.connect-row-end { display: inline-flex; align-items: center; gap: .6rem; }
 .agent-meta { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
 .agent-meta strong { font-weight: 600; color: #fff; }
 .agent-sub { font-size: .8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

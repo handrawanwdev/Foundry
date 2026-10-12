@@ -30,7 +30,7 @@ const usage = `Foundry — ide sampai aplikasi siap diperiksa
       Tanpa folder: halaman Start untuk Open/New/Close Project
 
   foundry mcp [--allow READ,WRITE,MODIFY,EXECUTE|ALL] [--project folder] [--print-config]
-      Server MCP (stdio) untuk AI Host: Claude, Codex, Qwen, Grok, Gemini, dll.
+      Server MCP (stdio) untuk AI Host: Cursor, Claude, Codex, OpenCode, Windsurf, dll.
 
   foundry version
 `

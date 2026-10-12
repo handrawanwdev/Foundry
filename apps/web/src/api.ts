@@ -23,7 +23,7 @@ export const api = {
   connectAgent: (agent_id: string, command?: string[], opts?: AgentOptions) => call("POST", "/ai/connect", { agent_id, command, ...opts }),
   connectMCP: (agents?: number) => call("POST", "/ai/connect-mcp", { agents }),
   setAgents: (agents: number) => call<AIState>("PATCH", "/ai", { agents }),
-  disconnect: () => call("POST", "/ai/disconnect", {}),
+  disconnect: (all = false) => call("POST", "/ai/disconnect", { all }),
 
   projects: () => call<{ current: string; recent: string[] | null }>("GET", "/projects"),
   openProject: (dir: string, create = false, name = "") => call<Project>("POST", "/projects/open", { dir, create, name }),

@@ -71,6 +71,11 @@ var Presets = []Preset{
 	{ID: "gemini", Name: "Gemini", Binary: "gemini",
 		think:   []string{},
 		execute: []string{"--approval-mode", "auto_edit"}},
+	// opencode run reads the prompt from stdin; the plan agent is read-only,
+	// the default build agent edits files without asking.
+	{ID: "opencode", Name: "OpenCode", Binary: "opencode", sub: []string{"run"},
+		think:   []string{"--agent", "plan"},
+		execute: []string{}},
 }
 
 // Options picks the model and effort; empty values keep the CLI default.

@@ -15,6 +15,7 @@ const MARK: Record<string, string> = {
   qwen: "QW",
   grok: "GK",
   gemini: "GM",
+  opencode: "OC",
 };
 
 function AgentMark({ id, name }: { id: string; name: string }) {
@@ -112,7 +113,10 @@ export function ConnectPage() {
                 <strong>{agentName(state)}</strong>
                 {agentOptions(state) && <span className="agent-sub">{agentOptions(state)}</span>}
               </span>
-              <span className="agent-status ok">Terhubung</span>
+              <span className="connect-row-end">
+                <span className="agent-status ok">Terhubung</span>
+                <button type="button" className="ghost small" disabled={!!connecting} onClick={() => void disconnect()}>Putuskan</button>
+              </span>
             </div>
             <div className="connect-config">
               <AgentsField value={parallel?.agents ?? agents} max={maxAgents} fromEnv={parallel?.from_env}
@@ -122,7 +126,7 @@ export function ConnectPage() {
         </div>
         <div className="connect-actions">
           <button className="primary big" onClick={() => nav(project ? stepFor(project.stage).path : "/")}>Mulai</button>
-          <button className="ghost" onClick={disconnect}>Ganti AI</button>
+          <button className="ghost" disabled={!!connecting} onClick={() => void disconnect(true)}>Putuskan semua</button>
         </div>
       </section>
     );
@@ -216,7 +220,7 @@ export function ConnectPage() {
             <span className="agent-mark agent-mark-mcp" aria-hidden><Icon name="host" size={16} /></span>
             <span className="agent-meta">
               <strong>AI Host lewat MCP</strong>
-              <span className="agent-sub">Claude, Codex, Qwen, Gemini, dan host lain</span>
+              <span className="agent-sub">Cursor, Claude, Codex, OpenCode, Windsurf, VS Code, dan host lain</span>
             </span>
             {waitingMCP
               ? <span className="agent-status ok">Menunggu</span>
@@ -234,6 +238,9 @@ export function ConnectPage() {
                     {connecting === "mcp" ? <><span className="spinner" /> Menghubungkan…</> : "Sudah ditambahkan"}
                   </button>
                 )}
+                {waitingMCP && (
+                  <button type="button" className="ghost" disabled={!!connecting} onClick={() => void disconnect()}>Putuskan</button>
+                )}
               </div>
               <div className="code-head">
                 <span className="muted small">mcp.json</span>
@@ -247,6 +254,11 @@ export function ConnectPage() {
         </div>
       </div>
 
+      {(state.connection || state.mcp) && (
+        <p className="connect-refresh">
+          Sisa koneksi manual (MCP / perintah sendiri)? <button type="button" className="link" disabled={!!connecting} onClick={() => void disconnect(true)}>Putuskan semua</button>
+        </p>
+      )}
       <p className="connect-refresh">
         Baru memasang CLI? <button type="button" className="link" onClick={() => void load()}>Periksa lagi</button>
       </p>

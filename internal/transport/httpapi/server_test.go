@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
+	"github.com/handrawanw/foundry/internal/config"
 	"github.com/handrawanw/foundry/internal/core"
 )
 
@@ -398,5 +400,56 @@ func TestAIParallelSettings(t *testing.T) {
 	}
 	if w := do("POST", "/api/v1/ai/connect-mcp", `{}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"agents":2`) {
 		t.Fatalf("reconnect keeps agents: %s", w.Body)
+	}
+}
+
+func TestAIDisconnect(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	h := New(nil, "/bin/foundry").Handler()
+	do := func(path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", path, strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:50000"
+		r.Host = "127.0.0.1:8080"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	beat := func() {
+		if _, err := config.Update(func(c *config.Config) {
+			c.MCP = &config.MCPHeartbeat{Client: "opencode", At: time.Now().UTC()}
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state := func() *config.Config {
+		c, err := config.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	// Disconnecting the MCP host forgets its heartbeat too.
+	do("/api/v1/ai/connect-mcp", `{}`)
+	beat()
+	if w := do("/api/v1/ai/disconnect", `{}`); w.Code != 200 {
+		t.Fatalf("disconnect: %d %s", w.Code, w.Body)
+	}
+	if c := state(); c.Connection != nil || c.MCP != nil {
+		t.Fatalf("after disconnect: %+v %+v", c.Connection, c.MCP)
+	}
+	// An agent connection keeps a stray MCP heartbeat unless "all" is set.
+	if _, err := config.Update(func(c *config.Config) {
+		c.Connection = &config.Connection{Mode: config.ModeAgent, AgentID: "custom"}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	beat()
+	do("/api/v1/ai/disconnect", `{}`)
+	if c := state(); c.Connection != nil || c.MCP == nil {
+		t.Fatalf("single: %+v %+v", c.Connection, c.MCP)
+	}
+	do("/api/v1/ai/disconnect", `{"all": true}`)
+	if c := state(); c.Connection != nil || c.MCP != nil {
+		t.Fatalf("all: %+v %+v", c.Connection, c.MCP)
 	}
 }

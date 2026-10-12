@@ -36,9 +36,39 @@ export const useProject = create<ProjectStore>((set, get) => ({
     }
   },
   subscribe: () => {
-    const es = new EventSource("/api/v1/events");
-    es.addEventListener("change", () => void get().load());
-    return () => es.close();
+    // The stream can stall without an error (sleeping laptop, throttled
+    // background tab, proxy), and events missed meanwhile are never replayed.
+    // So: refetch whenever the stream (re)opens or the tab returns, and
+    // reopen it when the server's 15s ping stops arriving.
+    let es: EventSource | null = null;
+    let lastSeen = Date.now();
+    const open = () => {
+      es?.close();
+      lastSeen = Date.now();
+      es = new EventSource("/api/v1/events");
+      es.addEventListener("change", () => { lastSeen = Date.now(); void get().load(); });
+      es.addEventListener("ping", () => { lastSeen = Date.now(); });
+      es.addEventListener("open", () => void get().load());
+    };
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      if (!es || es.readyState === EventSource.CLOSED || Date.now() - lastSeen > 40_000) open();
+      void get().load();
+    };
+    open();
+    const watchdog = setInterval(() => {
+      if (document.visibilityState === "visible" && Date.now() - lastSeen > 40_000) open();
+    }, 10_000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    return () => {
+      clearInterval(watchdog);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      es?.close();
+    };
   },
   run: async (name, fn) => {
     set({ pending: name, error: null });
