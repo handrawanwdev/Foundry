@@ -528,7 +528,7 @@ func (s *Service) concludeTask(id string, crit []core.Criterion, buildID, source
 			return nil
 		}
 		t.Status = core.TaskDone
-		t.Notes = nil
+		t.Notes, t.Repair = nil, false
 		t.Progress = ""
 		stampFinished(t)
 		clearDraft(p.Dir, id)
@@ -604,6 +604,63 @@ func (s *Service) SetTaskClosed(id string, closed bool) (*core.Project, error) {
 		}
 		return nil
 	})
+}
+
+// SetQueueClosed closes (or reopens) every TODO task at once, so the build
+// queue is empty without moving cards. Running, review, blocked and done
+// tasks are untouched.
+func (s *Service) SetQueueClosed(closed bool) (*core.Project, error) {
+	return s.Store.Update(func(p *core.Project) error {
+		n := 0
+		for i := range p.Tasks {
+			t := &p.Tasks[i]
+			if t.Status == core.TaskTodo && t.Closed != closed {
+				t.Closed = closed
+				n++
+			}
+		}
+		if closed {
+			p.Log("ui", fmt.Sprintf("Antrian ditutup: %d task", n))
+		} else {
+			p.Log("ui", fmt.Sprintf("Antrian dibuka: %d task", n))
+		}
+		return nil
+	})
+}
+
+// FixBlocked puts only BLOCKED tasks back in the queue, with a fresh attempt
+// budget and their failure notes as feedback. Nothing else is touched. The
+// tasks are not started directly: they go through claimNext like any other, so
+// a task whose files or pages another running task holds waits for it, and a
+// task that is free runs in parallel. If a build is already running or waits
+// for an MCP host it picks them up; otherwise a build is started.
+func (s *Service) FixBlocked() error {
+	var picked bool
+	_, err := s.Store.Update(func(p *core.Project) error {
+		building := buildActive(p)
+		if p.Busy() && !building {
+			return ErrBusy
+		}
+		var ids []string
+		for i := range p.Tasks {
+			t := &p.Tasks[i]
+			if t.Status != core.TaskBlocked {
+				continue
+			}
+			t.Status, t.Attempts, t.Conflicts, t.Closed, t.Progress, t.Repair = core.TaskTodo, 0, 0, false, "", true
+			ids = append(ids, t.ID)
+		}
+		if len(ids) == 0 {
+			return ErrNothingToDo
+		}
+		picked = building
+		p.Log("ui", fmt.Sprintf("Perbaiki terblokir: %d task kembali ke antrian (%s)", len(ids), strings.Join(ids, ", ")))
+		return nil
+	})
+	if err != nil || picked {
+		return err
+	}
+	return s.StartBuild()
 }
 
 func stampFinished(t *core.Task) {
@@ -704,11 +761,4 @@ func (s *Service) Fix() error {
 		return err
 	}
 	return s.StartBuild()
-}
-
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
 }

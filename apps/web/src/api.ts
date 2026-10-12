@@ -87,6 +87,8 @@ export const api = {
   moveTask: (id: string, status: TaskStatus) => call<Project>("PATCH", `/project/tasks/${id}`, { status }),
   setTaskClosed: (id: string, closed: boolean) => call<Project>("PATCH", `/project/tasks/${id}`, { closed }),
   verify: () => call("POST", "/project/verify", {}),
+  setQueueClosed: (closed: boolean) => call<Project>("POST", "/project/queue/close", { closed }),
+  fixBlocked: () => call("POST", "/project/fix-blocked", {}),
   fix: () => call("POST", "/project/fix", {}),
   files: (path = "") => call<FileEntry[]>("GET", `/project/files?path=${encodeURIComponent(path)}`),
   file: (path: string) => call<FileContent>("GET", `/project/file?path=${encodeURIComponent(path)}`),

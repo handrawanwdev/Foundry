@@ -651,7 +651,10 @@ type Task struct {
 	// FinishedAt is when the task last became DONE.
 	FinishedAt time.Time `json:"finished_at,omitempty"`
 	// Closed is a user gate: a closed task is skipped by the build queue.
-	Closed      bool        `json:"closed,omitempty"`
+	Closed bool `json:"closed,omitempty"`
+	// Repair marks a task put back by "Perbaiki Terblokir": its next run gets
+	// the full failure history and must fix the root cause. Cleared on DONE.
+	Repair      bool        `json:"repair,omitempty"`
 	Notes       []string    `json:"notes"`
 	LastBuildID string      `json:"last_build_id,omitempty"`
 	Criteria    []Criterion `json:"criteria,omitempty"`

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -207,4 +208,66 @@ func mustLoad(t *testing.T, st *core.Store) *core.Project {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func TestSetQueueClosedOnlyTodo(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	st, _ := core.NewStore(t.TempDir())
+	st.Init("t")
+	st.Update(func(p *core.Project) error {
+		p.Tasks = []core.Task{
+			{ID: "T1", Area: "data", Files: []string{"a.go"}, Status: core.TaskTodo},
+			{ID: "T2", Area: "data", Files: []string{"b.go"}, Status: core.TaskTodo},
+			{ID: "T3", Area: "data", Files: []string{"c.go"}, Status: core.TaskBlocked},
+		}
+		return nil
+	})
+	s := New(st, mcpAI{})
+	p, err := s.SetQueueClosed(true)
+	if err != nil || !p.Task("T1").Closed || !p.Task("T2").Closed || p.Task("T3").Closed {
+		t.Fatalf("close all: %v %+v", err, p.Tasks)
+	}
+	if len(p.ReadyTasks()) != 0 {
+		t.Fatal("queue not empty")
+	}
+	if p, _ = s.SetQueueClosed(false); p.Task("T1").Closed || p.Task("T2").Closed {
+		t.Fatal("reopen")
+	}
+}
+
+func TestFixBlockedKeepsLocks(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	st, _ := core.NewStore(t.TempDir())
+	st.Init("t")
+	st.Update(func(p *core.Project) error {
+		p.Job = &core.Job{Kind: "build", Status: core.JobWaiting}
+		p.Tasks = []core.Task{
+			{ID: "T1", Area: "data", Files: []string{"a.go"}, Status: core.TaskInProgress},
+			{ID: "T2", Area: "data", Files: []string{"a.go"}, Status: core.TaskBlocked, Attempts: 3, Closed: true},
+			{ID: "T3", Area: "data", Files: []string{"c.go"}, Status: core.TaskBlocked, Attempts: 3},
+			{ID: "T4", Area: "data", Files: []string{"d.go"}, Status: core.TaskDone},
+		}
+		return nil
+	})
+	s := New(st, mcpAI{})
+	if err := s.FixBlocked(); err != nil {
+		t.Fatal(err)
+	}
+	p := mustLoad(t, st)
+	if p.Task("T2").Status != core.TaskTodo || p.Task("T2").Attempts != 0 || p.Task("T2").Closed {
+		t.Fatalf("T2 = %+v", p.Task("T2"))
+	}
+	if p.Task("T4").Status != core.TaskDone || p.Task("T1").Status != core.TaskInProgress {
+		t.Fatal("other tasks touched")
+	}
+	// T2 shares a.go with active T1: waits. T3 is free.
+	if o, _ := p.Blocker(p.Task("T2")); o == nil || o.ID != "T1" {
+		t.Fatalf("T2 blocker = %v", o)
+	}
+	if o, _ := p.Blocker(p.Task("T3")); o != nil {
+		t.Fatalf("T3 blocker = %v", o.ID)
+	}
+	if err := s.FixBlocked(); !errors.Is(err, ErrNothingToDo) {
+		t.Fatalf("no blocked left: %v", err)
+	}
 }

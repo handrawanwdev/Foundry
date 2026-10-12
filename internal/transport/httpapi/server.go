@@ -410,6 +410,16 @@ func (s *Server) Handler() http.Handler {
 		}
 		return svc.MoveTask(id, *in.Status)
 	}))
+	api("POST /api/v1/project/queue/close", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			Closed bool `json:"closed"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.SetQueueClosed(in.Closed)
+	}))
+	api("POST /api/v1/project/fix-blocked", s.action(func(svc *pipeline.Service) error { return svc.FixBlocked() }))
 	api("POST /api/v1/project/prd", s.action(func(svc *pipeline.Service) error { return svc.GeneratePRD() }))
 	api("POST /api/v1/project/verify", s.action(func(svc *pipeline.Service) error { return svc.Verify() }))
 	api("POST /api/v1/project/fix", s.action(func(svc *pipeline.Service) error { return svc.Fix() }))

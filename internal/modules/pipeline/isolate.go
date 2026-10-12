@@ -410,6 +410,9 @@ func (s *Service) applyDraft(ctx context.Context, id string, tree *gitwt.Tree) b
 }
 
 func (s *Service) taskPrompt(p *core.Project, t *core.Task) string {
+	if t.Repair {
+		return work.BlockedPrompt(p, t, hasDraft(p.Dir, t.ID))
+	}
 	if hasDraft(p.Dir, t.ID) {
 		return work.ContinuePrompt(p, t)
 	}

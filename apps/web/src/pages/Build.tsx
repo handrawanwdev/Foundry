@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { Kanban } from "../components/Kanban";
 import { IssueList } from "../components/IssueList";
-import { formatElapsed, formatWhen, isWorking, openTodos, queueItem, queueLabel, taskCounts, validTime } from "../flow";
+import { closedTodos, formatElapsed, formatWhen, isWorking, openTodos, queueItem, queueLabel, taskCounts, validTime } from "../flow";
 import { AgentsField } from "../components/AgentsField";
 import { Icon } from "../components/Icon";
 import { useAI } from "../store/ai";
@@ -66,6 +66,8 @@ export function BuildPage() {
   const c = taskCounts(project);
   const working = isWorking(project);
   const openTodo = openTodos(project);
+  const closedTodo = closedTodos(project);
+  const canFixBlocked = c.BLOCKED > 0 && (!working || project.job?.kind === "build");
   const v = project.verification;
   const task = tasks.find((t) => t.id === selected);
   const independent = project.schedule?.independent ?? [];
@@ -94,6 +96,7 @@ export function BuildPage() {
             {c.IN_PROGRESS ? ` · ${c.IN_PROGRESS} dikerjakan` : ""}
             {c.REVIEW ? ` · ${c.REVIEW} review` : ""}
             {c.BLOCKED ? ` · ${c.BLOCKED} terblokir` : ""}
+            {closedTodo ? ` · ${closedTodo} ditutup` : ""}
             {independent.length > 0 ? ` · ${independent.length} siap paralel` : ""}
           </span>
         </div>
@@ -114,6 +117,21 @@ export function BuildPage() {
             }}
             onGenerate={() => void run("prd", api.generatePRD).then((ok) => { if (ok) { setShowPRD(true); setTab("prd"); } })}
           />
+          {openTodo > 0 && (
+            <button type="button" disabled={pending === "queue"} title="Tutup semua task TODO. Yang sedang jalan tidak dihentikan" onClick={() => run("queue", () => api.setQueueClosed(true))}>
+              Tutup semua antrian
+            </button>
+          )}
+          {closedTodo > 0 && (
+            <button type="button" disabled={pending === "queue"} onClick={() => run("queue", () => api.setQueueClosed(false))}>
+              Buka semua antrian ({closedTodo})
+            </button>
+          )}
+          {canFixBlocked && (
+            <button type="button" disabled={pending === "fix-blocked"} title="Kerjakan ulang hanya task terblokir. Task yang berbagi file dengan task aktif menunggu" onClick={() => run("fix-blocked", api.fixBlocked)}>
+              Perbaiki Terblokir ({c.BLOCKED})
+            </button>
+          )}
           {!working && (
             <button type="button" disabled={pending === "verify"} onClick={() => run("verify", api.verify)}>Verifikasi</button>
           )}

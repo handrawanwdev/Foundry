@@ -83,6 +83,7 @@ function TaskCard({ t, now, feature, queue, active, onClick, onSetClosed }: {
         </div>
         <div className="task-feature">
           {feature}
+          {t.repair ? " · perbaikan terblokir" : ""}
           {t.attempts > 1 ? ` · percobaan ${t.attempts}` : ""}
           {t.owner && working ? ` · ${t.owner}` : ""}
         </div>

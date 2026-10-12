@@ -134,3 +134,18 @@ func TestForeignOwnerSkipsDependencyFiles(t *testing.T) {
 		t.Errorf("src/db.ts owner = %v", o)
 	}
 }
+
+func TestBlockedPromptCarriesFailureHistory(t *testing.T) {
+	p := &core.Project{Name: "x", Builds: []core.BuildRun{{ID: "B1", Reason: "go test gagal", Steps: []core.StepResult{{Command: "go test ./...", ExitCode: 1, Output: "FAIL pkg TestA"}}}}}
+	p.Tasks = []core.Task{
+		{ID: "T1", Title: "dep", Status: core.TaskDone},
+		{ID: "T2", Title: "x", AcceptanceCriteria: []string{"a", "b"}, DependsOn: []string{"T1"}, Files: []string{"a.go"},
+			Notes: []string{"Verifikasi gagal: boom"}, LastBuildID: "B1", Criteria: []core.Criterion{{Met: true}, {Met: false, Evidence: "missing"}}},
+	}
+	got := BlockedPrompt(p, p.Task("T2"), true)
+	for _, want := range []string{"ROOT CAUSE", "Verifikasi gagal: boom", "FAIL pkg TestA", "[NOT MET: missing]", "T1 dep", "previous attempt"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("prompt missing %q", want)
+		}
+	}
+}

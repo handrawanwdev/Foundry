@@ -225,6 +225,69 @@ func ContinuePrompt(p *core.Project, t *core.Task) string {
 	return b.String()
 }
 
+// BlockedPrompt briefs a retry of a BLOCKED task. It carries what the earlier
+// attempts could not: every failure note, the unmet criteria, and the tail of
+// the last failing build, with an order to find the root cause before editing.
+// hasDraft says the directory still holds the previous attempt's changes.
+func BlockedPrompt(p *core.Project, t *core.Task, hasDraft bool) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "You are a coding agent for Foundry on project %q (cwd).\n", p.Name)
+	fmt.Fprintf(&b, "TASK %s was BLOCKED after repeated failed attempts. This is a targeted repair, not a normal run.\n", t.ID)
+	b.WriteString("1. Read the failures below and name the ROOT CAUSE before editing. Do not repeat an approach that already failed.\n")
+	b.WriteString("2. Fix the cause with the smallest change. Never delete, skip, or weaken tests to make them pass.\n")
+	b.WriteString("3. Touch only files this task owns; a change needed elsewhere goes in \"patches\".\n")
+	if hasDraft {
+		b.WriteString("This directory still holds the previous attempt. Keep what works, fix what failed.\n")
+	} else {
+		b.WriteString("The previous attempt is gone: implement the task again, applying what the failures teach.\n")
+	}
+	b.WriteString("Foundry runs build/test after you finish. DONE = they pass AND every acceptance criterion is met.\n")
+	b.WriteString(workRules + "\n")
+	fmt.Fprintf(&b, "TASK %s: %s\nArea: %s  Platform: %s\n\n%s\n", t.ID, t.Title, t.Area, t.Platform, t.Description)
+	b.WriteString("\nACCEPTANCE CRITERIA:\n")
+	for i, c := range t.AcceptanceCriteria {
+		mark := ""
+		if i < len(t.Criteria) && !t.Criteria[i].Met {
+			mark = " [NOT MET: " + clip(t.Criteria[i].Evidence, 200) + "]"
+		}
+		fmt.Fprintf(&b, "%d. %s%s\n", i+1, c, mark)
+	}
+	if len(t.TestRequirements) > 0 {
+		b.WriteString("\nTEST REQUIREMENTS:\n- " + strings.Join(t.TestRequirements, "\n- ") + "\n")
+	}
+	b.WriteString(ownership(p, t))
+	if len(t.Notes) > 0 {
+		b.WriteString("\nFAILED ATTEMPTS (oldest first):\n")
+		for i, n := range t.Notes {
+			fmt.Fprintf(&b, "%d) %s\n", i+1, clip(n, 1500))
+		}
+	}
+	if bld := p.Build(t.LastBuildID); bld != nil && !bld.Passed {
+		b.WriteString("\nLAST FAILING BUILD: " + bld.Reason + "\n")
+		for _, s := range bld.Steps {
+			if s.ExitCode != 0 {
+				fmt.Fprintf(&b, "$ %s (exit %d)\n%s\n", s.Command, s.ExitCode, tail(s.Output, 2000))
+			}
+		}
+	}
+	if done := doneDeps(p, t); done != "" {
+		b.WriteString("\nDEPENDENCIES ALREADY DONE (use them, do not redo): " + done + "\n")
+	}
+	b.WriteString("\nWhen you finish, include a ```json block: " + finishJSON + ". Every criterion needs evidence.\n")
+	b.WriteString("\n" + structureBrief(p))
+	return b.String()
+}
+
+func doneDeps(p *core.Project, t *core.Task) string {
+	var out []string
+	for _, id := range t.DependsOn {
+		if d := p.Task(id); d != nil && d.Status == core.TaskDone {
+			out = append(out, id+" "+d.Title)
+		}
+	}
+	return strings.Join(out, "; ")
+}
+
 // RepairPrompt asks an agent to fix its own attempt in place: the worktree
 // still holds the changes, so it repairs them instead of starting over.
 func RepairPrompt(p *core.Project, t *core.Task, problem string) string {

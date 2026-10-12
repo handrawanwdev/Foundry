@@ -53,6 +53,10 @@ export function openTodos(p: Project): number {
   return (p.tasks ?? []).filter((t) => t.status === "TODO" && !t.closed).length;
 }
 
+export function closedTodos(p: Project): number {
+  return (p.tasks ?? []).filter((t) => t.status === "TODO" && t.closed).length;
+}
+
 export function formatElapsed(ms: number): string {
   const sec = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(sec / 3600);
