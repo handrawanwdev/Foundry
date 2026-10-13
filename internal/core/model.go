@@ -289,7 +289,7 @@ type Component struct {
 
 // Command is a verification step detected from real project tooling.
 type Command struct {
-	Name string   `json:"name"` // build | typecheck | lint | vet | test
+	Name string   `json:"name"` // build | typecheck | lint | vet | test | smoke
 	Dir  string   `json:"dir"`  // relative to project dir
 	Argv []string `json:"argv"`
 }
@@ -699,7 +699,7 @@ type Check struct {
 }
 
 type Issue struct {
-	Kind    string `json:"kind"` // missing_feature | missing_page | missing_task | missing_test | task_open | task_blocked | build_failed | test_failed | no_commands | broken_flow
+	Kind    string `json:"kind"` // missing_feature | missing_page | missing_task | missing_test | task_open | task_blocked | build_failed | test_failed | no_smoke | smoke_failed | no_commands | broken_flow
 	Ref     string `json:"ref"`
 	Message string `json:"message"`
 }

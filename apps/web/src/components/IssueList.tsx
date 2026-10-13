@@ -10,6 +10,8 @@ const LABEL: Record<string, string> = {
   missing_page: "fitur tanpa halaman",
   missing_feature: "kebutuhan tanpa fitur",
   broken_flow: "alur belum terverifikasi",
+  no_smoke: "app belum terbukti berjalan",
+  smoke_failed: "app gagal berjalan",
   no_commands: "build/test belum bisa dijalankan",
 };
 

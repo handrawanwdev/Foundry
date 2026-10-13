@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/modules/scan"
 	"github.com/handrawanw/foundry/internal/modules/work"
 )
 
@@ -123,6 +124,10 @@ func Report(p *core.Project, lastBuild *core.BuildRun) *core.Verification {
 			if s.Name == "test" {
 				testOK = s.ExitCode == 0
 			}
+			if s.ExitCode != 0 && s.Name == "smoke" {
+				issue("smoke_failed", lastBuild.ID, "Aplikasi tidak berjalan: "+s.Command)
+				continue
+			}
 			if s.ExitCode != 0 && s.Name != "test" {
 				buildOK = false
 				issue("build_failed", lastBuild.ID, fmt.Sprintf("%s gagal: %s", s.Name, s.Command))
@@ -140,6 +145,22 @@ func Report(p *core.Project, lastBuild *core.BuildRun) *core.Verification {
 		}
 	}
 
+	// The apps must really start: a green build and test does not prove a
+	// page renders, the API answers or the worker connects. A project that
+	// can be started needs a smoke script that starts it and probes it.
+	smokeOK := true
+	if runnable(p) {
+		smokeOK = false
+		for _, s := range stepsOf(lastBuild) {
+			if s.Name == "smoke" {
+				smokeOK = s.ExitCode == 0
+			}
+		}
+		if !smokeOK && countKind(v.Issues, "smoke_failed") == 0 && lastBuild != nil && len(lastBuild.Steps) > 0 {
+			issue("no_smoke", "", "Belum ada script smoke yang menjalankan semua app (web, API, worker) dan memeriksanya")
+		}
+	}
+
 	doneAll := open == 0 && blocked == 0 && len(p.Tasks) > 0
 	designOK := p.Design != nil && p.Design.Status == core.DesignApproved
 	v.Checks = []core.Check{
@@ -148,6 +169,7 @@ func Report(p *core.Project, lastBuild *core.BuildRun) *core.Verification {
 		{Name: "Semua task selesai", OK: doneAll, Info: fmt.Sprintf("%d terbuka, %d terblokir", open, blocked)},
 		{Name: "Build berhasil", OK: buildOK},
 		{Name: "Test berhasil", OK: testOK},
+		{Name: "Aplikasi berjalan", OK: smokeOK},
 	}
 	v.Ready = len(v.Issues) == 0
 	for _, c := range v.Checks {
@@ -165,4 +187,17 @@ func countKind(is []core.Issue, kind string) int {
 		}
 	}
 	return n
+}
+
+// runnable reports whether the project has something to start (a dev or
+// start script). Projects without a directory are never runnable.
+func runnable(p *core.Project) bool {
+	return p.Dir != "" && len(scan.Scan(p.Dir).Run) > 0
+}
+
+func stepsOf(b *core.BuildRun) []core.StepResult {
+	if b == nil {
+		return nil
+	}
+	return b.Steps
 }

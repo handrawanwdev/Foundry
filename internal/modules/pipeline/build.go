@@ -762,17 +762,24 @@ func (s *Service) Fix() error {
 		added := work.FillCoverage(p)
 		for _, is := range p.Verification.Issues {
 			tooling := is.Kind == "missing_test" && is.Ref == ""
-			if is.Kind != "build_failed" && is.Kind != "test_failed" && is.Kind != "no_commands" && !tooling {
+			runtime := is.Kind == "no_smoke" || is.Kind == "smoke_failed"
+			if is.Kind != "build_failed" && is.Kind != "test_failed" && is.Kind != "no_commands" && !tooling && !runtime {
 				continue
 			}
 			var out string
 			if b := p.Build(is.Ref); b != nil {
 				out = lastOutput(*b)
 			}
-			p.Tasks = append(p.Tasks, core.Task{ID: work.NextTaskID(p), Title: "Perbaiki: " + is.Message, Area: "integration",
+			task := core.Task{ID: work.NextTaskID(p), Title: "Perbaiki: " + is.Message, Area: "integration",
 				Description:        "Verifikasi project gagal. Perbaiki penyebabnya tanpa mengubah perilaku yang sudah benar.\n\n" + out,
 				AcceptanceCriteria: []string{"Semua command build/test project lulus", "Tidak ada test yang dihapus atau dilewati untuk membuatnya lulus"},
-				TestRequirements:   []string{"Command test project lulus"}, Status: core.TaskTodo})
+				TestRequirements:   []string{"Command test project lulus"}, Status: core.TaskTodo}
+			if runtime {
+				task.Description = work.SmokeBrief + "\n\n" + out
+				task.AcceptanceCriteria = work.SmokeCriteria
+				task.TestRequirements = []string{"Script smoke lulus: semua app hidup dan lulus pemeriksaan"}
+			}
+			p.Tasks = append(p.Tasks, task)
 			added++
 		}
 		p.Log("ui", fmt.Sprintf("Perbaiki otomatis: %d task baru", added))

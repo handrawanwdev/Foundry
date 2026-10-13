@@ -119,3 +119,21 @@ func featurePage(p *core.Project, f core.Feature, id string, routes map[string]b
 		},
 	}
 }
+
+// SmokeBrief is the task for the agent when the project does not prove that
+// it runs: exit codes of build and test say nothing about a blank page, a
+// dead API or a worker that never connected.
+const SmokeBrief = `Project belum terbukti BERJALAN. Build dan test hijau belum cukup.
+Buat script "smoke" di package.json root (mis. node scripts/smoke.mjs) yang:
+1. Menyiapkan dependensi runtime (database/redis bila perlu; baca port yang benar dari konfigurasi, jangan menebak), menjalankan migrasi dan seed.
+2. Menjalankan SEMUA app dari project (web, API, worker) sebagai proses sungguhan, bukan mock.
+3. Memeriksa tiap app: API menjawab endpoint health/ready dan satu endpoint nyata (login memakai akun seed), web menyajikan halaman "/" yang benar-benar merender (root tidak kosong, tidak ada route yang tidak cocok, tidak ada error console, request ke API tidak diblok CORS), worker tetap hidup dan terhubung ke queue.
+4. Menghentikan semua proses di akhir dan keluar dengan kode non-nol jika satu saja gagal, dengan pesan yang menyebut app dan penyebabnya.
+Jika smoke menemukan kegagalan, perbaiki penyebabnya di kode (route, CORS, konfigurasi, migrasi), bukan melemahkan pemeriksaan.`
+
+var SmokeCriteria = []string{
+	"pnpm/npm run smoke menjalankan web, API, dan worker lalu keluar 0",
+	"Halaman utama web merender konten dan tidak ada error console",
+	"API menjawab health/ready dan satu alur nyata (login seed)",
+	"Worker hidup dan terhubung ke queue",
+}

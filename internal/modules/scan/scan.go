@@ -179,7 +179,7 @@ func scanNode(root, relDir, path string, add func(core.Component), r *Result) {
 	}
 	// Workspace roots usually delegate scripts to packages; only run what exists.
 	pm := packageManager(root, relDir)
-	for _, name := range []string{"typecheck", "lint", "build", "test"} {
+	for _, name := range []string{"typecheck", "lint", "build", "test", "smoke"} {
 		if script, ok := p.Scripts[name]; ok {
 			r.Commands = append(r.Commands, core.Command{Name: name, Dir: relDir, Argv: []string{pm, "run", name}})
 			if isDelegating(script) {
