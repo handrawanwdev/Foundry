@@ -9,11 +9,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -127,13 +130,19 @@ type Runner struct {
 	argvExec   []string
 	promptFile string
 	Timeout    time.Duration
+	// Idle kills an Execute run that wrote no output and touched no file for
+	// this long (a stuck or rate-limited CLI); zero disables it.
+	Idle time.Duration
 }
+
+// DefaultIdle is how long an executing agent may show no sign of life.
+const DefaultIdle = 10 * time.Minute
 
 // NewRunner builds a runner from a preset id, or from a custom command when
 // custom is non-empty (prompt goes to stdin, same command for both modes).
 func NewRunner(id string, custom []string, opt Options) (*Runner, error) {
 	if len(custom) > 0 {
-		return &Runner{Name: id, argvThink: custom, argvExec: custom, Timeout: 30 * time.Minute}, nil
+		return &Runner{Name: id, argvThink: custom, argvExec: custom, Timeout: 30 * time.Minute, Idle: DefaultIdle}, nil
 	}
 	p, ok := PresetByID(id)
 	if !ok {
@@ -153,14 +162,86 @@ func NewRunner(id string, custom []string, opt Options) (*Runner, error) {
 		argvExec:   append(slices.Clone(head), p.execute...),
 		promptFile: p.PromptFile,
 		Timeout:    30 * time.Minute,
+		Idle:       DefaultIdle,
 	}, nil
 }
 
 var ErrAgentFailed = errors.New("agent gagal")
 
+// ErrLimit means the AI account ran out of quota or hit a rate limit; retrying
+// cannot help until it resets.
+var ErrLimit = fmt.Errorf("%w: limit/kuota AI habis", ErrAgentFailed)
+
 // WaitDelay bounds how long Run waits for output after the agent exited or
 // was stopped.
 const WaitDelay = 5 * time.Second
+
+var limitText = regexp.MustCompile(`(?i)(usage limit|rate[ _-]?limit|limit reached|reached (your|the) .{0,20}limit|quota (exceeded|exhausted)|insufficient[ _]quota|out of (credits|quota)|exceeded your (current )?quota|resource[_ ]exhausted|too many requests|\b429\b|credit balance is too low|limit will reset)`)
+
+// limitHit reports whether text reads like a quota or rate-limit message.
+func limitHit(text string) bool { return limitText.MatchString(text) }
+
+// watchBuf is an output buffer that records the last write time and checks
+// for limit messages as they arrive (stderr only; stdout is the agent's prose
+// and may legitimately talk about rate limits).
+type watchBuf struct {
+	mu       sync.Mutex
+	buf      bytes.Buffer
+	last     time.Time
+	onLimit  func()
+	tailText string
+}
+
+func (w *watchBuf) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	w.buf.Write(p)
+	w.last = time.Now()
+	hit := false
+	if w.onLimit != nil {
+		w.tailText = tail(w.tailText+string(p), 400)
+		hit = limitHit(w.tailText)
+	}
+	w.mu.Unlock()
+	if hit {
+		w.onLimit()
+	}
+	return len(p), nil
+}
+
+func (w *watchBuf) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+
+func (w *watchBuf) lastWrite() time.Time {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.last
+}
+
+var skipDirs = map[string]bool{"node_modules": true, ".git": true, "dist": true, "vendor": true, ".next": true}
+
+// lastTouched returns the newest file mtime under dir.
+func lastTouched(dir string) time.Time {
+	var newest time.Time
+	filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if path != dir && skipDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if info, err := d.Info(); err == nil && info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+		return nil
+	})
+	return newest
+}
 
 // Run sends prompt to the agent with dir as working directory.
 func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string, error) {
@@ -194,14 +275,63 @@ func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string
 	// A child the agent left running (dev server, MCP server) keeps the
 	// output pipes open; without a bound, Run would wait for it forever.
 	cmd.WaitDelay = WaitDelay
-	var out, errb bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errb
+	// cancelRun records why the watchdog stopped the run.
+	var (
+		reasonMu sync.Mutex
+		reason   error
+	)
+	stop := func(err error) {
+		reasonMu.Lock()
+		if reason == nil {
+			reason = err
+		}
+		reasonMu.Unlock()
+		cancel()
+	}
+	out := &watchBuf{last: time.Now()}
+	errb := &watchBuf{last: time.Now(), onLimit: func() { stop(ErrLimit) }}
+	cmd.Stdout, cmd.Stderr = out, errb
+	if mode == Execute && r.Idle > 0 {
+		poll := min(r.Idle/4, 20*time.Second)
+		go func() {
+			t := time.NewTicker(poll)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					seen := lastTouched(dir)
+					for _, w := range []time.Time{out.lastWrite(), errb.lastWrite()} {
+						if w.After(seen) {
+							seen = w
+						}
+					}
+					if idle := time.Since(seen); idle >= r.Idle {
+						stop(fmt.Errorf("%w: tidak ada aktivitas selama %s (agent macet atau limit tercapai)", ErrAgentFailed, r.Idle.Round(time.Second)))
+						return
+					}
+				}
+			}
+		}()
+	}
 	err := cmd.Run()
+	reasonMu.Lock()
+	why := reason
+	reasonMu.Unlock()
+	if why != nil {
+		return out.String(), why
+	}
 	if ctx.Err() == context.DeadlineExceeded {
 		return out.String(), fmt.Errorf("%w: timeout setelah %s", ErrAgentFailed, r.Timeout)
 	}
-	if err != nil && !errors.Is(err, exec.ErrWaitDelay) { // ErrWaitDelay: the agent itself exited 0
+	failed := err != nil && !errors.Is(err, exec.ErrWaitDelay) // ErrWaitDelay: the agent itself exited 0
+	// A CLI that hit its quota prints the notice and exits; stdout is only
+	// trusted when the run failed or produced almost nothing.
+	if limitHit(errb.String()) || ((failed || len(strings.TrimSpace(out.String())) < 400) && limitHit(out.String())) {
+		return out.String(), fmt.Errorf("%w: %s", ErrLimit, tail(strings.TrimSpace(errb.String()+"\n"+out.String()), 300))
+	}
+	if failed {
 		return out.String(), fmt.Errorf("%w: %v: %s", ErrAgentFailed, err, tail(errb.String(), 600))
 	}
 	return out.String(), nil

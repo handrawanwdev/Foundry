@@ -169,6 +169,11 @@ func (s *Service) buildLoop(ctx context.Context, cancel context.CancelFunc, runn
 			agentFailures = 0
 		case ctx.Err() != nil:
 			// stopped by the user or by a fatal error; handled once all return
+		case errors.Is(r.err, agent.ErrLimit):
+			if fatal == nil {
+				fatal = fmt.Errorf("limit/kuota AI habis, tunggu reset atau ganti koneksi AI lalu lanjutkan build: %w", r.err)
+				cancel()
+			}
 		case errors.Is(r.err, agent.ErrAgentFailed):
 			if agentFailures++; agentFailures >= 2 && fatal == nil {
 				fatal = fmt.Errorf("agent gagal berulang kali, periksa koneksi AI: %w", r.err)

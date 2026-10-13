@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"slices"
 	"testing"
@@ -63,5 +64,34 @@ func TestRunNotHeldByBackgroundChild(t *testing.T) {
 	}
 	if err != nil || out != "done\n" {
 		t.Fatalf("out=%q err=%v", out, err)
+	}
+}
+
+func TestRunDetectsLimit(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh tidak ada")
+	}
+	r, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo 'Claude usage limit reached' >&2; sleep 30"}, Options{})
+	start := time.Now()
+	_, err := r.Run(context.Background(), Execute, t.TempDir(), "hi")
+	if !errors.Is(err, ErrLimit) || time.Since(start) > 10*time.Second {
+		t.Fatalf("err = %v after %s", err, time.Since(start))
+	}
+	r, _ = NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo 'usage limit reached|123'"}, Options{})
+	if _, err := r.Run(context.Background(), Execute, t.TempDir(), "hi"); !errors.Is(err, ErrLimit) {
+		t.Fatalf("stdout notice: err = %v", err)
+	}
+}
+
+func TestRunKillsIdleAgent(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh tidak ada")
+	}
+	r, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; sleep 30"}, Options{})
+	r.Idle = 2 * time.Second
+	start := time.Now()
+	_, err := r.Run(context.Background(), Execute, t.TempDir(), "hi")
+	if !errors.Is(err, ErrAgentFailed) || errors.Is(err, ErrLimit) || time.Since(start) > 15*time.Second {
+		t.Fatalf("err = %v after %s", err, time.Since(start))
 	}
 }
