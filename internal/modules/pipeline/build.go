@@ -62,8 +62,12 @@ func (s *Service) StartBuild() error {
 	if err != nil || isMCP {
 		return err
 	}
-	if p, err := s.Store.Load(); err == nil && gitwt.Usable(p.Dir) {
-		gitwt.Prune(p.Dir) // stale worktrees of a crashed run
+	var dir string
+	if p, err := s.Store.Load(); err == nil {
+		dir = p.Dir
+		if gitwt.Usable(dir) {
+			gitwt.Prune(dir) // stale worktrees of a crashed run
+		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
@@ -73,6 +77,10 @@ func (s *Service) StartBuild() error {
 	go func() {
 		defer s.wg.Done()
 		defer cancel()
+		if err := runner.Preflight(ctx, dir); err != nil && ctx.Err() == nil {
+			s.failJob("build", fmt.Errorf("koneksi AI bermasalah, build tidak dimulai: %w", err))
+			return
+		}
 		s.buildLoop(ctx, cancel, runner)
 	}()
 	return nil

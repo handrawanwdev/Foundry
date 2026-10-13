@@ -95,3 +95,17 @@ func TestRunKillsIdleAgent(t *testing.T) {
 		t.Fatalf("err = %v after %s", err, time.Since(start))
 	}
 }
+
+func TestPreflightFailsFastOnLimit(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh tidak ada")
+	}
+	r, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo 'usage limit reached'"}, Options{})
+	if err := r.Preflight(context.Background(), t.TempDir()); !errors.Is(err, ErrLimit) {
+		t.Fatalf("err = %v", err)
+	}
+	ok, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo OK"}, Options{})
+	if err := ok.Preflight(context.Background(), t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+}

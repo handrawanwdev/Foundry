@@ -339,10 +339,22 @@ func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string
 
 // Ping runs a minimal probe to prove the agent works headless.
 func (r *Runner) Ping(ctx context.Context, dir string) error {
-	saved := r.Timeout
-	r.Timeout = 2 * time.Minute
-	defer func() { r.Timeout = saved }()
-	out, err := r.Run(ctx, Think, dir, "Balas hanya dengan satu kata: OK")
+	return r.probe(ctx, dir, 2*time.Minute)
+}
+
+// PreflightTimeout bounds the probe that runs before a build.
+const PreflightTimeout = 60 * time.Second
+
+// Preflight is a fast Ping: it exposes an exhausted quota or a dead
+// connection in seconds, before any task is claimed.
+func (r *Runner) Preflight(ctx context.Context, dir string) error {
+	return r.probe(ctx, dir, PreflightTimeout)
+}
+
+func (r *Runner) probe(ctx context.Context, dir string, timeout time.Duration) error {
+	probe := *r
+	probe.Timeout = timeout
+	out, err := probe.Run(ctx, Think, dir, "Balas hanya dengan satu kata: OK")
 	if err != nil {
 		return err
 	}
