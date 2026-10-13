@@ -755,6 +755,10 @@ func (s *Service) Fix() error {
 				p.Tasks[i].Status, p.Tasks[i].Attempts, p.Tasks[i].Conflicts = core.TaskTodo, 0, 0
 			}
 		}
+		pages, flows := work.RepairDesign(p)
+		if pages+flows > 0 {
+			p.Log("ui", fmt.Sprintf("Perbaiki otomatis: %d halaman baru, %d alur terhubung", pages, flows))
+		}
 		added := work.FillCoverage(p)
 		for _, is := range p.Verification.Issues {
 			tooling := is.Kind == "missing_test" && is.Ref == ""
