@@ -78,7 +78,11 @@ func (s *Service) StartBuild() error {
 		defer s.wg.Done()
 		defer cancel()
 		if err := runner.Preflight(ctx, dir); err != nil && ctx.Err() == nil {
-			s.failJob("build", fmt.Errorf("koneksi AI bermasalah, build tidak dimulai: %w", err))
+			msg := fmt.Errorf("koneksi AI bermasalah, build tidak dimulai: %w", err)
+			if m := runner.SuggestModel(ctx, dir); m != "" {
+				msg = fmt.Errorf("%w. Model yang merespons: %s", msg, m)
+			}
+			s.failJob("build", msg)
 			return
 		}
 		s.buildLoop(ctx, cancel, runner)

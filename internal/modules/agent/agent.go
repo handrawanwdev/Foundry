@@ -77,8 +77,9 @@ var Presets = []Preset{
 	// opencode run reads the prompt from stdin; the plan agent is read-only,
 	// the default build agent edits files without asking.
 	{ID: "opencode", Name: "OpenCode", Binary: "opencode", sub: []string{"run"},
-		think:   []string{"--agent", "plan"},
-		execute: []string{}},
+		listModels: opencodeModels,
+		think:      []string{"--agent", "plan"},
+		execute:    []string{}},
 }
 
 // Options picks the model and effort; empty values keep the CLI default.
@@ -125,6 +126,7 @@ func (p Preset) Detected() (string, bool) {
 
 // Runner executes one configured agent.
 type Runner struct {
+	ID         string // preset id; empty for a custom command
 	Name       string
 	argvThink  []string
 	argvExec   []string
@@ -157,6 +159,7 @@ func NewRunner(id string, custom []string, opt Options) (*Runner, error) {
 	}
 	head := append(append([]string{p.Binary}, p.sub...), opts...)
 	return &Runner{
+		ID:         p.ID,
 		Name:       p.Name,
 		argvThink:  append(slices.Clone(head), p.think...),
 		argvExec:   append(slices.Clone(head), p.execute...),
@@ -176,7 +179,7 @@ var ErrLimit = fmt.Errorf("%w: limit/kuota AI habis", ErrAgentFailed)
 // was stopped.
 const WaitDelay = 5 * time.Second
 
-var limitText = regexp.MustCompile(`(?i)(usage limit|rate[ _-]?limit|limit reached|reached (your|the) .{0,20}limit|quota (exceeded|exhausted)|insufficient[ _]quota|out of (credits|quota)|exceeded your (current )?quota|resource[_ ]exhausted|too many requests|\b429\b|credit balance is too low|limit will reset)`)
+var limitText = regexp.MustCompile(`(?i)(usage limit|rate[ _-]?limit|limit reached|reached (your|the) .{0,20}limit|quota (exceeded|exhausted)|insufficient[ _]quota|insufficient (account )?funds|out of (credits|quota)|exceeded your (current )?quota|resource[_ ]exhausted|too many requests|\b429\b|credit balance is too low|limit will reset)`)
 
 // limitHit reports whether text reads like a quota or rate-limit message.
 func limitHit(text string) bool { return limitText.MatchString(text) }
@@ -370,4 +373,54 @@ func tail(s string, n int) string {
 		return "…" + s[len(s)-n:]
 	}
 	return s
+}
+
+// maxCandidates caps how many models SuggestModel probes at once.
+const maxCandidates = 8
+
+// SuggestTimeout bounds the whole SuggestModel race.
+const SuggestTimeout = 20 * time.Second
+
+// SuggestModel looks for a model that answers when the current one does not
+// (empty quota, silent hang). It probes a few listed models in parallel and
+// returns the first that replies; free models go first because an empty
+// balance is the usual cause. Empty means none replied or the agent is custom.
+func (r *Runner) SuggestModel(ctx context.Context, dir string) string {
+	p, ok := PresetByID(r.ID)
+	if !ok || p.listModels == nil {
+		return ""
+	}
+	models := slices.Clone(p.ListModels(ctx))
+	slices.SortStableFunc(models, func(a, b string) int {
+		return boolInt(strings.Contains(b, "free")) - boolInt(strings.Contains(a, "free"))
+	})
+	if len(models) > maxCandidates {
+		models = models[:maxCandidates]
+	}
+	ctx, cancel := context.WithTimeout(ctx, SuggestTimeout)
+	defer cancel()
+	won := make(chan string, len(models))
+	var wg sync.WaitGroup
+	for _, m := range models {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cand, err := NewRunner(r.ID, nil, Options{Model: m})
+			if err != nil {
+				return
+			}
+			if cand.probe(ctx, dir, SuggestTimeout) == nil {
+				won <- m
+			}
+		}()
+	}
+	go func() { wg.Wait(); close(won) }()
+	return <-won // "" once every probe failed
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

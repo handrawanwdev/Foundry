@@ -236,3 +236,18 @@ func valid(in []string) ([]string, error) {
 }
 
 var errNoSource = errors.New("daftar model tidak tersedia")
+
+// opencodeModels reads `opencode models` (one provider/model per line).
+func opencodeModels(ctx context.Context, p Preset) ([]string, error) {
+	out, err := exec.CommandContext(ctx, p.Binary, "models").Output()
+	if err != nil {
+		return nil, err
+	}
+	var models []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if m := strings.TrimSpace(line); m != "" && modelName.MatchString(m) {
+			models = append(models, m)
+		}
+	}
+	return valid(models)
+}

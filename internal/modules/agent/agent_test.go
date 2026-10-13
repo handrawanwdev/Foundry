@@ -3,7 +3,9 @@ package agent
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -107,5 +109,33 @@ func TestPreflightFailsFastOnLimit(t *testing.T) {
 	ok, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo OK"}, Options{})
 	if err := ok.Preflight(context.Background(), t.TempDir()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLimitHitFunds(t *testing.T) {
+	if !limitHit("Error: Upstream request failed: Insufficient account funds") {
+		t.Fatal("funds notice not detected")
+	}
+}
+
+// First listed model is dead; only "good" replies. SuggestModel must find it.
+func TestSuggestModelFindsWorking(t *testing.T) {
+	dir := t.TempDir()
+	script := `#!/bin/sh
+if [ "$1" = models ]; then printf 'p/dead\np/good-free\n'; exit 0; fi
+cat >/dev/null
+case "$*" in *good*) echo OK;; *) echo 'Error: Insufficient account funds';; esac
+`
+	os.WriteFile(filepath.Join(dir, "opencode"), []byte(script), 0o755)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	modelCache.Lock()
+	delete(modelCache.m, "opencode")
+	modelCache.Unlock()
+	r, err := NewRunner("opencode", nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.SuggestModel(context.Background(), t.TempDir()); got != "p/good-free" {
+		t.Fatalf("suggested %q", got)
 	}
 }

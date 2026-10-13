@@ -58,3 +58,15 @@ func TestClaudeCLIModelsReadsVersionedIDs(t *testing.T) {
 		t.Fatalf("got %v %v", got, err)
 	}
 }
+
+func TestOpenCodeModelsParsesList(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "opencode")
+	os.WriteFile(bin, []byte("#!/bin/sh\nprintf 'opencode/a-free\\n\\nopencode/b\\n'\n"), 0o755)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	p, _ := PresetByID("opencode")
+	got, err := opencodeModels(context.Background(), p)
+	if err != nil || !slices.Equal(got, []string{"opencode/a-free", "opencode/b"}) {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}
