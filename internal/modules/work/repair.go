@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/modules/scan"
 )
 
 var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
@@ -33,7 +34,7 @@ func RepairDesign(p *core.Project) (pages, flows int) {
 	}
 	var added []core.Page
 	for _, f := range UIFeatures(p) {
-		if has[f.ID] {
+		if has[f.ID] || len(PageIDsOf(p, f.ID)) > 0 {
 			continue
 		}
 		next++
@@ -126,14 +127,34 @@ func featurePage(p *core.Project, f core.Feature, id string, routes map[string]b
 const SmokeBrief = `Project belum terbukti BERJALAN. Build dan test hijau belum cukup.
 Buat script "smoke" di package.json root (mis. node scripts/smoke.mjs) yang:
 1. Menyiapkan dependensi runtime (database/redis bila perlu; baca port yang benar dari konfigurasi, jangan menebak), menjalankan migrasi dan seed.
-2. Menjalankan SEMUA app dari project (web, API, worker) sebagai proses sungguhan, bukan mock.
+2. Menjalankan SEMUA app yang ADA di project (web, API, worker; jangan mengada-ada app yang tidak ada, mis. project hanya-klien cukup web) sebagai proses sungguhan, bukan mock.
 3. Memeriksa tiap app: API menjawab endpoint health/ready dan satu endpoint nyata (login memakai akun seed), web menyajikan halaman "/" yang benar-benar merender (root tidak kosong, tidak ada route yang tidak cocok, tidak ada error console, request ke API tidak diblok CORS), worker tetap hidup dan terhubung ke queue.
 4. Menghentikan semua proses di akhir dan keluar dengan kode non-nol jika satu saja gagal, dengan pesan yang menyebut app dan penyebabnya.
 Jika smoke menemukan kegagalan, perbaiki penyebabnya di kode (route, CORS, konfigurasi, migrasi), bukan melemahkan pemeriksaan.`
 
-var SmokeCriteria = []string{
-	"pnpm/npm run smoke menjalankan web, API, dan worker lalu keluar 0",
-	"Halaman utama web merender konten dan tidak ada error console",
-	"API menjawab health/ready dan satu alur nyata (login seed)",
-	"Worker hidup dan terhubung ke queue",
+// SmokeCriteriaFor lists what the smoke script must prove for the apps the
+// project actually has: demanding an API or worker of a client-only app can
+// never be met and would block the task forever.
+func SmokeCriteriaFor(dir string) []string {
+	var web, api, worker bool
+	for _, c := range scan.Scan(dir).Components {
+		switch c.Kind {
+		case "web", "desktop", "mobile":
+			web = true
+		case "backend":
+			api = true
+			worker = worker || strings.Contains(strings.ToLower(c.Path), "worker")
+		}
+	}
+	crit := []string{"npm/pnpm run smoke menjalankan semua app project sebagai proses sungguhan lalu keluar 0, dan keluar non-nol bila satu pemeriksaan gagal"}
+	if web || !api {
+		crit = append(crit, "Halaman utama web merender konten dan tidak ada error console")
+	}
+	if api {
+		crit = append(crit, "API menjawab health/ready dan satu endpoint nyata")
+	}
+	if worker {
+		crit = append(crit, "Worker hidup dan terhubung ke queue")
+	}
+	return crit
 }

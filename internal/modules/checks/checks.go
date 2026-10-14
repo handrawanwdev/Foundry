@@ -32,7 +32,7 @@ func Run(ctx context.Context, dir string, cmds []core.Command, taskID string) co
 		run.Reason = "Tidak ada command build/test yang terdeteksi di project"
 		return run
 	}
-	for _, c := range cmds {
+	for _, c := range append(installs(dir, cmds), cmds...) {
 		st := runOne(ctx, dir, c)
 		run.Steps = append(run.Steps, st)
 		if st.ExitCode != 0 {
@@ -42,6 +42,103 @@ func Run(ctx context.Context, dir string, cmds []core.Command, taskID string) co
 		}
 	}
 	return run
+}
+
+// installs returns one dependency install per Node directory the commands
+// run in whose node_modules is missing or older than its manifest/lockfile.
+// Agents run headless and cannot install, so without this a fresh scaffold
+// fails every check with "tsc: not found".
+func installs(dir string, cmds []core.Command) []core.Command {
+	var out []core.Command
+	seen := map[string]bool{}
+	for _, c := range cmds {
+		if seen[c.Dir] {
+			continue
+		}
+		seen[c.Dir] = true
+		base := filepath.Join(dir, c.Dir)
+		manifest, err := os.Stat(filepath.Join(base, "package.json"))
+		if err != nil {
+			continue
+		}
+		argv, lock := []string{"npm", "install", "--no-audit", "--no-fund"}, ""
+		switch {
+		case exists(filepath.Join(base, "pnpm-lock.yaml")):
+			argv, lock = []string{"pnpm", "install", "--frozen-lockfile"}, "pnpm-lock.yaml"
+		case exists(filepath.Join(base, "yarn.lock")):
+			argv, lock = []string{"yarn", "install", "--frozen-lockfile"}, "yarn.lock"
+		case exists(filepath.Join(base, "package-lock.json")):
+			argv, lock = []string{"npm", "ci", "--no-audit", "--no-fund"}, "package-lock.json"
+		}
+		if !depsStale(base, manifest.ModTime(), lock) {
+			continue
+		}
+		// A dependency added to the manifest leaves the lockfile behind:
+		// frozen installs refuse that, so update the lockfile instead.
+		if st, err := os.Stat(filepath.Join(base, lock)); lock != "" && err == nil && manifest.ModTime().After(st.ModTime()) {
+			argv = []string{argv[0], "install"}
+			if argv[0] == "npm" {
+				argv = append(argv, "--no-audit", "--no-fund")
+			}
+		}
+		out = append(out, core.Command{Name: "install", Dir: c.Dir, Argv: argv})
+	}
+	return append(out, browserInstalls(dir, cmds)...)
+}
+
+// browserInstalls fetches the Chromium build Playwright needs for a script
+// that runs its tests: node_modules alone does not include the browser, so a
+// fresh machine fails every e2e test with "Executable doesn't exist". The
+// command is a no-op when the browser is already there.
+func browserInstalls(dir string, cmds []core.Command) []core.Command {
+	var out []core.Command
+	seen := map[string]bool{}
+	for _, c := range cmds {
+		if c.Name != "test:e2e" || seen[c.Dir] {
+			continue
+		}
+		seen[c.Dir] = true
+		if exists(filepath.Join(dir, c.Dir, "node_modules", "@playwright", "test")) || hasPlaywright(filepath.Join(dir, c.Dir)) {
+			out = append(out, core.Command{Name: "install-browser", Dir: c.Dir, Argv: []string{"npx", "playwright", "install", "chromium"}})
+		}
+	}
+	return out
+}
+
+// hasPlaywright reports whether the package declares @playwright/test, before
+// its install has run.
+func hasPlaywright(base string) bool {
+	b, err := os.ReadFile(filepath.Join(base, "package.json"))
+	return err == nil && strings.Contains(string(b), `"@playwright/test"`)
+}
+
+// depsStale reports whether base/node_modules is missing or older than the
+// manifest or lockfile, judged by the marker each package manager writes.
+func depsStale(base string, manifest time.Time, lock string) bool {
+	var marker time.Time
+	for _, m := range []string{".package-lock.json", ".modules.yaml", ".yarn-integrity", ".yarn-state.yml"} {
+		if st, err := os.Stat(filepath.Join(base, "node_modules", m)); err == nil {
+			marker = st.ModTime()
+			break
+		}
+	}
+	if marker.IsZero() {
+		return true
+	}
+	if manifest.After(marker) {
+		return true
+	}
+	if lock != "" {
+		if st, err := os.Stat(filepath.Join(base, lock)); err == nil && st.ModTime().After(marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func runOne(ctx context.Context, dir string, c core.Command) core.StepResult {

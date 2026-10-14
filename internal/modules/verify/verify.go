@@ -37,7 +37,7 @@ func Report(p *core.Project, lastBuild *core.BuildRun) *core.Verification {
 			for _, rid := range f.RequirementIDs {
 				if rid == r.ID {
 					tr.FeatureIDs = append(tr.FeatureIDs, f.ID)
-					tr.PageIDs = append(tr.PageIDs, pagesByFeature[f.ID]...)
+					tr.PageIDs = append(tr.PageIDs, work.PageIDsOf(p, f.ID)...)
 					for _, t := range tasksByFeature[f.ID] {
 						if t.Area != "test" {
 							tr.TaskIDs = append(tr.TaskIDs, t.ID)
@@ -68,7 +68,7 @@ func Report(p *core.Project, lastBuild *core.BuildRun) *core.Verification {
 		uiFeature[f.ID] = true
 	}
 	for _, f := range p.Features {
-		if uiFeature[f.ID] && len(pagesByFeature[f.ID]) == 0 {
+		if uiFeature[f.ID] && len(work.PageIDsOf(p, f.ID)) == 0 {
 			issue("missing_page", f.ID, fmt.Sprintf("%s %s belum punya halaman", f.ID, f.Name))
 		}
 		// Tests usually ship with the task that writes the code

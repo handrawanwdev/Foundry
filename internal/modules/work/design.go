@@ -755,14 +755,51 @@ func UndoRevision(p *core.Project) error {
 	return nil
 }
 
-// UIFeatures returns features that must have at least one page.
+// UIFeatures returns features that must have at least one page: those with a
+// non-backend platform. When flows are defined, a feature no flow walks is a
+// quality or tooling concern (CI gates, accessibility audits), not a screen.
 func UIFeatures(p *core.Project) []core.Feature {
+	hasFlow := map[string]bool{}
+	for _, fl := range p.Flows {
+		hasFlow[fl.FeatureID] = true
+	}
 	var out []core.Feature
 	for _, f := range p.Features {
+		if len(p.Flows) > 0 && !hasFlow[f.ID] {
+			continue
+		}
 		for _, pl := range f.Platforms {
 			if pl != core.PlatformBackend {
 				out = append(out, f)
 				break
+			}
+		}
+	}
+	return out
+}
+
+// PageIDsOf lists the pages that carry a feature: its own pages plus the
+// pages its flows walk through (a feature realised on another feature's page).
+func PageIDsOf(p *core.Project, featureID string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(id string) {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	if p.Design != nil {
+		for _, pg := range p.Design.Pages {
+			if pg.FeatureID == featureID {
+				add(pg.ID)
+			}
+		}
+	}
+	for _, fl := range p.Flows {
+		if fl.FeatureID == featureID {
+			for _, id := range fl.PageIDs {
+				add(id)
 			}
 		}
 	}

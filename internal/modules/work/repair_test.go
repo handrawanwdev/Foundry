@@ -1,6 +1,9 @@
 package work
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/handrawanw/foundry/internal/core"
@@ -41,5 +44,43 @@ func TestRepairDesignAddsMissingPagesAndLinksFlows(t *testing.T) {
 	}
 	if pages, flows = RepairDesign(p); pages+flows != 0 {
 		t.Fatalf("not idempotent: %d %d", pages, flows)
+	}
+}
+
+func TestFeatureCarriedByFlowPageNeedsNoOwnPage(t *testing.T) {
+	p := &core.Project{Name: "app",
+		Features: []core.Feature{
+			{ID: "FEAT-001", Name: "Tampilan", Platforms: []string{"web"}},
+			{ID: "FEAT-002", Name: "Aksi", Platforms: []string{"web"}},
+			{ID: "FEAT-003", Name: "Gate CI", Platforms: []string{"web"}},
+		},
+		Flows: []core.Flow{
+			{ID: "FLOW-001", FeatureID: "FEAT-001", PageIDs: []string{"PAGE-001"}},
+			{ID: "FLOW-002", FeatureID: "FEAT-002", PageIDs: []string{"PAGE-001"}},
+		},
+		Design: &core.Design{System: &core.DesignSystem{}, Pages: []core.Page{{ID: "PAGE-001", Name: "Counter", Platform: "web", FeatureID: "FEAT-001", Route: "/"}}},
+	}
+	if got := PageIDsOf(p, "FEAT-002"); len(got) != 1 || got[0] != "PAGE-001" {
+		t.Fatalf("PageIDsOf = %v", got)
+	}
+	for _, f := range UIFeatures(p) {
+		if f.ID == "FEAT-003" {
+			t.Fatal("feature without a flow must not require a page")
+		}
+	}
+	if pages, flows := RepairDesign(p); pages+flows != 0 {
+		t.Fatalf("repair added %d pages, %d flows", pages, flows)
+	}
+}
+
+func TestSmokeCriteriaOnlyForExistingApps(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"dependencies":{"react":"1"},"scripts":{"dev":"vite"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range SmokeCriteriaFor(dir) {
+		if strings.Contains(c, "API") || strings.Contains(c, "Worker") {
+			t.Fatalf("client-only app must not require %q", c)
+		}
 	}
 }

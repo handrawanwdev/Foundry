@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -378,6 +379,21 @@ func (s *Service) runShared(ctx context.Context, runner *agent.Runner, p *core.P
 		changed, patch = checks.Changed(p.Dir, before), nil
 	}
 	if len(changed) == 0 {
+		// A rejected attempt in the shared tree leaves its files behind; an
+		// agent that finds them complete changes nothing. Judge them rather
+		// than reject the task forever.
+		changed = existingFiles(p.Dir, t.Files)
+	}
+	// A task that owns no file (coverage filler, a cross-cutting concern) is
+	// often already satisfied by the code of other tasks. Its agent may then
+	// change nothing; that stands only when the agent itself reports every
+	// criterion met, and the build and tests below must still pass.
+	satisfied := false
+	if len(changed) == 0 && len(t.Files) == 0 {
+		crit, ok := work.SelfReview(t, out)
+		satisfied = ok && work.AllMet(crit)
+	}
+	if len(changed) == 0 && !satisfied {
 		s.rejectTask(id, "Tidak ada file yang berubah; implementasi belum dibuat")
 		return nil
 	}
@@ -404,7 +420,10 @@ func (s *Service) review(ctx context.Context, runner *agent.Runner, id, out, dir
 	s.setProgress(id, "Meninjau hasil")
 	p, _ := s.Store.Load()
 	t := p.Task(id)
-	if crit, ok := work.SelfReview(t, out); ok {
+	// The coding agent judges before Foundry's checks run (and often cannot
+	// run them itself), so only its passing verdict is final; an unmet one
+	// goes to the reviewer, who sees the build result.
+	if crit, ok := work.SelfReview(t, out); ok && work.AllMet(crit) {
 		return crit, nil
 	}
 	s.setStatus(id, core.TaskReview, "agent", "Build + test lulus, review acceptance criteria")
@@ -793,7 +812,7 @@ func (s *Service) Fix() error {
 				TestRequirements:   []string{"Command test project lulus"}, Status: core.TaskTodo}
 			if runtime {
 				task.Description = work.SmokeBrief + "\n\n" + out
-				task.AcceptanceCriteria = work.SmokeCriteria
+				task.AcceptanceCriteria = work.SmokeCriteriaFor(p.Dir)
 				task.TestRequirements = []string{"Script smoke lulus: semua app hidup dan lulus pemeriksaan"}
 			}
 			p.Tasks = append(p.Tasks, task)
@@ -864,6 +883,17 @@ func changePaths(cs []checks.Change) []string {
 		out = append(out, c.Path)
 		if c.From != "" {
 			out = append(out, c.From)
+		}
+	}
+	return out
+}
+
+// existingFiles returns the files (relative to dir) that exist as regular files.
+func existingFiles(dir string, files []string) []string {
+	var out []string
+	for _, f := range files {
+		if st, err := os.Stat(filepath.Join(dir, f)); err == nil && st.Mode().IsRegular() {
+			out = append(out, f)
 		}
 	}
 	return out

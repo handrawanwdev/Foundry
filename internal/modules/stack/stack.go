@@ -179,7 +179,7 @@ var needWords = map[string][]string{
 	"flexible_schema":     {"skema fleksibel", "flexible schema", "form dinamis", "dynamic form", "field kustom", "custom field", "schemaless"},
 	"transactions":        {"pembayaran", "payment", "transaksi", "invoice", "tagihan", "saldo", "akuntansi", "accounting", "ledger", "checkout"},
 	"independent_scaling": {"microservice", "microservices", "skala independen", "independent scaling", "deploy terpisah", "separate deployment"},
-	"enterprise":          {"sso", "audit", "rbac", "compliance", "kepatuhan", "ldap", "enterprise"},
+	"enterprise":          {"sso", "audit trail", "audit log", "log audit", "jejak audit", "rbac", "compliance", "kepatuhan", "ldap", "enterprise"},
 	"files":               {"upload", "lampiran", "attachment", "berkas", "object storage", "signed url"},
 	"search":              {"pencarian teks", "full text", "full text search", "search engine", "fuzzy search", "pencarian cepat"},
 	"webhook":             {"webhook", "callback http", "callback HTTP"},

@@ -243,8 +243,14 @@ func FillCoverage(p *core.Project) int {
 			return base
 		}
 		if len(impl) == 0 {
+			// Client-only features get frontend context, not backend.
+			area := "api"
+			switch platform {
+			case core.PlatformWeb, core.PlatformAndroid, core.PlatformIOS, core.PlatformDesktop:
+				area = "ui"
+			}
 			id := NextTaskID(p)
-			p.Tasks = append(p.Tasks, core.Task{ID: id, Title: "Implementasi " + f.Name, Area: "api",
+			p.Tasks = append(p.Tasks, core.Task{ID: id, Title: "Implementasi " + f.Name, Area: area,
 				Description:    f.Description + "\nSub-feature: " + strings.Join(subs, ", "),
 				RequirementIDs: f.RequirementIDs, FeatureID: f.ID, Platform: platform, DependsOn: deps(nil),
 				AcceptanceCriteria: prefixAll("Berfungsi: ", subs), TestRequirements: []string{"Unit test untuk setiap sub-feature " + f.Name},

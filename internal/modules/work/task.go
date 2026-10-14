@@ -2,7 +2,9 @@ package work
 
 import (
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
@@ -187,7 +189,7 @@ func ownership(p *core.Project, t *core.Task) string {
 			b.WriteString(strings.Join(other, "\n") + "\n")
 		}
 	}
-	b.WriteString("Edit only owned files. New files: next to owned files or this feature's module in PROJECT STRUCTURE. Foreign file needed → do not edit; put {file, change} under \"patches\" in final JSON.\n")
+	b.WriteString("Edit only owned files. New files: next to owned files or this feature's module in PROJECT STRUCTURE. A file no list above names (e.g. .gitignore, a lockfile) has no owner: edit it directly when a criterion needs it. A file listed as running or owned by another task → do not edit; put {file, change} under \"patches\" in final JSON.\n")
 	return b.String()
 }
 
@@ -355,8 +357,30 @@ func ReviewPrompt(p *core.Project, t *core.Task, changes string, build *core.Bui
 			fmt.Fprintf(&b, "- %s exit %d\n", s.Command, s.ExitCode)
 		}
 	}
+	if ci := workflowExcerpt(p.Dir); ci != "" {
+		b.WriteString("\nCI WORKFLOWS OF THE PROJECT (a remote CI run cannot be executed here: a criterion about CI being green is met when a workflow step runs the same commands that passed in the VERIFICATION RESULT; cite the step):\n" + ci + "\n")
+	}
 	b.WriteString("\nCHANGES (diff or file excerpts):\n" + changes + "\n")
 	b.WriteString("\nReply with ONLY one JSON object in a ```json block: {\"criteria\": [{\"index\": 1, \"met\": true, \"evidence\": \"\"}]}")
+	return b.String()
+}
+
+// workflowExcerpt reads the project's CI workflow files, bounded in size, so
+// the reviewer can judge CI criteria that no local command can prove.
+func workflowExcerpt(dir string) string {
+	files, _ := filepath.Glob(filepath.Join(dir, ".github", "workflows", "*.y*ml"))
+	var b strings.Builder
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		if len(data) > 4000 {
+			data = append(data[:4000:4000], "\n…(dipotong)"...)
+		}
+		rel, _ := filepath.Rel(dir, f)
+		fmt.Fprintf(&b, "--- %s\n%s\n", rel, data)
+	}
 	return b.String()
 }
 
