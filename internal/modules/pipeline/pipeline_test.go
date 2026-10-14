@@ -605,8 +605,16 @@ func TestFailingTestsBlockTasks(t *testing.T) {
 	s.Wait()
 	p := load(t, s)
 	scaffold := p.Task("TASK-001")
-	if scaffold.Status != core.TaskBlocked || scaffold.Attempts != pipeline.MaxAttempts {
+	// The same failure twice stops the loop before MaxAttempts: a third
+	// identical attempt would only burn tokens.
+	if scaffold.Status != core.TaskBlocked || scaffold.Attempts != 2 {
 		t.Fatalf("scaffold = %s attempts %d", scaffold.Status, scaffold.Attempts)
+	}
+	if bm := p.BuildMetrics; bm == nil || bm.Runs < scaffold.Metrics.Runs {
+		t.Fatalf("build metrics must total every task's runs: %+v", bm)
+	}
+	if m := scaffold.Metrics; m == nil || m.Runs < 2 || m.PromptChars == 0 || m.InputTokens != 0 || m.UsageRuns != 0 {
+		t.Fatalf("metrics = %+v (runs recorded, provider usage unavailable for this fake CLI)", m)
 	}
 	if !strings.Contains(strings.Join(scaffold.Notes, "\n"), "test gagal") {
 		t.Fatalf("notes = %v", scaffold.Notes)

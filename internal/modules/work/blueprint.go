@@ -776,7 +776,9 @@ var defaultAIGuidelines = []string{
 
 // ArchitectureBrief is the compact contract injected into plan and task
 // prompts so coding agents follow the same architecture.
-func ArchitectureBrief(p *core.Project) string {
+func ArchitectureBrief(p *core.Project) string { return architectureBrief(p, nil) }
+
+func architectureBrief(p *core.Project, sc *briefScope) string {
 	b := p.Blueprint
 	if b == nil {
 		return ""
@@ -796,6 +798,9 @@ func ArchitectureBrief(p *core.Project) string {
 	if len(b.Modules) > 0 {
 		s.WriteString("Modules:\n")
 		for _, m := range b.Modules {
+			if !sc.module(m.ID) {
+				continue
+			}
 			fmt.Fprintf(&s, "- %s: %s", m.ID, m.Responsibility)
 			if len(m.DependsOn) > 0 {
 				fmt.Fprintf(&s, " (depends: %s)", strings.Join(m.DependsOn, ", "))
@@ -812,6 +817,9 @@ func ArchitectureBrief(p *core.Project) string {
 	if len(b.Database.Entities) > 0 {
 		s.WriteString("Entities:\n")
 		for _, e := range b.Database.Entities {
+			if !sc.entity(e) {
+				continue
+			}
 			fmt.Fprintf(&s, "- %s [%s] %s\n", e.Name, e.Module, strings.Join(e.Fields, ", "))
 		}
 	}
@@ -837,8 +845,15 @@ func ArchitectureBrief(p *core.Project) string {
 		fmt.Fprintf(&s, "Realtime: %s events %s retry %s\n", b.Realtime.Broker, strings.Join(b.Realtime.Events, ", "), b.Realtime.Retry)
 	}
 	if len(b.Workers) > 0 {
-		s.WriteString("Workers:\n")
+		head := false
 		for _, w := range b.Workers {
+			if !sc.worker(w) {
+				continue
+			}
+			if !head {
+				s.WriteString("Workers:\n")
+				head = true
+			}
 			fmt.Fprintf(&s, "- %s [%s] %s\n", w.Name, w.Trigger, w.Job)
 		}
 	}
@@ -851,20 +866,20 @@ func ArchitectureBrief(p *core.Project) string {
 	if b.Coding.API.Style != "" {
 		fmt.Fprintf(&s, "API: %s %s errors %s pagination %s\n", b.Coding.API.Style, b.Coding.API.Versioning, b.Coding.API.Errors, b.Coding.API.Pagination)
 	}
-	if len(b.Coding.Backend) > 0 {
+	if len(b.Coding.Backend) > 0 && sc.backend() {
 		s.WriteString("Backend rules: " + strings.Join(b.Coding.Backend, "; ") + "\n")
 	}
-	if len(b.Coding.Frontend) > 0 {
+	if len(b.Coding.Frontend) > 0 && sc.frontend() {
 		s.WriteString("Frontend rules: " + strings.Join(b.Coding.Frontend, "; ") + "\n")
 	}
 	if len(b.AIGuidelines) > 0 {
 		s.WriteString("AI rules:\n- " + strings.Join(b.AIGuidelines, "\n- ") + "\n")
 	}
-	if b.Frontend.State != "" {
+	if b.Frontend.State != "" && sc.frontend() {
 		fmt.Fprintf(&s, "Frontend libs: state %s, server state %s, forms %s, validation %s, routing %s\n",
 			b.Frontend.State, b.Frontend.ServerState, b.Frontend.Forms, b.Frontend.Validation, b.Frontend.Routing)
 	}
-	if b.Backend.Pattern != "" {
+	if b.Backend.Pattern != "" && sc.backend() {
 		fmt.Fprintf(&s, "Backend shape: %s · DI %s · background %s\n", b.Backend.Pattern, b.Backend.DI, b.Backend.Background)
 	}
 	return s.String()

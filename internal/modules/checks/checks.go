@@ -130,6 +130,9 @@ func Excerpt(dir string, files []string, budget int) string {
 	for _, f := range files {
 		data, err := os.ReadFile(filepath.Join(dir, f))
 		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Fprintf(&b, "--- %s (dihapus)\n", f)
+			}
 			continue
 		}
 		chunk := string(data)
@@ -145,6 +148,39 @@ func Excerpt(dir string, files []string, budget int) string {
 	}
 	if b.Len() == 0 {
 		return "(tidak ada file yang berubah)"
+	}
+	return b.String()
+}
+
+// DiffExcerpt trims a unified diff for a reviewer: each file section is cut
+// at 6000 bytes and sections past budget are listed by name only, so the
+// reviewer always sees every changed file. Binary sections show no content.
+func DiffExcerpt(patch string, budget int) string {
+	const perFile = 6000
+	var secs []string
+	for _, line := range strings.SplitAfter(patch, "\n") {
+		if strings.HasPrefix(line, "diff --git ") || len(secs) == 0 {
+			secs = append(secs, "")
+		}
+		secs[len(secs)-1] += line
+	}
+	var b strings.Builder
+	for _, sec := range secs {
+		head, _, _ := strings.Cut(sec, "\n")
+		name := strings.TrimPrefix(head, "diff --git ")
+		switch {
+		case strings.Contains(sec, "GIT binary patch") && !strings.Contains(sec, "omitted"):
+			fmt.Fprintf(&b, "%s (file biner, isi tidak ditampilkan)\n", name)
+		case b.Len()+min(len(sec), perFile) > budget:
+			fmt.Fprintf(&b, "%s (tidak ditampilkan, batas ukuran)\n", name)
+		case len(sec) > perFile:
+			b.WriteString(sec[:perFile] + "\n…(dipotong)\n")
+		default:
+			b.WriteString(sec)
+		}
+	}
+	if strings.TrimSpace(b.String()) == "" {
+		return "(tidak ada perubahan)"
 	}
 	return b.String()
 }

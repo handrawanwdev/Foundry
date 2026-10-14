@@ -45,6 +45,9 @@ type Preset struct {
 	effortArg  func(string) []string
 	// listModels asks the CLI (or its API) which models exist; see ListModels.
 	listModels func(context.Context, Preset) ([]string, error)
+	// usage unwraps a CLI's structured output into the answer text and the
+	// token usage it reported. Only set for CLIs whose format was verified.
+	usage func(raw string) (string, *Usage, bool)
 }
 
 var Presets = []Preset{
@@ -53,8 +56,9 @@ var Presets = []Preset{
 		listModels: claudeModels,
 		Efforts:    []string{"low", "medium", "high", "xhigh", "max"},
 		effortArg:  func(e string) []string { return []string{"--effort", e} },
-		think:      []string{"-p"},
-		execute:    []string{"-p", "--permission-mode", "acceptEdits"}},
+		usage:      claudeUsage,
+		think:      []string{"-p", "--output-format", "json"},
+		execute:    []string{"-p", "--output-format", "json", "--permission-mode", "acceptEdits"}},
 	{ID: "codex", Name: "Codex", Binary: "codex", sub: []string{"exec"},
 		listModels: codexModels,
 		Efforts:    []string{"low", "medium", "high", "xhigh"},
@@ -134,7 +138,8 @@ type Runner struct {
 	Timeout    time.Duration
 	// Idle kills an Execute run that wrote no output and touched no file for
 	// this long (a stuck or rate-limited CLI); zero disables it.
-	Idle time.Duration
+	Idle  time.Duration
+	usage func(raw string) (string, *Usage, bool)
 }
 
 // DefaultIdle is how long an executing agent may show no sign of life.
@@ -164,6 +169,7 @@ func NewRunner(id string, custom []string, opt Options) (*Runner, error) {
 		argvThink:  append(slices.Clone(head), p.think...),
 		argvExec:   append(slices.Clone(head), p.execute...),
 		promptFile: p.PromptFile,
+		usage:      p.usage,
 		Timeout:    30 * time.Minute,
 		Idle:       DefaultIdle,
 	}, nil
@@ -248,6 +254,13 @@ func lastTouched(dir string) time.Time {
 
 // Run sends prompt to the agent with dir as working directory.
 func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string, error) {
+	res, err := r.RunDetailed(ctx, mode, dir, prompt)
+	return res.Text, err
+}
+
+// RunDetailed is Run plus the token usage the CLI reported (nil when the CLI
+// has no verified usage format or did not report any).
+func (r *Runner) RunDetailed(ctx context.Context, mode Mode, dir, prompt string) (Result, error) {
 	argv := r.argvThink
 	if mode == Execute {
 		argv = r.argvExec
@@ -259,7 +272,7 @@ func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string
 	if r.promptFile != "" {
 		f, err := os.CreateTemp("", "foundry-prompt-*.txt")
 		if err != nil {
-			return "", fmt.Errorf("%w: %v", ErrAgentFailed, err)
+			return Result{}, fmt.Errorf("%w: %v", ErrAgentFailed, err)
 		}
 		defer os.Remove(f.Name())
 		_, err = f.WriteString(prompt)
@@ -267,7 +280,7 @@ func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string
 			err = cerr
 		}
 		if err != nil {
-			return "", fmt.Errorf("%w: %v", ErrAgentFailed, err)
+			return Result{}, fmt.Errorf("%w: %v", ErrAgentFailed, err)
 		}
 		cmd = exec.CommandContext(ctx, argv[0], append(argv[1:], r.promptFile, f.Name())...)
 	} else {
@@ -319,25 +332,26 @@ func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string
 		}()
 	}
 	err := cmd.Run()
+	res := r.unwrap(out.String())
 	reasonMu.Lock()
 	why := reason
 	reasonMu.Unlock()
 	if why != nil {
-		return out.String(), why
+		return res, why
 	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return out.String(), fmt.Errorf("%w: timeout setelah %s", ErrAgentFailed, r.Timeout)
+		return res, fmt.Errorf("%w: timeout setelah %s", ErrAgentFailed, r.Timeout)
 	}
 	failed := err != nil && !errors.Is(err, exec.ErrWaitDelay) // ErrWaitDelay: the agent itself exited 0
 	// A CLI that hit its quota prints the notice and exits; stdout is only
 	// trusted when the run failed or produced almost nothing.
-	if limitHit(errb.String()) || ((failed || len(strings.TrimSpace(out.String())) < 400) && limitHit(out.String())) {
-		return out.String(), fmt.Errorf("%w: %s", ErrLimit, tail(strings.TrimSpace(errb.String()+"\n"+out.String()), 300))
+	if limitHit(errb.String()) || ((failed || len(strings.TrimSpace(res.Text)) < 400) && limitHit(res.Text)) {
+		return res, fmt.Errorf("%w: %s", ErrLimit, tail(strings.TrimSpace(errb.String()+"\n"+res.Text), 300))
 	}
 	if failed {
-		return out.String(), fmt.Errorf("%w: %v: %s", ErrAgentFailed, err, tail(errb.String(), 600))
+		return res, fmt.Errorf("%w: %v: %s", ErrAgentFailed, err, tail(errb.String(), 600))
 	}
-	return out.String(), nil
+	return res, nil
 }
 
 // Ping runs a minimal probe to prove the agent works headless.

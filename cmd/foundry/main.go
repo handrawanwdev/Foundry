@@ -32,6 +32,9 @@ const usage = `Foundry — ide sampai aplikasi siap diperiksa
   foundry mcp [--allow READ,WRITE,MODIFY,EXECUTE|ALL] [--project folder] [--print-config]
       Server MCP (stdio) untuk AI Host: Cursor, Claude, Codex, OpenCode, Windsurf, dll.
 
+  foundry metrics [folder-project]
+      Ukuran prompt (baseline vs terfilter) dan metrik run agent. Hanya baca.
+
   foundry version
 `
 
@@ -45,6 +48,8 @@ func main() {
 		serve(os.Args[2:])
 	case "mcp":
 		runMCP(os.Args[2:])
+	case "metrics":
+		runMetrics(os.Args[2:])
 	case "version":
 		fmt.Println(version)
 	default:

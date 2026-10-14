@@ -45,7 +45,10 @@ type Project struct {
 	Discovery *Discovery `json:"discovery,omitempty"`
 	// Blueprint is the production architecture decided during discovery.
 	// Coding agents treat it as source of truth and do not invent another.
-	Blueprint    *Blueprint    `json:"blueprint,omitempty"`
+	Blueprint *Blueprint `json:"blueprint,omitempty"`
+	// BuildMetrics totals every agent run of the latest build (execution,
+	// repair, review, retries); reset when a build starts.
+	BuildMetrics *TaskMetrics  `json:"build_metrics,omitempty"`
 	Requirements []Requirement `json:"requirements"`
 	Features     []Feature     `json:"features"`
 	Flows        []Flow        `json:"flows"`
@@ -654,10 +657,101 @@ type Task struct {
 	Closed bool `json:"closed,omitempty"`
 	// Repair marks a task put back by "Perbaiki Terblokir": its next run gets
 	// the full failure history and must fix the root cause. Cleared on DONE.
-	Repair      bool        `json:"repair,omitempty"`
-	Notes       []string    `json:"notes"`
-	LastBuildID string      `json:"last_build_id,omitempty"`
-	Criteria    []Criterion `json:"criteria,omitempty"`
+	Repair      bool         `json:"repair,omitempty"`
+	Notes       []string     `json:"notes"`
+	LastBuildID string       `json:"last_build_id,omitempty"`
+	Criteria    []Criterion  `json:"criteria,omitempty"`
+	Metrics     *TaskMetrics `json:"metrics,omitempty"`
+	// Memory is a compact record of the finished task, reused by dependents
+	// while its fingerprint still matches the source.
+	Memory *TaskMemory `json:"memory,omitempty"`
+}
+
+// TaskMemory summarizes a DONE task. Files holds a content fingerprint per
+// owned file and Contract a hash of the task's criteria and architecture
+// brief; a mismatch on either invalidates the record. It never replaces
+// the source: dependents are told to read changed files.
+type TaskMemory struct {
+	Summary  string            `json:"summary"`
+	Files    map[string]string `json:"files,omitempty"`
+	Contract string            `json:"contract"`
+	// SourceBytes is the size of the owned files at record time: what a
+	// dependent would read instead of the summary.
+	SourceBytes int       `json:"source_bytes"`
+	At          time.Time `json:"at"`
+}
+
+// TaskMetrics is what Foundry measured for a task (or, in
+// Project.BuildMetrics, for the whole build) across agent runs.
+//
+// Two kinds of numbers, never mixed:
+//   - Chars and Millis are exact measurements of what Foundry sent and waited.
+//   - Input/CacheWrite/Cached/OutputTokens and CostUSD are reported by the
+//     provider CLI, summed over the UsageRuns runs that carried them. Input is
+//     fresh input only; CacheWrite and Cached (cache read) are separate, so
+//     nothing is counted twice. Total input processed = their sum.
+//   - EstTokens (chars/4) is added only for runs WITHOUT provider usage.
+//
+// A run is one agent process: execution, in-place repair and review each count,
+// retries included.
+type TaskMetrics struct {
+	Runs        int   `json:"runs"`
+	PromptChars int   `json:"prompt_chars"`
+	OutputChars int   `json:"output_chars"`
+	EstTokens   int   `json:"est_tokens"`
+	Millis      int64 `json:"millis"`
+	Failures    int   `json:"failures,omitempty"`
+
+	UsageRuns        int     `json:"usage_runs,omitempty"`
+	InputTokens      int     `json:"input_tokens,omitempty"`
+	CacheWriteTokens int     `json:"cache_write_tokens,omitempty"`
+	CachedTokens     int     `json:"cached_tokens,omitempty"`
+	OutputTokens     int     `json:"output_tokens,omitempty"`
+	CostUSD          float64 `json:"cost_usd,omitempty"` // reported by the CLI, never computed
+}
+
+// Record adds one agent run. reported says the provider gave usage for it, in
+// which case the estimate is skipped.
+func (m *TaskMetrics) Record(promptChars, outputChars int, millis int64, failed, reported bool) {
+	m.Runs++
+	m.PromptChars += promptChars
+	m.OutputChars += outputChars
+	if !reported {
+		m.EstTokens += (promptChars + outputChars) / 4
+	}
+	m.Millis += millis
+	if failed {
+		m.Failures++
+	}
+}
+
+// RecordUsage adds provider-reported usage of one run.
+func (m *TaskMetrics) RecordUsage(in, cacheWrite, cached, out int, costUSD float64) {
+	m.UsageRuns++
+	m.InputTokens += in
+	m.CacheWriteTokens += cacheWrite
+	m.CachedTokens += cached
+	m.OutputTokens += out
+	m.CostUSD += costUSD
+}
+
+// Add folds o into m.
+func (m *TaskMetrics) Add(o *TaskMetrics) {
+	if o == nil {
+		return
+	}
+	m.Runs += o.Runs
+	m.PromptChars += o.PromptChars
+	m.OutputChars += o.OutputChars
+	m.EstTokens += o.EstTokens
+	m.Millis += o.Millis
+	m.Failures += o.Failures
+	m.UsageRuns += o.UsageRuns
+	m.InputTokens += o.InputTokens
+	m.CacheWriteTokens += o.CacheWriteTokens
+	m.CachedTokens += o.CachedTokens
+	m.OutputTokens += o.OutputTokens
+	m.CostUSD += o.CostUSD
 }
 
 type Criterion struct {

@@ -18,7 +18,7 @@ func TaskPrompt(p *core.Project, t *core.Task) string {
 	b.WriteString("Implement ONLY this task. Production code + its tests.\n")
 	b.WriteString("Follow project structure, FOUNDRY.md, and docs/foundry-profile.md. Do not delete or restructure architecture.\n")
 	b.WriteString("Foundry runs build/test after you finish. DONE = they pass AND every acceptance criterion is met.\n")
-	b.WriteString(standard.Rules + "\n")
+	b.WriteString(standard.RulesFor(ruleScope(t)) + "\n")
 	b.WriteString(workRules + "\n")
 	fmt.Fprintf(&b, "TASK %s: %s\nArea: %s  Platform: %s\n\n%s\n\n", t.ID, t.Title, t.Area, t.Platform, t.Description)
 	if f := p.Feature(t.FeatureID); f != nil {
@@ -46,6 +46,7 @@ func TaskPrompt(p *core.Project, t *core.Task) string {
 			b.WriteString("\n" + mustJSON(handoff(p, *pg, p.Design.Pages)) + "\n")
 		}
 	}
+	b.WriteString(DependencyMemory(p, t))
 	if ui {
 		if p.Design != nil && p.Design.System != nil {
 			b.WriteString("\n" + systemBrief(p.Design.System))
@@ -70,7 +71,7 @@ func TaskPrompt(p *core.Project, t *core.Task) string {
 	b.WriteString("When you finish, include a ```json block so Foundry can skip a second review pass: " + finishJSON +
 		". Every criterion needs evidence. \"patches\" is optional: foreign-file changes only. Do not implement other tasks.\n")
 	b.WriteString("\n" + structureBrief(p))
-	if brief := ArchitectureBrief(p); brief != "" {
+	if brief := TaskArchitectureBrief(p, t); brief != "" {
 		b.WriteString("\n" + brief)
 	}
 	return b.String()
@@ -354,7 +355,7 @@ func ReviewPrompt(p *core.Project, t *core.Task, changes string, build *core.Bui
 			fmt.Fprintf(&b, "- %s exit %d\n", s.Command, s.ExitCode)
 		}
 	}
-	b.WriteString("\nCHANGED FILES:\n" + changes + "\n")
+	b.WriteString("\nCHANGES (diff or file excerpts):\n" + changes + "\n")
 	b.WriteString("\nReply with ONLY one JSON object in a ```json block: {\"criteria\": [{\"index\": 1, \"met\": true, \"evidence\": \"\"}]}")
 	return b.String()
 }
@@ -484,4 +485,15 @@ var depFiles = map[string]bool{
 // DependencyFile reports whether file is a dependency manifest or lockfile.
 func DependencyFile(file string) bool {
 	return depFiles[path.Base(normPath(file))]
+}
+
+// OwnsFile reports whether file is one of files or lies inside one of them.
+func OwnsFile(files []string, file string) bool {
+	k := normPath(file)
+	for _, f := range files {
+		if m := normPath(f); k != "" && m != "" && (k == m || strings.HasPrefix(k, m+"/")) {
+			return true
+		}
+	}
+	return false
 }

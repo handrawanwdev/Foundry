@@ -54,6 +54,7 @@ func (s *Service) StartBuild() error {
 			return ErrWrongStage
 		}
 		p.Stage = core.StageBuild
+		p.BuildMetrics = nil
 		p.Job = &core.Job{Kind: "build", Status: status, Message: msg, Started: time.Now().UTC()}
 		p.Log("ui", "Build dimulai")
 		logIndependent(p)
@@ -354,8 +355,10 @@ func (s *Service) runShared(ctx context.Context, runner *agent.Runner, p *core.P
 	// Changes by agents running in parallel land in the same tree, so the
 	// diff below may include their files too; the reviewer judges criteria.
 	before := checks.Take(p.Dir)
+	base := checks.Capture(p.Dir)
 	stopWatch := s.watchProgress(ctx, id, p.Dir, before)
-	out, err := runner.Run(ctx, agent.Execute, p.Dir, s.taskPrompt(p, t))
+	prompt := s.taskPrompt(p, t)
+	out, err := s.measured(id, prompt, func() (agent.Result, error) { return runner.RunDetailed(ctx, agent.Execute, p.Dir, prompt) })
 	if err != nil {
 		stopWatch()
 		if ctx.Err() != nil {
@@ -366,7 +369,14 @@ func (s *Service) runShared(ctx context.Context, runner *agent.Runner, p *core.P
 	}
 	stopWatch()
 	s.handOffPatches(id, work.ParsePatches(out))
-	changed := checks.Changed(p.Dir, before)
+	changes, foreign := s.ownChanges(id, base.Compare(p.Dir))
+	changed := changePaths(changes)
+	patch := []byte(checks.Render(changes, base.Truncated) + foreign)
+	if len(changed) == 0 && foreign == "" {
+		// An agent that rewrote files with identical content did work on the
+		// tree a retry left behind: judge those files, not "nothing changed".
+		changed, patch = checks.Changed(p.Dir, before), nil
+	}
 	if len(changed) == 0 {
 		s.rejectTask(id, "Tidak ada file yang berubah; implementasi belum dibuat")
 		return nil
@@ -380,7 +390,7 @@ func (s *Service) runShared(ctx context.Context, runner *agent.Runner, p *core.P
 		s.rejectTask(id, "Verifikasi gagal: "+build.Reason+"\n"+lastOutput(build))
 		return nil
 	}
-	crit, err := s.review(ctx, runner, id, out, p.Dir, changed, &build)
+	crit, err := s.review(ctx, runner, id, out, p.Dir, changed, patch, &build)
 	if crit == nil {
 		return err
 	}
@@ -390,7 +400,7 @@ func (s *Service) runShared(ctx context.Context, runner *agent.Runner, p *core.P
 // review judges acceptance criteria: the coding agent's own JSON when it
 // sent one, else a reviewer run in dir. A nil result means the task was
 // already released or rejected.
-func (s *Service) review(ctx context.Context, runner *agent.Runner, id, out, dir string, changed []string, build *core.BuildRun) ([]core.Criterion, error) {
+func (s *Service) review(ctx context.Context, runner *agent.Runner, id, out, dir string, changed []string, patch []byte, build *core.BuildRun) ([]core.Criterion, error) {
 	s.setProgress(id, "Meninjau hasil")
 	p, _ := s.Store.Load()
 	t := p.Task(id)
@@ -398,7 +408,8 @@ func (s *Service) review(ctx context.Context, runner *agent.Runner, id, out, dir
 		return crit, nil
 	}
 	s.setStatus(id, core.TaskReview, "agent", "Build + test lulus, review acceptance criteria")
-	out, err := s.reviewRunner(runner).Run(ctx, agent.Think, dir, work.ReviewPrompt(p, t, checks.Excerpt(dir, changed, 60000), build))
+	rp := work.ReviewPrompt(p, t, reviewChanges(dir, changed, patch), build)
+	out, err := s.measured(id, rp, func() (agent.Result, error) { return s.reviewRunner(runner).RunDetailed(ctx, agent.Think, dir, rp) })
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, s.releaseTask(ctx, id)
@@ -504,14 +515,19 @@ func (s *Service) rejectTask(id, note string) {
 		if t == nil {
 			return nil
 		}
+		repeat := RepeatedFailure(t.Notes, note)
 		t.Notes = append(t.Notes, note)
 		if len(t.Notes) > 5 {
 			t.Notes = t.Notes[len(t.Notes)-5:]
 		}
 		t.Progress = ""
-		if t.Attempts >= MaxAttempts {
+		if t.Attempts >= MaxAttempts || repeat {
 			t.Status = core.TaskBlocked
-			p.Log("system", fmt.Sprintf("%s BLOCKED setelah %d percobaan", id, t.Attempts))
+			if repeat && t.Attempts < MaxAttempts {
+				p.Log("system", fmt.Sprintf("%s BLOCKED: kegagalan identik berulang (percobaan %d), retry tanpa strategi baru dihentikan", id, t.Attempts))
+			} else {
+				p.Log("system", fmt.Sprintf("%s BLOCKED setelah %d percobaan", id, t.Attempts))
+			}
 		} else {
 			t.Status = core.TaskTodo
 			p.Log("system", fmt.Sprintf("%s kembali ke TODO: %s", id, firstLine(note)))
@@ -548,6 +564,7 @@ func (s *Service) concludeTask(id string, crit []core.Criterion, buildID, source
 		t.Notes, t.Repair = nil, false
 		t.Progress = ""
 		stampFinished(t)
+		t.Memory = work.RememberTask(p, t)
 		clearDraft(p.Dir, id)
 		p.Log(source, id+" DONE")
 		return nil
@@ -789,4 +806,65 @@ func (s *Service) Fix() error {
 		return err
 	}
 	return s.StartBuild()
+}
+
+// maxReviewDiff bounds the diff a reviewer reads.
+const maxReviewDiff = 24000
+
+// reviewChanges is what the reviewer reads: the git diff when there is one
+// (only changed lines of edited files), else excerpts of the changed files.
+func reviewChanges(dir string, changed []string, patch []byte) string {
+	if len(patch) > 0 {
+		return checks.DiffExcerpt(string(patch), maxReviewDiff)
+	}
+	return checks.Excerpt(dir, changed, 60000)
+}
+
+// ownChanges keeps the changes that belong to task id. In a shared tree other
+// agents (and their files) run at the same time; a change inside files owned
+// by another active task is theirs, not this task's. It returns a note for
+// the reviewer when some were left out.
+func (s *Service) ownChanges(id string, all []checks.Change) ([]checks.Change, string) {
+	p, err := s.Store.Load()
+	if err != nil || p.Task(id) == nil {
+		return all, ""
+	}
+	mine := p.Task(id).Files
+	var others [][]string
+	for _, o := range p.ActiveTasks() {
+		if o.ID != id {
+			others = append(others, o.Files)
+		}
+	}
+	var keep []checks.Change
+	skipped := 0
+	for _, c := range all {
+		foreign := false
+		for _, f := range others {
+			if (work.OwnsFile(f, c.Path) || (c.From != "" && work.OwnsFile(f, c.From))) && !work.OwnsFile(mine, c.Path) {
+				foreign = true
+			}
+		}
+		if foreign {
+			skipped++
+			continue
+		}
+		keep = append(keep, c)
+	}
+	note := ""
+	if skipped > 0 {
+		note = fmt.Sprintf("NOTE: %d file milik task lain yang sedang berjalan tidak ikut ditinjau.\n", skipped)
+	}
+	return keep, note
+}
+
+func changePaths(cs []checks.Change) []string {
+	var out []string
+	for _, c := range cs {
+		out = append(out, c.Path)
+		if c.From != "" {
+			out = append(out, c.From)
+		}
+	}
+	return out
 }

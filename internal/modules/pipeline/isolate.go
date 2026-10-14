@@ -125,7 +125,7 @@ func (s *Service) runIn(ctx context.Context, runner *agent.Runner, id string, tr
 	defer os.Remove(state)
 	stop := s.watchProgress(ctx, id, tree.Dir, checks.Take(tree.Dir))
 	defer stop()
-	return runner.Run(ctx, agent.Execute, tree.Dir, prompt)
+	return s.measured(id, prompt, func() (agent.Result, error) { return runner.RunDetailed(ctx, agent.Execute, tree.Dir, prompt) })
 }
 
 // settle checks one round of work: collect the diff, build/test, criteria
@@ -148,7 +148,7 @@ func (s *Service) settle(ctx context.Context, runner *agent.Runner, id, dir stri
 		return settled{problem: "Verifikasi gagal: " + build.Reason + "\n" + lastOutput(build)}
 	}
 	if crit == nil {
-		if crit, err = s.review(ctx, runner, id, out, tree.Dir, changed, &build); crit == nil {
+		if crit, err = s.review(ctx, runner, id, out, tree.Dir, changed, patch, &build); crit == nil {
 			return settled{done: true, err: err}
 		}
 	}
