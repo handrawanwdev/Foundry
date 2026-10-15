@@ -18,6 +18,9 @@ var ErrNotFound = errors.New("project belum dibuat")
 
 var errExists = errors.New("project sudah ada")
 
+// ErrLocked means another process held the state lock past lockWait.
+var ErrLocked = errors.New("state sedang dikunci proses lain")
+
 // Store persists one project to <dir>/.foundry/project.json. The HTTP server
 // and the MCP process may run concurrently, so every mutation goes through a
 // cross-process lock file and re-reads state from disk before applying.
@@ -137,7 +140,7 @@ var lockWait = 40 * time.Second
 func (s *Store) withLock(fn func() error) error {
 	l, err := safefile.Acquire(s.lockPath(), lockWait)
 	if errors.Is(err, safefile.ErrTimeout) {
-		return errors.New("state sedang dikunci proses lain")
+		return ErrLocked
 	}
 	if err != nil {
 		return err

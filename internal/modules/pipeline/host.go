@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"cmp"
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -80,7 +79,7 @@ func (s *Service) NextWork(worker string) (*WorkItem, error) {
 			return &WorkItem{Kind: "wait", Prompt: fmt.Sprintf(
 				"Task independen sedang dikerjakan (%s). Tunggu sebentar lalu panggil next_work lagi.", strings.Join(ids, ", "))}, nil
 		}
-		if !s.finishBuild(context.Background()) {
+		if !s.finishBuild(s.context()) {
 			return &WorkItem{Kind: "none", Prompt: "Verifikasi sudah dijalankan host lain."}, nil
 		}
 		return &WorkItem{Kind: "none", Prompt: "Semua task yang bisa dikerjakan sudah selesai. Foundry menjalankan verifikasi."}, nil
@@ -185,7 +184,7 @@ func (s *Service) SubmitTask(id, worker string, verdicts []work.Verdict, patches
 	t := p.Task(id)
 	s.setProgress(id, "Menjalankan build & tes")
 	stop := s.keepSeen(id)
-	build, err := s.runChecks(context.Background(), id, p.Dir)
+	build, err := s.runChecks(s.context(), id, p.Dir)
 	stop()
 	if err != nil { // nothing ran: the task stays with its host to submit again
 		s.setProgress(id, "")

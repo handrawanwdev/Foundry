@@ -63,7 +63,7 @@ func (s *Service) prepareReference(p *core.Project) (*core.Project, error) {
 	if c, ok := s.Render.(Capturer); ok {
 		for _, dev := range []string{"desktop", "mobile"} {
 			img := filepath.Join(p.Dir, core.StateDir, "references", p.Reference.Name+"-"+dev+".png")
-			if err := c.Capture(context.Background(), p.Reference.URL, dev, img); err == nil {
+			if err := c.Capture(s.context(), p.Reference.URL, dev, img); err == nil {
 				shots = append(shots, core.QAShot{Device: dev, Image: img})
 			}
 		}

@@ -119,6 +119,10 @@ type Service struct {
 	// design and of a revision; nil skips the check.
 	Render Renderer
 
+	// ctx ends with Shutdown; every job this service runs derives from it.
+	ctx  context.Context
+	stop context.CancelFunc
+
 	mu     sync.Mutex
 	cancel context.CancelFunc
 	run    uint64 // numbers the build that owns cancel
@@ -162,7 +166,39 @@ func (s *Service) reviewRunner(exec *agent.Runner) *agent.Runner {
 }
 
 func New(store *core.Store, ai AI) *Service {
-	return &Service{Store: store, AI: ai}
+	ctx, stop := context.WithCancel(context.Background())
+	return &Service{Store: store, AI: ai, ctx: ctx, stop: stop}
+}
+
+// context is the parent of every job: cancelled by Shutdown.
+func (s *Service) context() context.Context {
+	if s.ctx == nil {
+		return context.Background()
+	}
+	return s.ctx
+}
+
+// Shutdown stops every job of this service: agents, build/test and the
+// processes they started are killed through their cancelled context. It
+// waits up to timeout for the jobs to return and record their state, and
+// for a build/test of an MCP call to end.
+func (s *Service) Shutdown(timeout time.Duration) error {
+	if s.stop != nil {
+		s.stop()
+	}
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		s.checkMu.Lock()
+		s.checkMu.Unlock()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("job belum berhenti setelah %s", timeout)
+	}
 }
 
 // RecoverStale marks jobs left "running" by a dead process as failed. Only
@@ -517,7 +553,7 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		out, err := runner.Run(context.Background(), agent.Think, p.Dir, prompt)
+		out, err := runner.Run(s.context(), agent.Think, p.Dir, prompt)
 		if err != nil {
 			s.failJob(kind, err)
 			return

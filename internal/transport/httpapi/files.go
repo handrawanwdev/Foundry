@@ -39,7 +39,7 @@ func resolve(root, rel string) (string, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", httpError{http.StatusNotFound, "file tidak ditemukan"}
 		}
-		return "", badRequest(err.Error())
+		return "", err
 	}
 	realRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -66,7 +66,7 @@ func (s *Server) listFiles(r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := readDir(dir)
 	if err != nil {
 		return nil, badRequest("bukan folder")
 	}
@@ -114,11 +114,21 @@ func (s *Server) readFile(r *http.Request) (any, error) {
 	if st.IsDir() {
 		return nil, badRequest("path adalah folder")
 	}
-	f, err := os.Open(p)
+	if !st.Mode().IsRegular() {
+		return nil, badRequest("bukan file biasa")
+	}
+	f, err := openNoWait(p)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	// The path may have been replaced since the stat.
+	if st, err = f.Stat(); err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() {
+		return nil, badRequest("bukan file biasa")
+	}
 	data, err := io.ReadAll(io.LimitReader(f, maxFileBytes))
 	if err != nil {
 		return nil, err
@@ -134,6 +144,32 @@ func (s *Server) readFile(r *http.Request) (any, error) {
 		res["content"] = string(data)
 	}
 	return res, nil
+}
+
+// openNoWait opens path for reading without blocking: opening a FIFO
+// waits for a writer, which would hang the handler for good.
+func openNoWait(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDONLY|openNonblock, 0)
+}
+
+// readDir is os.ReadDir that refuses anything but a folder instead of
+// blocking on a FIFO.
+func readDir(path string) ([]fs.DirEntry, error) {
+	f, err := openNoWait(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !st.IsDir() {
+		return nil, badRequest("bukan folder")
+	}
+	entries, err := f.ReadDir(-1)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	return entries, err
 }
 
 // trimPartialRune drops a UTF-8 sequence cut by the size limit.

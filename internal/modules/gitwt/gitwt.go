@@ -52,7 +52,7 @@ func git(ctx context.Context, dir string, env []string, stdin []byte, args ...st
 		if msg == "" {
 			msg = strings.TrimSpace(out.String())
 		}
-		return out.Bytes(), fmt.Errorf("git %s: %v: %s", args[0], err, msg)
+		return out.Bytes(), fmt.Errorf("git %s: %w: %s", args[0], err, msg)
 	}
 	return out.Bytes(), nil
 }

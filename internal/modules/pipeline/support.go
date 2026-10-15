@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/handrawanw/foundry/internal/core"
@@ -60,7 +59,7 @@ func (s *Service) support(start func(*core.Project, string) error) error {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		out, err := runner.Run(context.Background(), agent.Think, p.Dir, prompt)
+		out, err := runner.Run(s.context(), agent.Think, p.Dir, prompt)
 		if err == nil {
 			err = s.applySupport(out)
 		}

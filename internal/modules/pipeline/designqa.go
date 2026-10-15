@@ -90,7 +90,7 @@ func (s *Service) prepareQA(p *core.Project) (*core.Project, error) {
 	var shots []core.QAShot
 	for i, id := range ids {
 		img := filepath.Join(p.Dir, core.StateDir, "qa", fmt.Sprintf("%s-%s-%s%d.png", id, devs[i], tag, qa.Round))
-		outline, err := s.Render.Shot(context.Background(), p.Dir, id, devs[i], img)
+		outline, err := s.Render.Shot(s.context(), p.Dir, id, devs[i], img)
 		if err != nil {
 			return nil, s.finishQA("skipped", "Browser tidak bisa merender halaman: "+err.Error())
 		}

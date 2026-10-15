@@ -8,14 +8,17 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -28,6 +31,7 @@ import (
 	"github.com/handrawanw/foundry/internal/modules/structure"
 	"github.com/handrawanw/foundry/internal/modules/verify"
 	"github.com/handrawanw/foundry/internal/modules/work"
+	"github.com/handrawanw/foundry/internal/safefile"
 	"github.com/handrawanw/foundry/internal/transport/httpapi/respond"
 	"github.com/handrawanw/foundry/internal/transport/mcp"
 )
@@ -99,6 +103,15 @@ func (s *Server) Close() error {
 	return nil
 }
 
+// Shutdown stops the jobs of the open project and waits up to timeout.
+func (s *Server) Shutdown(timeout time.Duration) error {
+	svc, err := s.service()
+	if err != nil {
+		return nil
+	}
+	return svc.Shutdown(timeout)
+}
+
 // idle refuses to switch projects while an agent job of the current project
 // is still running in this process.
 func (s *Server) idle() error {
@@ -136,7 +149,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			out, err := h(r)
 			if err != nil {
-				fail(w, err)
+				fail(w, r, err)
 				return
 			}
 			respond.Success(w, out)
@@ -461,12 +474,12 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) downloadPRD(w http.ResponseWriter, r *http.Request) {
 	svc, err := s.service()
 	if err != nil {
-		fail(w, err)
+		fail(w, r, err)
 		return
 	}
 	p, err := svc.Store.Load()
 	if err != nil {
-		fail(w, err)
+		fail(w, r, err)
 		return
 	}
 	if p.PRD == nil || strings.TrimSpace(p.PRD.Markdown) == "" {
@@ -716,9 +729,9 @@ func (s *Server) browse(r *http.Request) (any, error) {
 	}
 	dir, err := filepath.Abs(expandHome(dir))
 	if err != nil {
-		return nil, badRequest(err.Error())
+		return nil, err
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := readDir(dir)
 	if err != nil {
 		return nil, badRequest("tidak bisa membaca folder: " + dir)
 	}
@@ -843,8 +856,30 @@ func statusFor(err error) int {
 		return http.StatusPreconditionFailed
 	case errors.Is(err, core.ErrNotFound), errors.Is(err, errNoProject):
 		return http.StatusNotFound
+	case internal(err):
+		return http.StatusInternalServerError
 	}
-	return http.StatusBadRequest
+	return http.StatusBadRequest // a domain rule the request broke
+}
+
+// internal reports an error of the system rather than of the request: IO,
+// a process, a corrupt or locked state file, a cancelled operation.
+// Messages built by Foundry's own rules carry none of these.
+func internal(err error) bool {
+	var (
+		pathErr *fs.PathError
+		linkErr *os.LinkError
+		sysErr  *os.SyscallError
+		errno   syscall.Errno
+		execErr *exec.Error
+		exitErr *exec.ExitError
+		synErr  *json.SyntaxError
+		typErr  *json.UnmarshalTypeError
+	)
+	return errors.As(err, &pathErr) || errors.As(err, &linkErr) || errors.As(err, &sysErr) || errors.As(err, &errno) ||
+		errors.As(err, &execErr) || errors.As(err, &exitErr) || errors.As(err, &synErr) || errors.As(err, &typErr) ||
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, core.ErrLocked) || errors.Is(err, config.ErrLocked) || errors.Is(err, safefile.ErrTimeout)
 }
 
 func decode(r *http.Request, v any) error {
@@ -855,10 +890,19 @@ func decode(r *http.Request, v any) error {
 	return nil
 }
 
+// internalMessage is all a client learns of an internal error; the error
+// itself, which may name paths or carry git or tool output, goes to the log.
+const internalMessage = "Terjadi kesalahan internal di Foundry. Detailnya ada di log server."
+
 // fail maps a service error to the standard error envelope.
-func fail(w http.ResponseWriter, err error) {
+func fail(w http.ResponseWriter, r *http.Request, err error) {
 	status := statusFor(err)
-	respond.Fail(w, respond.CodeFor(status), err.Error(), status)
+	msg := err.Error()
+	if status >= http.StatusInternalServerError {
+		log.Printf("api %s %s: %v", r.Method, r.URL.Path, err)
+		msg = internalMessage
+	}
+	respond.Fail(w, respond.CodeFor(status), msg, status)
 }
 
 // guard blocks cross-site requests: the API can run agents and commands, so

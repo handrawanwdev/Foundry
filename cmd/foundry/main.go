@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	web "github.com/handrawanw/foundry/apps/web"
 	"github.com/handrawanw/foundry/internal/core"
@@ -86,12 +87,12 @@ func serve(args []string) {
 		}
 	}
 	hs := &http.Server{Addr: *addr, Handler: srv.Handler()}
-	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-		<-sig
+	onStop(func() {
+		if err := srv.Shutdown(shutdownTimeout); err != nil {
+			log.Printf("shutdown: %v", err)
+		}
 		hs.Close()
-	}()
+	})
 	log.Printf("Foundry: http://%s", *addr)
 	if err := hs.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
@@ -132,7 +133,30 @@ func runMCP(args []string) {
 		svc.Render = r
 	}
 	s := &mcp.Server{Svc: svc, Allow: perms, Version: version}
-	if err := s.Serve(os.Stdin, os.Stdout); err != nil {
+	stop := func() {
+		if err := svc.Shutdown(shutdownTimeout); err != nil {
+			log.Printf("shutdown: %v", err)
+		}
+	}
+	onStop(func() { stop(); os.Exit(1) })
+	err = s.Serve(os.Stdin, os.Stdout)
+	stop() // the host closed stdin: nothing it started may keep running
+	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+// shutdownTimeout bounds how long stopping waits for jobs to end.
+const shutdownTimeout = 15 * time.Second
+
+// onStop runs fn once on the first interrupt, terminate or hangup signal.
+// Commands run in their own process group, so a terminal's Ctrl+C or
+// hangup reaches only Foundry, and Foundry must stop them itself.
+func onStop(fn func()) {
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		<-sig
+		fn()
+	}()
 }

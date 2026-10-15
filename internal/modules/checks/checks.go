@@ -4,7 +4,6 @@
 package checks
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/proc"
 )
 
 const maxOutput = 6000
@@ -152,11 +152,13 @@ func runOne(ctx context.Context, dir string, c core.Command) core.StepResult {
 	// A background process the command started (a test server) keeps the
 	// output pipe open; bound the wait so checks — serialized — never hang.
 	cmd.WaitDelay = 5 * time.Second
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
+	proc.Group(cmd)
+	out := &tailWriter{max: maxOutput}
+	cmd.Stdout, cmd.Stderr = out, out
 	err := cmd.Run()
+	proc.KillGroup(cmd) // a server it left must not hold the port for the next check
 	st.Millis = time.Since(start).Milliseconds()
-	st.Output = tail(out.String())
+	st.Output = out.String()
 	var ee *exec.ExitError
 	switch {
 	case err == nil, errors.Is(err, exec.ErrWaitDelay): // exited 0, a child kept the pipe
@@ -181,6 +183,38 @@ func tail(s string) string {
 		return "…" + s[len(s)-maxOutput:]
 	}
 	return s
+}
+
+// tailWriter keeps only the last max bytes written, so a noisy command
+// costs at most 2*max bytes of memory however much it prints. String reads
+// the same as tail of the whole output.
+type tailWriter struct {
+	max   int
+	buf   []byte
+	total int64
+}
+
+func (w *tailWriter) Write(p []byte) (int, error) {
+	w.total += int64(len(p))
+	if w.buf == nil {
+		w.buf = make([]byte, 0, 2*w.max)
+	}
+	if len(p) >= w.max {
+		w.buf = append(w.buf[:0], p[len(p)-w.max:]...)
+		return len(p), nil
+	}
+	if len(w.buf)+len(p) > 2*w.max {
+		w.buf = append(w.buf[:0], w.buf[len(w.buf)-(w.max-len(p)):]...)
+	}
+	w.buf = append(w.buf, p...)
+	return len(p), nil
+}
+
+func (w *tailWriter) String() string {
+	if w.total > int64(w.max) {
+		return "…" + string(w.buf[len(w.buf)-w.max:])
+	}
+	return string(w.buf)
 }
 
 // Snapshot records file modification times to detect what an agent changed.

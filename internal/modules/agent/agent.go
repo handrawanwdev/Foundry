@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/handrawanw/foundry/internal/proc"
 )
 
 type Mode int
@@ -291,6 +293,10 @@ func (r *Runner) RunDetailed(ctx context.Context, mode Mode, dir, prompt string)
 	// A child the agent left running (dev server, MCP server) keeps the
 	// output pipes open; without a bound, Run would wait for it forever.
 	cmd.WaitDelay = WaitDelay
+	// Stopping the agent stops what it started; a server it left behind
+	// is killed once it returns.
+	proc.Group(cmd)
+	defer proc.KillGroup(cmd)
 	// cancelRun records why the watchdog stopped the run.
 	var (
 		reasonMu sync.Mutex

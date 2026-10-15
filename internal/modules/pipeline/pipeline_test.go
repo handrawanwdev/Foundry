@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -183,6 +184,7 @@ func fakeAgent() {
 		}
 		fmt.Println(`{"status": "pass"}`)
 	case strings.Contains(prompt, "product analyst of Foundry"):
+		countRun("prd")
 		if mode == "prd_fail" {
 			fmt.Println("maaf, saya tidak bisa")
 			return
@@ -201,6 +203,7 @@ func fakeAgent() {
 			os.Exit(1)
 		}
 		if mode == "hang" {
+			hangWithChild()
 			time.Sleep(time.Minute)
 		}
 		m := taskIDRe.FindStringSubmatch(prompt)
@@ -264,6 +267,21 @@ func fakeAgent() {
 		fmt.Fprintln(os.Stderr, "unknown prompt")
 		os.Exit(3)
 	}
+}
+
+// hangWithChild starts a child like a dev server would and writes its pid
+// and the agent's to $FAKE_PIDS, so a test can check both are stopped.
+func hangWithChild() {
+	path := os.Getenv("FAKE_PIDS")
+	if path == "" {
+		return
+	}
+	c := exec.Command("sleep", "300")
+	if c.Start() != nil {
+		return
+	}
+	os.WriteFile(path+".tmp", []byte(fmt.Sprintf("%d %d\n", os.Getpid(), c.Process.Pid)), 0o644)
+	os.Rename(path+".tmp", path)
 }
 
 // countRun appends label to $FAKE_RUNS, so a test can count agent runs.

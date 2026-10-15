@@ -44,6 +44,9 @@ type Config struct {
 
 var mu sync.Mutex
 
+// ErrLocked means another process held the config lock past lockWait.
+var ErrLocked = errors.New("config sedang dikunci proses lain")
+
 func Home() string {
 	if h := os.Getenv("FOUNDRY_HOME"); h != "" {
 		return h
@@ -87,7 +90,7 @@ func Update(fn func(c *Config)) (*Config, error) {
 	}
 	l, err := safefile.Acquire(path()+".lock", lockWait)
 	if errors.Is(err, safefile.ErrTimeout) {
-		return nil, errors.New("config sedang dikunci proses lain")
+		return nil, ErrLocked
 	}
 	if err != nil {
 		return nil, err

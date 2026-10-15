@@ -24,18 +24,27 @@ import (
 
 // GeneratePRD reconstructs the product PRD from current requirements,
 // capabilities, flows, contracts and tasks. The kanban must already exist.
+// The precondition is checked again in the update that starts the job, so
+// two requests at once start it only once.
 func (s *Service) GeneratePRD() error {
 	p, err := s.Store.Load()
 	if err != nil {
 		return err
 	}
+	if err := prdReady(p); err != nil {
+		return err
+	}
+	return s.startAIIf(work.KindPRD, prdReady)
+}
+
+func prdReady(p *core.Project) error {
 	if p.Busy() || (p.Job != nil && p.Job.Status == core.JobWaiting) {
 		return ErrBusy
 	}
 	if len(p.Tasks) == 0 {
 		return ErrWrongStage
 	}
-	return s.startAI(work.KindPRD)
+	return nil
 }
 
 // StartBuild runs ready tasks until none is left, then verifies.
@@ -72,7 +81,7 @@ func (s *Service) StartBuild() error {
 			gitwt.Prune(dir) // stale worktrees of a crashed run
 		}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(s.context())
 	run := s.beginBuild(cancel)
 	s.wg.Add(1)
 	go func() {
@@ -834,7 +843,7 @@ func (s *Service) Verify() error {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		s.verifyNow(context.Background())
+		s.verifyNow(s.context())
 	}()
 	return nil
 }
@@ -865,10 +874,15 @@ func (s *Service) verifyNow(ctx context.Context) {
 	})
 }
 
-// Fix turns verification issues into work and restarts the build.
+// Fix turns verification issues into work and restarts the build. An issue
+// that already has an open fix task gets no second one, so a repeated Fix,
+// or one whose build did not start, never duplicates work.
 func (s *Service) Fix() error {
+	if _, _, err := s.AI.Runner(); err != nil {
+		return err // the build could not start: add no task for it
+	}
 	_, err := s.Store.Update(func(p *core.Project) error {
-		if p.Busy() {
+		if p.Busy() || buildActive(p) {
 			return ErrBusy
 		}
 		if p.Verification == nil {
@@ -884,6 +898,12 @@ func (s *Service) Fix() error {
 			p.Log("ui", fmt.Sprintf("Perbaiki otomatis: %d halaman baru, %d alur terhubung", pages, flows))
 		}
 		added := work.FillCoverage(p)
+		open := map[string]bool{}
+		for _, t := range p.Tasks {
+			if t.Status != core.TaskDone {
+				open[t.Title] = true
+			}
+		}
 		for _, is := range p.Verification.Issues {
 			tooling := is.Kind == "missing_test" && is.Ref == ""
 			runtime := is.Kind == "no_smoke" || is.Kind == "smoke_failed"
@@ -894,6 +914,10 @@ func (s *Service) Fix() error {
 			if b := p.Build(is.Ref); b != nil {
 				out = lastOutput(*b)
 			}
+			if open["Perbaiki: "+is.Message] {
+				continue
+			}
+			open["Perbaiki: "+is.Message] = true
 			task := core.Task{ID: work.NextTaskID(p), Title: "Perbaiki: " + is.Message, Area: "integration",
 				Description:        "Verifikasi project gagal. Perbaiki penyebabnya tanpa mengubah perilaku yang sudah benar.\n\n" + out,
 				AcceptanceCriteria: []string{"Semua command build/test project lulus", "Tidak ada test yang dihapus atau dilewati untuk membuatnya lulus"},
