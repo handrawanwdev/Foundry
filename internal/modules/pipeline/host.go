@@ -80,7 +80,9 @@ func (s *Service) NextWork(worker string) (*WorkItem, error) {
 			return &WorkItem{Kind: "wait", Prompt: fmt.Sprintf(
 				"Task independen sedang dikerjakan (%s). Tunggu sebentar lalu panggil next_work lagi.", strings.Join(ids, ", "))}, nil
 		}
-		s.finishBuild(context.Background())
+		if !s.finishBuild(context.Background()) {
+			return &WorkItem{Kind: "none", Prompt: "Verifikasi sudah dijalankan host lain."}, nil
+		}
 		return &WorkItem{Kind: "none", Prompt: "Semua task yang bisa dikerjakan sudah selesai. Foundry menjalankan verifikasi."}, nil
 	}
 	return &WorkItem{Kind: "none", Prompt: nothingMessage(p)}, nil
@@ -181,11 +183,15 @@ func (s *Service) SubmitTask(id, worker string, verdicts []work.Verdict, patches
 		return nil, nil, err
 	}
 	t := p.Task(id)
-	s.handOffPatches(id, work.CleanPatches(patches))
 	s.setProgress(id, "Menjalankan build & tes")
 	stop := s.keepSeen(id)
-	build := s.runChecks(context.Background(), id, p.Dir)
+	build, err := s.runChecks(context.Background(), id, p.Dir)
 	stop()
+	if err != nil { // nothing ran: the task stays with its host to submit again
+		s.setProgress(id, "")
+		return nil, nil, err
+	}
+	s.handOffPatches(id, work.CleanPatches(patches))
 	if !build.Passed {
 		s.rejectTask(id, "Verifikasi gagal: "+build.Reason+"\n"+lastOutput(build))
 	} else {

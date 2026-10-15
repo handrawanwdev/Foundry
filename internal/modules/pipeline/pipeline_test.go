@@ -26,6 +26,9 @@ import (
 // The test binary doubles as a fake agent CLI: when FOUNDRY_FAKE_AGENT=1 it
 // reads a prompt on stdin and answers like a real agent would.
 func TestMain(m *testing.M) {
+	if mode := os.Getenv("FOUNDRY_LOCK_HELPER"); mode != "" {
+		os.Exit(lockHelper(mode))
+	}
 	if os.Getenv("FOUNDRY_FAKE_AGENT") == "1" {
 		fakeAgent()
 		return

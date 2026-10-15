@@ -140,9 +140,13 @@ func (s *Service) settle(ctx context.Context, runner *agent.Runner, id, dir stri
 		return settled{problem: "Tidak ada file yang berubah; implementasi belum dibuat"}
 	}
 	s.setProgress(id, "Menjalankan build & tes")
-	build := s.runChecks(ctx, id, tree.Dir)
+	build, err := s.runChecks(ctx, id, tree.Dir)
 	if ctx.Err() != nil {
 		return settled{done: true, err: s.releaseTask(ctx, id)}
+	}
+	if err != nil {
+		s.releaseTask(ctx, id)
+		return settled{done: true, err: err}
 	}
 	if !build.Passed {
 		return settled{problem: "Verifikasi gagal: " + build.Reason + "\n" + lastOutput(build)}
@@ -176,6 +180,9 @@ func (s *Service) settle(ctx context.Context, runner *agent.Runner, id, dir stri
 			"(<<<<<<< ======= >>>>>>>): " + strings.Join(files, ", ") + ". Selesaikan dengan mempertahankan maksud kedua sisi, lalu pastikan build/test lulus."}
 	case mergeBroken: // the worktree holds the rebased work: repairable there
 		return settled{problem: note}
+	case mergeUnlocked:
+		s.releaseTask(ctx, id)
+		return settled{done: true, err: errors.New(note)}
 	}
 	return settled{problem: note, final: true}
 }
@@ -277,16 +284,21 @@ const (
 	mergeConflict             // clashes with work merged meanwhile
 	mergeBroken               // rebased cleanly but build/test failed
 	mergeFailed               // git could not read or apply; not repairable
+	mergeUnlocked             // the build/test lock could not be taken; nothing done
 )
 
-// merge applies a task's patch to the project tree under checkMu, so merges
-// and checks never interleave. When the tree changed since the worktree's
-// snapshot, the patch is replayed on a fresh snapshot and tested there
-// first, so what lands is exactly what passed. It returns the build that
+// merge applies a task's patch to the project tree under lockChecks, so
+// merges and checks never interleave, in this process or another. When the
+// tree changed since the worktree's snapshot, the patch is replayed on a
+// fresh snapshot and tested there first, so what lands is exactly what
+// passed. It returns the build that
 // gates DONE, or a note and why the work could not land.
 func (s *Service) merge(ctx context.Context, id, dir string, tree *gitwt.Tree, patch []byte, buildID string) (string, string, mergeResult) {
-	s.checkMu.Lock()
-	defer s.checkMu.Unlock()
+	unlock, err := s.lockChecks(ctx, nil)
+	if err != nil {
+		return "", err.Error(), mergeUnlocked
+	}
+	defer unlock()
 	now, err := gitwt.Snapshot(ctx, dir, core.StateDir)
 	if err != nil {
 		return "", "Gagal membaca project untuk digabung: " + err.Error(), mergeFailed
@@ -315,8 +327,11 @@ func (s *Service) merge(ctx context.Context, id, dir string, tree *gitwt.Tree, p
 // remerge three-way merges the task's patch onto the current project tree
 // in the worktree, returning the files left with conflict markers.
 func (s *Service) remerge(ctx context.Context, dir string, tree *gitwt.Tree, patch []byte) ([]string, error) {
-	s.checkMu.Lock()
-	defer s.checkMu.Unlock()
+	unlock, err := s.lockChecks(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	now, err := gitwt.Snapshot(ctx, dir, core.StateDir)
 	if err != nil {
 		return nil, err

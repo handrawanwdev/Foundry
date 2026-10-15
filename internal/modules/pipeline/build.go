@@ -17,6 +17,7 @@ import (
 	"github.com/handrawanw/foundry/internal/modules/scan"
 	"github.com/handrawanw/foundry/internal/modules/verify"
 	"github.com/handrawanw/foundry/internal/modules/work"
+	"github.com/handrawanw/foundry/internal/safefile"
 )
 
 // ---------- Build (Kanban + agent) ----------
@@ -416,9 +417,13 @@ func (s *Service) runShared(ctx context.Context, runner *agent.Runner, p *core.P
 		return nil
 	}
 	s.setProgress(id, "Menjalankan build & tes")
-	build := s.runChecks(ctx, id, p.Dir)
+	build, err := s.runChecks(ctx, id, p.Dir)
 	if ctx.Err() != nil {
 		return s.releaseTask(ctx, id)
+	}
+	if err != nil {
+		s.releaseTask(ctx, id)
+		return err
 	}
 	if !build.Passed {
 		s.rejectTask(id, "Verifikasi gagal: "+build.Reason+"\n"+lastOutput(build))
@@ -493,14 +498,52 @@ func (s *Service) handOffPatches(from string, patches []work.Patch) {
 }
 
 // runChecks re-detects commands in dir (a scaffold task may have created
-// tooling) and runs them, storing the result.
-func (s *Service) runChecks(ctx context.Context, taskID, dir string) core.BuildRun {
-	s.checkMu.Lock()
-	defer s.checkMu.Unlock()
-	return s.runChecksLocked(ctx, taskID, dir)
+// tooling) and runs them, storing the result. While another process runs
+// its checks the task shows that it waits. An error means the checks did
+// not run and nothing was stored.
+func (s *Service) runChecks(ctx context.Context, taskID, dir string) (core.BuildRun, error) {
+	waited := false
+	unlock, err := s.lockChecks(ctx, func() {
+		if taskID != "" {
+			waited = true
+			s.setProgress(taskID, "Menunggu build & tes proses lain selesai")
+		}
+	})
+	if err != nil {
+		return core.BuildRun{}, err
+	}
+	defer unlock()
+	if waited {
+		s.setProgress(taskID, "Menjalankan build & tes")
+	}
+	return s.runChecksLocked(ctx, taskID, dir), nil
 }
 
-// runChecksLocked is runChecks for a caller already holding checkMu.
+// lockChecks takes the project's build/test lock: checkMu for this
+// process's goroutines, then a file lock for every Foundry process (the UI
+// and each MCP host) on the project. The caller holds both until it no
+// longer uses the shared outputs. A live owner is waited for as long as
+// ctx lives, with no deadline of its own: its hold is bounded by its steps'
+// StepTimeout, and a crashed owner frees the lock at once. onWait, if set,
+// runs once when another process holds it.
+func (s *Service) lockChecks(ctx context.Context, onWait func()) (func(), error) {
+	s.checkMu.Lock()
+	path := filepath.Join(s.Store.Dir, core.StateDir, "checks.lock")
+	l, err := safefile.Acquire(path, 0)
+	if errors.Is(err, safefile.ErrTimeout) {
+		if onWait != nil {
+			onWait()
+		}
+		l, err = safefile.AcquireContext(ctx, path)
+	}
+	if err != nil {
+		s.checkMu.Unlock()
+		return nil, fmt.Errorf("build/test tidak dapat dikunci: %w", err)
+	}
+	return func() { l.Unlock(); s.checkMu.Unlock() }, nil
+}
+
+// runChecksLocked is runChecks for a caller already holding lockChecks.
 func (s *Service) runChecksLocked(ctx context.Context, taskID, dir string) core.BuildRun {
 	cmds := scan.Scan(dir).Commands
 	build := checks.Run(ctx, dir, cmds, taskID)
@@ -748,14 +791,27 @@ func stampFinished(t *core.Task) {
 	}
 }
 
-// finishBuild runs the full verification once the queue is empty.
-func (s *Service) finishBuild(ctx context.Context) {
-	s.Store.Update(func(p *core.Project) error {
+// finishBuild runs the full verification once the queue is empty. Several
+// hosts can find it empty at once; the move from the build job to verify
+// is checked and made in one update, so only the first runs it. It reports
+// whether this caller did.
+func (s *Service) finishBuild(ctx context.Context) bool {
+	_, err := s.Store.Update(func(p *core.Project) error {
+		if p.Job == nil || p.Job.Kind != "build" || (p.Job.Status != core.JobRunning && p.Job.Status != core.JobWaiting) {
+			return errUnchanged // another host moved on already
+		}
+		if len(p.ActiveTasks()) > 0 {
+			return errUnchanged
+		}
 		p.Stage = core.StageVerify
 		p.Job = &core.Job{Kind: "verify", Status: core.JobRunning, Message: jobMessage("verify"), Started: time.Now().UTC()}
 		return nil
 	})
+	if err != nil {
+		return false
+	}
 	s.verifyNow(ctx)
+	return true
 }
 
 // ---------- Verify / Fix ----------
@@ -789,7 +845,11 @@ func (s *Service) verifyNow(ctx context.Context) {
 		s.failJobIf("verify", err, runningJob("verify"))
 		return
 	}
-	build := s.runChecks(ctx, "", p.Dir)
+	build, err := s.runChecks(ctx, "", p.Dir)
+	if err != nil {
+		s.failJobIf("verify", err, runningJob("verify"))
+		return
+	}
 	s.Store.Update(func(p *core.Project) error {
 		v := verify.Report(p, p.Build(build.ID))
 		p.Verification = v

@@ -123,8 +123,9 @@ type Service struct {
 	cancel context.CancelFunc
 	run    uint64 // numbers the build that owns cancel
 	wg     sync.WaitGroup
-	// checkMu runs one build/test at a time; parallel runs of the same
-	// toolchain would fight over its outputs.
+	// checkMu runs one build/test at a time in this process; parallel runs
+	// of the same toolchain would fight over its outputs. lockChecks adds
+	// the file lock that does the same across processes.
 	checkMu sync.Mutex
 }
 
