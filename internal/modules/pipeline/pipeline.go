@@ -121,6 +121,7 @@ type Service struct {
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
+	run    uint64 // numbers the build that owns cancel
 	wg     sync.WaitGroup
 	// checkMu runs one build/test at a time; parallel runs of the same
 	// toolchain would fight over its outputs.
@@ -409,17 +410,18 @@ func (s *Service) ApproveDesign() error {
 	if err != nil {
 		return err
 	}
-	return s.continueApproval()
+	return s.continueApproval(nil)
 }
 
 // continueApproval scaffolds the project (if needed) and starts the plan
-// job. Called after a fresh approval and when retrying a failed plan.
-func (s *Service) continueApproval() error {
+// job. Called after a fresh approval and when retrying a failed plan;
+// expect is the precondition for starting the job (nil: none).
+func (s *Service) continueApproval(expect func(*core.Project) error) error {
 	if err := s.scaffoldApproved(); err != nil {
-		s.failJob(work.KindPlan, err)
+		s.failJobIf(work.KindPlan, err, expect)
 		return err
 	}
-	return s.startAI(work.KindPlan)
+	return s.startAIIf(work.KindPlan, expect)
 }
 
 func (s *Service) scaffoldApproved() error {
@@ -468,10 +470,15 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 
 // startAI either runs the job with the agent in the background or parks it
 // for the MCP host.
-func (s *Service) startAI(kind string) error {
+func (s *Service) startAI(kind string) error { return s.startAIIf(kind, nil) }
+
+// startAIIf is startAI with a precondition checked in the same store update
+// that starts the job, so two callers can never both start it. A failed
+// precondition starts nothing and writes nothing.
+func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error {
 	runner, isMCP, err := s.AI.Runner()
 	if err != nil {
-		s.failJob(kind, err)
+		s.failJobIf(kind, err, expect)
 		return err
 	}
 	status := core.JobRunning
@@ -480,6 +487,11 @@ func (s *Service) startAI(kind string) error {
 		status, msg = core.JobWaiting, msg+" — menunggu AI Host (MCP)"
 	}
 	p, err := s.Store.Update(func(p *core.Project) error {
+		if expect != nil {
+			if err := expect(p); err != nil {
+				return err
+			}
+		}
 		p.Job = &core.Job{Kind: kind, Status: status, Message: msg, Started: time.Now().UTC()}
 		return nil
 	})
@@ -568,8 +580,17 @@ func (s *Service) dropUnclearRequest() error {
 	return err
 }
 
-func (s *Service) failJob(kind string, err error) {
+func (s *Service) failJob(kind string, err error) { s.failJobIf(kind, err, nil) }
+
+// failJobIf records a failed job only while expect holds (nil: always), so
+// a late failure never overwrites a job that started after it.
+func (s *Service) failJobIf(kind string, err error, expect func(*core.Project) error) {
 	s.Store.Update(func(p *core.Project) error {
+		if expect != nil {
+			if err := expect(p); err != nil {
+				return err
+			}
+		}
 		p.Job = &core.Job{Kind: kind, Status: core.JobFailed, Message: jobMessage(kind), Error: err.Error(), Started: time.Now().UTC()}
 		p.Log("system", fmt.Sprintf("%s gagal: %v", kind, err))
 		return nil
@@ -712,25 +733,49 @@ func (s *Service) RetryJob() error {
 	if p.Job == nil || p.Job.Status != core.JobFailed {
 		return ErrNothingToDo
 	}
-	switch p.Job.Kind {
-	case work.KindDiscovery, work.KindDesign, work.KindDesignQA, work.KindReference:
-		return s.startAI(p.Job.Kind)
+	// The check above is an early answer only; failedJob repeats it inside
+	// the update that starts the job, so concurrent retries start it once.
+	kind := p.Job.Kind
+	switch kind {
+	case work.KindDiscovery, work.KindDesign, work.KindDesignQA, work.KindReference, work.KindPRD:
+		return s.startAIIf(kind, failedJob(kind))
 	case work.KindStack:
 		if p.Stack != nil && p.Stack.Request != "" {
-			return s.startAI(work.KindStack)
+			return s.startAIIf(kind, failedJob(kind))
 		}
 	case work.KindStructure:
 		if p.Structure != nil && p.Structure.Request != "" {
-			return s.startAI(work.KindStructure)
+			return s.startAIIf(kind, failedJob(kind))
 		}
 	case work.KindPlan:
-		return s.continueApproval()
-	case work.KindPRD:
-		return s.startAI(work.KindPRD)
+		return s.continueApproval(failedJob(kind))
 	case "build":
 		return s.StartBuild()
 	case "verify":
 		return s.Verify()
 	}
 	return ErrNothingToDo
+}
+
+// failedJob holds while the project's job is still the failed job of kind.
+func failedJob(kind string) func(*core.Project) error {
+	return func(p *core.Project) error {
+		if p.Busy() {
+			return ErrBusy
+		}
+		if p.Job == nil || p.Job.Status != core.JobFailed || p.Job.Kind != kind {
+			return ErrNothingToDo
+		}
+		return nil
+	}
+}
+
+// runningJob holds while the project's job is the running job of kind.
+func runningJob(kind string) func(*core.Project) error {
+	return func(p *core.Project) error {
+		if p.Job == nil || p.Job.Status != core.JobRunning || p.Job.Kind != kind {
+			return ErrNothingToDo
+		}
+		return nil
+	}
 }

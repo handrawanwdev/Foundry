@@ -27,6 +27,7 @@ internal/modules/
   pipeline/                 orchestrator: job, kanban gate, build loop, verify, fix
 internal/transport/
   httpapi/                  REST /api/v1 + SSE + SPA
+    respond/                helper response standar (success/created/noContent/fail/paginated)
   mcp/                      MCP stdio server (JSON-RPC 2.0)
 apps/web/                   React + Vite + Zustand (embed ke binary)
 ```
@@ -90,3 +91,30 @@ make test
 ```
 
 E2E Go memakai test binary sebagai fake agent: happy path sampai READY, tanpa AI, output AI rusak, revisi desain, test gagal → BLOCKED → Perbaiki Otomatis, reviewer menolak, agent crash, project existing, alur MCP host.
+
+## Kontrak Response API
+
+Semua endpoint JSON `/api/v1` memakai satu envelope (`internal/transport/httpapi/respond`). Pengecualian: `GET /api/v1/project/prd.md` (file Markdown) dan `GET /api/v1/events` (SSE); kegagalannya tetap envelope error.
+
+Sukses:
+
+```json
+{ "success": true, "data": {}, "meta": null }
+```
+
+Error:
+
+```json
+{ "success": false, "error": { "code": "VALIDATION_ERROR", "message": "Request tidak valid", "details": [] } }
+```
+
+| HTTP | `error.code`          | Kapan                                                      |
+| ---- | --------------------- | ---------------------------------------------------------- |
+| 400  | `VALIDATION_ERROR`    | body/parameter tidak valid                                 |
+| 403  | `FORBIDDEN`           | host/origin ditolak                                        |
+| 404  | `NOT_FOUND`           | resource/proyek tidak ada                                  |
+| 409  | `CONFLICT`            | job sibuk, gate/stage salah, belum ada yang dikerjakan     |
+| 412  | `PRECONDITION_FAILED` | AI belum terhubung                                         |
+| 500  | `INTERNAL_ERROR`      | kegagalan server                                           |
+
+Helper: `Success(w, data, meta?)` 200 · `Created(w, data)` 201 · `NoContent(w)` 204 · `Fail(w, code, message, status, details...)` · `Paginated(w, data, Pagination{Page, Limit, Total})` → `meta` berisi `page`, `limit`, `total`, `totalPages` (dihitung). Klien bercabang pada `error.code`, bukan teks `message`. Frontend meng-unwrap `data` di `apps/web/src/api.ts`.

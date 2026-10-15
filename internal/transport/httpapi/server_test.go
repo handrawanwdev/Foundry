@@ -324,7 +324,7 @@ func TestDesignVersionRoutes(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
-	if w := do("GET", "/api/v1/project/design/versions", ""); w.Code != 200 || w.Body.String() != "[]\n" {
+	if w := do("GET", "/api/v1/project/design/versions", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"data":[]`) {
 		t.Fatalf("versions: %d %s", w.Code, w.Body)
 	}
 	if w := do("GET", "/api/v1/project/design/prototype", ""); w.Code != 200 {
@@ -353,13 +353,17 @@ func TestDesignTemplateRoute(t *testing.T) {
 	r.Host = "127.0.0.1:8080"
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
-	var g struct {
-		Templates []struct{ ID string }
-		Previews  map[string]struct{ Name string }
-		Theme     struct{ ID string }
-		Domain    string
+	var env struct {
+		Data struct {
+			Templates []struct{ ID string }
+			Previews  map[string]struct{ Name string }
+			Theme     struct{ ID string }
+			Domain    string
+		}
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &g); w.Code != 200 || err != nil {
+	err := json.Unmarshal(w.Body.Bytes(), &env)
+	g := env.Data
+	if w.Code != 200 || err != nil {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	if len(g.Templates) != 8 || g.Theme.ID != "sakura-light" || g.Domain != "ticketing" || g.Previews["workspace-agent"].Name != "Helpdesk tiket" {
@@ -451,5 +455,46 @@ func TestAIDisconnect(t *testing.T) {
 	do("/api/v1/ai/disconnect", `{"all": true}`)
 	if c := state(); c.Connection != nil || c.MCP != nil {
 		t.Fatalf("all: %+v %+v", c.Connection, c.MCP)
+	}
+}
+
+func TestResponseEnvelope(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	s := New(nil, "/bin/foundry")
+	h := s.Handler()
+	get := func(path, host string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.RemoteAddr, r.Host = "127.0.0.1:50000", host
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	type env struct {
+		Success bool            `json:"success"`
+		Data    json.RawMessage `json:"data"`
+		Error   *struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+			Details []any  `json:"details"`
+		} `json:"error"`
+	}
+	w := get("/api/v1/ai", "127.0.0.1:8080")
+	var ok env
+	if err := json.Unmarshal(w.Body.Bytes(), &ok); err != nil || w.Code != 200 || !ok.Success || ok.Error != nil || len(ok.Data) == 0 || !strings.Contains(w.Body.String(), `"meta":null`) {
+		t.Fatalf("success envelope: %d %s", w.Code, w.Body)
+	}
+	for _, c := range []struct {
+		path, host, code string
+		status           int
+	}{
+		{"/api/v1/project", "127.0.0.1:8080", "NOT_FOUND", 404},
+		{"/api/v1/nope", "127.0.0.1:8080", "NOT_FOUND", 404},
+		{"/api/v1/ai", "evil.example", "FORBIDDEN", 403},
+	} {
+		w := get(c.path, c.host)
+		var e env
+		if err := json.Unmarshal(w.Body.Bytes(), &e); err != nil || w.Code != c.status || e.Success || e.Error == nil || e.Error.Code != c.code || e.Error.Message == "" || e.Error.Details == nil {
+			t.Fatalf("%s: want %d %s, got %d %s", c.path, c.status, c.code, w.Code, w.Body)
+		}
 	}
 }

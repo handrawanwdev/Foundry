@@ -11,8 +11,8 @@ func prdProject() *core.Project {
 	return &core.Project{
 		Name: "Klinik", Story: "Aplikasi janji temu klinik",
 		Discovery: &core.Discovery{Summary: "Klinik", Business: "Janji temu",
-			Users: []string{"Pasien", "Admin"},
-			Roles: []core.Role{{Name: "Pasien", Description: "membuat janji", Platform: "web"}},
+			Users:    []string{"Pasien", "Admin"},
+			Roles:    []core.Role{{Name: "Pasien", Description: "membuat janji", Platform: "web"}},
 			Security: []string{"Login wajib"}},
 		Requirements: []core.Requirement{
 			{ID: "REQ-001", Text: "Pasien dapat membuat janji", Priority: "MUST"},

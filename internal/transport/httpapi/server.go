@@ -28,6 +28,7 @@ import (
 	"github.com/handrawanw/foundry/internal/modules/structure"
 	"github.com/handrawanw/foundry/internal/modules/verify"
 	"github.com/handrawanw/foundry/internal/modules/work"
+	"github.com/handrawanw/foundry/internal/transport/httpapi/respond"
 	"github.com/handrawanw/foundry/internal/transport/mcp"
 )
 
@@ -135,10 +136,10 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			out, err := h(r)
 			if err != nil {
-				writeJSON(w, statusFor(err), map[string]string{"error": err.Error()})
+				fail(w, err)
 				return
 			}
-			writeJSON(w, http.StatusOK, out)
+			respond.Success(w, out)
 		})
 	}
 
@@ -460,16 +461,16 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) downloadPRD(w http.ResponseWriter, r *http.Request) {
 	svc, err := s.service()
 	if err != nil {
-		writeJSON(w, statusFor(err), map[string]string{"error": err.Error()})
+		fail(w, err)
 		return
 	}
 	p, err := svc.Store.Load()
 	if err != nil {
-		writeJSON(w, statusFor(err), map[string]string{"error": err.Error()})
+		fail(w, err)
 		return
 	}
 	if p.PRD == nil || strings.TrimSpace(p.PRD.Markdown) == "" {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "PRD belum dibuat"})
+		respond.Fail(w, respond.CodeNotFound, "PRD belum dibuat", http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
@@ -743,7 +744,7 @@ func (s *Server) browse(r *http.Request) (any, error) {
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	fl, okf := w.(http.Flusher)
 	if !okf {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		respond.Fail(w, respond.CodeInternal, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -780,7 +781,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) spa(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/api/") {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		respond.Fail(w, respond.CodeNotFound, "not found", http.StatusNotFound)
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/")
@@ -808,7 +809,7 @@ func (s *Server) spa(w http.ResponseWriter, r *http.Request) {
 	// Client-side routes (/simple/*) fall back to index.html.
 	b, err := fs.ReadFile(s.UI, "index.html")
 	if err != nil {
-		http.Error(w, "index.html tidak ada", http.StatusInternalServerError)
+		respond.Fail(w, respond.CodeInternal, "index.html tidak ada", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -854,10 +855,10 @@ func decode(r *http.Request, v any) error {
 	return nil
 }
 
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+// fail maps a service error to the standard error envelope.
+func fail(w http.ResponseWriter, err error) {
+	status := statusFor(err)
+	respond.Fail(w, respond.CodeFor(status), err.Error(), status)
 }
 
 // guard blocks cross-site requests: the API can run agents and commands, so
@@ -876,14 +877,14 @@ func guard(next http.Handler) http.Handler {
 			peer = r.RemoteAddr
 		}
 		if (!isLocal(host) || !isLocal(peer)) && os.Getenv("FOUNDRY_ALLOW_REMOTE") != "1" {
-			http.Error(w, "host tidak diizinkan", http.StatusForbidden)
+			respond.Fail(w, respond.CodeForbidden, "host tidak diizinkan", http.StatusForbidden)
 			return
 		}
 		if o := r.Header.Get("Origin"); o != "" {
 			u, err := url.Parse(o)
 			// Same host, or a loopback origin (Vite dev server on another port).
 			if err != nil || (u.Host != r.Host && !isLocal(u.Hostname())) {
-				http.Error(w, "origin tidak diizinkan", http.StatusForbidden)
+				respond.Fail(w, respond.CodeForbidden, "origin tidak diizinkan", http.StatusForbidden)
 				return
 			}
 		}

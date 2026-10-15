@@ -24,13 +24,13 @@ func TestBlockersScreenIntent(t *testing.T) {
 	p := &core.Project{Design: &core.Design{Pages: []core.Page{
 		{ID: "PAGE-001", Name: "Masuk", Kind: "auth", Route: "/masuk", Access: "public", Hierarchy: []string{"Form"},
 			PrimaryAction: &core.PageAction{Label: "Masuk"},
-			Components: []core.PageComponent{{Type: "form", Label: "Login"}, {Type: "button", Label: "masuk "}}},
+			Components:    []core.PageComponent{{Type: "form", Label: "Login"}, {Type: "button", Label: "masuk "}}},
 		{ID: "PAGE-002", Name: "Janji", Kind: "list", Route: "/janji", Access: "auth", Hierarchy: []string{"Tabel"},
 			PrimaryAction: &core.PageAction{Label: "Buat"}, States: &core.PageStates{Empty: "Belum ada janji."},
 			Components: []core.PageComponent{{Type: "table", Label: "Janji", Columns: []string{"Pasien"}}}},
 		{ID: "PAGE-003", Name: "Detail", Kind: "detail", Route: "/janji/:id", Access: "auth",
 			PrimaryAction: &core.PageAction{Reason: "baca saja"},
-			Components: []core.PageComponent{{Type: "list", Label: "Info"}}},
+			Components:    []core.PageComponent{{Type: "list", Label: "Info"}}},
 	}}}
 	got := blockerTexts(p)
 	want := []string{

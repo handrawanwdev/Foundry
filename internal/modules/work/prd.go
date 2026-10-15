@@ -66,7 +66,7 @@ type prdAnalysis struct {
 }
 
 type prdOut struct {
-	Markdown string           `json:"markdown"`
+	Markdown string            `json:"markdown"`
 	Findings []core.PRDFinding `json:"findings"`
 }
 
@@ -547,7 +547,7 @@ type prdPageView struct {
 }
 
 type prdTaskView struct {
-	ID, Title, Description, Area, FeatureID, Platform, Status string
+	ID, Title, Description, Area, FeatureID, Platform, Status                       string
 	RequirementIDs, PageIDs, DependsOn, AcceptanceCriteria, Files, TestRequirements []string
 }
 

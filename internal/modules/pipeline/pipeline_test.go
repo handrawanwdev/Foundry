@@ -127,6 +127,7 @@ func fakeAgent() {
 		}
 		fmt.Println(supportJSON)
 	case strings.Contains(prompt, "discovery analyst"):
+		countRun("discovery")
 		if mode == "bad_json" {
 			fmt.Println("maaf, saya tidak bisa")
 			return
@@ -185,6 +186,7 @@ func fakeAgent() {
 		}
 		fmt.Println(prdJSON)
 	case strings.Contains(prompt, "tech lead"):
+		countRun("plan")
 		if mode == "plan_fail" {
 			fmt.Println("maaf, saya tidak bisa")
 			return
@@ -259,6 +261,20 @@ func fakeAgent() {
 		fmt.Fprintln(os.Stderr, "unknown prompt")
 		os.Exit(3)
 	}
+}
+
+// countRun appends label to $FAKE_RUNS, so a test can count agent runs.
+func countRun(label string) {
+	path := os.Getenv("FAKE_RUNS")
+	if path == "" {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintln(f, label)
 }
 
 type fakeAI struct {

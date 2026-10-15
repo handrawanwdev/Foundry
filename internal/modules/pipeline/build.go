@@ -72,12 +72,11 @@ func (s *Service) StartBuild() error {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.mu.Lock()
-	s.cancel = cancel
-	s.mu.Unlock()
+	run := s.beginBuild(cancel)
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		defer s.endBuild(run)
 		defer cancel()
 		if err := runner.Preflight(ctx, dir); err != nil && ctx.Err() == nil {
 			msg := fmt.Errorf("koneksi AI bermasalah, build tidak dimulai: %w", err)
@@ -90,6 +89,25 @@ func (s *Service) StartBuild() error {
 		s.buildLoop(ctx, cancel, runner)
 	}()
 	return nil
+}
+
+// beginBuild makes cancel the one StopBuild calls and numbers the build.
+func (s *Service) beginBuild(cancel context.CancelFunc) uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.run++
+	s.cancel = cancel
+	return s.run
+}
+
+// endBuild forgets the cancel func of a build that returned, unless a newer
+// build owns it already. A stale func would make StopBuild skip a host build.
+func (s *Service) endBuild(run uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.run == run {
+		s.cancel = nil
+	}
 }
 
 func (s *Service) StopBuild() error {
@@ -418,8 +436,14 @@ func (s *Service) runShared(ctx context.Context, runner *agent.Runner, p *core.P
 // already released or rejected.
 func (s *Service) review(ctx context.Context, runner *agent.Runner, id, out, dir string, changed []string, patch []byte, build *core.BuildRun) ([]core.Criterion, error) {
 	s.setProgress(id, "Meninjau hasil")
-	p, _ := s.Store.Load()
+	p, err := s.Store.Load()
+	if err != nil {
+		return nil, err
+	}
 	t := p.Task(id)
+	if t == nil {
+		return nil, nil // removed meanwhile: nothing left to judge
+	}
 	// The coding agent judges before Foundry's checks run (and often cannot
 	// run them itself), so only its passing verdict is final; an unmet one
 	// goes to the reviewer, who sees the build result.
@@ -428,7 +452,7 @@ func (s *Service) review(ctx context.Context, runner *agent.Runner, id, out, dir
 	}
 	s.setStatus(id, core.TaskReview, "agent", "Build + test lulus, review acceptance criteria")
 	rp := work.ReviewPrompt(p, t, reviewChanges(dir, changed, patch), build)
-	out, err := s.measured(id, rp, func() (agent.Result, error) { return s.reviewRunner(runner).RunDetailed(ctx, agent.Think, dir, rp) })
+	out, err = s.measured(id, rp, func() (agent.Result, error) { return s.reviewRunner(runner).RunDetailed(ctx, agent.Think, dir, rp) })
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, s.releaseTask(ctx, id)
@@ -760,7 +784,11 @@ func (s *Service) Verify() error {
 }
 
 func (s *Service) verifyNow(ctx context.Context) {
-	p, _ := s.Store.Load()
+	p, err := s.Store.Load()
+	if err != nil {
+		s.failJobIf("verify", err, runningJob("verify"))
+		return
+	}
 	build := s.runChecks(ctx, "", p.Dir)
 	s.Store.Update(func(p *core.Project) error {
 		v := verify.Report(p, p.Build(build.ID))

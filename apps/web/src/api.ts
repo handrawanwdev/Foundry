@@ -1,10 +1,13 @@
 import type { AgentOptions, AIState, Browse, CanvasOp, CanvasResult, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Prototype, TaskStatus, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
 
 export class ApiError extends Error {
-  constructor(message: string, public status: number) {
+  constructor(message: string, public status: number, public code = "") {
     super(message);
   }
 }
+
+// Standard envelope: {success:true,data,meta} | {success:false,error:{code,message,details}}.
+type Envelope<T> = { success: true; data: T; meta: unknown } | { success: false; error: { code: string; message: string; details: unknown[] } };
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api/v1${path}`, {
@@ -12,9 +15,10 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error ?? res.statusText, res.status);
-  return data as T;
+  if (res.status === 204) return undefined as T;
+  const env = (await res.json().catch(() => null)) as Envelope<T> | null;
+  if (!env || !env.success) throw new ApiError(env && !env.success ? env.error.message : res.statusText, res.status, env && !env.success ? env.error.code : "");
+  return env.data;
 }
 
 export const api = {
