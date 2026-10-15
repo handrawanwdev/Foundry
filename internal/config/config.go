@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/handrawanw/foundry/internal/safefile"
 )
 
 type ConnectionMode string
@@ -70,23 +72,40 @@ func Load() (*Config, error) {
 	return &c, nil
 }
 
+// lockWait bounds the wait for another Foundry process (UI, MCP) that is
+// updating the config.
+var lockWait = 10 * time.Second
+
+// Update re-reads the config, applies fn and saves it atomically. The file
+// lock serializes every process; mu only spares goroutines of this one the
+// lock polling.
 func Update(fn func(c *Config)) (*Config, error) {
 	mu.Lock()
 	defer mu.Unlock()
+	if err := os.MkdirAll(Home(), 0o755); err != nil {
+		return nil, err
+	}
+	l, err := safefile.Acquire(path()+".lock", lockWait)
+	if errors.Is(err, safefile.ErrTimeout) {
+		return nil, errors.New("config sedang dikunci proses lain")
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer l.Unlock()
 	c, err := Load()
 	if err != nil {
 		return nil, err
 	}
 	fn(c)
-	if err := os.MkdirAll(Home(), 0o755); err != nil {
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
 		return nil, err
 	}
-	b, _ := json.MarshalIndent(c, "", "  ")
-	tmp := path() + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	if err := safefile.WriteFile(path(), b, 0o600); err != nil {
 		return nil, err
 	}
-	return c, os.Rename(tmp, path())
+	return c, nil
 }
 
 func (c *Config) AddRecent(dir string) {

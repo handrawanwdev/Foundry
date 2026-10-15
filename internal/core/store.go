@@ -7,12 +7,16 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/handrawanw/foundry/internal/safefile"
 )
 
 // StateDir is the per-project folder holding the single source of truth.
 const StateDir = ".foundry"
 
 var ErrNotFound = errors.New("project belum dibuat")
+
+var errExists = errors.New("project sudah ada")
 
 // Store persists one project to <dir>/.foundry/project.json. The HTTP server
 // and the MCP process may run concurrently, so every mutation goes through a
@@ -50,7 +54,15 @@ func (s *Store) Init(name string) (*Project, error) {
 	}
 	p := &Project{Name: name, Dir: s.Dir, Stage: StageTell}
 	p.Log("system", "Project dibuat")
-	err := s.withLock(func() error { return s.write(p) })
+	err := s.withLock(func() error {
+		if s.Exists() {
+			return errExists // another process created it meanwhile
+		}
+		return s.write(p)
+	})
+	if errors.Is(err, errExists) {
+		return s.Load()
+	}
 	return p, err
 }
 
@@ -114,38 +126,22 @@ func (s *Store) write(p *Project) error {
 	if err != nil {
 		return err
 	}
-	tmp := s.path() + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path())
+	return safefile.WriteFile(s.path(), b, 0o644)
 }
 
-// staleLock is when a lock file counts as left by a crashed process. The
-// wait outlasts it, so a lock left by a crash is broken instead of failing
-// the caller.
-const staleLock = 30 * time.Second
+// lockWait is how long a mutation waits for another process to finish its
+// own. The lock is held by the OS (see safefile), so it is never broken: a
+// crashed owner frees it at once and a live one keeps it until it is done.
+var lockWait = 40 * time.Second
 
 func (s *Store) withLock(fn func() error) error {
-	deadline := time.Now().Add(staleLock + 10*time.Second)
-	for {
-		f, err := os.OpenFile(s.lockPath(), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if err == nil {
-			f.Close()
-			defer os.Remove(s.lockPath())
-			return fn()
-		}
-		if !errors.Is(err, os.ErrExist) {
-			return err
-		}
-		// Break locks left behind by a crashed process.
-		if st, serr := os.Stat(s.lockPath()); serr == nil && time.Since(st.ModTime()) > staleLock {
-			os.Remove(s.lockPath())
-			continue
-		}
-		if time.Now().After(deadline) {
-			return errors.New("state sedang dikunci proses lain")
-		}
-		time.Sleep(25 * time.Millisecond)
+	l, err := safefile.Acquire(s.lockPath(), lockWait)
+	if errors.Is(err, safefile.ErrTimeout) {
+		return errors.New("state sedang dikunci proses lain")
 	}
+	if err != nil {
+		return err
+	}
+	defer l.Unlock()
+	return fn()
 }
