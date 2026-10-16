@@ -90,6 +90,7 @@ export function queueLabel(it?: QueueItem): string {
   if (!it) return "";
   if (it.state === "independent") return "siap paralel";
   if (it.state === "waiting_deps") return `menunggu ${(it.waiting ?? []).join(", ")}`;
+  if (it.state === "blocked_deps" || it.state === "invalid_deps") return it.reason ?? "dependensi bermasalah";
   if (it.blocked_by) {
     const lock = it.lock === "*" ? "seluruh project" : (it.lock ?? "").replace(":", " ");
     return lock ? `dipakai ${it.blocked_by} (${lock})` : `dipakai ${it.blocked_by}`;

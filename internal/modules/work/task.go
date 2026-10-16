@@ -200,6 +200,7 @@ const workRules = `WORK RULES:
 - Reuse existing helper/component/type/client in shared folders. Never duplicate.
 - Tests next to the code they test, project convention.
 - ORM only in repository. Cross-module side effects via events. Function ≤ 40 lines, file ≤ 300.
+- Go deps: write require lines with explicit versions in go.mod (you cannot run go get); Foundry runs "go mod tidy -go=<go directive>". Never raise the go directive or add a toolchain line: pick versions that support it.
 - No notes, summaries, reports, TODO md, scratch scripts, logs, backups, or new top-level folders. Foundry discards them. Keep FOUNDRY.md and AGENTS.md.
 `
 

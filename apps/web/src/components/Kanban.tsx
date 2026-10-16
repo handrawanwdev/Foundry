@@ -90,6 +90,7 @@ function TaskCard({ t, now, feature, queue, active, onClick, onSetClosed }: {
         {t.progress && (working || t.status === "REVIEW") && (
           <div className="task-progress">{t.progress}</div>
         )}
+        {t.status === "BLOCKED" && t.blocked_reason && <div className="task-progress">{t.blocked_reason}</div>}
         <TaskTime t={t} now={now} />
         {closed ? (
           <div className="task-queue">ditutup</div>

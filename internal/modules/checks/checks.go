@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -83,8 +84,134 @@ func installs(dir string, cmds []core.Command) []core.Command {
 		}
 		out = append(out, core.Command{Name: "install", Dir: c.Dir, Argv: argv})
 	}
+	out = append(out, goInstalls(dir, cmds)...)
 	return append(out, browserInstalls(dir, cmds)...)
 }
+
+// goInstalls returns one `go mod tidy` per Go module the commands run in
+// whose go.sum is missing or older than go.mod or a source file. Agents run
+// headless and may not fetch modules, so a scaffold that imports packages
+// absent from go.mod fails `go vet` with "no required module provides
+// package" on every attempt. tidy is idempotent and only rewrites go.mod and
+// go.sum, never source.
+func goInstalls(dir string, cmds []core.Command) []core.Command {
+	var out []core.Command
+	seen := map[string]bool{}
+	for _, c := range cmds {
+		if len(c.Argv) == 0 || c.Argv[0] != "go" || seen[c.Dir] {
+			continue
+		}
+		seen[c.Dir] = true
+		base := filepath.Join(dir, c.Dir)
+		mod, err := os.Stat(filepath.Join(base, "go.mod"))
+		if err != nil || !goDepsStale(base, mod.ModTime()) {
+			continue
+		}
+		argv := []string{"go", "mod", "tidy"}
+		// Pin the declared version: an unpinned tidy picks the newest module
+		// versions and silently raises the go directive (1.22 → 1.26) to fit
+		// them. Pinned, an incompatible version fails with "requires go@X,
+		// but Y is requested", which the agent fixes by pinning the module.
+		if b, err := os.ReadFile(filepath.Join(base, "go.mod")); err == nil {
+			if v := goDirective(string(b)); v != "" {
+				argv = append(argv, "-go="+v)
+			}
+		}
+		out = append(out, core.Command{Name: "install-go", Dir: c.Dir, Argv: argv})
+	}
+	return out
+}
+
+// goDepsStale reports whether go.sum is missing (with something to fetch) or
+// older than go.mod or any Go source below base.
+func goDepsStale(base string, mod time.Time) bool {
+	sum, err := os.Stat(filepath.Join(base, "go.sum"))
+	if err != nil {
+		b, rerr := os.ReadFile(filepath.Join(base, "go.mod"))
+		return rerr == nil && (hasRequire(string(b)) || hasGoImports(base, modulePath(string(b))))
+	}
+	if mod.After(sum.ModTime()) {
+		return true
+	}
+	stale := false
+	filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case "node_modules", ".git", ".foundry", "vendor":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(d.Name(), ".go") {
+			if info, ierr := d.Info(); ierr == nil && info.ModTime().After(sum.ModTime()) {
+				stale = true
+				return fs.SkipAll
+			}
+		}
+		return nil
+	})
+	return stale
+}
+
+// hasGoImports reports whether any Go source below base imports a path with
+// a dot in its first element, i.e. a third-party module.
+func hasGoImports(base, own string) bool {
+	found := false
+	filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case "node_modules", ".git", ".foundry", "vendor":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(d.Name(), ".go") {
+			if b, rerr := os.ReadFile(path); rerr == nil {
+				for _, m := range thirdParty.FindAllSubmatch(b, -1) {
+					if imp := string(m[1]); own == "" || imp != own && !strings.HasPrefix(imp, own+"/") {
+						found = true
+						return fs.SkipAll
+					}
+				}
+			}
+		}
+		return nil
+	})
+	return found
+}
+
+var thirdParty = regexp.MustCompile(`(?m)^\s*(?:import\s+)?(?:[\w._]+\s+)?"([a-z0-9-]+\.[a-z]+/[^"]+)"`)
+
+var (
+	modLine     = regexp.MustCompile(`(?m)^module\s+(\S+)`)
+	goLine      = regexp.MustCompile(`(?m)^go\s+([0-9][0-9.]*)\s*$`)
+	requireLine = regexp.MustCompile(`(?m)^\s*require\b`)
+)
+
+// modulePath is the module path declared in go.mod, "" when unreadable.
+func modulePath(mod string) string {
+	if m := modLine.FindStringSubmatch(mod); m != nil {
+		return strings.Trim(m[1], `"`)
+	}
+	return ""
+}
+
+// goDirective is the go version declared in go.mod, "" when absent.
+func goDirective(mod string) string {
+	if m := goLine.FindStringSubmatch(mod); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// hasRequire reports whether go.mod has a require directive (not a comment).
+func hasRequire(mod string) bool { return requireLine.MatchString(mod) }
 
 // browserInstalls fetches the Chromium build Playwright needs for a script
 // that runs its tests: node_modules alone does not include the browser, so a

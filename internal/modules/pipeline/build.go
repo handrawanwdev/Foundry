@@ -618,11 +618,14 @@ func (s *Service) rejectTask(id, note string) {
 		t.Progress = ""
 		if t.Attempts >= MaxAttempts || repeat {
 			t.Status = core.TaskBlocked
+			why := fmt.Sprintf("batas %d percobaan habis", MaxAttempts)
 			if repeat && t.Attempts < MaxAttempts {
+				why = "kegagalan identik berulang, retry tanpa strategi baru dihentikan"
 				p.Log("system", fmt.Sprintf("%s BLOCKED: kegagalan identik berulang (percobaan %d), retry tanpa strategi baru dihentikan", id, t.Attempts))
 			} else {
 				p.Log("system", fmt.Sprintf("%s BLOCKED setelah %d percobaan", id, t.Attempts))
 			}
+			t.BlockedReason = blockedReason(t, why, note)
 		} else {
 			t.Status = core.TaskTodo
 			p.Log("system", fmt.Sprintf("%s kembali ke TODO: %s", id, firstLine(note)))
@@ -630,6 +633,19 @@ func (s *Service) rejectTask(id, note string) {
 		return nil
 	})
 	markResume(s.Store.Dir, id)
+}
+
+// blockedReason is the traceable cause stored with a BLOCKED task: which
+// attempt, why it stopped, the last error, and what recovers it. Evidence
+// (notes, last build, criteria) stays on the task.
+func blockedReason(t *core.Task, why, note string) string {
+	fix := "Periksa log/agent lalu klik Perbaiki Terblokir."
+	if transient.MatchString(note) {
+		fix = "Masalah lingkungan (jaringan, proxy modul, port, resource), bukan kode: perbaiki lingkungannya lalu klik Perbaiki Terblokir."
+	} else if isDeterministic(note) {
+		fix = "Klik Perbaiki Terblokir: percobaan berikutnya membawa riwayat kegagalan dan build gagal terakhir untuk memperbaiki akar masalah."
+	}
+	return fmt.Sprintf("Percobaan ke-%d: %s. Error terakhir: %s. Pemulihan: %s", t.Attempts, why, shorten(note, 400), fix)
 }
 
 // concludeTask applies the DONE gate: passing build + all criteria met.
@@ -656,7 +672,7 @@ func (s *Service) concludeTask(id string, crit []core.Criterion, buildID, source
 			return nil
 		}
 		t.Status = core.TaskDone
-		t.Notes, t.Repair = nil, false
+		t.Notes, t.Repair, t.BlockedReason = nil, false, ""
 		t.Progress = ""
 		stampFinished(t)
 		t.Memory = work.RememberTask(p, t)
@@ -692,7 +708,7 @@ func (s *Service) MoveTask(id string, to core.TaskStatus) (*core.Project, error)
 			if t.Status == core.TaskInProgress && p.Busy() {
 				return ErrBusy
 			}
-			t.Attempts, t.Conflicts = 0, 0
+			t.Attempts, t.Conflicts, t.BlockedReason = 0, 0, ""
 			t.Progress = ""
 			t.StartedAt = time.Time{}
 			clearDraft(p.Dir, id)
@@ -776,7 +792,7 @@ func (s *Service) FixBlocked() error {
 			if t.Status != core.TaskBlocked {
 				continue
 			}
-			t.Status, t.Attempts, t.Conflicts, t.Closed, t.Progress, t.Repair = core.TaskTodo, 0, 0, false, "", true
+			t.Status, t.Attempts, t.Conflicts, t.Closed, t.Progress, t.Repair, t.BlockedReason = core.TaskTodo, 0, 0, false, "", true, ""
 			ids = append(ids, t.ID)
 		}
 		if len(ids) == 0 {
@@ -891,6 +907,7 @@ func (s *Service) Fix() error {
 		for i := range p.Tasks {
 			if p.Tasks[i].Status == core.TaskBlocked || p.Tasks[i].Status == core.TaskReview {
 				p.Tasks[i].Status, p.Tasks[i].Attempts, p.Tasks[i].Conflicts = core.TaskTodo, 0, 0
+				p.Tasks[i].BlockedReason = ""
 			}
 		}
 		pages, flows := work.RepairDesign(p)
@@ -899,11 +916,25 @@ func (s *Service) Fix() error {
 		}
 		added := work.FillCoverage(p)
 		open := map[string]bool{}
+		// A fix task is cross-cutting (it locks the whole project), so it
+		// waits for every feature task instead of racing the scaffold for
+		// the same files; the smoke task also waits for the other fixes.
+		var feature, fixes []string
+		smokeOpen := false
 		for _, t := range p.Tasks {
+			isFix := strings.HasPrefix(t.Title, fixPrefix)
 			if t.Status != core.TaskDone {
 				open[t.Title] = true
+				if isFix {
+					fixes = append(fixes, t.ID)
+					smokeOpen = smokeOpen || strings.HasPrefix(t.Description, work.SmokeBrief)
+				}
+			}
+			if !isFix && !t.Closed {
+				feature = append(feature, t.ID)
 			}
 		}
+		var smoke *core.Task
 		for _, is := range p.Verification.Issues {
 			tooling := is.Kind == "missing_test" && is.Ref == ""
 			runtime := is.Kind == "no_smoke" || is.Kind == "smoke_failed"
@@ -914,21 +945,30 @@ func (s *Service) Fix() error {
 			if b := p.Build(is.Ref); b != nil {
 				out = lastOutput(*b)
 			}
-			if open["Perbaiki: "+is.Message] {
-				continue
+			if open[fixPrefix+is.Message] || (runtime && (smokeOpen || smoke != nil)) {
+				continue // the same failure, or a second smoke task for one smoke script
 			}
-			open["Perbaiki: "+is.Message] = true
-			task := core.Task{ID: work.NextTaskID(p), Title: "Perbaiki: " + is.Message, Area: "integration",
+			open[fixPrefix+is.Message] = true
+			task := core.Task{ID: work.NextTaskID(p), Title: fixPrefix + is.Message, Area: "integration",
 				Description:        "Verifikasi project gagal. Perbaiki penyebabnya tanpa mengubah perilaku yang sudah benar.\n\n" + out,
 				AcceptanceCriteria: []string{"Semua command build/test project lulus", "Tidak ada test yang dihapus atau dilewati untuk membuatnya lulus"},
-				TestRequirements:   []string{"Command test project lulus"}, Status: core.TaskTodo}
+				TestRequirements:   []string{"Command test project lulus"}, Status: core.TaskTodo,
+				DependsOn: append([]string(nil), feature...)}
 			if runtime {
 				task.Description = work.SmokeBrief + "\n\n" + out
 				task.AcceptanceCriteria = work.SmokeCriteriaFor(p.Dir)
 				task.TestRequirements = []string{"Script smoke lulus: semua app hidup dan lulus pemeriksaan"}
+				smoke = &task // appended last: it needs the other fixes in place
+				p.Tasks = append(p.Tasks, task)
+				added++
+				continue
 			}
+			fixes = append(fixes, task.ID)
 			p.Tasks = append(p.Tasks, task)
 			added++
+		}
+		if smoke != nil {
+			p.Task(smoke.ID).DependsOn = append(p.Task(smoke.ID).DependsOn, fixes...)
 		}
 		p.Log("ui", fmt.Sprintf("Perbaiki otomatis: %d task baru", added))
 		return nil
@@ -938,6 +978,9 @@ func (s *Service) Fix() error {
 	}
 	return s.StartBuild()
 }
+
+// fixPrefix starts the title of every task Fix generates.
+const fixPrefix = "Perbaiki: "
 
 // maxReviewDiff bounds the diff a reviewer reads.
 const maxReviewDiff = 24000

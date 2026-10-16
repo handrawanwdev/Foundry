@@ -56,7 +56,7 @@ var deterministic = []string{"Verifikasi gagal", "Acceptance criteria belum"}
 
 // transient marks output that points at the environment, not the code: a
 // flaky test or busy port can pass on the same input, so it is retried.
-var transient = regexp.MustCompile(`(?i)(timeout|timed out|deadline exceeded|connection (refused|reset)|econn(refused|reset)|eaddrinuse|address already in use|temporar|unavailable|too many requests|rate.?limit|\b50[234]\b|no space left|out of memory|killed|flaky)`)
+var transient = regexp.MustCompile(`(?i)(timeout|timed out|deadline exceeded|connection (refused|reset)|econn(refused|reset)|eaddrinuse|address already in use|temporar|unavailable|too many requests|rate.?limit|\b50[234]\b|no space left|out of memory|killed|flaky|no such host|dial tcp|eai_again|enotfound|etimedout)`)
 
 // RepeatedFailure reports whether note repeats the latest failure and
 // another identical attempt would only burn tokens. Only deterministic

@@ -116,3 +116,74 @@ func idsOf(ts []*Task) []string {
 	}
 	return out
 }
+
+func queueOf(p *Project, id string) QueueItem {
+	for _, it := range p.Schedule().Items {
+		if it.ID == id {
+			return it
+		}
+	}
+	return QueueItem{}
+}
+
+// A dependent of a BLOCKED task is blocked_deps, not waiting_deps; it reopens
+// once the prerequisite is DONE, and an independent task is never held.
+func TestScheduleBlockedVersusWaitingDeps(t *testing.T) {
+	p := &Project{Tasks: []Task{
+		{ID: "T1", Area: "scaffold", Files: []string{"a"}, Status: TaskBlocked},
+		{ID: "T2", Area: "data", Files: []string{"b"}, Status: TaskTodo, DependsOn: []string{"T1"}},
+		{ID: "T3", Area: "data", Files: []string{"c"}, Status: TaskTodo, DependsOn: []string{"T2"}}, // upstream blocked
+		{ID: "T4", Area: "data", Files: []string{"d"}, Status: TaskInProgress},
+		{ID: "T5", Area: "data", Files: []string{"e"}, Status: TaskTodo, DependsOn: []string{"T4"}}, // plain wait
+		{ID: "T6", Area: "data", Files: []string{"f"}, Status: TaskTodo},
+	}}
+	if it := queueOf(p, "T2"); it.State != QueueBlockedDeps || it.BlockedBy != "T1" || !strings.Contains(it.Reason, "T1") {
+		t.Fatalf("T2 = %+v", it)
+	}
+	if it := queueOf(p, "T3"); it.State != QueueBlockedDeps || it.BlockedBy != "T1" {
+		t.Fatalf("T3 = %+v", it)
+	}
+	if it := queueOf(p, "T5"); it.State != QueueWaitingDeps {
+		t.Fatalf("T5 = %+v", it)
+	}
+	if got := idsOf(p.IndependentTasks()); len(got) != 1 || got[0] != "T6" {
+		t.Fatalf("independent = %v, want only T6", got)
+	}
+	// Prerequisite recovers: dependents are recomputed, never faked as DONE.
+	p.Task("T1").Status = TaskDone
+	if it := queueOf(p, "T2"); it.State != QueueIndependent {
+		t.Fatalf("T2 after recovery = %+v", it)
+	}
+	if it := queueOf(p, "T3"); it.State != QueueWaitingDeps {
+		t.Fatalf("T3 after recovery = %+v", it)
+	}
+	if len(p.Task("T2").DependsOn) != 1 {
+		t.Fatal("dependency must not be removed")
+	}
+}
+
+func TestScheduleInvalidDependencies(t *testing.T) {
+	p := &Project{Tasks: []Task{
+		{ID: "A", Area: "data", Files: []string{"a"}, Status: TaskTodo, DependsOn: []string{"C"}},
+		{ID: "B", Area: "data", Files: []string{"b"}, Status: TaskTodo, DependsOn: []string{"A"}},
+		{ID: "C", Area: "data", Files: []string{"c"}, Status: TaskTodo, DependsOn: []string{"B"}},
+		{ID: "M", Area: "data", Files: []string{"m"}, Status: TaskTodo, DependsOn: []string{"NOPE"}},
+		{ID: "F", Area: "data", Files: []string{"f"}, Status: TaskTodo},
+	}}
+	for _, id := range []string{"A", "B", "C"} {
+		if it := queueOf(p, id); it.State != QueueInvalidDeps || !strings.Contains(it.Reason, "cycle") {
+			t.Fatalf("%s = %+v", id, it)
+		}
+	}
+	// Downstream of a cycle: never ready, so it must say why.
+	p.Tasks = append(p.Tasks, Task{ID: "D", Area: "data", Files: []string{"d"}, Status: TaskTodo, DependsOn: []string{"A"}})
+	if it := queueOf(p, "D"); it.State != QueueInvalidDeps || !strings.Contains(it.Reason, "cycle") {
+		t.Fatalf("D = %+v", it)
+	}
+	if it := queueOf(p, "M"); it.State != QueueInvalidDeps || !strings.Contains(it.Reason, "NOPE") {
+		t.Fatalf("M = %+v", it)
+	}
+	if got := idsOf(p.IndependentTasks()); len(got) != 1 || got[0] != "F" {
+		t.Fatalf("independent = %v", got)
+	}
+}

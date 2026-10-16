@@ -657,11 +657,14 @@ type Task struct {
 	Closed bool `json:"closed,omitempty"`
 	// Repair marks a task put back by "Perbaiki Terblokir": its next run gets
 	// the full failure history and must fix the root cause. Cleared on DONE.
-	Repair      bool         `json:"repair,omitempty"`
-	Notes       []string     `json:"notes"`
-	LastBuildID string       `json:"last_build_id,omitempty"`
-	Criteria    []Criterion  `json:"criteria,omitempty"`
-	Metrics     *TaskMetrics `json:"metrics,omitempty"`
+	Repair bool `json:"repair,omitempty"`
+	// BlockedReason says why the task is BLOCKED: the attempt, the last
+	// error and the recovery step. Set with the status, cleared on leaving it.
+	BlockedReason string       `json:"blocked_reason,omitempty"`
+	Notes         []string     `json:"notes"`
+	LastBuildID   string       `json:"last_build_id,omitempty"`
+	Criteria      []Criterion  `json:"criteria,omitempty"`
+	Metrics       *TaskMetrics `json:"metrics,omitempty"`
 	// Memory is a compact record of the finished task, reused by dependents
 	// while its fingerprint still matches the source.
 	Memory *TaskMemory `json:"memory,omitempty"`
@@ -832,6 +835,8 @@ const (
 	QueueIndependent = "independent"  // deps done, files/pages free, no overlap with others in this set
 	QueueQueued      = "queued"       // deps done, but a file/page is held (or would be) by another task
 	QueueWaitingDeps = "waiting_deps" // a depends_on task is not DONE
+	QueueBlockedDeps = "blocked_deps" // a dependency, direct or upstream, is BLOCKED: it will not finish by itself
+	QueueInvalidDeps = "invalid_deps" // a depends_on id does not exist, or the dependencies form a cycle
 )
 
 // QueueItem is why one TODO task is or is not in the parallel set.
@@ -841,6 +846,8 @@ type QueueItem struct {
 	BlockedBy string   `json:"blocked_by,omitempty"`
 	Lock      string   `json:"lock,omitempty"`
 	Waiting   []string `json:"waiting,omitempty"`
+	// Reason explains blocked_deps and invalid_deps.
+	Reason string `json:"reason,omitempty"`
 }
 
 // Schedule is the live build queue. It is computed, never persisted.
@@ -1183,7 +1190,14 @@ func (p *Project) Schedule() Schedule {
 			}
 		}
 		if len(wait) > 0 {
-			items = append(items, QueueItem{ID: t.ID, State: QueueWaitingDeps, Waiting: wait})
+			if reason := p.invalidDeps(t); reason != "" {
+				items = append(items, QueueItem{ID: t.ID, State: QueueInvalidDeps, Waiting: wait, Reason: reason})
+			} else if root := p.blockedRoots(t); len(root) > 0 {
+				items = append(items, QueueItem{ID: t.ID, State: QueueBlockedDeps, Waiting: wait, BlockedBy: root[0],
+					Reason: "menunggu " + strings.Join(root, ", ") + " yang BLOCKED; dependensi tidak dilewati"})
+			} else {
+				items = append(items, QueueItem{ID: t.ID, State: QueueWaitingDeps, Waiting: wait})
+			}
 			continue
 		}
 		o, lock := p.Blocker(t)
@@ -1214,4 +1228,95 @@ func (p *Project) ActiveTasks() []*Task {
 		}
 	}
 	return out
+}
+
+// blockedRoots are the BLOCKED tasks that t is stuck behind, following
+// unfinished dependencies upstream. Cycle-safe.
+func (p *Project) blockedRoots(t *Task) []string {
+	var out []string
+	seen := map[string]bool{t.ID: true}
+	var walk func(*Task)
+	walk = func(x *Task) {
+		for _, d := range x.DependsOn {
+			dt := p.Task(d)
+			if dt == nil || seen[d] || dt.Status == TaskDone {
+				continue
+			}
+			seen[d] = true
+			if dt.Status == TaskBlocked {
+				out = append(out, d)
+				continue
+			}
+			walk(dt)
+		}
+	}
+	walk(t)
+	return out
+}
+
+// invalidDeps explains why t can never become ready on its own: a depends_on
+// id that is not a task, or a dependency path that leads back to t. Empty
+// when the dependencies are sound.
+func (p *Project) invalidDeps(t *Task) string {
+	var missing []string
+	for _, d := range t.DependsOn {
+		if p.Task(d) == nil {
+			missing = append(missing, d)
+		}
+	}
+	if len(missing) > 0 {
+		return "dependensi tidak ada: " + strings.Join(missing, ", ")
+	}
+	// A task is stuck for good when it, or anything it waits on upstream,
+	// sits on a cycle.
+	seen := map[string]bool{}
+	var up func(id string) string
+	up = func(id string) string {
+		x := p.Task(id)
+		if x == nil || seen[id] {
+			return ""
+		}
+		seen[id] = true
+		if p.onCycle(id) {
+			return id
+		}
+		for _, d := range x.DependsOn {
+			if c := up(d); c != "" {
+				return c
+			}
+		}
+		return ""
+	}
+	if c := up(t.ID); c != "" {
+		if c == t.ID {
+			return "dependensi melingkar (cycle) melewati " + t.ID
+		}
+		return "menunggu " + c + " yang berada dalam dependensi melingkar (cycle)"
+	}
+	return ""
+}
+
+// onCycle reports whether id can reach itself through depends_on.
+func (p *Project) onCycle(id string) bool {
+	seen := map[string]bool{}
+	var walk func(cur string) bool
+	walk = func(cur string) bool {
+		x := p.Task(cur)
+		if x == nil {
+			return false
+		}
+		for _, d := range x.DependsOn {
+			if d == id {
+				return true
+			}
+			if !seen[d] {
+				seen[d] = true
+				if walk(d) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(id)
 }

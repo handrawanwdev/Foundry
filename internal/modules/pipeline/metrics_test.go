@@ -56,11 +56,24 @@ func TestRepeatedFailureSparesTransientAndAgentErrors(t *testing.T) {
 		"agent":     "Agent gagal menjalankan task: agent gagal: tidak ada aktivitas selama 10m0s",
 		"limit":     "Agent gagal menjalankan task: agent gagal: limit/kuota AI habis",
 		"no change": "Tidak ada file yang berubah; implementasi belum dibuat",
+		"go proxy":  "Verifikasi gagal: install-go gagal (go mod tidy)\ngo: github.com/gin-gonic/gin@v1.10.0: Get \"https://proxy.golang.org/...\": dial tcp: lookup proxy.golang.org: no such host",
+		"npm":       "Verifikasi gagal: install gagal (npm ci --no-audit --no-fund)\nnpm error code EAI_AGAIN",
 	}
 	for name, note := range cases {
 		if RepeatedFailure([]string{note}, note) {
 			t.Fatalf("%s: identical but transient/agent-level failure must keep its retries", name)
 		}
+	}
+	// A module version the declared go version cannot use is code (go.mod),
+	// not environment: retrying the same go.mod cannot pass.
+	pin := "Verifikasi gagal: install-go gagal (go mod tidy -go=1.22)\ngo: github.com/Microsoft/go-winio@v0.6.3 requires go@1.26.0, but 1.22 is requested"
+	if !RepeatedFailure([]string{pin}, pin) {
+		t.Fatal("identical go version conflict must stop")
+	}
+	// The original TASK-001 failure is code, not environment: it still stops.
+	vet := "Verifikasi gagal: vet gagal (go vet ./...)\napps/api/cmd/main.go:18:2: no required module provides package github.com/gin-gonic/gin; to add it:"
+	if !RepeatedFailure([]string{vet}, vet) {
+		t.Fatal("identical missing-module vet failure must stop")
 	}
 	det := "Verifikasi gagal: test (go test)\n--- FAIL: TestX\n    x_test.go:10: got 1 want 2"
 	if !RepeatedFailure([]string{det}, det) {

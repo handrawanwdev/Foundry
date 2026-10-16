@@ -256,6 +256,7 @@ func (s *Service) UpdateTaskNote(id, note, progress string, blocked bool) (*core
 			if note != "" {
 				t.Notes = append(t.Notes, note)
 			}
+			t.BlockedReason = blockedReason(t, "host menandai BLOCKED", cmp.Or(note, "tanpa catatan"))
 		} else if note != "" && progress != "" {
 			t.Notes = append(t.Notes, note)
 		}

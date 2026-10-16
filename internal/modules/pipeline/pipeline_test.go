@@ -677,6 +677,26 @@ func TestFailingTestsBlockTasks(t *testing.T) {
 	if len(p.Tasks) <= n {
 		t.Fatal("fix added no task")
 	}
+	// Generated fix tasks wait for every feature task and never form a cycle.
+	smokes := 0
+	for _, tk := range p.Tasks[n:] {
+		if len(tk.DependsOn) == 0 {
+			t.Fatalf("%s %q has no dependencies: it would race the scaffold", tk.ID, tk.Title)
+		}
+		if it := p.Schedule(); len(it.Items) > 0 {
+			for _, q := range it.Items {
+				if q.State == core.QueueInvalidDeps {
+					t.Fatalf("invalid deps: %+v", q)
+				}
+			}
+		}
+		if strings.HasPrefix(tk.Description, work.SmokeBrief) {
+			smokes++
+		}
+	}
+	if smokes > 1 {
+		t.Fatalf("%d smoke tasks for one smoke script", smokes)
+	}
 	if p.Stage != core.StageReady {
 		for _, is := range p.Verification.Issues {
 			t.Log(is)

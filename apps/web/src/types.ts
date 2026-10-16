@@ -277,7 +277,7 @@ export interface Task {
   feature_id: string; page_ids: string[] | null; platform: string; depends_on: string[] | null;
   acceptance_criteria: string[]; files: string[] | null; test_requirements: string[] | null;
   status: TaskStatus; attempts: number; owner?: string; progress?: string;
-  started_at?: string; finished_at?: string; closed?: boolean; repair?: boolean;
+  started_at?: string; finished_at?: string; closed?: boolean; repair?: boolean; blocked_reason?: string;
   notes: string[] | null; last_build_id?: string; criteria?: Criterion[];
 }
 export interface PRDFinding { kind: "GAP" | "UNASSIGNED" | "MISSING_TASK" | "DUPLICATE" | "OVERLAP" | "INVALID_DEPENDENCY"; ref: string; message: string }
@@ -296,8 +296,8 @@ export interface Job {
   message: string; error?: string; task_id?: string; task_ids?: string[] | null; started: string;
 }
 export interface QueueItem {
-  id: string; state: "independent" | "queued" | "waiting_deps";
-  blocked_by?: string; lock?: string; waiting?: string[] | null;
+  id: string; state: "independent" | "queued" | "waiting_deps" | "blocked_deps" | "invalid_deps";
+  blocked_by?: string; lock?: string; waiting?: string[] | null; reason?: string;
 }
 export interface Schedule { independent: string[]; items?: QueueItem[] | null }
 export interface FlowStep { name: string; detail?: string; role?: string; module?: string; page_id?: string; api?: string; current?: boolean }

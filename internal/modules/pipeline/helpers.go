@@ -18,3 +18,12 @@ func firstLine(s string) string {
 func buildActive(p *core.Project) bool {
 	return p.Job != nil && p.Job.Kind == "build" && (p.Job.Status == core.JobRunning || p.Job.Status == core.JobWaiting)
 }
+
+// shorten keeps the first n bytes of s on one line, for a stored reason.
+func shorten(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > n {
+		s = s[:n] + "…"
+	}
+	return s
+}
