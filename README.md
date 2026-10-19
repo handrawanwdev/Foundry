@@ -41,7 +41,7 @@ Setiap artefak punya hash isi. Hash ini dipakai untuk mendeteksi command yang te
 
 Setelah itu paket ekspor ditulis ke `docs/foundry/` di folder project. `AGENTS.md` ditambahkan di root bila belum ada. Selama final, blueprint dan workflow terkunci. `POST /api/v1/project/reopen` membukanya lagi.
 
-Paket (`GET /api/v1/project/export` untuk daftar, `GET /api/v1/project/export.zip` untuk unduhan bila sudah final):
+Paket (`GET /api/v1/project/export` untuk daftar, `GET /api/v1/project/export.zip` untuk unduhan bila sudah final; ZIP berisi folder `docs/foundry/`, ekstrak di root repository):
 
 ```
 README.md            cara memakai paket + daftar artefak + urutan gelombang

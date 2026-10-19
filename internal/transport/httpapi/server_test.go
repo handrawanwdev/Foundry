@@ -364,7 +364,7 @@ func TestDownloadExport(t *testing.T) {
 	for _, f := range zr.File {
 		names = append(names, f.Name)
 	}
-	for _, want := range []string{"foundry-Klinik-Sehat/manifest.json", "foundry-Klinik-Sehat/workflow/CMD-001.md", "foundry-Klinik-Sehat/blueprint/requirements.md"} {
+	for _, want := range []string{"docs/foundry/manifest.json", "docs/foundry/workflow/CMD-001.md", "docs/foundry/blueprint/requirements.md"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("zip misses %s: %v", want, names)
 		}

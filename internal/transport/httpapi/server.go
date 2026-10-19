@@ -546,7 +546,9 @@ func (s *Server) downloadSpec(w http.ResponseWriter, r *http.Request) {
 }
 
 // downloadExport sends the export package of a finalized project as a
-// zip: the same files finalize wrote into docs/foundry.
+// zip: the same files finalize wrote into docs/foundry, under that same
+// path, so extracting it at a repository root matches the paths the
+// package and the agent prompt use.
 func (s *Server) downloadExport(w http.ResponseWriter, r *http.Request) {
 	svc, err := s.service()
 	if err != nil {
@@ -571,7 +573,7 @@ func (s *Server) downloadExport(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	name := "foundry" + strings.TrimPrefix(specDownloadName(p.Name, ""), "spec")
-	folder := name + "/"
+	folder := spec.ExportDir + "/"
 	for _, path := range names {
 		f, err := zw.Create(folder + path)
 		if err == nil {

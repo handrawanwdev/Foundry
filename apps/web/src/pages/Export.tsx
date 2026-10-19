@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, EXPORT_ZIP_URL, SPEC_JSON_URL, SPEC_MD_URL } from "../api";
+import { agentPrompt } from "../blueprint";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
-import type { ExportView } from "../types";
+import type { ExportManifest, ExportView } from "../types";
 
 // Finalize and export: the package an external coding agent reads.
 export function ExportPage() {
@@ -89,6 +90,8 @@ export function ExportPage() {
         </section>
       )}
 
+      {finalized && view && m && m.commands.length > 0 && <AgentPromptBox manifest={m} dir={view.dir} />}
+
       {view && (
         <section className="export-sec">
           <h2>Isi paket</h2>
@@ -101,6 +104,39 @@ export function ExportPage() {
         </section>
       )}
     </div>
+  );
+}
+
+// The prompt to paste into an external coding agent: the whole workflow or
+// one wave.
+function AgentPromptBox({ manifest, dir }: { manifest: ExportManifest; dir: string }) {
+  const [wave, setWave] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const text = agentPrompt(manifest, dir, wave);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard blocked: the text stays selectable */ }
+  };
+  return (
+    <section className="export-sec">
+      <h2>Prompt untuk coding agent</h2>
+      <div className="prompt-copy-head">
+        <label className="small muted">Cakupan{" "}
+          <select value={wave} onChange={(e) => { setWave(Number(e.target.value)); setCopied(false); }}>
+            <option value={0}>Seluruh workflow, per gelombang</option>
+            {manifest.waves.map((w, i) => <option key={i} value={i + 1}>Gelombang {i + 1} ({w.length} command)</option>)}
+          </select>
+        </label>
+        <button className="primary" onClick={() => void copy()}>{copied ? "Tersalin" : "Salin prompt"}</button>
+      </div>
+      <pre className="prompt-copy">{text}</pre>
+      <p className="small muted">
+        Jalankan agent dari root repository. ZIP berisi folder <code>{dir}/</code>: ekstrak langsung di root repository.
+      </p>
+    </section>
   );
 }
 

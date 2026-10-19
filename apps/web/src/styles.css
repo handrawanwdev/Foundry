@@ -500,6 +500,10 @@ button.ref-chip:not(:disabled):hover, a.ref-chip:hover { border-color: var(--acc
 .files { list-style: none; padding: 0; margin: 0 0 .8rem; font-size: 13px; }
 .files li { display: flex; justify-content: space-between; gap: 1rem; padding: .3rem 0; border-bottom: 1px solid var(--line); }
 .files code { overflow-wrap: anywhere; }
+.prompt-copy-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem; margin-bottom: .6rem; }
+.prompt-copy-head select { margin-left: .3rem; max-width: 100%; }
+.prompt-copy { margin: 0 0 .6rem; padding: .9rem 1rem; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;
+  font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; }
 
 @container (max-width: 860px) {
   .ws { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }

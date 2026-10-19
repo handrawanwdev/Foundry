@@ -1,4 +1,4 @@
-import type { Artifact, ArtifactCategory, Command, Workflow, WorkflowReport } from "./types";
+import type { Artifact, ArtifactCategory, Command, ExportManifest, Workflow, WorkflowReport } from "./types";
 
 export const CATEGORY_LABEL: Record<ArtifactCategory, string> = {
   requirements: "Kebutuhan", domain: "Domain & bisnis", architecture: "Arsitektur", ui: "UI/UX",
@@ -57,6 +57,36 @@ export function commandText(c: Command, r: WorkflowReport | null): string {
   list("Output yang diharapkan", c.expected_outputs);
   list("Acceptance criteria", c.acceptance_criteria, "[ ] ");
   list("Batasan", c.constraints);
+  return out.join("\n");
+}
+
+// Ready-to-paste prompt for an external coding agent working from the
+// export package at dir. wave is 1-based; 0 means the whole workflow, one
+// wave at a time.
+export function agentPrompt(m: ExportManifest, dir: string, wave = 0): string {
+  const w = m.waves[wave - 1];
+  const name = (id: string) => m.commands.find((c) => c.id === id)?.name ?? "";
+  const out = [
+    `Baca ${dir}/README.md dan ${dir}/manifest.json. Blueprint di ${dir}/blueprint/ adalah sumber kebenaran.`,
+    "",
+  ];
+  if (w) {
+    out.push(`Kerjakan Gelombang ${wave} saja:`, ...w.map((id) => `- ${dir}/workflow/${id}.md (${id} — ${name(id)})`), "");
+    if (wave > 1) out.push(`Gelombang ${wave === 2 ? "1" : `1–${wave - 1}`} sudah selesai. Pastikan dependency tiap command memang sudah ada di repository sebelum mulai.`, "");
+  } else {
+    out.push(`Kerjakan command di ${dir}/workflow/ per gelombang (${m.waves.length} gelombang, ${m.commands.length} command), mulai dari Gelombang 1.`,
+      "Jangan mulai command sebelum semua dependency-nya selesai.", "");
+  }
+  out.push(
+    "Untuk tiap command:",
+    "1. Baca file command dan artefak blueprint yang dirujuknya.",
+    "2. Periksa repository dulu; pakai struktur dan konvensi yang ada, jangan mengarang path atau API.",
+    "3. Implementasikan, lalu buktikan setiap acceptance criteria (test atau perintah beserta hasilnya).",
+    "4. Laporkan: command ID, file yang diubah, bukti, dan criteria yang belum terpenuhi.",
+    "",
+    "Jika blueprint bertentangan dengan repository atau dengan command lain, berhenti dan tanya saya.",
+    w ? "Setelah gelombang ini selesai, berhenti dan laporkan." : "Setelah satu gelombang selesai, berhenti dan tunggu konfirmasi saya sebelum lanjut.",
+  );
   return out.join("\n");
 }
 
