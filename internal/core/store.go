@@ -82,6 +82,11 @@ func (s *Store) Load() (*Project, error) {
 		return nil, fmt.Errorf("state rusak: %w", err)
 	}
 	p.Dir = s.Dir
+	// Build-era stages no longer exist: those projects had an approved design.
+	switch p.Stage {
+	case "PLAN", "BUILD", "VERIFY":
+		p.Stage = StageReady
+	}
 	if d := p.Design; d != nil {
 		// Designs saved before the Design IR get their layout here, once.
 		EnsureIR(d.Pages, p.Name)

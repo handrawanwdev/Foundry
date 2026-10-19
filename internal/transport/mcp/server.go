@@ -8,22 +8,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/handrawanw/foundry/internal/config"
-	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/pipeline"
-	"github.com/handrawanw/foundry/internal/modules/work"
+	"github.com/handrawanw/foundry/internal/modules/spec"
 )
 
 type Perm string
 
 const (
-	PermRead    Perm = "READ"
-	PermWrite   Perm = "WRITE"
-	PermModify  Perm = "MODIFY"
+	PermRead   Perm = "READ"
+	PermWrite  Perm = "WRITE"
+	PermModify Perm = "MODIFY"
+	// PermExecute is still accepted in --allow for old host configs; no
+	// tool needs it since Foundry no longer runs builds.
 	PermExecute Perm = "EXECUTE"
 )
 
@@ -178,37 +178,15 @@ var str = map[string]any{"type": "string"}
 var tools = []tool{
 	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, discovery, architecture blueprint, platform, structure, technology stack, job, counts.", InputSchema: obj(nil)},
 	{Name: "get_requirements", perm: PermRead, Description: "Requirements, features, sub-features and user flows.", InputSchema: obj(nil)},
-	{Name: "get_blueprint", perm: PermRead, Description: "Production architecture blueprint: modules, data, auth, storage, workers, performance, coding rules. Source of truth for implementation.", InputSchema: obj(nil)},
-	{Name: "get_design", perm: PermRead, Description: "Design pages with wireframe components and status.", InputSchema: obj(nil)},
-	{Name: "get_tasks", perm: PermRead, Description: "All tasks (Kanban), optionally filtered by status. Each TODO includes queue: independent (can run now in parallel), queued (file/page held by another task), or waiting_deps.",
-		InputSchema: obj(map[string]any{"status": map[string]any{"type": "string", "enum": []string{"TODO", "IN_PROGRESS", "REVIEW", "DONE", "BLOCKED"}}})},
-	{Name: "get_task", perm: PermRead, Description: "One task with its full brief.", InputSchema: obj(map[string]any{"task_id": str}, "task_id")},
-	{Name: "get_verification", perm: PermRead, Description: "Latest verification: checks, issues, requirement traceability.", InputSchema: obj(nil)},
-	{Name: "get_prd", perm: PermRead, Description: "Product PRD: capability, business flow, API/UI contract, task traceability. Source of truth for why a task exists.", InputSchema: obj(nil)},
-	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, plan, prd, a support question or a task). Claims a task when building. " +
-		"worker defaults to this connection; hosts sharing one connection pass distinct worker names. A task whose host stays silent (no next_work/update_task) for 30 minutes is released to other workers. also_ready lists other independent tasks another worker can claim; a task whose page or files another worker holds waits (kind \"wait\": call again shortly).",
-		InputSchema: obj(map[string]any{"worker": str})},
-	{Name: "submit_work", perm: PermWrite, Description: "Hand back a discovery/design/plan/design_qa/support/stack result (the JSON object requested by next_work).",
-		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "plan", "design_qa", "support", "stack", "structure", "prd"}}, "result": str}, "kind", "result")},
-	{Name: "submit_task", perm: PermExecute, Description: "Report a task as implemented. Foundry runs build/test; DONE only if checks pass and every acceptance criterion is met with evidence. " +
-		"patches (optional): changes you need in files another task owns; do not edit them, Foundry hands each to its owner. worker: the same as given to next_work.",
-		InputSchema: obj(map[string]any{"task_id": str, "worker": str, "criteria": map[string]any{"type": "array", "items": obj(map[string]any{
-			"index": map[string]any{"type": "integer"}, "met": map[string]any{"type": "boolean"}, "evidence": str}, "index", "met", "evidence")},
-			"patches": map[string]any{"type": "array", "items": obj(map[string]any{"file": str, "change": str}, "file", "change")}}, "task_id", "criteria")},
-	{Name: "update_task", perm: PermModify, Description: "Set a short live progress line on the Kanban (progress), add lasting feedback (note), or mark the task BLOCKED.",
-		InputSchema: obj(map[string]any{"task_id": str, "progress": str, "note": str, "blocked": map[string]any{"type": "boolean"}}, "task_id")},
+	{Name: "get_blueprint", perm: PermRead, Description: "Architecture blueprint (design level): modules, data model, auth, storage, workers, performance, coding rules.", InputSchema: obj(nil)},
+	{Name: "get_design", perm: PermRead, Description: "Design pages (Design IR) with wireframe components and status.", InputSchema: obj(nil)},
+	{Name: "get_spec", perm: PermRead, Description: "Final spec for implementation outside Foundry: requirements, flows, stack, structure, blueprint, design system and per-page specs (JSON) plus the same as Markdown.", InputSchema: obj(nil)},
+	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, design_qa, reference, stack or structure).", InputSchema: obj(nil)},
+	{Name: "submit_work", perm: PermWrite, Description: "Hand back a result (the JSON object requested by next_work).",
+		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "design_qa", "reference", "stack", "structure"}}, "result": str}, "kind", "result")},
 }
 
 func toolList() []tool { return tools }
-
-// worker names this connection when the host gave no name, so two hosts on
-// separate connections never share a claimed task.
-func (s *Server) worker(w string) string {
-	if w = strings.TrimSpace(w); w != "" {
-		return w
-	}
-	return fmt.Sprintf("host-%d", os.Getpid())
-}
 
 func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 	var t *tool
@@ -223,20 +201,9 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 	if !s.Allow[t.perm] {
 		return nil, fmt.Errorf("izin %s belum diberikan. Jalankan `foundry mcp --allow %s`", t.perm, t.perm)
 	}
-	if t.perm == PermExecute && !s.Allow[PermModify] {
-		return nil, fmt.Errorf("submit_task butuh izin MODIFY dan EXECUTE")
-	}
 	var args struct {
-		Status   string          `json:"status"`
-		TaskID   string          `json:"task_id"`
-		Kind     string          `json:"kind"`
-		Result   json.RawMessage `json:"result"`
-		Criteria []work.Verdict  `json:"criteria"`
-		Patches  []work.Patch    `json:"patches"`
-		Note     string          `json:"note"`
-		Progress string          `json:"progress"`
-		Blocked  bool            `json:"blocked"`
-		Worker   string          `json:"worker"`
+		Kind   string          `json:"kind"`
+		Result json.RawMessage `json:"result"`
 	}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &args); err != nil {
@@ -249,48 +216,24 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 	}
 	switch name {
 	case "get_project":
+		pages := 0
+		if p.Design != nil {
+			pages = len(p.Design.Pages)
+		}
 		return map[string]any{"name": p.Name, "stage": p.Stage, "story": p.Story, "discovery": p.Discovery,
 			"blueprint": p.Blueprint,
 			"platform":  p.Platform, "structure": p.Structure, "stack": p.Stack, "job": p.Job,
-			"schedule": p.Schedule(),
-			"counts":   map[string]int{"requirements": len(p.Requirements), "features": len(p.Features), "tasks": len(p.Tasks)}}, nil
+			"counts": map[string]int{"requirements": len(p.Requirements), "features": len(p.Features), "pages": pages}}, nil
 	case "get_requirements":
 		return map[string]any{"requirements": p.Requirements, "features": p.Features, "flows": p.Flows}, nil
 	case "get_blueprint":
-		return map[string]any{"blueprint": p.Blueprint, "brief": work.ArchitectureBrief(p)}, nil
+		return map[string]any{"blueprint": p.Blueprint}, nil
 	case "get_design":
 		return p.Design, nil
-	case "get_tasks":
-		queue := map[string]core.QueueItem{}
-		for _, it := range p.Schedule().Items {
-			queue[it.ID] = it
-		}
-		var out []map[string]any
-		for _, t := range p.Tasks {
-			if args.Status == "" || string(t.Status) == args.Status {
-				row := map[string]any{"id": t.ID, "title": t.Title, "status": t.Status, "feature_id": t.FeatureID, "depends_on": t.DependsOn, "owner": t.Owner, "files": t.Files, "progress": t.Progress}
-				if q, ok := queue[t.ID]; ok {
-					row["queue"] = q
-				}
-				out = append(out, row)
-			}
-		}
-		return out, nil
-	case "get_task":
-		t := p.Task(args.TaskID)
-		if t == nil {
-			return nil, fmt.Errorf("task %s tidak ada", args.TaskID)
-		}
-		return map[string]any{"task": t, "brief": work.TaskPrompt(p, t)}, nil
-	case "get_verification":
-		return p.Verification, nil
-	case "get_prd":
-		if p.PRD == nil {
-			return map[string]any{"prd": nil}, nil
-		}
-		return p.PRD, nil
+	case "get_spec":
+		return map[string]any{"spec": spec.Export(p), "markdown": spec.Markdown(p)}, nil
 	case "next_work":
-		return s.Svc.NextWork(s.worker(args.Worker))
+		return s.Svc.NextWork()
 	case "submit_work":
 		// Accept the result as a JSON object or as a string containing JSON.
 		result := string(args.Result)
@@ -303,14 +246,6 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		}
 		np, _ := s.Svc.Store.Load()
 		return map[string]any{"accepted": true, "stage": np.Stage, "job": np.Job, "next": "Panggil next_work untuk pekerjaan berikutnya."}, nil
-	case "submit_task":
-		t, b, err := s.Svc.SubmitTask(args.TaskID, s.worker(args.Worker), args.Criteria, args.Patches)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"task": t, "build": b}, nil
-	case "update_task":
-		return s.Svc.UpdateTaskNote(args.TaskID, args.Note, args.Progress, args.Blocked)
 	}
 	return nil, fmt.Errorf("tool %q tidak ada", name)
 }

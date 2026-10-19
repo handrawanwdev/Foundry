@@ -17,7 +17,7 @@ const SOURCE: Record<string, string> = { recommend: "rekomendasi", user: "diubah
 
 // Technology decision workspace: the AI recommends, the user changes (by
 // hand or in words), sees the impact, applies and approves. Design and
-// build use the approved decision.
+// the final spec use the approved decision.
 export function TechStackPanel({ project }: { project: Project }) {
   const { run, pending } = useProject();
   const [cat, setCat] = useState<StackCatalog | null>(null);
@@ -87,7 +87,7 @@ export function TechStackPanel({ project }: { project: Project }) {
       {s.mode === "new" && (
         <div className="tech-foot">
           {editable && !s.proposal && <button className="ghost small" onClick={() => void run("stack", api.recommendStack)}>↻ Analisa ulang</button>}
-          {state === "approved" ? <span className="ok-text small">✓ Teknologi v{techVersion(s)} disetujui{designApproved ? " dan dipakai build" : ""}</span>
+          {state === "approved" ? <span className="ok-text small">✓ Teknologi v{techVersion(s)} disetujui{designApproved ? " dan masuk spesifikasi final" : ""}</span>
             : !designApproved && (
               <button className="primary" disabled={!editable || !!s.proposal || errors.length > 0}
                 title={s.proposal ? "Terapkan atau batalkan perubahan dulu" : errors.length ? "Selesaikan masalah di atas dulu" : undefined}

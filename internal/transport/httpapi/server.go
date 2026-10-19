@@ -26,10 +26,9 @@ import (
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/agent"
 	"github.com/handrawanw/foundry/internal/modules/pipeline"
-	"github.com/handrawanw/foundry/internal/modules/scan"
+	"github.com/handrawanw/foundry/internal/modules/spec"
 	"github.com/handrawanw/foundry/internal/modules/stack"
 	"github.com/handrawanw/foundry/internal/modules/structure"
-	"github.com/handrawanw/foundry/internal/modules/verify"
 	"github.com/handrawanw/foundry/internal/modules/work"
 	"github.com/handrawanw/foundry/internal/safefile"
 	"github.com/handrawanw/foundry/internal/transport/httpapi/respond"
@@ -158,7 +157,6 @@ func (s *Server) Handler() http.Handler {
 
 	// AI connection
 	api("GET /api/v1/ai", s.getAI)
-	api("PATCH /api/v1/ai", s.patchAI)
 	api("GET /api/v1/ai/models", s.listModels)
 	api("POST /api/v1/ai/connect", s.connectAgent)
 	api("POST /api/v1/ai/connect-mcp", s.connectMCP)
@@ -208,7 +206,7 @@ func (s *Server) Handler() http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		return withSchedule(p), nil
+		return p, nil
 	}))
 	api("POST /api/v1/project/story", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {
@@ -336,7 +334,7 @@ func (s *Server) Handler() http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"pages": work.Handoffs(p), "blockers": work.Blockers(p), "stack": p.Stack, "structure": p.Structure}, nil
+		return map[string]any{"pages": work.PageSpecs(p), "blockers": work.Blockers(p), "stack": p.Stack, "structure": p.Structure}, nil
 	}))
 	// Canvas: direct edits of one page's Design IR tree, no AI.
 	api("POST /api/v1/project/design/edit", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
@@ -405,73 +403,26 @@ func (s *Server) Handler() http.Handler {
 		return svc.RestoreDesignVersion(id)
 	}))
 	api("POST /api/v1/project/design/approve", s.action(func(svc *pipeline.Service) error { return svc.ApproveDesign() }))
-	api("POST /api/v1/project/build/start", s.action(func(svc *pipeline.Service) error { return svc.StartBuild() }))
-	api("POST /api/v1/project/build/stop", s.action(func(svc *pipeline.Service) error { return svc.StopBuild() }))
-	api("PATCH /api/v1/project/tasks/{id}", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct {
-			Status *core.TaskStatus `json:"status"`
-			Closed *bool            `json:"closed"`
-		}
-		if err := decode(r, &in); err != nil {
-			return nil, err
-		}
-		id := r.PathValue("id")
-		if in.Closed != nil {
-			return svc.SetTaskClosed(id, *in.Closed)
-		}
-		if in.Status == nil {
-			return nil, badRequest("status atau closed wajib")
-		}
-		return svc.MoveTask(id, *in.Status)
-	}))
-	api("POST /api/v1/project/queue/close", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct {
-			Closed bool `json:"closed"`
-		}
-		if err := decode(r, &in); err != nil {
-			return nil, err
-		}
-		return svc.SetQueueClosed(in.Closed)
-	}))
-	api("POST /api/v1/project/fix-blocked", s.action(func(svc *pipeline.Service) error { return svc.FixBlocked() }))
-	api("POST /api/v1/project/prd", s.action(func(svc *pipeline.Service) error { return svc.GeneratePRD() }))
-	api("POST /api/v1/project/verify", s.action(func(svc *pipeline.Service) error { return svc.Verify() }))
-	api("POST /api/v1/project/fix", s.action(func(svc *pipeline.Service) error { return svc.Fix() }))
-	api("GET /api/v1/project/files", s.listFiles)
-	api("GET /api/v1/project/file", s.readFile)
-	api("GET /api/v1/project/docs", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+	api("POST /api/v1/project/design/reopen", s.action(func(svc *pipeline.Service) error { return svc.ReopenDesign() }))
+	// Final spec: the same documents Finalize writes into docs/.
+	api("GET /api/v1/project/spec", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		p, err := svc.Store.Load()
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"markdown": verify.Markdown(p), "run": scan.Scan(p.Dir).Run}, nil
-	}))
-
-	// Technical Support Assistant
-	api("POST /api/v1/project/support/ask", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct{ Question string }
-		if err := decode(r, &in); err != nil {
-			return nil, err
-		}
-		return ok(svc.AskSupport(in.Question))
-	}))
-	api("POST /api/v1/project/support/retry", s.action(func(svc *pipeline.Service) error { return svc.RetrySupport() }))
-	api("POST /api/v1/project/support/clear", s.action(func(svc *pipeline.Service) error { return svc.ClearSupport() }))
-	api("POST /api/v1/project/support/escalate", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in core.Escalation
-		if err := decode(r, &in); err != nil {
-			return nil, err
-		}
-		return svc.Escalate(in)
+		return map[string]any{"markdown": spec.Markdown(p), "spec": spec.Export(p)}, nil
 	}))
 
 	mux.HandleFunc("GET /api/v1/events", s.events)
-	mux.HandleFunc("GET /api/v1/project/prd.md", s.downloadPRD)
+	mux.HandleFunc("GET /api/v1/project/spec.md", s.downloadSpec)
+	mux.HandleFunc("GET /api/v1/project/spec.json", s.downloadSpec)
 	mux.HandleFunc("/", s.spa)
 	return guard(mux)
 }
 
-func (s *Server) downloadPRD(w http.ResponseWriter, r *http.Request) {
+// downloadSpec serves the final spec as Markdown (spec.md) or JSON
+// (spec.json) for an external implementation tool.
+func (s *Server) downloadSpec(w http.ResponseWriter, r *http.Request) {
 	svc, err := s.service()
 	if err != nil {
 		fail(w, r, err)
@@ -482,18 +433,29 @@ func (s *Server) downloadPRD(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, err)
 		return
 	}
-	if p.PRD == nil || strings.TrimSpace(p.PRD.Markdown) == "" {
-		respond.Fail(w, respond.CodeNotFound, "PRD belum dibuat", http.StatusNotFound)
+	if p.Design == nil || len(p.Design.Pages) == 0 {
+		respond.Fail(w, respond.CodeNotFound, "rancangan belum dibuat", http.StatusNotFound)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, ".json") {
+		b, err := json.MarshalIndent(spec.Export(p), "", "  ")
+		if err != nil {
+			fail(w, r, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+specDownloadName(p.Name, ".json")+`"`)
+		w.Write(b)
 		return
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+prdDownloadName(p.Name)+`"`)
-	w.Write([]byte(p.PRD.Markdown))
+	w.Header().Set("Content-Disposition", `attachment; filename="`+specDownloadName(p.Name, ".md")+`"`)
+	w.Write([]byte(spec.Markdown(p)))
 }
 
-func prdDownloadName(name string) string {
+func specDownloadName(name, ext string) string {
 	var b strings.Builder
-	b.WriteString("PRD")
+	b.WriteString("spec")
 	dash := true
 	for _, r := range strings.TrimSpace(name) {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
@@ -506,7 +468,7 @@ func prdDownloadName(name string) string {
 		}
 		dash = true
 	}
-	b.WriteString(".md")
+	b.WriteString(ext)
 	return b.String()
 }
 
@@ -529,14 +491,6 @@ func ok(err error) (any, error) {
 		return nil, err
 	}
 	return map[string]bool{"ok": true}, nil
-}
-
-// withSchedule attaches the live build queue. It is computed, not stored.
-func withSchedule(p *core.Project) any {
-	return struct {
-		*core.Project
-		Schedule core.Schedule `json:"schedule"`
-	}{p, p.Schedule()}
 }
 
 // ---------- AI ----------
@@ -566,12 +520,9 @@ func (s *Server) getAI(r *http.Request) (any, error) {
 		dir = svc.Store.Dir
 	}
 	ready := false
-	stored := 0
 	if c.Connection != nil {
 		ready = c.Connection.Mode == config.ModeAgent || c.MCPAlive()
-		stored = c.Connection.Agents
 	}
-	n, fromEnv := pipeline.ParallelInfo(stored)
 	return map[string]any{
 		"connection": c.Connection,
 		"ready":      ready,
@@ -579,39 +530,7 @@ func (s *Server) getAI(r *http.Request) (any, error) {
 		"mcp_alive":  c.MCPAlive(),
 		"agents":     agents,
 		"mcp_config": mcp.ClientConfig(s.Binary, dir),
-		"parallel": map[string]any{
-			"agents":   n,
-			"max":      pipeline.MaxAgents,
-			"default":  pipeline.DefaultAgents,
-			"from_env": fromEnv,
-		},
 	}, nil
-}
-
-func (s *Server) patchAI(r *http.Request) (any, error) {
-	var in struct {
-		Agents *int `json:"agents"`
-	}
-	if err := decode(r, &in); err != nil {
-		return nil, err
-	}
-	if in.Agents == nil {
-		return nil, badRequest("agents wajib diisi")
-	}
-	n := pipeline.ClampAgents(*in.Agents)
-	c, err := config.Update(func(c *config.Config) {
-		if c.Connection == nil {
-			return
-		}
-		c.Connection.Agents = n
-	})
-	if err != nil {
-		return nil, err
-	}
-	if c.Connection == nil {
-		return nil, pipeline.ErrNoAI
-	}
-	return s.getAI(r)
 }
 
 // listModels asks the agent CLI for its current models (?agent=id).
@@ -630,7 +549,6 @@ func (s *Server) connectAgent(r *http.Request) (any, error) {
 	var in struct {
 		AgentID string   `json:"agent_id"`
 		Command []string `json:"command"`
-		Agents  int      `json:"agents"`
 		agent.Options
 	}
 	if err := decode(r, &in); err != nil {
@@ -661,7 +579,7 @@ func (s *Server) connectAgent(r *http.Request) (any, error) {
 	}
 	c, err := config.Update(func(c *config.Config) {
 		c.Connection = &config.Connection{Mode: config.ModeAgent, AgentID: in.AgentID, Command: in.Command,
-			Model: in.Model, Effort: in.Effort, Agents: keepAgents(c.Connection, in.Agents), Since: time.Now().UTC()}
+			Model: in.Model, Effort: in.Effort, Since: time.Now().UTC()}
 	})
 	if err != nil {
 		return nil, err
@@ -688,29 +606,13 @@ func (s *Server) disconnectAI(r *http.Request) (any, error) {
 }
 
 func (s *Server) connectMCP(r *http.Request) (any, error) {
-	var in struct {
-		Agents int `json:"agents"`
-	}
-	_ = decode(r, &in) // body is optional
 	c, err := config.Update(func(c *config.Config) {
-		c.Connection = &config.Connection{Mode: config.ModeMCP, Agents: keepAgents(c.Connection, in.Agents), Since: time.Now().UTC()}
+		c.Connection = &config.Connection{Mode: config.ModeMCP, Since: time.Now().UTC()}
 	})
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{"connection": c.Connection, "mcp_alive": c.MCPAlive()}, nil
-}
-
-// keepAgents stores a clamped count when requested, else the previous value
-// so reconnecting does not reset the parallel setting.
-func keepAgents(prev *config.Connection, requested int) int {
-	if requested != 0 {
-		return pipeline.ClampAgents(requested)
-	}
-	if prev != nil {
-		return prev.Agents
-	}
-	return 0
 }
 
 // ---------- Folder browser (Open / New Project dialog) ----------
@@ -848,9 +750,7 @@ func statusFor(err error) int {
 		return he.code
 	case errors.Is(err, pipeline.ErrBusy):
 		return http.StatusConflict
-	case errors.Is(err, work.ErrSupportBusy), errors.Is(err, work.ErrNoSupportIntel):
-		return http.StatusConflict
-	case errors.Is(err, pipeline.ErrGate), errors.Is(err, pipeline.ErrWrongStage), errors.Is(err, pipeline.ErrNothingToDo), errors.Is(err, pipeline.ErrIncomplete):
+	case errors.Is(err, pipeline.ErrWrongStage), errors.Is(err, pipeline.ErrNothingToDo), errors.Is(err, pipeline.ErrIncomplete):
 		return http.StatusConflict
 	case errors.Is(err, pipeline.ErrNoAI):
 		return http.StatusPreconditionFailed

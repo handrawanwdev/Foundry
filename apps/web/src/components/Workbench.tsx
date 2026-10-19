@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { reachable, stepFor, STEPS, SUPPORT_PATH, taskCounts, viewOf, VIEWS } from "../flow";
+import { reachable, stepFor, STEPS, viewOf, VIEWS } from "../flow";
 import { agentName, agentOptions, useAI } from "../store/ai";
 import { useProject } from "../store/project";
 import { useWorkbench } from "../store/workbench";
@@ -105,8 +105,6 @@ function MenuBar() {
       { label: wb.sidebar ? "Sembunyikan Explorer" : "Tampilkan Explorer", action: wb.toggleSidebar, disabled: !project },
       "sep",
       ...STEPS.map((s, i) => ({ label: s.label, action: () => nav(s.path), disabled: !project || !reachable(project.stage, i) })),
-      "sep",
-      { label: "Technical Support Assistant", action: () => nav(SUPPORT_PATH), disabled: !project },
     ],
     AI: [{ label: "Hubungkan AI…", action: () => nav("/simple/connect") }],
   };
@@ -159,9 +157,6 @@ function ActivityBar() {
           </button>
         );
       })}
-      <button className={`act ${loc.pathname === SUPPORT_PATH ? "active" : ""}`} title="Technical Support Assistant" disabled={!project} onClick={() => nav(SUPPORT_PATH)}>
-        <Icon name="help" />
-      </button>
       <div className="grow" />
       <button className={`act ${loc.pathname === "/simple/connect" ? "active" : ""}`} title="Hubungkan AI" onClick={() => nav("/simple/connect")}>
         <Icon name="plug" />
@@ -177,22 +172,18 @@ function StatusBar() {
   const project = useProject((s) => s.project);
   const nav = useNavigate();
   const job = project?.job;
-  const c = project ? taskCounts(project) : null;
-  const total = project?.tasks?.length ?? 0;
   return (
     <div className={`statusbar ${project ? "" : "noproject"}`}>
       <button className="sb-item" onClick={() => nav("/simple/connect")}>
         {ai?.ready ? `⚡ ${agentName(ai)}${agentOptions(ai) ? ` · ${agentOptions(ai)}` : ""}` : "⚠ AI belum terhubung"}
       </button>
-      {project && <span className="sb-item">{stepFor(project.stage).label} · {project.stage}</span>}
+      {project && <span className="sb-item">{stepFor(project.stage).label}{project.stage === "READY" ? " · Final" : ""}</span>}
       {job && job.status !== "done" && (
         <span className="sb-item">
           {job.status === "failed" ? `✗ ${job.message} gagal` : <><span className="spinner light" /> {job.message}</>}
         </span>
       )}
       <div className="grow" />
-      {project && total > 0 && c && <span className="sb-item">Task {c.DONE}/{total}{c.BLOCKED ? ` · ${c.BLOCKED} blocked` : ""}{(project.schedule?.independent.length ?? 0) > 0 ? ` · ${project.schedule!.independent.length} paralel` : ""}</span>}
-      {project?.verification && <span className="sb-item">{project.verification.ready ? "✓ Terverifikasi" : `${project.verification.issues?.length ?? 0} masalah`}</span>}
       {project && <span className="sb-item path" title={project.dir}>{project.dir}</span>}
     </div>
   );

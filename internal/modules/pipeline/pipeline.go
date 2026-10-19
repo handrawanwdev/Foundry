@@ -1,5 +1,5 @@
 // Package pipeline is the Foundry orchestrator: it moves one project through
-// Tell → Discovery → Design → Plan → Build → Verify → Ready. AI work is done
+// Prompt → Design (with preview) → Finalize. AI work is done
 // either by a connected agent CLI (Foundry drives it) or by an MCP host (the
 // host pulls work with next_work and pushes answers with submit_work). Both
 // paths go through the same apply functions and the same store.
@@ -10,9 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,19 +18,15 @@ import (
 	"github.com/handrawanw/foundry/internal/config"
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/agent"
+	"github.com/handrawanw/foundry/internal/modules/spec"
 	"github.com/handrawanw/foundry/internal/modules/structure"
-	"github.com/handrawanw/foundry/internal/modules/verify"
 	"github.com/handrawanw/foundry/internal/modules/work"
 )
-
-// MaxAttempts before a task becomes BLOCKED.
-const MaxAttempts = 3
 
 var (
 	ErrBusy        = errors.New("Foundry sedang mengerjakan proses lain")
 	ErrNoAI        = errors.New("AI belum terhubung")
 	ErrWrongStage  = errors.New("tahap project tidak sesuai")
-	ErrGate        = errors.New("task hanya boleh DONE setelah build/test lulus dan acceptance criteria terpenuhi")
 	ErrNothingToDo = errors.New("tidak ada pekerjaan untuk AI saat ini")
 	ErrIncomplete  = errors.New("rancangan belum lengkap")
 )
@@ -40,49 +34,6 @@ var (
 // AI abstracts where AI work goes. Nil runner means MCP host mode.
 type AI interface {
 	Runner() (*agent.Runner, bool, error) // runner, isMCP, err
-}
-
-// Parallel is optional on AI: how many coding agents may build at once.
-type Parallel interface {
-	Agents() int
-}
-
-// DefaultAgents build in parallel unless FOUNDRY_AGENTS or the connection
-// says otherwise; MaxAgents caps it. CheapReviewEffort is used for the
-// acceptance-criteria pass when the coding agent did not self-review.
-const (
-	DefaultAgents     = 2
-	MaxAgents         = 2
-	CheapReviewEffort = "low"
-)
-
-// ClampAgents maps a requested worker count onto 1..MaxAgents.
-// 0 or negative means the default.
-func ClampAgents(n int) int {
-	if n <= 0 {
-		return DefaultAgents
-	}
-	if n > MaxAgents {
-		return MaxAgents
-	}
-	return n
-}
-
-// EnvAgents is FOUNDRY_AGENTS when it is a number.
-func EnvAgents() (int, bool) {
-	v, err := strconv.Atoi(strings.TrimSpace(os.Getenv("FOUNDRY_AGENTS")))
-	if err != nil {
-		return 0, false
-	}
-	return v, true
-}
-
-// ParallelInfo is the live worker count shown in the UI.
-func ParallelInfo(stored int) (agents int, fromEnv bool) {
-	if n, ok := EnvAgents(); ok {
-		return ClampAgents(n), true
-	}
-	return ClampAgents(stored), false
 }
 
 // ConfigAI resolves the connection from user config.
@@ -104,14 +55,6 @@ func (ConfigAI) Runner() (*agent.Runner, bool, error) {
 	return r, false, err
 }
 
-func (ConfigAI) Agents() int {
-	c, err := config.Load()
-	if err != nil || c.Connection == nil {
-		return 0
-	}
-	return c.Connection.Agents
-}
-
 type Service struct {
 	Store *core.Store
 	AI    AI
@@ -123,46 +66,7 @@ type Service struct {
 	ctx  context.Context
 	stop context.CancelFunc
 
-	mu     sync.Mutex
-	cancel context.CancelFunc
-	run    uint64 // numbers the build that owns cancel
-	wg     sync.WaitGroup
-	// checkMu runs one build/test at a time in this process; parallel runs
-	// of the same toolchain would fight over its outputs. lockChecks adds
-	// the file lock that does the same across processes.
-	checkMu sync.Mutex
-}
-
-// agents is how many coding agents build in parallel.
-func (s *Service) agents() int {
-	if n, ok := EnvAgents(); ok {
-		return ClampAgents(n)
-	}
-	if pa, ok := s.AI.(Parallel); ok {
-		return ClampAgents(pa.Agents())
-	}
-	return DefaultAgents
-}
-
-// reviewRunner is the coding runner, or the same CLI at low effort when
-// the connected agent supports it.
-func (s *Service) reviewRunner(exec *agent.Runner) *agent.Runner {
-	c, err := config.Load()
-	if err != nil || c.Connection == nil || len(c.Connection.Command) > 0 {
-		return exec
-	}
-	p, ok := agent.PresetByID(c.Connection.AgentID)
-	if !ok || !slices.Contains(p.Efforts, CheapReviewEffort) {
-		return exec
-	}
-	if c.Connection.Effort == "" || c.Connection.Effort == CheapReviewEffort {
-		return exec
-	}
-	r, err := agent.NewRunner(c.Connection.AgentID, nil, agent.Options{Model: c.Connection.Model, Effort: CheapReviewEffort})
-	if err != nil {
-		return exec
-	}
-	return r
+	wg sync.WaitGroup
 }
 
 func New(store *core.Store, ai AI) *Service {
@@ -178,10 +82,9 @@ func (s *Service) context() context.Context {
 	return s.ctx
 }
 
-// Shutdown stops every job of this service: agents, build/test and the
-// processes they started are killed through their cancelled context. It
-// waits up to timeout for the jobs to return and record their state, and
-// for a build/test of an MCP call to end.
+// Shutdown stops every job of this service: agents and the processes they
+// started are killed through their cancelled context. It waits up to
+// timeout for the jobs to return and record their state.
 func (s *Service) Shutdown(timeout time.Duration) error {
 	if s.stop != nil {
 		s.stop()
@@ -189,8 +92,6 @@ func (s *Service) Shutdown(timeout time.Duration) error {
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
-		s.checkMu.Lock()
-		s.checkMu.Unlock()
 		close(done)
 	}()
 	select {
@@ -205,14 +106,8 @@ func (s *Service) Shutdown(timeout time.Duration) error {
 // the process that runs agent jobs (the HTTP server) should call this.
 func (s *Service) RecoverStale() error {
 	_, err := s.Store.Update(func(p *core.Project) error {
-		recoverSupport(p)
 		if p.Job != nil && p.Job.Status == core.JobRunning {
 			p.Job.Status, p.Job.Error = core.JobFailed, "Proses terhenti sebelum selesai. Jalankan ulang."
-			for i := range p.Tasks {
-				if p.Tasks[i].Active() { // frees its page/file locks
-					p.Tasks[i].Status = core.TaskTodo
-				}
-			}
 		}
 		return nil
 	})
@@ -407,9 +302,9 @@ func (s *Service) SetTheme(id string) (*core.Project, error) {
 	return p, err
 }
 
-// ApproveDesign locks platform, structure and design, then generates tasks.
-// The approval is saved first: a later scaffold or plan error does not
-// undo it. RetryJob re-runs those steps.
+// ApproveDesign finalizes the design: it locks platform, structure and
+// design, then writes the final spec into docs/ for an external
+// implementation tool. ReopenDesign undoes the lock for another revision.
 func (s *Service) ApproveDesign() error {
 	_, err := s.Store.Update(func(p *core.Project) error {
 		if p.Busy() {
@@ -440,42 +335,29 @@ func (s *Service) ApproveDesign() error {
 		p.Design.Revision = nil // approving keeps any pending change
 		p.Platform.Approved = true
 		p.Structure.Approved = true
-		p.Stage = core.StagePlan
-		p.Log("ui", "Rancangan disetujui")
+		work.CompleteBlueprint(p)
+		if err := spec.WriteDocs(p.Dir, p); err != nil {
+			return fmt.Errorf("gagal menulis spesifikasi final: %w", err)
+		}
+		p.Stage = core.StageReady
+		p.Log("ui", "Rancangan difinalisasi")
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	return s.continueApproval(nil)
+	return err
 }
 
-// continueApproval scaffolds the project (if needed) and starts the plan
-// job. Called after a fresh approval and when retrying a failed plan;
-// expect is the precondition for starting the job (nil: none).
-func (s *Service) continueApproval(expect func(*core.Project) error) error {
-	if err := s.scaffoldApproved(); err != nil {
-		s.failJobIf(work.KindPlan, err, expect)
-		return err
-	}
-	return s.startAIIf(work.KindPlan, expect)
-}
-
-func (s *Service) scaffoldApproved() error {
+// ReopenDesign unlocks a finalized design so it can be revised again.
+func (s *Service) ReopenDesign() error {
 	_, err := s.Store.Update(func(p *core.Project) error {
+		if p.Busy() {
+			return ErrBusy
+		}
 		if p.Design == nil || p.Design.Status != core.DesignApproved {
 			return ErrWrongStage
 		}
-		if p.Structure == nil || p.Structure.Scaffolded {
-			return nil
-		}
-		if err := structure.Scaffold(p.Dir, p.Structure); err != nil {
-			return fmt.Errorf("gagal menyiapkan struktur: %w", err)
-		}
-		work.CompleteBlueprint(p)
-		if err := verify.WriteDocs(p.Dir, p); err != nil {
-			return fmt.Errorf("gagal menulis dokumentasi arsitektur: %w", err)
-		}
+		p.Design.Status = core.DesignDraft
+		p.Stage = core.StageDesign
+		p.Log("ui", "Rancangan dibuka untuk revisi")
 		return nil
 	})
 	return err
@@ -489,8 +371,6 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 		return work.DiscoveryPrompt(p)
 	case work.KindDesign:
 		return work.DesignPrompt(p)
-	case work.KindPlan:
-		return work.PlanPrompt(p)
 	case work.KindDesignQA:
 		return work.QAPrompt(p)
 	case work.KindReference:
@@ -499,8 +379,6 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 		return work.StackPrompt(p)
 	case work.KindStructure:
 		return work.StructurePrompt(p)
-	case work.KindPRD:
-		return work.PRDPrompt(p)
 	}
 	return ""
 }
@@ -553,7 +431,7 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		out, err := runner.Run(s.context(), agent.Think, p.Dir, prompt)
+		out, err := runner.Run(s.context(), p.Dir, prompt)
 		if err != nil {
 			s.failJob(kind, err)
 			return
@@ -575,12 +453,6 @@ func jobMessage(kind string) string {
 		return "Memahami kebutuhan"
 	case work.KindDesign:
 		return "Membuat rancangan aplikasi"
-	case work.KindPlan:
-		return "Membuat fitur, sub-fitur, dan task"
-	case "build":
-		return "AI Agent mengerjakan task"
-	case "verify":
-		return "Build, test, dan verifikasi"
 	case work.KindDesignQA:
 		return "Memeriksa hasil visual di browser"
 	case work.KindReference:
@@ -589,8 +461,6 @@ func jobMessage(kind string) string {
 		return "Memahami permintaan perubahan teknologi"
 	case work.KindStructure:
 		return "Memahami permintaan perubahan struktur"
-	case work.KindPRD:
-		return "Menyusun PRD"
 	}
 	return kind
 }
@@ -688,11 +558,6 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			p.Stage = core.StageDesign
 			measureQuality(p)
 			measured = true
-		case work.KindPlan:
-			if err := work.ApplyPlan(p, raw); err != nil {
-				return err
-			}
-			p.Stage = core.StageBuild
 		case work.KindStack:
 			if err := work.ApplyStackChange(p, raw); err != nil {
 				return err
@@ -710,13 +575,6 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			measured = true
 			if again {
 				next = work.KindDesignQA
-			}
-		case work.KindPRD:
-			if err := work.ApplyPRD(p, raw); err != nil {
-				return err
-			}
-			if err := verify.WriteDocs(p.Dir, p); err != nil {
-				return fmt.Errorf("gagal menulis PRD: %w", err)
 			}
 		default:
 			return fmt.Errorf("jenis pekerjaan %q tidak dikenal", kind)
@@ -774,7 +632,7 @@ func (s *Service) RetryJob() error {
 	// the update that starts the job, so concurrent retries start it once.
 	kind := p.Job.Kind
 	switch kind {
-	case work.KindDiscovery, work.KindDesign, work.KindDesignQA, work.KindReference, work.KindPRD:
+	case work.KindDiscovery, work.KindDesign, work.KindDesignQA, work.KindReference:
 		return s.startAIIf(kind, failedJob(kind))
 	case work.KindStack:
 		if p.Stack != nil && p.Stack.Request != "" {
@@ -784,12 +642,6 @@ func (s *Service) RetryJob() error {
 		if p.Structure != nil && p.Structure.Request != "" {
 			return s.startAIIf(kind, failedJob(kind))
 		}
-	case work.KindPlan:
-		return s.continueApproval(failedJob(kind))
-	case "build":
-		return s.StartBuild()
-	case "verify":
-		return s.Verify()
 	}
 	return ErrNothingToDo
 }
@@ -801,16 +653,6 @@ func failedJob(kind string) func(*core.Project) error {
 			return ErrBusy
 		}
 		if p.Job == nil || p.Job.Status != core.JobFailed || p.Job.Kind != kind {
-			return ErrNothingToDo
-		}
-		return nil
-	}
-}
-
-// runningJob holds while the project's job is the running job of kind.
-func runningJob(kind string) func(*core.Project) error {
-	return func(p *core.Project) error {
-		if p.Job == nil || p.Job.Status != core.JobRunning || p.Job.Kind != kind {
 			return ErrNothingToDo
 		}
 		return nil

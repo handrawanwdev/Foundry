@@ -2,13 +2,9 @@ import { useEffect, useRef, type ReactElement } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Workbench } from "./components/Workbench";
 import { stepFor, stepIndex, STEPS } from "./flow";
-import { BuildPage } from "./pages/Build";
 import { ConnectPage } from "./pages/Connect";
 import { DesignPage } from "./pages/Design";
-import { ReadyPage } from "./pages/Ready";
 import { EmptyEditor, StartPage } from "./pages/Start";
-import { FileViewer } from "./pages/FileViewer";
-import { SupportPage } from "./pages/Support";
 import { TellPage } from "./pages/Tell";
 import { useAI } from "./store/ai";
 import { useProject } from "./store/project";
@@ -82,10 +78,6 @@ export default function App() {
         <Route path="/simple/connect" element={<ConnectPage />} />
         <Route path="/simple/tell" element={guard(<TellPage />)} />
         <Route path="/simple/rancang" element={guard(<DesignPage />)} />
-        <Route path="/simple/bangun" element={guard(<BuildPage />)} />
-        <Route path="/simple/siap" element={guard(<ReadyPage />)} />
-        <Route path="/simple/support" element={guard(<SupportPage />)} />
-        <Route path="/files/*" element={project ? <FileViewer /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Workbench>

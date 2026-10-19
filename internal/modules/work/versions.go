@@ -17,7 +17,7 @@ import (
 // Version layer: every design state that lands (a generated design, a
 // revision, a canvas edit, a theme change, ...) is snapshotted, so versions
 // can be compared and an earlier one restored. The snapshot is the same
-// Design IR the renderer and the build read; nothing is re-generated.
+// Design IR the renderer and the final spec read; nothing is re-generated.
 
 // MaxDesignVersions caps the version file; the oldest versions go first.
 const MaxDesignVersions = 50
@@ -256,7 +256,6 @@ func RestoreVersion(p *core.Project, v core.DesignVersion) error {
 	if v.Theme != nil && v.Theme.Source == "user" {
 		p.Theme = v.Theme.ID
 	}
-	p.Tasks, p.Verification = nil, nil
 	return nil
 }
 

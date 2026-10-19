@@ -1,7 +1,7 @@
 // Mirrors internal/core/model.go — the single project context.
 
-export type Stage = "TELL" | "DISCOVERY" | "DESIGN" | "PLAN" | "BUILD" | "VERIFY" | "READY";
-export type TaskStatus = "TODO" | "IN_PROGRESS" | "REVIEW" | "DONE" | "BLOCKED";
+// READY: the design is finalized and the final spec exported.
+export type Stage = "TELL" | "DISCOVERY" | "DESIGN" | "READY";
 export type PlatformKind = "web" | "android" | "ios" | "desktop" | "backend" | "cli";
 export type SurveyKind = "web" | "mobile" | "desktop" | "cli" | "api" | "bot";
 export interface Survey {
@@ -59,11 +59,10 @@ export interface Flow { id: string; name: string; feature_id: string; role: stri
 export interface PlatformTarget { kind: PlatformKind; audience: string[]; rationale: string }
 export interface PlatformPlan { targets: PlatformTarget[]; reason: string; approved: boolean }
 export interface Component { kind: string; path: string; tech: string; evidence: string }
-export interface Command { name: string; dir: string; argv: string[] }
 export type StructureType = "simple" | "modular" | "monorepo" | "microservices";
 export type PartKind = "app" | "service" | "module" | "worker" | "package";
 export interface StructurePart { name: string; path: string; modules?: string[]; reason?: string }
-// The structure decision of a new project: the build contract.
+// The structure decision of a new project (design level).
 export interface StructureIR {
   type: StructureType; apps?: StructurePart[]; services?: StructurePart[]; workers?: StructurePart[];
   packages?: StructurePart[]; docs: string;
@@ -80,7 +79,7 @@ export interface StructureVersion {
 }
 export interface Structure {
   mode: "existing" | "new"; components: Component[] | null; template?: string; layout?: string[];
-  reason: string; commands: Command[] | null; approved: boolean; scaffolded: boolean;
+  reason: string; approved: boolean;
   ui?: ExistingUI;
   ir?: StructureIR; recommended?: StructureType; status?: TechStatus; issues?: TechIssue[];
   proposal?: StructureProposal; request?: string; history?: StructureVersion[];
@@ -165,8 +164,8 @@ export interface Page {
   route?: string; access?: "public" | "auth"; primary_action?: PageAction; data?: PageData;
   intent?: PageIntent; plan?: PagePlan; layout?: PageLayout;
 }
-// Build spec of one page, assembled by the server from the design.
-export interface PageHandoff {
+// Implementation-ready spec of one page, assembled by the server from the design.
+export interface PageSpec {
   page_id: string; name: string; route: string; platform: string; access: string; role: string; kind?: string;
   purpose: string; hierarchy?: string[]; primary_action: string; secondary_actions?: string[]; responsive?: string;
   density?: string; layout?: PageLayout; plan?: PagePlan; components: string[] | null; data?: PageData;
@@ -174,7 +173,7 @@ export interface PageHandoff {
   tests: string[] | null; feature_id: string; sub_feature_ids?: string[]; requirement_ids: string[] | null; flow_ids: string[] | null;
 }
 export interface Blocker { page_id?: string; page?: string; text: string }
-export interface DesignHandoff { pages: PageHandoff[] | null; blockers: Blocker[] | null; stack?: TechStack | null; structure?: Structure | null }
+export interface DesignSpec { pages: PageSpec[] | null; blockers: Blocker[] | null; stack?: TechStack | null; structure?: Structure | null }
 export interface DesignChange { kind: "added" | "changed" | "removed"; page_id?: string; page: string; details?: string[] }
 export interface ScopePage { id: string; request?: string; components?: number[]; fields?: boolean; device?: string }
 // What a change request may touch; the server rejects a patch outside it.
@@ -271,80 +270,29 @@ export interface DesignReference {
   theme_id?: string; error?: string; at: string;
 }
 export interface ThemeProblem { id: string; error: string }
-export interface Criterion { text: string; met: boolean; evidence: string }
-export interface Task {
-  id: string; title: string; description: string; area: string; requirement_ids: string[] | null;
-  feature_id: string; page_ids: string[] | null; platform: string; depends_on: string[] | null;
-  acceptance_criteria: string[]; files: string[] | null; test_requirements: string[] | null;
-  status: TaskStatus; attempts: number; owner?: string; progress?: string;
-  started_at?: string; finished_at?: string; closed?: boolean; repair?: boolean; blocked_reason?: string;
-  notes: string[] | null; last_build_id?: string; criteria?: Criterion[];
-}
-export interface PRDFinding { kind: "GAP" | "UNASSIGNED" | "MISSING_TASK" | "DUPLICATE" | "OVERLAP" | "INVALID_DEPENDENCY"; ref: string; message: string }
-export interface PRD { markdown: string; findings?: PRDFinding[] | null; generated: string }
-export interface StepResult { name: string; command: string; dir: string; exit_code: number; output: string; millis: number }
-export interface BuildRun { id: string; task_id?: string; steps: StepResult[] | null; passed: boolean; reason?: string; at: string }
-export interface Check { name: string; ok: boolean; info: string }
-export interface Issue { kind: string; ref: string; message: string }
-export interface Trace {
-  requirement_id: string; feature_ids: string[] | null; page_ids: string[] | null;
-  task_ids: string[] | null; test_task_ids: string[] | null; done: boolean;
-}
-export interface Verification { ready: boolean; checks: Check[]; issues: Issue[] | null; trace: Trace[] | null; at: string }
 export interface Job {
   kind: string; status: "running" | "done" | "failed" | "waiting_host";
-  message: string; error?: string; task_id?: string; task_ids?: string[] | null; started: string;
+  message: string; error?: string; started: string;
 }
-export interface QueueItem {
-  id: string; state: "independent" | "queued" | "waiting_deps" | "blocked_deps" | "invalid_deps";
-  blocked_by?: string; lock?: string; waiting?: string[] | null; reason?: string;
-}
-export interface Schedule { independent: string[]; items?: QueueItem[] | null }
-export interface FlowStep { name: string; detail?: string; role?: string; module?: string; page_id?: string; api?: string; current?: boolean }
-export interface SupportFlow { flow_id?: string; name: string; steps: FlowStep[] }
-// A cause is confirmed only with evidence; otherwise it is a possibility.
-export interface Cause { text: string; evidence?: string; confirmed?: boolean }
-export interface Troubleshoot { problem: string; status: string; module?: string; step?: string; causes?: Cause[]; actions?: string[] }
-export interface RoleAccess { role: string; access: string; source?: string }
-export interface SupportAnswer {
-  kind: "explain" | "flow" | "troubleshoot" | "roles" | "unknown"; summary: string;
-  flow?: SupportFlow; trouble?: Troubleshoot; roles?: RoleAccess[];
-  missing?: string[]; sources?: string[]; follow_ups?: string[]; escalate?: boolean;
-}
-export interface SupportMessage {
-  id: string; role: "user" | "assistant"; text: string;
-  status?: "running" | "waiting" | "done" | "failed"; error?: string; answer?: SupportAnswer; at: string;
-}
-export interface Escalation {
-  id: string; issue: string; module?: string; flow?: string; status?: string;
-  evidence?: string[]; causes?: string[]; investigation?: string[]; at: string;
-}
-export interface Support { messages: SupportMessage[] | null; escalations?: Escalation[] }
 export interface Event { at: string; source: string; message: string }
 
 export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string; survey?: Survey;
   discovery?: Discovery; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
-  platform?: PlatformPlan; structure?: Structure; stack?: TechStack; design?: Design; theme?: string; design_template?: string; reference?: DesignReference; tasks: Task[] | null;
-  prd?: PRD; builds: BuildRun[] | null; verification?: Verification; job?: Job; support?: Support; events: Event[] | null; updated_at: string;
-  schedule?: Schedule;
+  platform?: PlatformPlan; structure?: Structure; stack?: TechStack; design?: Design; theme?: string; design_template?: string; reference?: DesignReference;
+  job?: Job; events: Event[] | null; updated_at: string;
 }
 
 export interface AgentInfo { id: string; name: string; binary: string; detected: boolean; path?: string; models: string[] | null; efforts: string[] | null }
-export interface AgentOptions { model?: string; effort?: string; agents?: number }
-export interface Connection { mode: "agent" | "mcp"; agent_id?: string; command?: string[]; model?: string; effort?: string; agents?: number; since: string }
-export interface Parallel {
-  agents: number; max: number; default: number; from_env: boolean;
-}
+export interface AgentOptions { model?: string; effort?: string }
+export interface Connection { mode: "agent" | "mcp"; agent_id?: string; command?: string[]; model?: string; effort?: string; since: string }
 export interface AIState {
   connection: Connection | null; ready: boolean; mcp_alive: boolean;
   mcp: { client: string; dir: string; at: string } | null;
-  agents: AgentInfo[]; mcp_config: unknown; parallel?: Parallel;
+  agents: AgentInfo[]; mcp_config: unknown;
 }
 export interface Template { id: string; name: string; description: string; layout: string[] }
 export interface Browse {
   path: string; parent: string; is_project: boolean;
   dirs: { name: string; path: string; is_project: boolean }[];
 }
-export interface FileEntry { name: string; path: string; is_dir: boolean; size: number }
-export interface FileContent { path: string; size: number; binary: boolean; truncated: boolean; content?: string }

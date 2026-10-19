@@ -1,12 +1,11 @@
 import { useState, type KeyboardEvent } from "react";
-import { Link } from "react-router-dom";
-import { api } from "../api";
+import { api, SPEC_JSON_URL, SPEC_MD_URL } from "../api";
 import { changeRequest, changeScope, componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf, type PageRequest } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
 import { STRUCTURE_TYPE, structureGate, structureVersion } from "../structure";
 import { changeText, TECH_STATUS, techGate, techReview, techState, techVersion } from "../tech";
-import type { Blocker, DesignQA, DesignQuality, DesignSystem, Page, PageHandoff, Project, QAIssue, ThemeContext, Token } from "../types";
+import type { Blocker, DesignQA, DesignQuality, DesignSystem, Page, PageSpec, Project, QAIssue, ThemeContext, Token } from "../types";
 import type { Device } from "../design";
 import { screens } from "../screen";
 
@@ -15,7 +14,7 @@ import { screens } from "../screen";
 interface InspectProps {
   project: Project;
   page: Page;
-  handoff?: PageHandoff;
+  spec?: PageSpec;
   selected: number | null;
   onSelect: (i: number | null) => void;
   onOpen: (pageId: string) => void;
@@ -24,7 +23,7 @@ interface InspectProps {
 const List = ({ title, items }: { title: string; items?: string[] | null }) =>
   items?.length ? <><h5>{title}</h5><ul>{items.map((x) => <li key={x}>{x}</li>)}</ul></> : null;
 
-export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: InspectProps) {
+export function Inspect({ project, page, spec, selected, onSelect, onOpen }: InspectProps) {
   const pages = project.design?.pages ?? [];
   const c = selected !== null ? page.components?.[selected] : undefined;
   const PageLink = ({ p }: { p: Page }) => <button className="link" onClick={() => onOpen(p.id)}>→ {p.name}</button>;
@@ -59,7 +58,6 @@ export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: 
   const reqs = (feature?.requirement_ids ?? []).map((id) => project.requirements?.find((r) => r.id === id)).filter((r) => !!r);
   const flows = (project.flows ?? []).filter((f) => f.page_ids?.includes(page.id));
   const from = incoming(page, pages);
-  const tasks = (project.tasks ?? []).filter((t) => t.page_ids?.includes(page.id));
   const action = page.primary_action;
   const actionTarget = pages.find((p) => p.id === action?.target);
   const data = page.data;
@@ -92,7 +90,6 @@ export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: 
         {reqs.length > 0 && <><dt>Kebutuhan</dt><dd>{reqs.map((r) => <div key={r!.id}>{r!.text}</div>)}</dd></>}
         {flows.length > 0 && <><dt>Alur</dt><dd>{flows.map((f) => <div key={f.id}>{f.name}</div>)}</dd></>}
         {from.length > 0 && <><dt>Dibuka dari</dt><dd>{from.map((p) => <div key={p.id}><PageLink p={p} /></div>)}</dd></>}
-        {tasks.length > 0 && <><dt>Task</dt><dd>{tasks.map((t) => <div key={t.id}>{t.title} <span className="muted small">{t.status}</span></div>)}</dd></>}
       </dl>
       {(page.components ?? []).length > 0 && (
         <section>
@@ -102,12 +99,12 @@ export function Inspect({ project, page, handoff, selected, onSelect, onOpen }: 
           ))}
         </section>
       )}
-      {handoff && (
-        <details className="tech handoff"><summary>Handoff ke Build</summary>
-          <List title="Interaksi" items={handoff.interactions} />
-          <List title="Validasi" items={handoff.validation} />
-          <List title="Tes" items={handoff.tests} />
-          <List title="Kebutuhan" items={handoff.requirement_ids} />
+      {spec && (
+        <details className="tech handoff"><summary>Spesifikasi implementasi</summary>
+          <List title="Interaksi" items={spec.interactions} />
+          <List title="Validasi" items={spec.validation} />
+          <List title="Tes" items={spec.tests} />
+          <List title="Kebutuhan" items={spec.requirement_ids} />
         </details>
       )}
       <details className="tech"><summary>Detail teknis</summary>
@@ -367,7 +364,7 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
   return (
     <div className="review">
       <h1>Tinjau rancangan</h1>
-      <p className="muted">Setelah disetujui, Foundry membuat task dari rancangan ini.</p>
+      <p className="muted">Setelah difinalisasi, Foundry menulis spesifikasi final ke folder <code>docs/</code> project untuk diimplementasikan dengan tool lain.</p>
       <ul className="review-list">
         <li className="ok">✓ {pages.length} halaman</li>
         <li className="ok">✓ {flows.length} alur pengguna</li>
@@ -392,7 +389,7 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
           : <li className="ok">✓ Design system ada; tiap halaman punya route, akses, satu aksi utama, urutan informasi dan kondisi data</li>}
         {findings.length ? <li className="warn">! Kualitas rancangan: {findings.length} temuan</li>
           : <li className="ok">✓ Kualitas rancangan: tiap halaman punya layout sesuai jenisnya</li>}
-        {d.revision && !approved && <li className="warn">! Perubahan terakhir belum disimpan. Menyetujui akan menyimpannya.</li>}
+        {d.revision && !approved && <li className="warn">! Perubahan terakhir belum disimpan. Finalisasi akan menyimpannya.</li>}
         {d.qa && !d.revision && <li className={d.qa.status === "failed" ? "warn" : "ok"} style={{ whiteSpace: "pre-line" }}>{qaText(d.qa)}
           {!!d.qa.issues?.length && <QAIssues issues={d.qa.issues} pages={pages} onOpen={onOpen} />}</li>}
       </ul>
@@ -401,7 +398,7 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
 
       {!approved && blockers.length > 0 && (
         <section className="review-flows">
-          <h3>Wajib dilengkapi sebelum disetujui</h3>
+          <h3>Wajib dilengkapi sebelum finalisasi</h3>
           <ul className="review-findings review-blockers">
             {blockers.map((b, i) => (
               <li key={i}>
@@ -451,14 +448,15 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
       <div className="review-foot">
         {approved ? (
           <>
-            <span className="ok-text">✓ Rancangan disetujui</span>
-            {(project.tasks?.length ?? 0) > 0 ? <Link className="button primary" to="/simple/bangun">Lihat Kanban</Link>
-              : working ? <span><span className="spinner" /> Membuat task…</span> : null}
+            <span className="ok-text">✓ Rancangan final — spesifikasi ada di <code>docs/</code></span>
+            <a className="button primary" href={SPEC_MD_URL} download>Unduh spesifikasi (.md)</a>
+            <a className="button" href={SPEC_JSON_URL} download>Unduh JSON</a>
+            <button disabled={working || pending === "reopen"} onClick={() => run("reopen", api.reopenDesign)}>Revisi lagi</button>
           </>
         ) : (
           <>
-            <button className="primary" disabled={working || pending === "approve" || blockers.length > 0 || !!gate}
-              title={blockers.length ? "Lengkapi dulu hal wajib di atas" : gate ?? undefined} onClick={() => run("approve", api.approveDesign)}>Setujui Rancangan</button>
+            <button className="primary" disabled={working || pending === "finalize" || blockers.length > 0 || !!gate}
+              title={blockers.length ? "Lengkapi dulu hal wajib di atas" : gate ?? undefined} onClick={() => run("finalize", api.finalizeDesign)}>Finalisasi Rancangan</button>
             <button disabled={working} onClick={onAsk}>Minta perubahan</button>
           </>
         )}
@@ -488,7 +486,7 @@ function TokenRows({ title, tokens }: { title: string; tokens?: Token[] }) {
   );
 }
 
-// The tokens every page and the build use.
+// The tokens every page follows.
 function SystemView({ system }: { system: DesignSystem }) {
   return (
     <section className="review-flows ds">

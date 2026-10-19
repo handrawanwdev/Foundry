@@ -9,14 +9,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 
 	"github.com/handrawanw/foundry/internal/config"
 	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/gitwt"
 	"github.com/handrawanw/foundry/internal/modules/pipeline"
 	"github.com/handrawanw/foundry/internal/safefile"
 )
@@ -85,20 +83,6 @@ func TestDomainErrorsKeepTheirStatus(t *testing.T) {
 	}
 }
 
-// A failing git command is recognised as internal, not as a request error.
-func TestGitErrorIsInternal(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git tidak ada")
-	}
-	_, err := gitwt.TreeOf(context.Background(), t.TempDir(), "HEAD")
-	if err == nil {
-		t.Fatal("git outside a repository succeeded")
-	}
-	if code, _ := failed(t, err); code != http.StatusInternalServerError {
-		t.Fatalf("git error %q mapped to %d", err, code)
-	}
-}
-
 func openProject(t *testing.T) (http.Handler, string) {
 	t.Helper()
 	t.Setenv("FOUNDRY_HOME", t.TempDir())
@@ -120,20 +104,4 @@ func get(t *testing.T, h http.Handler, path string) (int, envelope) {
 	var e envelope
 	json.Unmarshal(w.Body.Bytes(), &e)
 	return w.Code, e
-}
-
-// An unreadable project file is an IO error: 500, no path in the answer.
-func TestUnreadableFileIs500(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root reads every file")
-	}
-	h, dir := openProject(t)
-	f := filepath.Join(dir, "private.txt")
-	if err := os.WriteFile(f, []byte("x"), 0o000); err != nil {
-		t.Fatal(err)
-	}
-	code, e := get(t, h, "/api/v1/project/file?path=private.txt")
-	if code != http.StatusInternalServerError || strings.Contains(e.Error.Message, dir) {
-		t.Fatalf("unreadable file: %d %q", code, e.Error.Message)
-	}
 }

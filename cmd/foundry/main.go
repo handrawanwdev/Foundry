@@ -24,17 +24,14 @@ import (
 
 var version = "dev"
 
-const usage = `Foundry — ide sampai aplikasi siap diperiksa
+const usage = `Foundry — dari prompt ke rancangan aplikasi dan spesifikasi final
 
   foundry serve [--addr 127.0.0.1:8080] [folder-project]
-      Buka UI: Hubungkan AI → Ceritakan → Rancang → Bangun → Siap
+      Buka UI: Hubungkan AI → Prompt → Rancang (preview + revisi) → Finalisasi
       Tanpa folder: halaman Start untuk Open/New/Close Project
 
-  foundry mcp [--allow READ,WRITE,MODIFY,EXECUTE|ALL] [--project folder] [--print-config]
+  foundry mcp [--allow READ,WRITE,MODIFY|ALL] [--project folder] [--print-config]
       Server MCP (stdio) untuk AI Host: Cursor, Claude, Codex, OpenCode, Windsurf, dll.
-
-  foundry metrics [folder-project]
-      Ukuran prompt (baseline vs terfilter) dan metrik run agent. Hanya baca.
 
   foundry version
 `
@@ -49,8 +46,6 @@ func main() {
 		serve(os.Args[2:])
 	case "mcp":
 		runMCP(os.Args[2:])
-	case "metrics":
-		runMetrics(os.Args[2:])
 	case "version":
 		fmt.Println(version)
 	default:
@@ -101,7 +96,7 @@ func serve(args []string) {
 
 func runMCP(args []string) {
 	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
-	allow := fs.String("allow", "READ", "READ, WRITE, MODIFY, EXECUTE atau ALL")
+	allow := fs.String("allow", "READ", "READ, WRITE, MODIFY atau ALL")
 	dir := fs.String("project", "", "folder project (default: folder saat ini)")
 	printCfg := fs.Bool("print-config", false, "cetak konfigurasi MCP client")
 	uiURL := fs.String("ui-url", "http://127.0.0.1:8080", "URL UI Foundry (foundry serve) untuk render pemeriksaan visual")

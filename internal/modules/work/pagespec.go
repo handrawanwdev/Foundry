@@ -7,9 +7,9 @@ import (
 	"github.com/handrawanw/foundry/internal/core"
 )
 
-// PageHandoff is the build spec of one page, assembled from the design
+// PageSpec is the implementation-ready spec of one page, assembled from the design
 // without AI so it always matches what the user approved.
-type PageHandoff struct {
+type PageSpec struct {
 	PageID        string   `json:"page_id"`
 	Name          string   `json:"name"`
 	Route         string   `json:"route"`
@@ -93,20 +93,20 @@ func pageRef(pg *core.Page) string {
 }
 
 // Handoffs returns the build spec of every designed page.
-func Handoffs(p *core.Project) []PageHandoff {
+func PageSpecs(p *core.Project) []PageSpec {
 	if p.Design == nil {
 		return nil
 	}
 	pages := p.Design.Pages
-	out := make([]PageHandoff, 0, len(pages))
+	out := make([]PageSpec, 0, len(pages))
 	for _, pg := range pages {
 		out = append(out, handoff(p, pg, pages))
 	}
 	return out
 }
 
-func handoff(p *core.Project, pg core.Page, pages []core.Page) PageHandoff {
-	h := PageHandoff{PageID: pg.ID, Name: pg.Name, Route: pg.Route, Platform: pg.Platform, Access: pg.Access, Role: pg.Role,
+func handoff(p *core.Project, pg core.Page, pages []core.Page) PageSpec {
+	h := PageSpec{PageID: pg.ID, Name: pg.Name, Route: pg.Route, Platform: pg.Platform, Access: pg.Access, Role: pg.Role,
 		Kind: pg.Kind, Purpose: pg.Purpose, Hierarchy: pg.Hierarchy, Secondary: pg.SecondaryActions, Responsive: pg.Responsive,
 		Density: pg.Density, Layout: pg.Layout, Plan: pg.Plan, Data: pg.Data, FeatureID: pg.FeatureID, SubFeatureIDs: pg.SubFeatureIDs,
 		RequirementIDs: featureReqs(p, pg.FeatureID)}
@@ -394,4 +394,11 @@ func missingStates(pg core.Page) []string {
 		}
 	}
 	return out
+}
+
+func featureReqs(p *core.Project, fid string) []string {
+	if f := p.Feature(fid); f != nil {
+		return f.RequirementIDs
+	}
+	return nil
 }

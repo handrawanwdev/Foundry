@@ -9,10 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -20,13 +18,6 @@ import (
 	"time"
 
 	"github.com/handrawanw/foundry/internal/proc"
-)
-
-type Mode int
-
-const (
-	Think   Mode = iota // read-only reasoning, returns text
-	Execute             // may edit files inside the project directory
 )
 
 type Preset struct {
@@ -42,14 +33,15 @@ type Preset struct {
 	// A file avoids the kernel's per-argument limit (E2BIG, ~128 KiB).
 	PromptFile string   `json:"-"`
 	sub        []string // subcommand, before the model/effort flags
-	think      []string // args after the model/effort flags
-	execute    []string
-	effortArg  func(string) []string
+	// think: args after the model/effort flags. Every run is read-only:
+	// Foundry asks for designs, never for file edits.
+	think     []string
+	effortArg func(string) []string
 	// listModels asks the CLI (or its API) which models exist; see ListModels.
 	listModels func(context.Context, Preset) ([]string, error)
-	// usage unwraps a CLI's structured output into the answer text and the
-	// token usage it reported. Only set for CLIs whose format was verified.
-	usage func(raw string) (string, *Usage, bool)
+	// unwrap turns a CLI's structured output into the answer text. Only set
+	// for CLIs whose format was verified.
+	unwrap func(raw string) (string, bool)
 }
 
 var Presets = []Preset{
@@ -58,34 +50,27 @@ var Presets = []Preset{
 		listModels: claudeModels,
 		Efforts:    []string{"low", "medium", "high", "xhigh", "max"},
 		effortArg:  func(e string) []string { return []string{"--effort", e} },
-		usage:      claudeUsage,
-		think:      []string{"-p", "--output-format", "json"},
-		execute:    []string{"-p", "--output-format", "json", "--permission-mode", "acceptEdits"}},
+		unwrap:     claudeResult,
+		think:      []string{"-p", "--output-format", "json"}},
 	{ID: "codex", Name: "Codex", Binary: "codex", sub: []string{"exec"},
 		listModels: codexModels,
 		Efforts:    []string{"low", "medium", "high", "xhigh"},
 		effortArg:  func(e string) []string { return []string{"-c", fmt.Sprintf("model_reasoning_effort=%q", e)} },
-		think:      []string{"--skip-git-repo-check", "-s", "read-only"},
-		execute:    []string{"--skip-git-repo-check", "-s", "workspace-write"}},
+		think:      []string{"--skip-git-repo-check", "-s", "read-only"}},
 	{ID: "qwen", Name: "Qwen Code", Binary: "qwen",
-		think:   []string{"--approval-mode", "plan"},
-		execute: []string{"--approval-mode", "auto-edit"}},
+		think: []string{"--approval-mode", "plan"}},
 	{ID: "grok", Name: "Grok", Binary: "grok", PromptFile: "--prompt-file",
 		Models:     []string{"grok-4.6", "grok-4.5"},
 		listModels: grokModels,
 		Efforts:    []string{"low", "medium", "high", "xhigh"},
 		effortArg:  func(e string) []string { return []string{"--effort", e} },
-		think:      []string{},
-		execute:    []string{"--always-approve"}},
+		think:      []string{}},
 	{ID: "gemini", Name: "Gemini", Binary: "gemini",
-		think:   []string{},
-		execute: []string{"--approval-mode", "auto_edit"}},
-	// opencode run reads the prompt from stdin; the plan agent is read-only,
-	// the default build agent edits files without asking.
+		think: []string{}},
+	// opencode run reads the prompt from stdin; the plan agent is read-only.
 	{ID: "opencode", Name: "OpenCode", Binary: "opencode", sub: []string{"run"},
 		listModels: opencodeModels,
-		think:      []string{"--agent", "plan"},
-		execute:    []string{}},
+		think:      []string{"--agent", "plan"}},
 }
 
 // Options picks the model and effort; empty values keep the CLI default.
@@ -134,24 +119,17 @@ func (p Preset) Detected() (string, bool) {
 type Runner struct {
 	ID         string // preset id; empty for a custom command
 	Name       string
-	argvThink  []string
-	argvExec   []string
+	argv       []string
 	promptFile string
 	Timeout    time.Duration
-	// Idle kills an Execute run that wrote no output and touched no file for
-	// this long (a stuck or rate-limited CLI); zero disables it.
-	Idle  time.Duration
-	usage func(raw string) (string, *Usage, bool)
+	unwrap     func(raw string) (string, bool)
 }
 
-// DefaultIdle is how long an executing agent may show no sign of life.
-const DefaultIdle = 10 * time.Minute
-
 // NewRunner builds a runner from a preset id, or from a custom command when
-// custom is non-empty (prompt goes to stdin, same command for both modes).
+// custom is non-empty (prompt goes to stdin).
 func NewRunner(id string, custom []string, opt Options) (*Runner, error) {
 	if len(custom) > 0 {
-		return &Runner{Name: id, argvThink: custom, argvExec: custom, Timeout: 30 * time.Minute, Idle: DefaultIdle}, nil
+		return &Runner{Name: id, argv: custom, Timeout: 30 * time.Minute}, nil
 	}
 	p, ok := PresetByID(id)
 	if !ok {
@@ -168,12 +146,10 @@ func NewRunner(id string, custom []string, opt Options) (*Runner, error) {
 	return &Runner{
 		ID:         p.ID,
 		Name:       p.Name,
-		argvThink:  append(slices.Clone(head), p.think...),
-		argvExec:   append(slices.Clone(head), p.execute...),
+		argv:       append(slices.Clone(head), p.think...),
 		promptFile: p.PromptFile,
-		usage:      p.usage,
+		unwrap:     p.unwrap,
 		Timeout:    30 * time.Minute,
-		Idle:       DefaultIdle,
 	}, nil
 }
 
@@ -192,13 +168,11 @@ var limitText = regexp.MustCompile(`(?i)(usage limit|rate[ _-]?limit|limit reach
 // limitHit reports whether text reads like a quota or rate-limit message.
 func limitHit(text string) bool { return limitText.MatchString(text) }
 
-// watchBuf is an output buffer that records the last write time and checks
-// for limit messages as they arrive (stderr only; stdout is the agent's prose
+// watchBuf is an output buffer that checks for limit messages as they arrive (stderr only; stdout is the agent's prose
 // and may legitimately talk about rate limits).
 type watchBuf struct {
 	mu       sync.Mutex
 	buf      bytes.Buffer
-	last     time.Time
 	onLimit  func()
 	tailText string
 }
@@ -206,7 +180,6 @@ type watchBuf struct {
 func (w *watchBuf) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	w.buf.Write(p)
-	w.last = time.Now()
 	hit := false
 	if w.onLimit != nil {
 		w.tailText = tail(w.tailText+string(p), 400)
@@ -225,56 +198,17 @@ func (w *watchBuf) String() string {
 	return w.buf.String()
 }
 
-func (w *watchBuf) lastWrite() time.Time {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.last
-}
-
-var skipDirs = map[string]bool{"node_modules": true, ".git": true, "dist": true, "vendor": true, ".next": true}
-
-// lastTouched returns the newest file mtime under dir.
-func lastTouched(dir string) time.Time {
-	var newest time.Time
-	filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if path != dir && skipDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if info, err := d.Info(); err == nil && info.ModTime().After(newest) {
-			newest = info.ModTime()
-		}
-		return nil
-	})
-	return newest
-}
-
-// Run sends prompt to the agent with dir as working directory.
-func (r *Runner) Run(ctx context.Context, mode Mode, dir, prompt string) (string, error) {
-	res, err := r.RunDetailed(ctx, mode, dir, prompt)
-	return res.Text, err
-}
-
-// RunDetailed is Run plus the token usage the CLI reported (nil when the CLI
-// has no verified usage format or did not report any).
-func (r *Runner) RunDetailed(ctx context.Context, mode Mode, dir, prompt string) (Result, error) {
-	argv := r.argvThink
-	if mode == Execute {
-		argv = r.argvExec
-	}
-	argv = append([]string{}, argv...)
+// Run sends prompt to the agent with dir as working directory and returns
+// its answer.
+func (r *Runner) Run(ctx context.Context, dir, prompt string) (string, error) {
+	argv := append([]string{}, r.argv...)
 	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 	var cmd *exec.Cmd
 	if r.promptFile != "" {
 		f, err := os.CreateTemp("", "foundry-prompt-*.txt")
 		if err != nil {
-			return Result{}, fmt.Errorf("%w: %v", ErrAgentFailed, err)
+			return "", fmt.Errorf("%w: %v", ErrAgentFailed, err)
 		}
 		defer os.Remove(f.Name())
 		_, err = f.WriteString(prompt)
@@ -282,7 +216,7 @@ func (r *Runner) RunDetailed(ctx context.Context, mode Mode, dir, prompt string)
 			err = cerr
 		}
 		if err != nil {
-			return Result{}, fmt.Errorf("%w: %v", ErrAgentFailed, err)
+			return "", fmt.Errorf("%w: %v", ErrAgentFailed, err)
 		}
 		cmd = exec.CommandContext(ctx, argv[0], append(argv[1:], r.promptFile, f.Name())...)
 	} else {
@@ -310,35 +244,11 @@ func (r *Runner) RunDetailed(ctx context.Context, mode Mode, dir, prompt string)
 		reasonMu.Unlock()
 		cancel()
 	}
-	out := &watchBuf{last: time.Now()}
-	errb := &watchBuf{last: time.Now(), onLimit: func() { stop(ErrLimit) }}
+	out := &watchBuf{}
+	errb := &watchBuf{onLimit: func() { stop(ErrLimit) }}
 	cmd.Stdout, cmd.Stderr = out, errb
-	if mode == Execute && r.Idle > 0 {
-		poll := min(r.Idle/4, 20*time.Second)
-		go func() {
-			t := time.NewTicker(poll)
-			defer t.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-					seen := lastTouched(dir)
-					for _, w := range []time.Time{out.lastWrite(), errb.lastWrite()} {
-						if w.After(seen) {
-							seen = w
-						}
-					}
-					if idle := time.Since(seen); idle >= r.Idle {
-						stop(fmt.Errorf("%w: tidak ada aktivitas selama %s (agent macet atau limit tercapai)", ErrAgentFailed, r.Idle.Round(time.Second)))
-						return
-					}
-				}
-			}
-		}()
-	}
 	err := cmd.Run()
-	res := r.unwrap(out.String())
+	res := r.text(out.String())
 	reasonMu.Lock()
 	why := reason
 	reasonMu.Unlock()
@@ -351,8 +261,8 @@ func (r *Runner) RunDetailed(ctx context.Context, mode Mode, dir, prompt string)
 	failed := err != nil && !errors.Is(err, exec.ErrWaitDelay) // ErrWaitDelay: the agent itself exited 0
 	// A CLI that hit its quota prints the notice and exits; stdout is only
 	// trusted when the run failed or produced almost nothing.
-	if limitHit(errb.String()) || ((failed || len(strings.TrimSpace(res.Text)) < 400) && limitHit(res.Text)) {
-		return res, fmt.Errorf("%w: %s", ErrLimit, tail(strings.TrimSpace(errb.String()+"\n"+res.Text), 300))
+	if limitHit(errb.String()) || ((failed || len(strings.TrimSpace(res)) < 400) && limitHit(res)) {
+		return res, fmt.Errorf("%w: %s", ErrLimit, tail(strings.TrimSpace(errb.String()+"\n"+res), 300))
 	}
 	if failed {
 		return res, fmt.Errorf("%w: %v: %s", ErrAgentFailed, err, tail(errb.String(), 600))
@@ -365,19 +275,10 @@ func (r *Runner) Ping(ctx context.Context, dir string) error {
 	return r.probe(ctx, dir, 2*time.Minute)
 }
 
-// PreflightTimeout bounds the probe that runs before a build.
-const PreflightTimeout = 60 * time.Second
-
-// Preflight is a fast Ping: it exposes an exhausted quota or a dead
-// connection in seconds, before any task is claimed.
-func (r *Runner) Preflight(ctx context.Context, dir string) error {
-	return r.probe(ctx, dir, PreflightTimeout)
-}
-
 func (r *Runner) probe(ctx context.Context, dir string, timeout time.Duration) error {
 	probe := *r
 	probe.Timeout = timeout
-	out, err := probe.Run(ctx, Think, dir, "Balas hanya dengan satu kata: OK")
+	out, err := probe.Run(ctx, dir, "Balas hanya dengan satu kata: OK")
 	if err != nil {
 		return err
 	}

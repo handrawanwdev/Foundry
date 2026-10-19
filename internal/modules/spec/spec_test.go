@@ -1,6 +1,7 @@
-package verify
+package spec
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,17 +59,23 @@ func TestWriteDocs(t *testing.T) {
 	}
 }
 
-func TestWriteDocsIncludesPRD(t *testing.T) {
+func TestWriteDocsIncludesPagesAndSpecJSON(t *testing.T) {
 	dir := t.TempDir()
-	p := &core.Project{Name: "Klinik", Dir: dir, PRD: &core.PRD{Markdown: "# 1. Product Overview\nKlinik\n"}}
+	p := &core.Project{Name: "Klinik", Dir: dir, Design: &core.Design{Pages: []core.Page{
+		{ID: "PAGE-001", Name: "Antrean", Route: "/antrean", Platform: "web", Purpose: "Lihat antrean"}}}}
 	if err := WriteDocs(dir, p); err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "docs", "PRD.md"))
+	pages, err := os.ReadFile(filepath.Join(dir, "docs", "pages.md"))
+	if err != nil || !strings.Contains(string(pages), "/antrean") {
+		t.Fatalf("pages.md = %s, %v", pages, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "docs", "spec.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), "Product Overview") {
-		t.Fatalf("PRD.md = %s", b)
+	var got Spec
+	if err := json.Unmarshal(raw, &got); err != nil || len(got.Pages) != 1 || got.Pages[0].PageID != "PAGE-001" {
+		t.Fatalf("spec.json = %s, %v", raw, err)
 	}
 }

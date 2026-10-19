@@ -9,8 +9,8 @@ import (
 
 // Prototype layer: the navigation the prototype runs on, derived from the
 // Design IR only (component targets, nav items, the back link and the
-// primary action). The same links are the build's navigation contract, so
-// prototype and production cannot disagree.
+// primary action). The same links are the final spec's navigation contract,
+// so prototype and implementation cannot disagree.
 
 type ProtoLink struct {
 	To   string `json:"to"`

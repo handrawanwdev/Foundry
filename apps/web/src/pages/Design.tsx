@@ -7,17 +7,17 @@ import { isWorking } from "../flow";
 import { useProject } from "../store/project";
 import { useWorkbench } from "../store/workbench";
 import { api } from "../api";
-import type { Blocker, DesignHandoff, PageHandoff, PageStates, Project, TechStack } from "../types";
+import type { Blocker, DesignSpec, PageSpec, PageStates, Project, TechStack } from "../types";
 import { NONE, TECH_AREA, techChoice } from "../tech";
 import { ThemeGallery } from "../components/ThemeGallery";
 import { RegenerateButton, TemplateLibrary } from "../components/TemplateGallery";
 import { Architecture, Features, PlatformStructure, Summary } from "./DesignInfo";
 import { CanvasComponent, CanvasPage, CanvasWarnings, Layers, PrototypeMap, Versions } from "../components/Canvas";
 
-type Mode = "pratinjau" | "prototipe" | "kode" | "tinjau";
+type Mode = "pratinjau" | "prototipe" | "spek" | "tinjau";
 type Info = "fitur" | "platform" | "kebutuhan" | "arsitektur" | "tema" | "template" | "peta" | "versi";
 
-const MODES: [Mode, string][] = [["pratinjau", "Desain"], ["prototipe", "Prototipe"], ["kode", "Kode"], ["tinjau", "Tinjau"]];
+const MODES: [Mode, string][] = [["pratinjau", "Desain"], ["prototipe", "Prototipe"], ["spek", "Spesifikasi"], ["tinjau", "Tinjau & Finalisasi"]];
 const STATES: [PageState, string, keyof PageStates | null][] = [
   ["normal", "Normal", null], ["loading", "Memuat", "loading"], ["empty", "Kosong", "empty"],
   ["no_results", "Tanpa hasil", "no_results"], ["error", "Error", "error"], ["success", "Berhasil", "success"],
@@ -55,7 +55,7 @@ function Workspace({ project }: { project: Project }) {
   const [flowId, setFlowId] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [pstate, setPstate] = useState<PageState>("normal");
-  const [handoff, setHandoff] = useState<DesignHandoff | null>(null);
+  const [spec, setSpec] = useState<DesignSpec | null>(null);
 
   // The explorer takes canvas space; hide it here and restore it on leave.
   useEffect(() => {
@@ -64,10 +64,10 @@ function Workspace({ project }: { project: Project }) {
     return () => { if (!useWorkbench.getState().sidebar) useWorkbench.getState().toggleSidebar(); };
   }, []);
 
-  // Handoff and blockers are derived by the server; refresh on every change.
+  // Page specs and blockers are derived by the server; refresh on every change.
   useEffect(() => {
     let live = true;
-    api.designHandoff().then((h) => live && setHandoff(h), () => live && setHandoff(null));
+    api.designSpec().then((h) => live && setSpec(h), () => live && setSpec(null));
     return () => { live = false; };
   }, [project.updated_at]);
 
@@ -183,11 +183,11 @@ function Workspace({ project }: { project: Project }) {
             : info === "peta" ? <PrototypeMap project={project} onOpen={(id) => { setMode("pratinjau"); show(id); }} onTry={(id) => { setMode("prototipe"); setInfo(null); startFlow(id, true); }} />
             : info === "versi" ? <Versions project={project} onOpen={(id) => { setMode("pratinjau"); show(id); }} />
             : mode === "tinjau" ? (
-              <Review project={project} blockers={handoff?.blockers ?? []} onAsk={() => setAsking(true)} onInfo={setInfo}
+              <Review project={project} blockers={spec?.blockers ?? []} onAsk={() => setAsking(true)} onInfo={setInfo}
                 onOpen={(id) => { setMode("pratinjau"); show(id); }}
                 onTry={(id) => { setMode("prototipe"); startFlow(id, true); }} />
-            ) : mode === "kode" ? (
-              page && <CodeHandoff key={page.id} stack={handoff?.stack} handoff={handoff?.pages?.find((h) => h.page_id === page.id)} blockers={(handoff?.blockers ?? []).filter((b) => b.page_id === page.id)} />
+            ) : mode === "spek" ? (
+              page && <PageSpecView key={page.id} stack={spec?.stack} spec={spec?.pages?.find((h) => h.page_id === page.id)} blockers={(spec?.blockers ?? []).filter((b) => b.page_id === page.id)} />
             ) : page && (
               <div className={`dw-stage ${dev}`}>
                 <Fit width={SCREEN_WIDTH[dev]}>
@@ -205,7 +205,7 @@ function Workspace({ project }: { project: Project }) {
             {selected !== null && page!.components?.[selected]
               ? <CanvasComponent project={project} page={page!} index={selected} onRemoved={() => setSelected(null)} />
               : <CanvasPage project={project} page={page!} />}
-            <Inspect project={project} page={page!} handoff={handoff?.pages?.find((h) => h.page_id === page!.id)} selected={selected} onSelect={setSelected} onOpen={go} />
+            <Inspect project={project} page={page!} spec={spec?.pages?.find((h) => h.page_id === page!.id)} selected={selected} onSelect={setSelected} onOpen={go} />
           </aside>
         )}
       </div>
@@ -246,11 +246,11 @@ function Workspace({ project }: { project: Project }) {
   );
 }
 
-// Code: the implementation handoff of one page, derived from the Design IR;
-// the build receives exactly this.
-function CodeHandoff({ handoff, blockers, stack }: { handoff?: PageHandoff; blockers: Blocker[]; stack?: TechStack | null }) {
+// Spec: the implementation-ready spec of one page, derived from the Design
+// IR; the final export carries exactly this.
+function PageSpecView({ spec: handoff, blockers, stack }: { spec?: PageSpec; blockers: Blocker[]; stack?: TechStack | null }) {
   const [copied, setCopied] = useState(false);
-  if (!handoff) return <div className="code-view"><p className="muted">Handoff belum tersedia.</p></div>;
+  if (!handoff) return <div className="code-view"><p className="muted">Spesifikasi belum tersedia.</p></div>;
   const tech = (stack?.decisions ?? []).filter((d) => techChoice(d) !== NONE);
   // The copied spec carries the technology so the code follows the same decision.
   const technology = Object.fromEntries(tech.map((d) => [d.area, techChoice(d)]));
@@ -261,9 +261,9 @@ function CodeHandoff({ handoff, blockers, stack }: { handoff?: PageHandoff; bloc
       <p className="small muted">
         <code>{handoff.route || "route belum ditentukan"}</code> · {handoff.platform} · {handoff.access === "auth" ? "harus login" : handoff.access || "akses belum ditentukan"}
       </p>
-      {tech.length > 0 && <p className="small">Dibangun dengan: {tech.map((d) => `${TECH_AREA[d.area] ?? d.area} ${techChoice(d)}`).join(" · ")}</p>}
+      {tech.length > 0 && <p className="small">Teknologi: {tech.map((d) => `${TECH_AREA[d.area] ?? d.area} ${techChoice(d)}`).join(" · ")}</p>}
       {blockers.map((b, i) => <p key={i} className="warn-text small">! {b.text}</p>)}
-      <p className="small muted">Handoff implementasi dari Design IR — build memakai data yang sama.</p>
+      <p className="small muted">Spesifikasi dari Design IR — sama dengan yang diekspor saat finalisasi.</p>
       <button className="ghost small" onClick={() => navigator.clipboard?.writeText(json).then(() => setCopied(true), () => {})}>{copied ? "Tersalin" : "Salin JSON"}</button>
       <pre>{json}</pre>
     </div>
@@ -282,9 +282,8 @@ function PageItem({ name, active, changed, onClick }: { name: string; active: bo
 function Status({ project }: { project: Project }) {
   const d = project.design!;
   const job = project.job;
-  if (d.status === "approved") return <span className="dw-status ok">✓ Disetujui</span>;
+  if (d.status === "approved") return <span className="dw-status ok">✓ Final</span>;
   if (isWorking(project) && job?.kind === "design") return <span className="dw-status"><span className="spinner" /> Memperbarui rancangan</span>;
-  if (isWorking(project) && job?.kind === "plan") return <span className="dw-status"><span className="spinner" /> Membuat task</span>;
   if (d.revision) return <span className="dw-status warn">● Perubahan belum disimpan</span>;
   return <span className="dw-status ok">✓ Siap ditinjau</span>;
 }
@@ -298,15 +297,15 @@ function Designing({ project }: { project: Project }) {
     return (
       <div className="dw-empty">
         <h1>Belum ada rancangan</h1>
-        <p className="muted">Rancangan dibuat dari cerita dan kebutuhan aplikasimu.</p>
-        <Link className="button primary" to="/simple/tell">Ceritakan idemu</Link>
+        <p className="muted">Rancangan dibuat dari prompt dan kebutuhan aplikasimu.</p>
+        <Link className="button primary" to="/simple/tell">Tulis prompt</Link>
       </div>
     );
   }
   const state = (kind: string, done: boolean) =>
     done ? "done" : job?.kind === kind ? (failed ? "failed" : "active") : "todo";
   const steps: [string, string][] = [
-    ["Cerita diterima", project.story ? "done" : "todo"],
+    ["Prompt diterima", project.story ? "done" : "todo"],
     ["Memahami kebutuhan & blueprint", state("discovery", !!project.discovery)],
     ...(project.reference ? [["Menganalisis referensi " + project.reference.name, state("reference", ["done", "failed"].includes(project.reference.status))] as [string, string]] : []),
     ["Membuat halaman dan alur", state("design", false)],

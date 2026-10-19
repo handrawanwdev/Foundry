@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { useNavigate } from "react-router-dom";
-import { AgentsField } from "../components/AgentsField";
 import { Icon } from "../components/Icon";
 import { ModelPicker } from "../components/ModelPicker";
 import { stepFor } from "../flow";
@@ -27,7 +26,7 @@ function AgentMark({ id, name }: { id: string; name: string }) {
 }
 
 export function ConnectPage() {
-  const { state, connecting, error, connectAgent, connectMCP, disconnect, setAgents: saveAgents, load } = useAI();
+  const { state, connecting, error, connectAgent, connectMCP, disconnect, load } = useAI();
   const project = useProject((s) => s.project);
   const nav = useNavigate();
   const [custom, setCustom] = useState("");
@@ -38,11 +37,8 @@ export function ConnectPage() {
   const [picked, setPicked] = useState<string | null>(null);
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
-  const [agents, setAgents] = useState(state?.parallel?.default ?? 2);
   const [copied, setCopied] = useState(false);
   const mcpPre = useRef<HTMLPreElement>(null);
-  const parallel = state?.parallel;
-  const maxAgents = parallel?.max ?? 2;
   const chosen = state?.agents.find((a) => a.id === picked);
   const [models, setModels] = useState<{ agent: string; list: string[] | null } | null>(null);
 
@@ -103,7 +99,7 @@ export function ConnectPage() {
       <section className="connect">
         <header className="connect-head">
           <h1>AI siap digunakan</h1>
-          <p className="muted">Foundry memakai agent ini untuk memahami ide, merancang, dan membangun project.</p>
+          <p className="muted">Foundry memakai agent ini untuk memahami prompt dan menyusun rancangan aplikasi.</p>
         </header>
         <div className="connect-list">
           <div className="connect-item on">
@@ -117,10 +113,6 @@ export function ConnectPage() {
                 <span className="agent-status ok">Terhubung</span>
                 <button type="button" className="ghost small" disabled={!!connecting} onClick={() => void disconnect()}>Putuskan</button>
               </span>
-            </div>
-            <div className="connect-config">
-              <AgentsField value={parallel?.agents ?? agents} max={maxAgents} fromEnv={parallel?.from_env}
-                onChange={(n) => { setAgents(n); void saveAgents(n); }} />
             </div>
           </div>
         </div>
@@ -138,7 +130,7 @@ export function ConnectPage() {
     <section className="connect">
       <header className="connect-head">
         <h1>Hubungkan AI</h1>
-        <p className="muted">Foundry memakai AI untuk memahami ide, merancang aplikasi, dan membangun project.</p>
+        <p className="muted">Foundry memakai AI untuk memahami prompt dan menyusun rancangan aplikasi.</p>
       </header>
 
       {noneDetected && (
@@ -158,7 +150,7 @@ export function ConnectPage() {
             {chosen?.id === a.id && (
               <form className="connect-config" id="agent-config" onSubmit={(e) => {
                 e.preventDefault();
-                void connectAgent(chosen.id, undefined, { model: model.trim() || undefined, effort: effort || undefined, agents });
+                void connectAgent(chosen.id, undefined, { model: model.trim() || undefined, effort: effort || undefined });
               }}>
                 <div className="small mp-field">Model
                   <ModelPicker models={(models?.agent === chosen.id && models.list?.length ? models.list : chosen.models) ?? []} loading={loadingModels} value={model} onChange={setModel} />
@@ -175,7 +167,6 @@ export function ConnectPage() {
                   </fieldset>
                 )}
                 <div className="connect-config-foot">
-                  <AgentsField value={agents} max={maxAgents} fromEnv={parallel?.from_env} disabled={!!connecting} onChange={setAgents} />
                   <button type="submit" className="primary" disabled={!!connecting}>
                     {connecting === chosen.id ? <><span className="spinner" /> Menguji koneksi…</> : `Hubungkan ${chosen.name}`}
                   </button>
@@ -201,13 +192,12 @@ export function ConnectPage() {
             <form className="connect-config" onSubmit={(e) => {
               e.preventDefault();
               const argv = custom.trim().split(/\s+/).filter(Boolean);
-              if (argv.length) void connectAgent("custom", argv, { agents });
+              if (argv.length) void connectAgent("custom", argv);
             }}>
               <label className="small mp-field">Perintah
                 <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="mis. my-agent --headless" spellCheck={false} />
               </label>
               <div className="connect-config-foot">
-                <AgentsField value={agents} max={maxAgents} fromEnv={parallel?.from_env} disabled={!!connecting} onChange={setAgents} />
                 <button type="submit" className="primary" disabled={!!connecting || !custom.trim()}>Hubungkan</button>
               </div>
             </form>
@@ -232,9 +222,8 @@ export function ConnectPage() {
                 ? <p className="connect-wait"><span className="spinner" /> Buka AI Host dan panggil tool <code>get_project</code>.</p>
                 : <p className="connect-mcp-copy">Tambahkan Foundry ke konfigurasi MCP di AI Host, lalu konfirmasi.</p>}
               <div className="connect-config-foot">
-                <AgentsField value={agents} max={maxAgents} fromEnv={parallel?.from_env} disabled={!!connecting} onChange={setAgents} />
                 {!waitingMCP && (
-                  <button className="primary" disabled={connecting === "mcp"} onClick={() => connectMCP(agents)}>
+                  <button className="primary" disabled={connecting === "mcp"} onClick={() => connectMCP()}>
                     {connecting === "mcp" ? <><span className="spinner" /> Menghubungkan…</> : "Sudah ditambahkan"}
                   </button>
                 )}

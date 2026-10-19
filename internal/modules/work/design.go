@@ -256,7 +256,7 @@ Follow FOUNDRY.md bagian 7: bukan AI slop. Tokens, state loading/kosong/error/su
 		}
 		b.WriteString("\n")
 	}
-	if ui := existingUIBrief(p, false); ui != "" {
+	if ui := existingUIBrief(p); ui != "" {
 		b.WriteString(ui + "\n")
 	}
 	theme, _ := ResolveTheme(p)
@@ -332,7 +332,7 @@ func ApplyDesign(p *core.Project, raw string) error {
 		ApplyTheme(p.Design, t, ctx)
 	}
 	p.Design.Template = ChooseTemplate(p, out.Template)
-	p.Tasks, p.Verification = nil, nil
+
 	return nil
 }
 
@@ -389,7 +389,7 @@ func applyRevision(p *core.Project, out designOut) error {
 	if t := currentTheme(p); t != nil {
 		p.Design.System = ThemeSystem(*t, next) // a revision keeps the theme's tokens
 	}
-	p.Tasks, p.Verification = nil, nil
+
 	return nil
 }
 
@@ -753,55 +753,4 @@ func UndoRevision(p *core.Project) error {
 	p.Design.Revision = nil
 	p.Design.Screens = nil
 	return nil
-}
-
-// UIFeatures returns features that must have at least one page: those with a
-// non-backend platform. When flows are defined, a feature no flow walks is a
-// quality or tooling concern (CI gates, accessibility audits), not a screen.
-func UIFeatures(p *core.Project) []core.Feature {
-	hasFlow := map[string]bool{}
-	for _, fl := range p.Flows {
-		hasFlow[fl.FeatureID] = true
-	}
-	var out []core.Feature
-	for _, f := range p.Features {
-		if len(p.Flows) > 0 && !hasFlow[f.ID] {
-			continue
-		}
-		for _, pl := range f.Platforms {
-			if pl != core.PlatformBackend {
-				out = append(out, f)
-				break
-			}
-		}
-	}
-	return out
-}
-
-// PageIDsOf lists the pages that carry a feature: its own pages plus the
-// pages its flows walk through (a feature realised on another feature's page).
-func PageIDsOf(p *core.Project, featureID string) []string {
-	var out []string
-	seen := map[string]bool{}
-	add := func(id string) {
-		if !seen[id] {
-			seen[id] = true
-			out = append(out, id)
-		}
-	}
-	if p.Design != nil {
-		for _, pg := range p.Design.Pages {
-			if pg.FeatureID == featureID {
-				add(pg.ID)
-			}
-		}
-	}
-	for _, fl := range p.Flows {
-		if fl.FeatureID == featureID {
-			for _, id := range fl.PageIDs {
-				add(id)
-			}
-		}
-	}
-	return out
 }

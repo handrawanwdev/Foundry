@@ -35,8 +35,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// fakeAgent answers the preflight probe; a coding run starts a server like
-// a dev server would, writes both pids and then works forever.
+// fakeAgent answers the preflight probe; any other run starts a child
+// process, writes both pids and then works forever.
 func fakeAgent() {
 	in, _ := io.ReadAll(os.Stdin)
 	if strings.HasPrefix(string(in), "Balas hanya") {
@@ -72,8 +72,8 @@ func until(t *testing.T, what string, cond func() bool) {
 	}
 }
 
-// SIGTERM to `foundry serve` during an agent build stops the agent and the
-// server it started, records the build as stopped, and exits.
+// SIGTERM to `foundry serve` during an agent job stops the agent and the
+// process it started, records the job as ended, and exits.
 func TestServeStopsJobsOnSignal(t *testing.T) {
 	if _, err := exec.LookPath("sleep"); err != nil {
 		t.Skip("sleep tidak ada")
@@ -90,13 +90,6 @@ func TestServeStopsJobsOnSignal(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := st.Init("demo"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.Update(func(p *core.Project) error {
-		p.Stage = core.StageBuild
-		p.Tasks = []core.Task{{ID: "T1", Title: "a", Area: "api", Files: []string{"a/x.go"}, AcceptanceCriteria: []string{"ok"}, Status: core.TaskTodo}}
-		return nil
-	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -123,13 +116,14 @@ func TestServeStopsJobsOnSignal(t *testing.T) {
 		}
 		return err == nil && res.StatusCode == 200
 	})
-	res, err := http.Post("http://"+addr+"/api/v1/project/build/start", "application/json", strings.NewReader("{}"))
+	res, err := http.Post("http://"+addr+"/api/v1/project/story", "application/json",
+		strings.NewReader(`{"story": "Aplikasi klinik untuk janji temu pasien"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	res.Body.Close()
 	if res.StatusCode != 200 {
-		t.Fatalf("start build: %d", res.StatusCode)
+		t.Fatalf("submit story: %d", res.StatusCode)
 	}
 	var agentPid, childPid int
 	until(t, "agent did not start", func() bool {
@@ -151,10 +145,7 @@ func TestServeStopsJobsOnSignal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Job == nil || p.Job.Kind != "build" || p.Job.Status != core.JobDone || p.Job.Message != "Build dihentikan" {
+	if p.Job == nil || p.Job.Kind != "discovery" || p.Job.Status == core.JobRunning {
 		t.Fatalf("job = %+v", p.Job)
-	}
-	if tk := p.Task("T1"); tk.Status != core.TaskTodo {
-		t.Fatalf("task = %s, want TODO", tk.Status)
 	}
 }

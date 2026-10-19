@@ -4,15 +4,13 @@
 package standard
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
 )
 
-// The compact FOUNDRY.md contract injected into AI prompts, in pieces so a
-// task gets the rules that apply to it. Pieces keep the original numbering.
+// The compact FOUNDRY.md contract injected into the discovery prompt. Pieces
+// keep the original numbering.
 const (
 	rulesHead = `FOUNDRY RULES (mandatory, FOUNDRY.md):
 1. Modular + Clean Architecture. Dependency points inward: entry → use case → domain. Domain has no framework, DB, or UI.
@@ -45,50 +43,6 @@ Stop and ask (problem → ≥2 options → recommendation → impact) when: stru
 
 // Rules is the full contract (every piece), used by discovery and planning.
 const Rules = rulesHead + ruleRedis + ruleEvents + ruleLatency + ruleFrontend + ruleStructure + eventsBlock + webhookBlock + stopAsk
-
-// Scope says which conditional rules a task needs. Rules 1, 2, 3, 5, 8 and
-// the stop-and-ask clause are global and always sent: architecture, code
-// quality, ORM boundary, the event contract, structure.
-type Scope struct {
-	Frontend bool // UI work: rule 7
-	Backend  bool // server work: Redis, latency, event/outbox details
-	Webhooks bool // webhook details
-}
-
-// AllScope keeps every rule (unknown or cross-cutting work).
-var AllScope = Scope{Frontend: true, Backend: true, Webhooks: true}
-
-// RulesFor is the contract limited to scope. Global pieces never drop.
-func RulesFor(s Scope) string {
-	var b strings.Builder
-	b.WriteString(rulesHead)
-	if s.Backend {
-		b.WriteString(ruleRedis)
-	}
-	b.WriteString(ruleEvents)
-	if s.Backend {
-		b.WriteString(ruleLatency)
-	}
-	if s.Frontend {
-		b.WriteString(ruleFrontend)
-	}
-	b.WriteString(ruleStructure)
-	if s.Backend {
-		b.WriteString(eventsBlock)
-	}
-	if s.Webhooks {
-		b.WriteString(webhookBlock)
-	}
-	b.WriteString(stopAsk)
-	return b.String()
-}
-
-// Version identifies the rule text (and so a change to it): a short hash of
-// the full contract. Memory and caches keyed on rules include it.
-func Version() string {
-	sum := sha256.Sum256([]byte(Rules))
-	return hex.EncodeToString(sum[:6])
-}
 
 const AgentsMD = `# Agents
 

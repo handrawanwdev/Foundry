@@ -1,6 +1,7 @@
-package verify
+package spec
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,10 +10,11 @@ import (
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/standard"
 	"github.com/handrawanw/foundry/internal/modules/structure"
+	"github.com/handrawanw/foundry/internal/modules/work"
 )
 
-// Markdown renders the project documentation from the single context:
-// story, requirements, features, pages, tasks and traceability.
+// Markdown renders the final spec from the single context: story,
+// requirements, features, design system and per-page specs.
 func Markdown(p *core.Project) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n%s\n\n", p.Name, p.Story)
@@ -105,21 +107,7 @@ func Markdown(p *core.Project) string {
 			b.WriteString("\n")
 		}
 	}
-	b.WriteString("## Task\n\n| ID | Task | Feature | Status |\n|---|---|---|---|\n")
-	for _, t := range p.Tasks {
-		fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", t.ID, t.Title, t.FeatureID, t.Status)
-	}
-	if v := p.Verification; v != nil {
-		b.WriteString("\n## Traceability\n\n| Requirement | Feature | Page | Task | Test | Selesai |\n|---|---|---|---|---|---|\n")
-		for _, t := range v.Trace {
-			done := "belum"
-			if t.Done {
-				done = "ya"
-			}
-			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n", t.RequirementID, strings.Join(t.FeatureIDs, ", "),
-				strings.Join(t.PageIDs, ", "), strings.Join(t.TaskIDs, ", "), strings.Join(t.TestTaskIDs, ", "), done)
-		}
-	}
+	b.WriteString(pagesMarkdown(p))
 	return b.String()
 }
 
@@ -358,8 +346,9 @@ func DocsFiles(p *core.Project) map[string]string {
 		"deployment.md":     "# Deployment\n\n" + deploymentDoc(p),
 		"adr/0001-stack.md": adrStack(p),
 	}
-	if p.PRD != nil && strings.TrimSpace(p.PRD.Markdown) != "" {
-		out["PRD.md"] = p.PRD.Markdown
+	out["pages.md"] = "# Halaman\n\n" + pagesMarkdown(p)
+	if b, err := json.MarshalIndent(Export(p), "", "  "); err == nil {
+		out["spec.json"] = string(b)
 	}
 	out["foundry-profile.md"] = standard.Profile(p)
 	out["requirements.md"] = standard.RequirementsDoc(p)
@@ -512,4 +501,72 @@ func adrStack(p *core.Project) string {
 			p.Blueprint.Architecture.Pattern, p.Blueprint.Architecture.Reason, p.Blueprint.Architecture.Tradeoff)
 	}
 	return b.String()
+}
+
+// Spec is the machine-readable final spec an external implementation tool
+// consumes: the structured design (Design IR) is the source of truth.
+type Spec struct {
+	Name         string             `json:"name"`
+	Story        string             `json:"story"`
+	Requirements []core.Requirement `json:"requirements"`
+	Features     []core.Feature     `json:"features"`
+	Flows        []core.Flow        `json:"flows"`
+	Platform     *core.PlatformPlan `json:"platform,omitempty"`
+	Stack        *core.TechStack    `json:"stack,omitempty"`
+	Structure    *core.Structure    `json:"structure,omitempty"`
+	Blueprint    *core.Blueprint    `json:"blueprint,omitempty"`
+	System       *core.DesignSystem `json:"design_system,omitempty"`
+	Pages        []work.PageSpec    `json:"pages"`
+}
+
+// Export builds the Spec from the project.
+func Export(p *core.Project) Spec {
+	s := Spec{Name: p.Name, Story: p.Story, Requirements: p.Requirements, Features: p.Features, Flows: p.Flows,
+		Platform: p.Platform, Stack: p.Stack, Structure: p.Structure, Blueprint: p.Blueprint, Pages: work.PageSpecs(p)}
+	if p.Design != nil {
+		s.System = p.Design.System
+	}
+	if s.Pages == nil {
+		s.Pages = []work.PageSpec{}
+	}
+	return s
+}
+
+// pagesMarkdown lists each page's spec: route, access, actions, data,
+// interactions, states and validation.
+func pagesMarkdown(p *core.Project) string {
+	var b strings.Builder
+	list := func(title string, items []string) {
+		if len(items) == 0 {
+			return
+		}
+		fmt.Fprintf(&b, "**%s:**\n", title)
+		for _, it := range items {
+			fmt.Fprintf(&b, "- %s\n", it)
+		}
+		b.WriteString("\n")
+	}
+	for _, h := range work.PageSpecs(p) {
+		fmt.Fprintf(&b, "### %s %s\n\n%s\n\n", h.PageID, h.Name, h.Purpose)
+		fmt.Fprintf(&b, "Route `%s` · %s · akses: %s", h.Route, h.Platform, h.Access)
+		if h.Role != "" {
+			fmt.Fprintf(&b, " · peran: %s", h.Role)
+		}
+		b.WriteString("\n\n")
+		if h.PrimaryAction != "" {
+			fmt.Fprintf(&b, "Aksi utama: %s\n\n", h.PrimaryAction)
+		}
+		list("Aksi sekunder", h.Secondary)
+		list("Komponen", h.Components)
+		list("Interaksi", h.Interactions)
+		list("State", h.States)
+		list("Validasi", h.Validation)
+		if h.Responsive != "" {
+			fmt.Fprintf(&b, "Responsive: %s\n\n", h.Responsive)
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "## Spesifikasi Halaman\n\n" + b.String()
 }

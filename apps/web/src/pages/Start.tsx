@@ -18,7 +18,7 @@ export function StartPage() {
   return (
     <div className="start">
       <h1 className="start-title">Foundry</h1>
-      <p className="muted">Ceritakan aplikasi yang kamu inginkan. Foundry mengurus sisanya sampai siap diperiksa.</p>
+      <p className="muted">Ceritakan aplikasi yang kamu inginkan. Foundry merancangnya, kamu tinjau dan revisi, lalu finalisasi jadi spesifikasi.</p>
       <div className="start-grid">
         <div>
           <div className="recent-head">

@@ -32,18 +32,12 @@ export function JobBanner() {
         <div className="muted small">
           Di AI Host kamu, minta: <code>Lanjutkan pekerjaan Foundry (panggil next_work)</code>
         </div>
-        {job.kind === "build" && (
-          <button className="ghost" disabled={pending === "stop"} onClick={() => run("stop", api.stopBuild)}>Hentikan</button>
-        )}
       </div>
     );
   }
   return (
     <div className="banner running">
       <span className="spinner" /> <strong>{job.message}…</strong>
-      {job.kind === "build" && (
-        <button className="ghost" disabled={pending === "stop"} onClick={() => run("stop", api.stopBuild)}>Hentikan</button>
-      )}
     </div>
   );
 }

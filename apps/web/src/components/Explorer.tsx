@@ -1,21 +1,17 @@
 import { useState, type ReactNode } from "react";
-import { FileTree } from "./FileTree";
 import { useLocation, useNavigate } from "react-router-dom";
-import { COLUMNS, reachable, stepIndex, STEPS } from "../flow";
+import { reachable, stepIndex, STEPS } from "../flow";
 import { useProject } from "../store/project";
 import { Icon } from "./Icon";
 
 // Solution-Explorer style tree of the single project context.
 export function Explorer() {
   const { project, close } = useProject();
-  const [refresh, setRefresh] = useState(0);
   const nav = useNavigate();
   const loc = useLocation();
   if (!project) return null;
   const current = stepIndex(project.stage);
-  const reload = project.version + refresh;
   const pages = project.design?.pages ?? [];
-  const tasks = project.tasks ?? [];
 
   const closeProject = async () => {
     await close();
@@ -28,11 +24,6 @@ export function Explorer() {
         <button className="icon-btn" title="Tutup Project" onClick={closeProject}><Icon name="close" size={14} /></button>
       </div>
       <div className="explorer-project" title={project.dir}>{project.name.toUpperCase()}</div>
-
-      <Section title="Files" defaultOpen
-        actions={<button className="icon-btn" title="Muat ulang file" onClick={() => setRefresh(refresh + 1)}>↻</button>}>
-        <FileTree reload={reload} />
-      </Section>
 
       <Section title="Pipeline" defaultOpen>
         {STEPS.map((s, i) => {
@@ -79,38 +70,12 @@ export function Explorer() {
         ))}
       </Section>
 
-      {project.prd && (
-        <Section title="PRD" count={project.prd.findings?.length} defaultOpen={(project.prd.findings?.length ?? 0) > 0}>
-          <Leaf onClick={() => nav("/simple/bangun?prd=1")}>Lihat PRD</Leaf>
-          {(project.prd.findings ?? []).map((f, i) => (
-            <Leaf key={i} title={f.message} onClick={() => nav("/simple/bangun?prd=1")}>
-              <span className="leaf-id">{f.kind}</span> {f.ref} {f.message}
-            </Leaf>
-          ))}
-        </Section>
-      )}
-
-      <Section title="Task" count={tasks.length}>
-        {COLUMNS.map((col) => {
-          const items = tasks.filter((t) => t.status === col.status);
-          if (!items.length) return null;
-          return (
-            <Section key={col.status} title={`${col.label} (${items.length})`} nested defaultOpen={col.status !== "DONE"}>
-              {items.map((t) => (
-                <Leaf key={t.id} title={t.title} active={loc.search === `?task=${t.id}`} onClick={() => nav(`/simple/bangun?task=${t.id}`)}>
-                  <span className="leaf-id">{t.id}</span> {t.title}
-                </Leaf>
-              ))}
-            </Section>
-          );
-        })}
-      </Section>
     </aside>
   );
 }
 
-function Section({ title, count, nested, defaultOpen, actions, children }: {
-  title: string; count?: number; nested?: boolean; defaultOpen?: boolean; actions?: ReactNode; children: ReactNode;
+function Section({ title, count, nested, defaultOpen, children }: {
+  title: string; count?: number; nested?: boolean; defaultOpen?: boolean; children: ReactNode;
 }) {
   const [open, setOpen] = useState(!!defaultOpen);
   return (
@@ -120,7 +85,6 @@ function Section({ title, count, nested, defaultOpen, actions, children }: {
           <span className="caret">{open ? "▾" : "▸"}</span> {nested ? title : title.toUpperCase()}
           {count !== undefined && <span className="tree-count">{count}</span>}
         </button>
-        {actions && <span className="tree-actions">{actions}</span>}
       </div>
       {open && <div className="tree-children">{children}</div>}
     </div>

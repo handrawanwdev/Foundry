@@ -128,12 +128,6 @@ func TestCompleteBlueprintFillsStackAndRules(t *testing.T) {
 	if b.Storage.Strategy != "none" {
 		t.Fatalf("storage = %s", b.Storage.Strategy)
 	}
-	brief := ArchitectureBrief(p)
-	for _, want := range []string{"ARCHITECTURE BLUEPRINT", "identity", "Prisma", "Argon2id", "controller → service → repository"} {
-		if !strings.Contains(brief, want) {
-			t.Errorf("brief missing %q", want)
-		}
-	}
 }
 
 func TestCompleteBlueprintKeepsAIAndOverridesPattern(t *testing.T) {
@@ -168,21 +162,5 @@ func TestDiscoveryPromptAsksForBlueprint(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("prompt missing %q", want)
 		}
-	}
-}
-
-func TestArchitectureBriefInPlanAndTask(t *testing.T) {
-	p := &core.Project{Story: "klinik", Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: "web"}}},
-		Structure: &core.Structure{Mode: core.StructureNew, Template: "modular", Layout: []string{"apps/web/"}}}
-	if err := ApplyDiscovery(p, richDiscovery); err != nil {
-		t.Fatal(err)
-	}
-	CompleteBlueprint(p)
-	if !strings.Contains(PlanPrompt(p), "ARCHITECTURE BLUEPRINT") {
-		t.Fatal("plan missing blueprint")
-	}
-	task := TaskPrompt(p, &core.Task{ID: "TASK-001", Title: "API", Area: "api", Description: "x"})
-	if !strings.Contains(task, "ARCHITECTURE BLUEPRINT") || !strings.Contains(task, "janji-temu") {
-		t.Fatal("task missing blueprint")
 	}
 }

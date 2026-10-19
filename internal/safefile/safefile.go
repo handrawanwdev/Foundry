@@ -10,7 +10,6 @@
 package safefile
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -49,35 +48,6 @@ func Acquire(path string, wait time.Duration) (*Lock, error) {
 			return nil, ErrTimeout
 		}
 		time.Sleep(25 * time.Millisecond)
-	}
-}
-
-// AcquireContext is Acquire waiting for as long as ctx lives, for a lock
-// whose owner may rightly hold it longer than any fixed wait.
-func AcquireContext(ctx context.Context, path string) (*Lock, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	tick := time.NewTicker(25 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		ok, err := tryLock(f)
-		if err != nil {
-			f.Close()
-			return nil, err
-		}
-		if ok {
-			f.Truncate(0)
-			f.WriteAt([]byte(fmt.Sprintf("pid %d\n", os.Getpid())), 0)
-			return &Lock{f: f}, nil
-		}
-		select {
-		case <-ctx.Done():
-			f.Close()
-			return nil, ctx.Err()
-		case <-tick.C:
-		}
 	}
 }
 

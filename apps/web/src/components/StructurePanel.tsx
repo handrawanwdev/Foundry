@@ -12,8 +12,8 @@ const KIND: Record<string, string> = {
 const SOURCE: Record<string, string> = { recommend: "rekomendasi", user: "diubah user", ai: "permintaan ke AI", technology: "mengikuti teknologi" };
 
 // Project structure workspace: Foundry recommends, the user edits (by hand
-// or in words), sees the impact, applies and approves. The build follows
-// the approved structure.
+// or in words), sees the impact, applies and approves. The final spec
+// carries the approved structure.
 export function StructurePanel({ project }: { project: Project }) {
   const { run, pending } = useProject();
   const [types, setTypes] = useState<Template[]>([]);
@@ -39,7 +39,7 @@ export function StructurePanel({ project }: { project: Project }) {
       </div>
       <p className="small muted">
         Rekomendasi Foundry: <strong className="fg">{STRUCTURE_TYPE[s.recommended ?? ""] ?? "—"}</strong>
-        {s.reason && <> — {s.reason}</>}. Kamu yang memutuskan; yang disetujui dipakai saat Build.
+        {s.reason && <> — {s.reason}</>}. Kamu yang memutuskan; yang disetujui masuk spesifikasi final.
       </p>
 
       <div className="tech-modes">
@@ -77,7 +77,7 @@ export function StructurePanel({ project }: { project: Project }) {
         {editable && !s.proposal && s.recommended && (
           <button className="ghost small" onClick={() => void run("structure", api.recommendStructure)}>↻ Gunakan rekomendasi</button>
         )}
-        {state === "approved" ? <span className="ok-text small">✓ Struktur v{structureVersion(s)} disetujui{designApproved ? " dan dipakai build" : ""}</span>
+        {state === "approved" ? <span className="ok-text small">✓ Struktur v{structureVersion(s)} disetujui{designApproved ? " dan masuk spesifikasi final" : ""}</span>
           : !designApproved && (
             <button className="primary" disabled={!editable || !!s.proposal || errors.length > 0}
               title={s.proposal ? "Terapkan atau batalkan perubahan dulu" : errors.length ? "Selesaikan masalah di atas dulu" : undefined}

@@ -100,22 +100,3 @@ func TestApplyQAIssues(t *testing.T) {
 		t.Fatalf("issues = %+v", is)
 	}
 }
-
-func TestTaskPromptUIRules(t *testing.T) {
-	p := opsProject()
-	p.Design.System = testSystem
-	p.Design.Pages[0].Hierarchy = []string{"Tabel janji"}
-	ui := &core.Task{ID: "TASK-002", Area: "ui", PageIDs: []string{"PAGE-001"}}
-	got := TaskPrompt(p, ui)
-	for _, want := range []string{"UI RULES:", "DESIGN SYSTEM:", `"hierarchy":[`, "Tabel janji", "At most one primary CTA", "primary=#1f6feb"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("ui prompt missing %q", want)
-		}
-	}
-	if strings.Contains(got, `"label":`) || strings.Contains(got, `"colors":[`) {
-		t.Error("ui prompt dumped raw page components or design-system JSON")
-	}
-	if got := TaskPrompt(p, &core.Task{ID: "TASK-001", Area: "api"}); strings.Contains(got, "UI RULES:") {
-		t.Error("api task must not get UI rules")
-	}
-}

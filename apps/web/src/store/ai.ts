@@ -9,8 +9,7 @@ interface AIStore {
   error: string | null;
   load: () => Promise<void>;
   connectAgent: (id: string, command?: string[], opts?: AgentOptions) => Promise<boolean>;
-  connectMCP: (agents?: number) => Promise<void>;
-  setAgents: (n: number) => Promise<void>;
+  connectMCP: () => Promise<void>;
   disconnect: (all?: boolean) => Promise<void>;
 }
 
@@ -39,22 +38,15 @@ export const useAI = create<AIStore>((set, get) => ({
       set({ connecting: null });
     }
   },
-  connectMCP: async (agents) => {
+  connectMCP: async () => {
     set({ connecting: "mcp", error: null });
     try {
-      await api.connectMCP(agents);
+      await api.connectMCP();
       await get().load();
     } catch (e) {
       set({ error: (e as Error).message });
     } finally {
       set({ connecting: null });
-    }
-  },
-  setAgents: async (n) => {
-    try {
-      set({ state: await api.setAgents(n), error: null });
-    } catch (e) {
-      set({ error: (e as Error).message });
     }
   },
   disconnect: async (all = false) => {
@@ -76,11 +68,9 @@ export function agentName(s: AIState | null): string {
   return s.agents.find((a) => a.id === s.connection?.agent_id)?.name ?? s.connection.agent_id ?? "Agent";
 }
 
-// Model, effort and parallel workers of the connected agent, e.g. "opus · effort high · 3 agent".
+// Model and effort of the connected agent, e.g. "opus · effort high".
 export function agentOptions(s: AIState | null): string {
   const c = s?.connection;
-  const n = s?.parallel?.agents;
   const bits = c?.mode === "agent" ? [c.model, c.effort && `effort ${c.effort}`] : [];
-  if (n) bits.push(`${n} agent`);
   return bits.filter(Boolean).join(" · ");
 }

@@ -18,8 +18,6 @@ func TestFIFOIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, path := range []string{
-		"/api/v1/project/file?path=pipe",
-		"/api/v1/project/files?path=pipe",
 		"/api/v1/fs?path=" + filepath.Join(dir, "pipe"),
 	} {
 		done := make(chan int, 1)

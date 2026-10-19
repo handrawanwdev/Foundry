@@ -73,11 +73,6 @@ export function PlatformStructure({ project }: { project: Project }) {
             ))}
             <p className="small">{s.reason}</p>
             {s.ui && <ExistingUIInfo ui={s.ui} />}
-            {(s.commands ?? []).length > 0 && (
-              <details className="small"><summary>Command verifikasi</summary>
-                {(s.commands ?? []).map((c, i) => <div key={i}><code>{c.argv.join(" ")}</code> <span className="muted">di {c.dir}</span></div>)}
-              </details>
-            )}
         </section>
       ) : s?.ir ? <StructurePanel project={project} />
         : <section className="info-sec"><h3>Struktur project</h3><p className="muted">Belum ditentukan</p></section>}

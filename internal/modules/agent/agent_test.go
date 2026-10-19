@@ -60,7 +60,7 @@ func TestRunNotHeldByBackgroundChild(t *testing.T) {
 	}
 	r, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo done; sleep 60 &"}, Options{})
 	start := time.Now()
-	out, err := r.Run(context.Background(), Execute, t.TempDir(), "hi")
+	out, err := r.Run(context.Background(), t.TempDir(), "hi")
 	if d := time.Since(start); d > 20*time.Second {
 		t.Fatalf("Run tertahan %s", d)
 	}
@@ -75,40 +75,13 @@ func TestRunDetectsLimit(t *testing.T) {
 	}
 	r, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo 'Claude usage limit reached' >&2; sleep 30"}, Options{})
 	start := time.Now()
-	_, err := r.Run(context.Background(), Execute, t.TempDir(), "hi")
+	_, err := r.Run(context.Background(), t.TempDir(), "hi")
 	if !errors.Is(err, ErrLimit) || time.Since(start) > 10*time.Second {
 		t.Fatalf("err = %v after %s", err, time.Since(start))
 	}
 	r, _ = NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo 'usage limit reached|123'"}, Options{})
-	if _, err := r.Run(context.Background(), Execute, t.TempDir(), "hi"); !errors.Is(err, ErrLimit) {
+	if _, err := r.Run(context.Background(), t.TempDir(), "hi"); !errors.Is(err, ErrLimit) {
 		t.Fatalf("stdout notice: err = %v", err)
-	}
-}
-
-func TestRunKillsIdleAgent(t *testing.T) {
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("sh tidak ada")
-	}
-	r, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; sleep 30"}, Options{})
-	r.Idle = 2 * time.Second
-	start := time.Now()
-	_, err := r.Run(context.Background(), Execute, t.TempDir(), "hi")
-	if !errors.Is(err, ErrAgentFailed) || errors.Is(err, ErrLimit) || time.Since(start) > 15*time.Second {
-		t.Fatalf("err = %v after %s", err, time.Since(start))
-	}
-}
-
-func TestPreflightFailsFastOnLimit(t *testing.T) {
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("sh tidak ada")
-	}
-	r, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo 'usage limit reached'"}, Options{})
-	if err := r.Preflight(context.Background(), t.TempDir()); !errors.Is(err, ErrLimit) {
-		t.Fatalf("err = %v", err)
-	}
-	ok, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo OK"}, Options{})
-	if err := ok.Preflight(context.Background(), t.TempDir()); err != nil {
-		t.Fatal(err)
 	}
 }
 

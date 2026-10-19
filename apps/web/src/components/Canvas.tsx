@@ -223,7 +223,7 @@ export function Versions({ project, onOpen }: { project: Project; onOpen: (pageI
 const LINK_KIND: Record<string, string> = { target: "tombol/elemen", nav: "menu", back: "kembali", primary: "aksi utama" };
 
 // Prototype map: the navigation the prototype runs on, derived from the IR;
-// the same links the build implements.
+// the same links the final spec carries.
 export function PrototypeMap({ project, onOpen, onTry }: { project: Project; onOpen: (pageId: string) => void; onTry: (flowId: string) => void }) {
   const [proto, setProto] = useState<Prototype | null>(null);
   const [error, setError] = useState("");
@@ -237,7 +237,7 @@ export function PrototypeMap({ project, onOpen, onTry }: { project: Project; onO
   return (
     <div className="info proto-map">
       <h1>Peta prototipe</h1>
-      <p className="muted small">Navigasi diturunkan dari Design IR; build memakai tautan yang sama.</p>
+      <p className="muted small">Navigasi diturunkan dari Design IR; spesifikasi final memakai tautan yang sama.</p>
       {(!!proto.unreachable?.length || !!proto.dead_ends?.length) && (
         <section>
           {!!proto.unreachable?.length && <p className="warn-text small">Tidak bisa dicapai dari halaman awal: {proto.unreachable.map((id) => <Page key={id} id={id} />)}</p>}

@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -33,7 +31,7 @@ func TestGuardAndFlow(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
-	if w := do("GET", "/api/v1/project", "", "", "127.0.0.1:8080"); w.Code != 200 || !strings.Contains(w.Body.String(), `"stage":"TELL"`) || !strings.Contains(w.Body.String(), `"schedule":{"independent":[]}`) {
+	if w := do("GET", "/api/v1/project", "", "", "127.0.0.1:8080"); w.Code != 200 || !strings.Contains(w.Body.String(), `"stage":"TELL"`) || strings.Contains(w.Body.String(), `"tasks"`) {
 		t.Fatalf("project: %d %s", w.Code, w.Body)
 	}
 	if w := do("POST", "/api/v1/project/story", `{"story":"aplikasi klinik untuk pasien"}`, "https://evil.example", "127.0.0.1:8080"); w.Code != 403 {
@@ -120,195 +118,6 @@ func TestOpenCloseBrowse(t *testing.T) {
 	}
 }
 
-func TestProjectSchedule(t *testing.T) {
-	t.Setenv("FOUNDRY_HOME", t.TempDir())
-	dir := t.TempDir()
-	s := New(nil, "/bin/foundry")
-	if _, err := s.Open(dir, "demo", true); err != nil {
-		t.Fatal(err)
-	}
-	st, err := core.NewStore(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.Update(func(p *core.Project) error {
-		p.Stage = core.StageBuild
-		p.Tasks = []core.Task{
-			{ID: "T1", Area: "scaffold", Status: core.TaskDone},
-			{ID: "T2", Area: "ui", Files: []string{"packages/ui"}, Status: core.TaskTodo, DependsOn: []string{"T1"}},
-			{ID: "T3", Area: "ui", Files: []string{"packages/ui/src/Button.tsx"}, Status: core.TaskTodo, DependsOn: []string{"T1"}},
-			{ID: "T4", Area: "data", Files: []string{"services/api/auth"}, Status: core.TaskTodo, DependsOn: []string{"T1"}},
-			{ID: "T5", Area: "api", Files: []string{"services/api/auth/login.go"}, Status: core.TaskTodo, DependsOn: []string{"T4"}},
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	r := httptest.NewRequest("GET", "/api/v1/project", nil)
-	r.RemoteAddr = "127.0.0.1:50000"
-	r.Host = "127.0.0.1:8080"
-	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, r)
-	if w.Code != 200 {
-		t.Fatalf("code %d %s", w.Code, w.Body)
-	}
-	if !strings.Contains(w.Body.String(), `"independent":["T2","T4"]`) {
-		t.Fatalf("schedule = %s", w.Body)
-	}
-	if !strings.Contains(w.Body.String(), `"state":"queued"`) || !strings.Contains(w.Body.String(), `"blocked_by":"T2"`) {
-		t.Fatalf("T3 queued = %s", w.Body)
-	}
-	if !strings.Contains(w.Body.String(), `"state":"waiting_deps"`) {
-		t.Fatalf("T5 waiting = %s", w.Body)
-	}
-}
-
-func TestPatchTaskClosed(t *testing.T) {
-	t.Setenv("FOUNDRY_HOME", t.TempDir())
-	dir := t.TempDir()
-	s := New(nil, "/bin/foundry")
-	if _, err := s.Open(dir, "demo", true); err != nil {
-		t.Fatal(err)
-	}
-	st, err := core.NewStore(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.Update(func(p *core.Project) error {
-		p.Stage = core.StageBuild
-		p.Tasks = []core.Task{
-			{ID: "T1", Area: "data", Files: []string{"a.go"}, Status: core.TaskTodo},
-			{ID: "T2", Area: "data", Files: []string{"b.go"}, Status: core.TaskTodo},
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	h := s.Handler()
-	do := func(method, path, body string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(method, path, strings.NewReader(body))
-		r.RemoteAddr = "127.0.0.1:50000"
-		r.Host = "127.0.0.1:8080"
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		return w
-	}
-	w := do("PATCH", "/api/v1/project/tasks/T2", `{"closed":true}`)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"closed":true`) {
-		t.Fatalf("close: %d %s", w.Code, w.Body)
-	}
-	w = do("GET", "/api/v1/project", "")
-	if w.Code != 200 {
-		t.Fatalf("get: %d %s", w.Code, w.Body)
-	}
-	if !strings.Contains(w.Body.String(), `"id":"T2"`) || !strings.Contains(w.Body.String(), `"closed":true`) {
-		t.Fatalf("persisted = %s", w.Body)
-	}
-	if strings.Contains(w.Body.String(), `"independent":["T1","T2"]`) {
-		t.Fatalf("closed T2 still independent: %s", w.Body)
-	}
-	w = do("PATCH", "/api/v1/project/tasks/T2", `{"closed":false}`)
-	if w.Code != 200 || strings.Contains(w.Body.String(), `"closed":true`) {
-		t.Fatalf("open: %d %s", w.Code, w.Body)
-	}
-	w = do("PATCH", "/api/v1/project/tasks/T2", `{}`)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("empty patch: %d %s", w.Code, w.Body)
-	}
-}
-
-func TestDownloadPRD(t *testing.T) {
-	t.Setenv("FOUNDRY_HOME", t.TempDir())
-	dir := t.TempDir()
-	s := New(nil, "/bin/foundry")
-	if _, err := s.Open(dir, "Klinik Sehat", true); err != nil {
-		t.Fatal(err)
-	}
-	h := s.Handler()
-	do := func(path string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest("GET", path, nil)
-		r.RemoteAddr = "127.0.0.1:50000"
-		r.Host = "127.0.0.1:8080"
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		return w
-	}
-	if w := do("/api/v1/project/prd.md"); w.Code != http.StatusNotFound {
-		t.Fatalf("missing prd: %d %s", w.Code, w.Body)
-	}
-	st, err := core.NewStore(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.Update(func(p *core.Project) error {
-		p.PRD = &core.PRD{Markdown: "# 1. Product Overview\nKlinik\n"}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	w := do("/api/v1/project/prd.md")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "Product Overview") {
-		t.Fatalf("download: %d %s", w.Code, w.Body)
-	}
-	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "text/markdown") {
-		t.Fatalf("type = %s", ct)
-	}
-	if cd := w.Header().Get("Content-Disposition"); !strings.Contains(cd, "PRD-Klinik-Sehat.md") {
-		t.Fatalf("disposition = %s", cd)
-	}
-}
-
-func TestPrdDownloadName(t *testing.T) {
-	if got := prdDownloadName(""); got != "PRD.md" {
-		t.Fatalf("empty = %s", got)
-	}
-	if got := prdDownloadName("Klinik Sehat"); got != "PRD-Klinik-Sehat.md" {
-		t.Fatalf("name = %s", got)
-	}
-}
-
-func TestFileExplorer(t *testing.T) {
-	t.Setenv("FOUNDRY_HOME", t.TempDir())
-	root := t.TempDir()
-	os.MkdirAll(filepath.Join(root, "src"), 0o755)
-	os.MkdirAll(filepath.Join(root, ".git"), 0o755)
-	os.WriteFile(filepath.Join(root, "src", "main.go"), []byte("package main\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "logo.bin"), []byte{0, 1, 2}, 0o644)
-	outside := t.TempDir()
-	os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("x"), 0o644)
-	os.Symlink(outside, filepath.Join(root, "escape"))
-
-	s := New(nil, "/bin/foundry")
-	if _, err := s.Open(root, "", false); err != nil {
-		t.Fatal(err)
-	}
-	h := s.Handler()
-	get := func(path string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest("GET", path, nil)
-		r.RemoteAddr = "127.0.0.1:50000"
-		r.Host = "127.0.0.1:8080"
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		return w
-	}
-	w := get("/api/v1/project/files")
-	body := w.Body.String()
-	if w.Code != 200 || strings.Contains(body, `".git"`) || !strings.Contains(body, `"src"`) || strings.Index(body, `"src"`) > strings.Index(body, `"logo.bin"`) {
-		t.Fatalf("list root: %d %s", w.Code, body)
-	}
-	if w := get("/api/v1/project/file?path=src/main.go"); w.Code != 200 || !strings.Contains(w.Body.String(), `package main`) {
-		t.Fatalf("read: %d %s", w.Code, w.Body)
-	}
-	if w := get("/api/v1/project/file?path=logo.bin"); !strings.Contains(w.Body.String(), `"binary":true`) {
-		t.Fatalf("binary: %s", w.Body)
-	}
-	for _, p := range []string{"../../etc/passwd", "escape/secret.txt", "/../x"} {
-		if w := get("/api/v1/project/file?path=" + p); w.Code == 200 {
-			t.Fatalf("%s must be refused: %s", p, w.Body)
-		}
-	}
-}
-
 func TestDesignVersionRoutes(t *testing.T) {
 	t.Setenv("FOUNDRY_HOME", t.TempDir())
 	s := New(nil, "/bin/foundry")
@@ -368,42 +177,6 @@ func TestDesignTemplateRoute(t *testing.T) {
 	}
 	if len(g.Templates) != 8 || g.Theme.ID != "sakura-light" || g.Domain != "ticketing" || g.Previews["workspace-agent"].Name != "Helpdesk tiket" {
 		t.Fatalf("gallery = %+v", g)
-	}
-}
-
-func TestAIParallelSettings(t *testing.T) {
-	t.Setenv("FOUNDRY_HOME", t.TempDir())
-	h := New(nil, "/bin/foundry").Handler()
-	do := func(method, path, body string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(method, path, strings.NewReader(body))
-		r.RemoteAddr = "127.0.0.1:50000"
-		r.Host = "127.0.0.1:8080"
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		return w
-	}
-	w := do("GET", "/api/v1/ai", "")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"max":2`) || !strings.Contains(w.Body.String(), `"default":2`) {
-		t.Fatalf("get ai: %d %s", w.Code, w.Body)
-	}
-	if w := do("PATCH", "/api/v1/ai", `{"agents":5}`); w.Code != http.StatusPreconditionFailed {
-		t.Fatalf("patch without connection: %d %s", w.Code, w.Body)
-	}
-	if w := do("POST", "/api/v1/ai/connect-mcp", `{"agents":1}`); w.Code != 200 {
-		t.Fatalf("mcp: %d %s", w.Code, w.Body)
-	}
-	w = do("GET", "/api/v1/ai", "")
-	if !strings.Contains(w.Body.String(), `"agents":1`) {
-		t.Fatalf("stored agents: %s", w.Body)
-	}
-	if w := do("PATCH", "/api/v1/ai", `{"agents":2}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"agents":2`) {
-		t.Fatalf("patch: %s", w.Body)
-	}
-	if w := do("PATCH", "/api/v1/ai", `{"agents":99}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"agents":2`) {
-		t.Fatalf("cap: %s", w.Body)
-	}
-	if w := do("POST", "/api/v1/ai/connect-mcp", `{}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"agents":2`) {
-		t.Fatalf("reconnect keeps agents: %s", w.Body)
 	}
 }
 
@@ -496,5 +269,59 @@ func TestResponseEnvelope(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &e); err != nil || w.Code != c.status || e.Success || e.Error == nil || e.Error.Code != c.code || e.Error.Message == "" || e.Error.Details == nil {
 			t.Fatalf("%s: want %d %s, got %d %s", c.path, c.status, c.code, w.Code, w.Body)
 		}
+	}
+}
+
+func TestDownloadSpec(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	dir := t.TempDir()
+	s := New(nil, "/bin/foundry")
+	if _, err := s.Open(dir, "Klinik Sehat", true); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	do := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.RemoteAddr = "127.0.0.1:50000"
+		r.Host = "127.0.0.1:8080"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if w := do("/api/v1/project/spec.md"); w.Code != http.StatusNotFound {
+		t.Fatalf("spec without design: %d %s", w.Code, w.Body)
+	}
+	st, err := core.NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Update(func(p *core.Project) error {
+		p.Design = &core.Design{Pages: []core.Page{{ID: "PAGE-001", Name: "Antrean", Route: "/antrean", Platform: "web"}}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w := do("/api/v1/project/spec.md")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "/antrean") || !strings.Contains(w.Header().Get("Content-Type"), "text/markdown") ||
+		!strings.Contains(w.Header().Get("Content-Disposition"), "spec-Klinik-Sehat.md") {
+		t.Fatalf("spec.md: %d %v %s", w.Code, w.Header(), w.Body)
+	}
+	w = do("/api/v1/project/spec.json")
+	var out struct {
+		Pages []struct {
+			PageID string `json:"page_id"`
+		} `json:"pages"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil || len(out.Pages) != 1 || out.Pages[0].PageID != "PAGE-001" {
+		t.Fatalf("spec.json: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestSpecDownloadName(t *testing.T) {
+	if got := specDownloadName("", ".md"); got != "spec.md" {
+		t.Fatalf("empty = %s", got)
+	}
+	if got := specDownloadName("Klinik Sehat!", ".json"); got != "spec-Klinik-Sehat.json" {
+		t.Fatalf("name = %s", got)
 	}
 }

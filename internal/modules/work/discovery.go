@@ -16,9 +16,6 @@ import (
 const (
 	KindDiscovery = "discovery"
 	KindDesign    = "design"
-	KindPlan      = "plan"
-	KindTask      = "task"
-	KindReview    = "review"
 )
 
 type discoveryOut struct {
@@ -214,7 +211,7 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	p.Blueprint = NormalizeBlueprint(out.Blueprint)
 	p.Requirements, p.Features, p.Flows = reqs, feats, flows
 	p.Platform = &core.PlatformPlan{Targets: targets, Reason: out.Platform.Reason}
-	p.Design, p.Tasks, p.Verification = nil, nil, nil
+	p.Design = nil
 	return nil
 }
 

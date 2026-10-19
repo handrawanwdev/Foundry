@@ -8,9 +8,8 @@ import (
 )
 
 // existingUIBrief is the frontend an existing project already has, for the
-// design, plan and task prompts: new pages fit into it, not beside it.
-// forCode adds what the code must reuse.
-func existingUIBrief(p *core.Project, forCode bool) string {
+// design prompts: new pages fit into it, not beside it.
+func existingUIBrief(p *core.Project) string {
 	if p.Structure == nil || p.Structure.UI == nil {
 		return ""
 	}
@@ -39,9 +38,5 @@ func existingUIBrief(p *core.Project, forCode bool) string {
 	b.WriteString("Do not redesign or re-create existing pages; design only pages the features need. " +
 		"New pages sit in the same layout shell and navigation: add them as items of the existing menu. " +
 		"Follow existing route style; never give a new page an existing route.\n")
-	if forCode {
-		b.WriteString("Build new pages inside the existing layout shell, register their routes in the existing router and their menu items in the existing navigation, " +
-			"and reuse the shared components above before creating new ones.\n")
-	}
 	return b.String()
 }

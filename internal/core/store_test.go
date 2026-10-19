@@ -311,3 +311,32 @@ func TestLongUpdateHasOneWriter(t *testing.T) {
 		t.Fatalf("version = %d, want %d", p.Version, procs*n)
 	}
 }
+
+// A project saved during the old build pipeline opens as a finalized design;
+// its task and build data are dropped, the design is kept.
+func TestLoadLegacyBuildProject(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, StateDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"name":"klinik","stage":"BUILD","story":"x","tasks":[{"id":"TASK-001","status":"TODO"}],"builds":[],
+		"design":{"status":"approved","pages":[{"id":"PAGE-001","name":"Masuk","platform":"web","components":[]}]}}`
+	if err := os.WriteFile(filepath.Join(dir, StateDir, "project.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{Dir: dir}
+	p, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Stage != StageReady || p.Design == nil || len(p.Design.Pages) != 1 || p.Design.Status != DesignApproved {
+		t.Fatalf("legacy project = stage %s design %+v", p.Stage, p.Design)
+	}
+	if _, err := s.Update(func(*Project) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, StateDir, "project.json"))
+	if strings.Contains(string(b), `"tasks"`) || strings.Contains(string(b), `"builds"`) {
+		t.Fatalf("build data kept: %s", b)
+	}
+}

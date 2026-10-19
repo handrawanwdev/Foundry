@@ -26,8 +26,8 @@ type Connection struct {
 	Command []string       `json:"command,omitempty"` // custom override of the preset command
 	Model   string         `json:"model,omitempty"`   // empty: the agent's default
 	Effort  string         `json:"effort,omitempty"`
-	Agents  int            `json:"agents,omitempty"` // coding agents building in parallel; 0: default
-	Since   time.Time      `json:"since"`
+
+	Since time.Time `json:"since"`
 }
 
 type MCPHeartbeat struct {

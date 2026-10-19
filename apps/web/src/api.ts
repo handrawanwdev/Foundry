@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, CanvasOp, CanvasResult, ChangeScope, Command, DesignHandoff, Escalation, FileContent, FileEntry, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Prototype, TaskStatus, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
+import type { AgentOptions, AIState, Browse, CanvasOp, CanvasResult, ChangeScope, DesignSpec, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Prototype, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code = "") {
@@ -25,8 +25,7 @@ export const api = {
   ai: () => call<AIState>("GET", "/ai"),
   models: (agent: string) => call<{ models: string[] }>("GET", `/ai/models?agent=${encodeURIComponent(agent)}`),
   connectAgent: (agent_id: string, command?: string[], opts?: AgentOptions) => call("POST", "/ai/connect", { agent_id, command, ...opts }),
-  connectMCP: (agents?: number) => call("POST", "/ai/connect-mcp", { agents }),
-  setAgents: (agents: number) => call<AIState>("PATCH", "/ai", { agents }),
+  connectMCP: () => call("POST", "/ai/connect-mcp", {}),
   disconnect: (all = false) => call("POST", "/ai/disconnect", { all }),
 
   projects: () => call<{ current: string; recent: string[] | null }>("GET", "/projects"),
@@ -76,7 +75,7 @@ export const api = {
   // A new design from the current features and flows (no discovery).
   regenerateDesign: () => call("POST", "/project/design/regenerate", {}),
   undoDesign: () => call("POST", "/project/design/undo", {}),
-  designHandoff: () => call<DesignHandoff>("GET", "/project/design/handoff"),
+  designSpec: () => call<DesignSpec>("GET", "/project/design/handoff"),
   // Canvas: direct Design IR edits of one page; rejected as a whole when invalid.
   editDesign: (page: string, ops: CanvasOp[]) => call<CanvasResult>("POST", "/project/design/edit", { page, ops }),
   prototype: () => call<Prototype>("GET", "/project/design/prototype"),
@@ -84,21 +83,12 @@ export const api = {
   // to 0 = the current design.
   compareVersions: (from: number, to = 0) => call<VersionComparison>("GET", `/project/design/versions/compare?from=${from}&to=${to}`),
   restoreVersion: (id: number) => call<Project>("POST", `/project/design/versions/${id}/restore`),
-  approveDesign: () => call("POST", "/project/design/approve", {}),
-  generatePRD: () => call("POST", "/project/prd", {}),
-  startBuild: () => call("POST", "/project/build/start", {}),
-  stopBuild: () => call("POST", "/project/build/stop", {}),
-  moveTask: (id: string, status: TaskStatus) => call<Project>("PATCH", `/project/tasks/${id}`, { status }),
-  setTaskClosed: (id: string, closed: boolean) => call<Project>("PATCH", `/project/tasks/${id}`, { closed }),
-  verify: () => call("POST", "/project/verify", {}),
-  setQueueClosed: (closed: boolean) => call<Project>("POST", "/project/queue/close", { closed }),
-  fixBlocked: () => call("POST", "/project/fix-blocked", {}),
-  fix: () => call("POST", "/project/fix", {}),
-  files: (path = "") => call<FileEntry[]>("GET", `/project/files?path=${encodeURIComponent(path)}`),
-  file: (path: string) => call<FileContent>("GET", `/project/file?path=${encodeURIComponent(path)}`),
-  askSupport: (question: string) => call("POST", "/project/support/ask", { question }),
-  retrySupport: () => call("POST", "/project/support/retry", {}),
-  clearSupport: () => call("POST", "/project/support/clear", {}),
-  escalate: (e: Omit<Escalation, "id" | "at">) => call<Escalation>("POST", "/project/support/escalate", e),
-  docs: () => call<{ markdown: string; run: Command[] | null }>("GET", "/project/docs"),
+  // Finalize: locks the design and writes the final spec into docs/.
+  finalizeDesign: () => call("POST", "/project/design/approve", {}),
+  // Unlocks a finalized design for another revision.
+  reopenDesign: () => call("POST", "/project/design/reopen", {}),
 };
+
+// Final spec downloads for an external implementation tool.
+export const SPEC_MD_URL = "/api/v1/project/spec.md";
+export const SPEC_JSON_URL = "/api/v1/project/spec.json";

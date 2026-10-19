@@ -54,7 +54,7 @@ func TestRunKillsAgentLeftover(t *testing.T) {
 	}
 	pidFile := filepath.Join(t.TempDir(), "pid")
 	r, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; sleep 300 >/dev/null 2>&1 & echo $! > " + pidFile + "; echo done"}, Options{})
-	if out, err := r.Run(context.Background(), Execute, t.TempDir(), "hi"); err != nil || out != "done\n" {
+	if out, err := r.Run(context.Background(), t.TempDir(), "hi"); err != nil || out != "done\n" {
 		t.Fatalf("out=%q err=%v", out, err)
 	}
 	waitExited(t, readPid(t, pidFile))
@@ -74,7 +74,7 @@ func TestCancelKillsAgentChildren(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := r.Run(ctx, Execute, t.TempDir(), "hi")
+		_, err := r.Run(ctx, t.TempDir(), "hi")
 		done <- err
 	}()
 	f, err := os.Open(fifo) // returns once the agent wrote its child's pid

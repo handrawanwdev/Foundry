@@ -5,33 +5,18 @@ package core
 
 import (
 	"encoding/json"
-	"path"
-	"strings"
 	"time"
 )
 
-// Stage is the internal pipeline position. The UI groups these into
-// Ceritakan → Rancang → Bangun → Siap.
+// Stage is the pipeline position: Prompt → Design (with preview) → Final.
+// StageReady means the design is approved and the final spec is exported.
 type Stage string
 
 const (
 	StageTell      Stage = "TELL"
 	StageDiscovery Stage = "DISCOVERY"
 	StageDesign    Stage = "DESIGN"
-	StagePlan      Stage = "PLAN"
-	StageBuild     Stage = "BUILD"
-	StageVerify    Stage = "VERIFY"
 	StageReady     Stage = "READY"
-)
-
-type TaskStatus string
-
-const (
-	TaskTodo       TaskStatus = "TODO"
-	TaskInProgress TaskStatus = "IN_PROGRESS"
-	TaskReview     TaskStatus = "REVIEW"
-	TaskDone       TaskStatus = "DONE"
-	TaskBlocked    TaskStatus = "BLOCKED"
 )
 
 type Project struct {
@@ -45,10 +30,7 @@ type Project struct {
 	Discovery *Discovery `json:"discovery,omitempty"`
 	// Blueprint is the production architecture decided during discovery.
 	// Coding agents treat it as source of truth and do not invent another.
-	Blueprint *Blueprint `json:"blueprint,omitempty"`
-	// BuildMetrics totals every agent run of the latest build (execution,
-	// repair, review, retries); reset when a build starts.
-	BuildMetrics *TaskMetrics  `json:"build_metrics,omitempty"`
+	Blueprint    *Blueprint    `json:"blueprint,omitempty"`
 	Requirements []Requirement `json:"requirements"`
 	Features     []Feature     `json:"features"`
 	Flows        []Flow        `json:"flows"`
@@ -66,16 +48,9 @@ type Project struct {
 	DesignTemplate string `json:"design_template,omitempty"`
 	// Reference is the website or app the design takes inspiration from.
 	Reference *DesignReference `json:"reference,omitempty"`
-	Tasks     []Task           `json:"tasks"`
-	// PRD is the product source of truth: capability → business flow →
-	// technical contract → task. Generated from the project context.
-	PRD          *PRD          `json:"prd,omitempty"`
-	Builds       []BuildRun    `json:"builds"`
-	Verification *Verification `json:"verification,omitempty"`
-	Job          *Job          `json:"job,omitempty"`
-	Support      *Support      `json:"support,omitempty"`
-	Events       []Event       `json:"events"`
-	UpdatedAt    time.Time     `json:"updated_at"`
+	Job       *Job             `json:"job,omitempty"`
+	Events    []Event          `json:"events"`
+	UpdatedAt time.Time        `json:"updated_at"`
 }
 
 // Survey answers (FOUNDRY.md bagian 3). Empty fields use the ★ defaults.
@@ -169,22 +144,6 @@ type Requirement struct {
 	Priority string `json:"priority"` // MUST | SHOULD | COULD
 }
 
-// PRD is the product requirements document derived from the project
-// context. Markdown is the document humans and agents read; Findings
-// are gaps between requirement, flow and task.
-type PRD struct {
-	Markdown  string       `json:"markdown"`
-	Findings  []PRDFinding `json:"findings,omitempty"`
-	Generated time.Time    `json:"generated"`
-}
-
-// PRDFinding kinds: GAP | UNASSIGNED | MISSING_TASK | DUPLICATE | OVERLAP | INVALID_DEPENDENCY.
-type PRDFinding struct {
-	Kind    string `json:"kind"`
-	Ref     string `json:"ref"`
-	Message string `json:"message"`
-}
-
 type Feature struct {
 	ID             string       `json:"id"`
 	Name           string       `json:"name"`
@@ -242,10 +201,9 @@ type Structure struct {
 	Components []Component   `json:"components"` // detected (existing) or planned (new)
 	// Template is the structure type of a new project (IR.Type); Layout
 	// the folders derived from IR.
-	Template string    `json:"template,omitempty"`
-	Layout   []string  `json:"layout,omitempty"`
-	Reason   string    `json:"reason"`
-	Commands []Command `json:"commands"`
+	Template string   `json:"template,omitempty"`
+	Layout   []string `json:"layout,omitempty"`
+	Reason   string   `json:"reason"`
 	// IR is the structure decision of a new project, the build contract.
 	IR *StructureIR `json:"ir,omitempty"`
 	// Recommended is the type Foundry recommends for the current needs.
@@ -257,8 +215,7 @@ type Structure struct {
 	Request string             `json:"request,omitempty"`
 	History []StructureVersion `json:"history,omitempty"`
 	// Approved mirrors Status == approved for older readers.
-	Approved   bool `json:"approved"`
-	Scaffolded bool `json:"scaffolded"`
+	Approved bool `json:"approved"`
 	// UI is what the existing frontend already has; nil for new projects
 	// or when no frontend was found.
 	UI *ExistingUI `json:"ui,omitempty"`
@@ -288,13 +245,6 @@ type Component struct {
 	Path     string `json:"path"`
 	Tech     string `json:"tech"`
 	Evidence string `json:"evidence"`
-}
-
-// Command is a verification step detected from real project tooling.
-type Command struct {
-	Name string   `json:"name"` // build | typecheck | lint | vet | test | smoke
-	Dir  string   `json:"dir"`  // relative to project dir
-	Argv []string `json:"argv"`
 }
 
 type DesignStatus string
@@ -625,192 +575,6 @@ type FormField struct {
 	Group      string `json:"group,omitempty"`
 }
 
-type Task struct {
-	ID                 string     `json:"id"`
-	Title              string     `json:"title"`
-	Description        string     `json:"description"`
-	Area               string     `json:"area"` // scaffold | data | api | ui | test | integration
-	RequirementIDs     []string   `json:"requirement_ids"`
-	FeatureID          string     `json:"feature_id"`
-	PageIDs            []string   `json:"page_ids"`
-	Platform           string     `json:"platform"`
-	DependsOn          []string   `json:"depends_on"`
-	AcceptanceCriteria []string   `json:"acceptance_criteria"`
-	Files              []string   `json:"files"`
-	TestRequirements   []string   `json:"test_requirements"`
-	Status             TaskStatus `json:"status"`
-	Attempts           int        `json:"attempts"`
-	// Conflicts counts merge clashes that were not charged as attempts.
-	Conflicts int `json:"conflicts,omitempty"`
-	// Owner is the agent or MCP worker that claimed the task last.
-	Owner string `json:"owner,omitempty"`
-	// Seen is the owner's last sign of life (claim, next_work, update_task);
-	// an MCP host silent past the lease loses the task.
-	Seen time.Time `json:"seen,omitempty"`
-	// Progress is a short live line on the Kanban while the task is active.
-	Progress string `json:"progress,omitempty"`
-	// StartedAt is when the current (or last) work attempt was claimed.
-	StartedAt time.Time `json:"started_at,omitempty"`
-	// FinishedAt is when the task last became DONE.
-	FinishedAt time.Time `json:"finished_at,omitempty"`
-	// Closed is a user gate: a closed task is skipped by the build queue.
-	Closed bool `json:"closed,omitempty"`
-	// Repair marks a task put back by "Perbaiki Terblokir": its next run gets
-	// the full failure history and must fix the root cause. Cleared on DONE.
-	Repair bool `json:"repair,omitempty"`
-	// BlockedReason says why the task is BLOCKED: the attempt, the last
-	// error and the recovery step. Set with the status, cleared on leaving it.
-	BlockedReason string       `json:"blocked_reason,omitempty"`
-	Notes         []string     `json:"notes"`
-	LastBuildID   string       `json:"last_build_id,omitempty"`
-	Criteria      []Criterion  `json:"criteria,omitempty"`
-	Metrics       *TaskMetrics `json:"metrics,omitempty"`
-	// Memory is a compact record of the finished task, reused by dependents
-	// while its fingerprint still matches the source.
-	Memory *TaskMemory `json:"memory,omitempty"`
-}
-
-// TaskMemory summarizes a DONE task. Files holds a content fingerprint per
-// owned file and Contract a hash of the task's criteria and architecture
-// brief; a mismatch on either invalidates the record. It never replaces
-// the source: dependents are told to read changed files.
-type TaskMemory struct {
-	Summary  string            `json:"summary"`
-	Files    map[string]string `json:"files,omitempty"`
-	Contract string            `json:"contract"`
-	// SourceBytes is the size of the owned files at record time: what a
-	// dependent would read instead of the summary.
-	SourceBytes int       `json:"source_bytes"`
-	At          time.Time `json:"at"`
-}
-
-// TaskMetrics is what Foundry measured for a task (or, in
-// Project.BuildMetrics, for the whole build) across agent runs.
-//
-// Two kinds of numbers, never mixed:
-//   - Chars and Millis are exact measurements of what Foundry sent and waited.
-//   - Input/CacheWrite/Cached/OutputTokens and CostUSD are reported by the
-//     provider CLI, summed over the UsageRuns runs that carried them. Input is
-//     fresh input only; CacheWrite and Cached (cache read) are separate, so
-//     nothing is counted twice. Total input processed = their sum.
-//   - EstTokens (chars/4) is added only for runs WITHOUT provider usage.
-//
-// A run is one agent process: execution, in-place repair and review each count,
-// retries included.
-type TaskMetrics struct {
-	Runs        int   `json:"runs"`
-	PromptChars int   `json:"prompt_chars"`
-	OutputChars int   `json:"output_chars"`
-	EstTokens   int   `json:"est_tokens"`
-	Millis      int64 `json:"millis"`
-	Failures    int   `json:"failures,omitempty"`
-
-	UsageRuns        int     `json:"usage_runs,omitempty"`
-	InputTokens      int     `json:"input_tokens,omitempty"`
-	CacheWriteTokens int     `json:"cache_write_tokens,omitempty"`
-	CachedTokens     int     `json:"cached_tokens,omitempty"`
-	OutputTokens     int     `json:"output_tokens,omitempty"`
-	CostUSD          float64 `json:"cost_usd,omitempty"` // reported by the CLI, never computed
-}
-
-// Record adds one agent run. reported says the provider gave usage for it, in
-// which case the estimate is skipped.
-func (m *TaskMetrics) Record(promptChars, outputChars int, millis int64, failed, reported bool) {
-	m.Runs++
-	m.PromptChars += promptChars
-	m.OutputChars += outputChars
-	if !reported {
-		m.EstTokens += (promptChars + outputChars) / 4
-	}
-	m.Millis += millis
-	if failed {
-		m.Failures++
-	}
-}
-
-// RecordUsage adds provider-reported usage of one run.
-func (m *TaskMetrics) RecordUsage(in, cacheWrite, cached, out int, costUSD float64) {
-	m.UsageRuns++
-	m.InputTokens += in
-	m.CacheWriteTokens += cacheWrite
-	m.CachedTokens += cached
-	m.OutputTokens += out
-	m.CostUSD += costUSD
-}
-
-// Add folds o into m.
-func (m *TaskMetrics) Add(o *TaskMetrics) {
-	if o == nil {
-		return
-	}
-	m.Runs += o.Runs
-	m.PromptChars += o.PromptChars
-	m.OutputChars += o.OutputChars
-	m.EstTokens += o.EstTokens
-	m.Millis += o.Millis
-	m.Failures += o.Failures
-	m.UsageRuns += o.UsageRuns
-	m.InputTokens += o.InputTokens
-	m.CacheWriteTokens += o.CacheWriteTokens
-	m.CachedTokens += o.CachedTokens
-	m.OutputTokens += o.OutputTokens
-	m.CostUSD += o.CostUSD
-}
-
-type Criterion struct {
-	Text     string `json:"text"`
-	Met      bool   `json:"met"`
-	Evidence string `json:"evidence"`
-}
-
-type BuildRun struct {
-	ID     string       `json:"id"`
-	TaskID string       `json:"task_id,omitempty"`
-	Steps  []StepResult `json:"steps"`
-	Passed bool         `json:"passed"`
-	Reason string       `json:"reason,omitempty"`
-	At     time.Time    `json:"at"`
-}
-
-type StepResult struct {
-	Name     string `json:"name"`
-	Command  string `json:"command"`
-	Dir      string `json:"dir"`
-	ExitCode int    `json:"exit_code"`
-	Output   string `json:"output"`
-	Millis   int64  `json:"millis"`
-}
-
-type Verification struct {
-	Ready  bool      `json:"ready"`
-	Checks []Check   `json:"checks"`
-	Issues []Issue   `json:"issues"`
-	Trace  []Trace   `json:"trace"`
-	At     time.Time `json:"at"`
-}
-
-type Check struct {
-	Name string `json:"name"`
-	OK   bool   `json:"ok"`
-	Info string `json:"info"`
-}
-
-type Issue struct {
-	Kind    string `json:"kind"` // missing_feature | missing_page | missing_task | missing_test | task_open | task_blocked | build_failed | test_failed | no_smoke | smoke_failed | no_commands | broken_flow
-	Ref     string `json:"ref"`
-	Message string `json:"message"`
-}
-
-// Trace is one requirement's chain down to verification.
-type Trace struct {
-	RequirementID string   `json:"requirement_id"`
-	FeatureIDs    []string `json:"feature_ids"`
-	PageIDs       []string `json:"page_ids"`
-	TaskIDs       []string `json:"task_ids"`
-	TestTaskIDs   []string `json:"test_task_ids"`
-	Done          bool     `json:"done"`
-}
-
 type JobStatus string
 
 const (
@@ -821,130 +585,11 @@ const (
 )
 
 type Job struct {
-	Kind    string    `json:"kind"` // discovery | design | plan | build | verify | fix
+	Kind    string    `json:"kind"` // discovery | design | design_qa | reference | stack | structure
 	Status  JobStatus `json:"status"`
 	Message string    `json:"message"`
 	Error   string    `json:"error,omitempty"`
-	TaskID  string    `json:"task_id,omitempty"`
-	TaskIDs []string  `json:"task_ids,omitempty"` // IN_PROGRESS / REVIEW during a parallel build
 	Started time.Time `json:"started"`
-}
-
-// Queue states for a TODO task in the live build schedule.
-const (
-	QueueIndependent = "independent"  // deps done, files/pages free, no overlap with others in this set
-	QueueQueued      = "queued"       // deps done, but a file/page is held (or would be) by another task
-	QueueWaitingDeps = "waiting_deps" // a depends_on task is not DONE
-	QueueBlockedDeps = "blocked_deps" // a dependency, direct or upstream, is BLOCKED: it will not finish by itself
-	QueueInvalidDeps = "invalid_deps" // a depends_on id does not exist, or the dependencies form a cycle
-)
-
-// QueueItem is why one TODO task is or is not in the parallel set.
-type QueueItem struct {
-	ID        string   `json:"id"`
-	State     string   `json:"state"` // independent | queued | waiting_deps
-	BlockedBy string   `json:"blocked_by,omitempty"`
-	Lock      string   `json:"lock,omitempty"`
-	Waiting   []string `json:"waiting,omitempty"`
-	// Reason explains blocked_deps and invalid_deps.
-	Reason string `json:"reason,omitempty"`
-}
-
-// Schedule is the live build queue. It is computed, never persisted.
-type Schedule struct {
-	Independent []string    `json:"independent"`
-	Items       []QueueItem `json:"items,omitempty"`
-}
-
-// Support is the Technical Support Assistant: a conversation about the system
-// being built, answered only from the project context and its files.
-type Support struct {
-	Messages    []SupportMessage `json:"messages"`
-	Escalations []Escalation     `json:"escalations,omitempty"`
-}
-
-// Support message statuses (assistant messages only).
-const (
-	SupportRunning = "running" // the agent is answering
-	SupportWaiting = "waiting" // waiting for the MCP host
-	SupportDone    = "done"
-	SupportFailed  = "failed"
-)
-
-type SupportMessage struct {
-	ID     string         `json:"id"`
-	Role   string         `json:"role"` // user | assistant
-	Text   string         `json:"text"` // the question (user)
-	Status string         `json:"status,omitempty"`
-	Error  string         `json:"error,omitempty"`
-	Answer *SupportAnswer `json:"answer,omitempty"`
-	At     time.Time      `json:"at"`
-}
-
-// SupportAnswer is one grounded answer. Sources are project ids (FLOW-001,
-// PAGE-002, ...) or project files; unknown references are dropped.
-type SupportAnswer struct {
-	Kind      string        `json:"kind"` // explain | flow | troubleshoot | roles | unknown
-	Summary   string        `json:"summary"`
-	Flow      *SupportFlow  `json:"flow,omitempty"`
-	Trouble   *Troubleshoot `json:"trouble,omitempty"`
-	Roles     []RoleAccess  `json:"roles,omitempty"`
-	Missing   []string      `json:"missing,omitempty"` // what the system does not define
-	Sources   []string      `json:"sources,omitempty"`
-	FollowUps []string      `json:"follow_ups,omitempty"`
-	Escalate  bool          `json:"escalate,omitempty"` // the assistant cannot resolve it
-}
-
-type SupportFlow struct {
-	FlowID string     `json:"flow_id,omitempty"`
-	Name   string     `json:"name"`
-	Steps  []FlowStep `json:"steps"`
-}
-
-type FlowStep struct {
-	Name    string `json:"name"`
-	Detail  string `json:"detail,omitempty"`
-	Role    string `json:"role,omitempty"`
-	Module  string `json:"module,omitempty"`
-	PageID  string `json:"page_id,omitempty"`
-	API     string `json:"api,omitempty"`
-	Current bool   `json:"current,omitempty"` // where the reported problem is
-}
-
-type Troubleshoot struct {
-	Problem string   `json:"problem"`
-	Status  string   `json:"status"`
-	Module  string   `json:"module,omitempty"`
-	Step    string   `json:"step,omitempty"`
-	Causes  []Cause  `json:"causes,omitempty"`
-	Actions []string `json:"actions,omitempty"`
-}
-
-// Cause is confirmed only with evidence; otherwise it is a possibility.
-type Cause struct {
-	Text      string `json:"text"`
-	Evidence  string `json:"evidence,omitempty"`
-	Confirmed bool   `json:"confirmed,omitempty"`
-}
-
-type RoleAccess struct {
-	Role   string `json:"role"`
-	Access string `json:"access"`
-	Source string `json:"source,omitempty"`
-}
-
-// Escalation is a problem handed to the technical team, as confirmed by the
-// user from the conversation.
-type Escalation struct {
-	ID            string    `json:"id"`
-	Issue         string    `json:"issue"`
-	Module        string    `json:"module,omitempty"`
-	Flow          string    `json:"flow,omitempty"`
-	Status        string    `json:"status,omitempty"`
-	Evidence      []string  `json:"evidence,omitempty"`
-	Causes        []string  `json:"causes,omitempty"`
-	Investigation []string  `json:"investigation,omitempty"`
-	At            time.Time `json:"at"`
 }
 
 type Event struct {
@@ -959,24 +604,6 @@ func (p *Project) Log(source, msg string) {
 	if n := len(p.Events); n > 300 {
 		p.Events = p.Events[n-300:]
 	}
-}
-
-func (p *Project) Task(id string) *Task {
-	for i := range p.Tasks {
-		if p.Tasks[i].ID == id {
-			return &p.Tasks[i]
-		}
-	}
-	return nil
-}
-
-func (p *Project) Build(id string) *BuildRun {
-	for i := range p.Builds {
-		if p.Builds[i].ID == id {
-			return &p.Builds[i]
-		}
-	}
-	return nil
 }
 
 func (p *Project) Feature(id string) *Feature {
@@ -998,28 +625,6 @@ func (p *Project) Page(id string) *Page {
 		}
 	}
 	return nil
-}
-
-// ReadyTasks returns TODO tasks whose dependencies are all DONE.
-func (p *Project) ReadyTasks() []*Task {
-	var out []*Task
-	for i := range p.Tasks {
-		t := &p.Tasks[i]
-		if t.Status != TaskTodo || t.Closed {
-			continue
-		}
-		ok := true
-		for _, d := range t.DependsOn {
-			if dt := p.Task(d); dt == nil || dt.Status != TaskDone {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			out = append(out, t)
-		}
-	}
-	return out
 }
 
 // Busy reports whether a job currently owns the project.
@@ -1052,271 +657,4 @@ func (v DesignVersion) MarshalJSON() ([]byte, error) {
 	}
 	type plain DesignVersion
 	return json.Marshal(plain(v))
-}
-
-// LockAll is held by a task that may touch anything in the project.
-const LockAll = "*"
-
-// Locks names what a task holds while it runs: its pages and files, else its
-// feature. Scaffold and integration work, or a task that names nothing,
-// holds the whole project.
-func (t *Task) Locks() []string {
-	if t.Area == "scaffold" || t.Area == "integration" {
-		return []string{LockAll}
-	}
-	var out []string
-	for _, pg := range t.PageIDs {
-		out = append(out, "page:"+pg)
-	}
-	for _, f := range t.Files {
-		f = strings.TrimPrefix(path.Clean(strings.ReplaceAll(strings.TrimSpace(f), "\\", "/")), "./")
-		if f != "" && f != "." && f != "/" {
-			out = append(out, "file:"+strings.ToLower(strings.TrimSuffix(f, "/")))
-		}
-	}
-	if len(out) == 0 && t.FeatureID != "" {
-		out = append(out, "feature:"+t.FeatureID)
-	}
-	if len(out) == 0 {
-		return []string{LockAll}
-	}
-	return out
-}
-
-// lockOverlap: same key, the project lock, or one file path inside the other.
-func lockOverlap(a, b string) bool {
-	if a == LockAll || b == LockAll || a == b {
-		return true
-	}
-	if strings.HasPrefix(a, "file:") && strings.HasPrefix(b, "file:") {
-		return strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
-	}
-	return false
-}
-
-// Active reports whether a task is being worked on and holds its locks.
-func (t *Task) Active() bool {
-	return t.Status == TaskInProgress || t.Status == TaskReview
-}
-
-// Blocker returns the active task holding a lock t needs, and that lock.
-func (p *Project) Blocker(t *Task) (*Task, string) {
-	mine := t.Locks()
-	for i := range p.Tasks {
-		o := &p.Tasks[i]
-		if o.ID == t.ID || !o.Active() {
-			continue
-		}
-		for _, b := range o.Locks() {
-			for _, a := range mine {
-				if lockOverlap(a, b) {
-					return o, b
-				}
-			}
-		}
-	}
-	return nil, ""
-}
-
-// ClaimableTasks are ready tasks no active task blocks, in plan order.
-func (p *Project) ClaimableTasks() []*Task {
-	var out []*Task
-	for _, t := range p.ReadyTasks() {
-		if o, _ := p.Blocker(t); o == nil {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// overlapLock is the lock key two tasks share, if any.
-func overlapLock(a, b *Task) (string, bool) {
-	if a == nil || b == nil {
-		return "", false
-	}
-	for _, x := range a.Locks() {
-		for _, y := range b.Locks() {
-			if lockOverlap(x, y) {
-				return y, true
-			}
-		}
-	}
-	return "", false
-}
-
-// IndependentTasks are claimable tasks that also do not overlap each other,
-// in plan order. These can run in parallel without file or page conflicts.
-func (p *Project) IndependentTasks() []*Task {
-	var out []*Task
-	for _, t := range p.ClaimableTasks() {
-		ok := true
-		for _, o := range out {
-			if _, hit := overlapLock(t, o); hit {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// Schedule is the live TODO queue: which tasks can start in parallel now,
-// which wait on a file/page held by another agent, and which wait on deps.
-func (p *Project) Schedule() Schedule {
-	indep := p.IndependentTasks()
-	in := make(map[string]*Task, len(indep))
-	ids := make([]string, len(indep))
-	for i, t := range indep {
-		ids[i] = t.ID
-		in[t.ID] = t
-	}
-	var items []QueueItem
-	for i := range p.Tasks {
-		t := &p.Tasks[i]
-		if t.Status != TaskTodo || t.Closed {
-			continue
-		}
-		if in[t.ID] != nil {
-			items = append(items, QueueItem{ID: t.ID, State: QueueIndependent})
-			continue
-		}
-		var wait []string
-		for _, d := range t.DependsOn {
-			if dt := p.Task(d); dt == nil || dt.Status != TaskDone {
-				wait = append(wait, d)
-			}
-		}
-		if len(wait) > 0 {
-			if reason := p.invalidDeps(t); reason != "" {
-				items = append(items, QueueItem{ID: t.ID, State: QueueInvalidDeps, Waiting: wait, Reason: reason})
-			} else if root := p.blockedRoots(t); len(root) > 0 {
-				items = append(items, QueueItem{ID: t.ID, State: QueueBlockedDeps, Waiting: wait, BlockedBy: root[0],
-					Reason: "menunggu " + strings.Join(root, ", ") + " yang BLOCKED; dependensi tidak dilewati"})
-			} else {
-				items = append(items, QueueItem{ID: t.ID, State: QueueWaitingDeps, Waiting: wait})
-			}
-			continue
-		}
-		o, lock := p.Blocker(t)
-		if o == nil {
-			for _, x := range indep {
-				if l, hit := overlapLock(t, x); hit {
-					o, lock = x, l
-					break
-				}
-			}
-		}
-		item := QueueItem{ID: t.ID, State: QueueQueued}
-		if o != nil {
-			item.BlockedBy = o.ID
-			item.Lock = lock
-		}
-		items = append(items, item)
-	}
-	return Schedule{Independent: ids, Items: items}
-}
-
-// ActiveTasks are the tasks currently holding locks.
-func (p *Project) ActiveTasks() []*Task {
-	var out []*Task
-	for i := range p.Tasks {
-		if p.Tasks[i].Active() {
-			out = append(out, &p.Tasks[i])
-		}
-	}
-	return out
-}
-
-// blockedRoots are the BLOCKED tasks that t is stuck behind, following
-// unfinished dependencies upstream. Cycle-safe.
-func (p *Project) blockedRoots(t *Task) []string {
-	var out []string
-	seen := map[string]bool{t.ID: true}
-	var walk func(*Task)
-	walk = func(x *Task) {
-		for _, d := range x.DependsOn {
-			dt := p.Task(d)
-			if dt == nil || seen[d] || dt.Status == TaskDone {
-				continue
-			}
-			seen[d] = true
-			if dt.Status == TaskBlocked {
-				out = append(out, d)
-				continue
-			}
-			walk(dt)
-		}
-	}
-	walk(t)
-	return out
-}
-
-// invalidDeps explains why t can never become ready on its own: a depends_on
-// id that is not a task, or a dependency path that leads back to t. Empty
-// when the dependencies are sound.
-func (p *Project) invalidDeps(t *Task) string {
-	var missing []string
-	for _, d := range t.DependsOn {
-		if p.Task(d) == nil {
-			missing = append(missing, d)
-		}
-	}
-	if len(missing) > 0 {
-		return "dependensi tidak ada: " + strings.Join(missing, ", ")
-	}
-	// A task is stuck for good when it, or anything it waits on upstream,
-	// sits on a cycle.
-	seen := map[string]bool{}
-	var up func(id string) string
-	up = func(id string) string {
-		x := p.Task(id)
-		if x == nil || seen[id] {
-			return ""
-		}
-		seen[id] = true
-		if p.onCycle(id) {
-			return id
-		}
-		for _, d := range x.DependsOn {
-			if c := up(d); c != "" {
-				return c
-			}
-		}
-		return ""
-	}
-	if c := up(t.ID); c != "" {
-		if c == t.ID {
-			return "dependensi melingkar (cycle) melewati " + t.ID
-		}
-		return "menunggu " + c + " yang berada dalam dependensi melingkar (cycle)"
-	}
-	return ""
-}
-
-// onCycle reports whether id can reach itself through depends_on.
-func (p *Project) onCycle(id string) bool {
-	seen := map[string]bool{}
-	var walk func(cur string) bool
-	walk = func(cur string) bool {
-		x := p.Task(cur)
-		if x == nil {
-			return false
-		}
-		for _, d := range x.DependsOn {
-			if d == id {
-				return true
-			}
-			if !seen[d] {
-				seen[d] = true
-				if walk(d) {
-					return true
-				}
-			}
-		}
-		return false
-	}
-	return walk(id)
 }

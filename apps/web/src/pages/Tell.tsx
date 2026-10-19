@@ -136,7 +136,7 @@ export function TellPage() {
         </details>
       )}
       {confirmReset && (
-        <p className="warn">Cerita baru akan membuat ulang rancangan dan task yang sudah ada. Tekan lagi untuk lanjut.</p>
+        <p className="warn">Cerita baru akan membuat ulang rancangan yang sudah ada. Tekan lagi untuk lanjut.</p>
       )}
       <button className="primary big" disabled={story.trim().length < 10 || pending === "story" || isWorking(project)} onClick={submit}>
         Mulai Merancang
