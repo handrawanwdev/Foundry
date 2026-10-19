@@ -54,6 +54,9 @@ func cleanScope(p *core.Project, sc *core.ChangeScope) *core.ChangeScope {
 // invalid Design IR) so the next prompt shows it. It reports whether an
 // automatic retry should run: only once.
 func (s *Service) noteRejection(kind string, err error) bool {
+	if err != nil && (kind == work.KindWorkflow || kind == work.KindArtifacts) {
+		return s.noteRequestRejection(kind, err)
+	}
 	var rej *work.PatchRejected
 	var invalid *core.IRInvalid
 	if kind != work.KindDesign || !errors.As(err, &rej) && !errors.As(err, &invalid) {
@@ -68,6 +71,33 @@ func (s *Service) noteRejection(kind string, err error) bool {
 		}
 		retry = p.Design.Rejected == ""
 		p.Design.Rejected = err.Error()
+		p.Log("system", err.Error())
+		return nil
+	})
+	return retry
+}
+
+// noteRequestRejection keeps why a workflow or blueprint answer was
+// refused on its request, for the retry prompt. Only the first refusal
+// retries automatically.
+func (s *Service) noteRequestRejection(kind string, err error) bool {
+	retry := false
+	s.Store.Update(func(p *core.Project) error {
+		var r **core.ChangeRequest
+		switch kind {
+		case work.KindArtifacts:
+			r = &p.ArtifactRequest
+		default:
+			if p.Workflow == nil {
+				p.Workflow = &core.Workflow{Status: core.CommandDraft}
+			}
+			r = &p.Workflow.Request
+		}
+		if *r == nil {
+			*r = &core.ChangeRequest{}
+		}
+		retry = (*r).Rejected == ""
+		(*r).Rejected = err.Error()
 		p.Log("system", err.Error())
 		return nil
 	})

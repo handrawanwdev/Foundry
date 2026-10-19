@@ -118,7 +118,8 @@ func (s *Server) handle(req request) (any, *rpcError) {
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "foundry", "version": s.Version},
 			"instructions": "Foundry is the orchestrator and source of truth. Loop: call next_work, do exactly what its prompt says, " +
-				"then hand the result back with the tool named in `submit`. Never mark work done yourself; Foundry runs build/test.",
+				"then hand the result back with the tool named in `submit`. Never mark work done yourself; Foundry validates what you submit. " +
+				"To implement a finalized design, read get_blueprint and get_workflow and follow the commands wave by wave.",
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
@@ -178,10 +179,11 @@ var str = map[string]any{"type": "string"}
 var tools = []tool{
 	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, discovery, architecture blueprint, platform, structure, technology stack, job, counts.", InputSchema: obj(nil)},
 	{Name: "get_requirements", perm: PermRead, Description: "Requirements, features, sub-features and user flows.", InputSchema: obj(nil)},
-	{Name: "get_blueprint", perm: PermRead, Description: "Architecture blueprint (design level): modules, data model, auth, storage, workers, performance, coding rules.", InputSchema: obj(nil)},
+	{Name: "get_blueprint", perm: PermRead, Description: "Blueprint: every artifact (requirements, architecture, technology, UI design and the project's own documents) as Markdown, plus the structured architecture.", InputSchema: obj(nil)},
+	{Name: "get_workflow", perm: PermRead, Description: "Command workflow for the coding agent: commands with objective, instructions, dependencies, blueprint references, expected outputs and acceptance criteria; the execution waves; validation issues and commands that need review.", InputSchema: obj(nil)},
 	{Name: "get_design", perm: PermRead, Description: "Design pages (Design IR) with wireframe components and status.", InputSchema: obj(nil)},
-	{Name: "get_spec", perm: PermRead, Description: "Final spec for implementation outside Foundry: requirements, flows, stack, structure, blueprint, design system and per-page specs (JSON) plus the same as Markdown.", InputSchema: obj(nil)},
-	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, design_qa, reference, stack or structure).", InputSchema: obj(nil)},
+	{Name: "get_spec", perm: PermRead, Description: "Whole spec for implementation outside Foundry (JSON: requirements, flows, stack, structure, blueprint, artifacts, design system, per-page specs, workflow) plus the same as Markdown.", InputSchema: obj(nil)},
+	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, design_qa, reference, stack, structure, blueprint or workflow).", InputSchema: obj(nil)},
 	{Name: "submit_work", perm: PermWrite, Description: "Hand back a result (the JSON object requested by next_work).",
 		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "design_qa", "reference", "stack", "structure"}}, "result": str}, "kind", "result")},
 }
@@ -227,7 +229,9 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 	case "get_requirements":
 		return map[string]any{"requirements": p.Requirements, "features": p.Features, "flows": p.Flows}, nil
 	case "get_blueprint":
-		return map[string]any{"blueprint": p.Blueprint}, nil
+		return map[string]any{"artifacts": spec.Artifacts(p), "blueprint": p.Blueprint}, nil
+	case "get_workflow":
+		return map[string]any{"workflow": p.Workflow, "report": pipeline.CheckWorkflow(p), "finalized": p.Finalized()}, nil
 	case "get_design":
 		return p.Design, nil
 	case "get_spec":

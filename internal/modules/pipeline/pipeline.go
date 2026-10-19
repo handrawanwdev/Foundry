@@ -1,5 +1,6 @@
 // Package pipeline is the Foundry orchestrator: it moves one project through
-// Prompt → Design (with preview) → Finalize. AI work is done
+// Prompt → Blueprint (with UI design when the product has screens) →
+// Command Workflow → Finalize → Export. Foundry never runs the workflow. AI work is done
 // either by a connected agent CLI (Foundry drives it) or by an MCP host (the
 // host pulls work with next_work and pushes answers with submit_work). Both
 // paths go through the same apply functions and the same store.
@@ -144,6 +145,7 @@ func (s *Service) SubmitStoryWith(story string, survey *core.Survey) (*core.Proj
 			s.FillDefaults()
 			p.Survey = s
 		}
+		unfinalize(p) // a new prompt reopens a finalized blueprint
 		p.Stage = core.StageDiscovery
 		attachStructure(p)
 		p.Log("ui", "Cerita diterima")
@@ -248,7 +250,8 @@ func (s *Service) SetPlatform(targets []core.PlatformTarget) (*core.Project, err
 		var ok []core.PlatformTarget
 		for _, t := range targets {
 			switch t.Kind {
-			case core.PlatformWeb, core.PlatformAndroid, core.PlatformIOS, core.PlatformDesktop, core.PlatformBackend:
+			case core.PlatformWeb, core.PlatformAndroid, core.PlatformIOS, core.PlatformDesktop, core.PlatformBackend,
+				core.PlatformCLI, core.PlatformEmbedded, core.PlatformOther:
 				ok = append(ok, t)
 			}
 		}
@@ -302,66 +305,12 @@ func (s *Service) SetTheme(id string) (*core.Project, error) {
 	return p, err
 }
 
-// ApproveDesign finalizes the design: it locks platform, structure and
-// design, then writes the final spec into docs/ for an external
-// implementation tool. ReopenDesign undoes the lock for another revision.
-func (s *Service) ApproveDesign() error {
-	_, err := s.Store.Update(func(p *core.Project) error {
-		if p.Busy() {
-			return ErrBusy
-		}
-		if p.Design == nil || len(p.Design.Pages) == 0 || p.Platform == nil || p.Structure == nil {
-			return ErrWrongStage
-		}
-		if p.Design.Status == core.DesignApproved {
-			return ErrWrongStage
-		}
-		if b := work.Blockers(p); len(b) > 0 {
-			return fmt.Errorf("%w: %d hal wajib dilengkapi", ErrIncomplete, len(b))
-		}
-		if p.Stack == nil {
-			decideStack(p, "")
-		}
-		if p.Stack == nil {
-			return errors.New("keputusan teknologi belum ada")
-		}
-		if err := stackReady(p); err != nil {
-			return err
-		}
-		if err := structureReady(p); err != nil {
-			return err
-		}
-		p.Design.Status = core.DesignApproved
-		p.Design.Revision = nil // approving keeps any pending change
-		p.Platform.Approved = true
-		p.Structure.Approved = true
-		work.CompleteBlueprint(p)
-		if err := spec.WriteDocs(p.Dir, p); err != nil {
-			return fmt.Errorf("gagal menulis spesifikasi final: %w", err)
-		}
-		p.Stage = core.StageReady
-		p.Log("ui", "Rancangan difinalisasi")
-		return nil
-	})
-	return err
-}
+// ApproveDesign is Finalize, kept for the design workspace and older
+// clients. ReopenDesign is Reopen.
+func (s *Service) ApproveDesign() error { return s.Finalize() }
 
-// ReopenDesign unlocks a finalized design so it can be revised again.
-func (s *Service) ReopenDesign() error {
-	_, err := s.Store.Update(func(p *core.Project) error {
-		if p.Busy() {
-			return ErrBusy
-		}
-		if p.Design == nil || p.Design.Status != core.DesignApproved {
-			return ErrWrongStage
-		}
-		p.Design.Status = core.DesignDraft
-		p.Stage = core.StageDesign
-		p.Log("ui", "Rancangan dibuka untuk revisi")
-		return nil
-	})
-	return err
-}
+// ReopenDesign unlocks a finalized project so it can be revised again.
+func (s *Service) ReopenDesign() error { return s.Reopen() }
 
 // ---------- AI jobs (shared by agent and MCP) ----------
 
@@ -379,6 +328,10 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 		return work.StackPrompt(p)
 	case work.KindStructure:
 		return work.StructurePrompt(p)
+	case work.KindArtifacts:
+		return work.ArtifactsPrompt(p, spec.Artifacts(p))
+	case work.KindWorkflow:
+		return work.WorkflowPrompt(p, spec.Artifacts(p))
 	}
 	return ""
 }
@@ -461,6 +414,10 @@ func jobMessage(kind string) string {
 		return "Memahami permintaan perubahan teknologi"
 	case work.KindStructure:
 		return "Memahami permintaan perubahan struktur"
+	case work.KindArtifacts:
+		return "Merevisi blueprint"
+	case work.KindWorkflow:
+		return "Menyusun command workflow"
 	}
 	return kind
 }
@@ -521,9 +478,11 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			readExistingUI(p)
 			decideStack(p, "")
 			p.Stage = core.StageDesign
-			next = work.KindDesign
-			if r := p.Reference; r != nil && r.Status == "pending" {
-				next = work.KindReference // the design follows the reference's theme
+			if p.HasUI() {
+				next = work.KindDesign
+				if r := p.Reference; r != nil && r.Status == "pending" {
+					next = work.KindReference // the design follows the reference's theme
+				}
 			}
 		case work.KindReference:
 			if err := applyReference(p, raw); err != nil {
@@ -564,6 +523,14 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			}
 		case work.KindStructure:
 			if err := work.ApplyStructureChange(p, raw); err != nil {
+				return err
+			}
+		case work.KindArtifacts:
+			if err := work.ApplyArtifacts(p, raw); err != nil {
+				return err
+			}
+		case work.KindWorkflow:
+			if err := work.ApplyWorkflow(p, raw, spec.Artifacts(p)); err != nil {
 				return err
 			}
 		case work.KindDesignQA:
@@ -613,6 +580,14 @@ func (s *Service) DismissJob() error {
 		if p.Job == nil || p.Job.Status != core.JobFailed {
 			return ErrNothingToDo
 		}
+		switch p.Job.Kind {
+		case work.KindArtifacts:
+			p.ArtifactRequest = nil
+		case work.KindWorkflow:
+			if p.Workflow != nil {
+				p.Workflow.Request = nil
+			}
+		}
 		p.Job = nil
 		p.Log("ui", "Pesan gagal ditutup")
 		return nil
@@ -642,6 +617,12 @@ func (s *Service) RetryJob() error {
 		if p.Structure != nil && p.Structure.Request != "" {
 			return s.startAIIf(kind, failedJob(kind))
 		}
+	case work.KindArtifacts:
+		if p.ArtifactRequest != nil {
+			return s.startAIIf(kind, failedJob(kind))
+		}
+	case work.KindWorkflow:
+		return s.startAIIf(kind, failedJob(kind))
 	}
 	return ErrNothingToDo
 }

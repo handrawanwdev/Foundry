@@ -1,19 +1,20 @@
 import { useEffect, useRef, type ReactElement } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Workbench } from "./components/Workbench";
-import { stepFor, stepIndex, STEPS } from "./flow";
+import { DESIGN_PATH, stepFor, stepIndex, STEPS } from "./flow";
+import { BlueprintPage } from "./pages/Blueprint";
 import { ConnectPage } from "./pages/Connect";
 import { DesignPage } from "./pages/Design";
-import { EmptyEditor, StartPage } from "./pages/Start";
+import { ExportPage } from "./pages/Export";
+import { StartPage } from "./pages/Start";
 import { TellPage } from "./pages/Tell";
+import { WorkflowPage } from "./pages/Workflow";
 import { useAI } from "./store/ai";
 import { useProject } from "./store/project";
-import { useWorkbench } from "./store/workbench";
 
 export default function App() {
   const ai = useAI();
   const { project, loaded, load, subscribe } = useProject();
-  const closeTabs = useWorkbench((s) => s.closeAll);
   const nav = useNavigate();
   const loc = useLocation();
 
@@ -39,7 +40,6 @@ export default function App() {
     const dir = project?.dir ?? "";
     const first = lastDir.current === null;
     if (dir !== lastDir.current) {
-      if (!first) closeTabs();
       if (!dir) {
         if (!first) nav("/");
       } else if (!first || loc.pathname === "/") {
@@ -74,10 +74,14 @@ export default function App() {
   return (
     <Workbench>
       <Routes>
-        <Route path="/" element={project ? <EmptyEditor /> : <StartPage />} />
+        <Route path="/" element={project ? <Navigate to={stepFor(project.stage).path} replace /> : <StartPage />} />
         <Route path="/simple/connect" element={<ConnectPage />} />
         <Route path="/simple/tell" element={guard(<TellPage />)} />
-        <Route path="/simple/rancang" element={guard(<DesignPage />)} />
+        <Route path="/blueprint" element={guard(<BlueprintPage />)} />
+        <Route path={DESIGN_PATH} element={guard(<DesignPage />)} />
+        <Route path="/workflow" element={guard(<WorkflowPage />)} />
+        <Route path="/export" element={guard(<ExportPage />)} />
+        <Route path="/simple/rancang" element={<Navigate to={DESIGN_PATH} replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Workbench>

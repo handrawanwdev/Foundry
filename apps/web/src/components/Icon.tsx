@@ -1,19 +1,10 @@
 import type { IconName } from "../flow";
 
 const PATHS: Record<IconName, string> = {
-  files: "M4 3h9l5 5v13H4z M13 3v5h5",
-  chat: "M4 5h16v11H9l-5 4z",
-  design: "M3 4h18v14H3z M3 8h18 M8 8v10",
-  plug: "M9 3v5 M15 3v5 M6 8h12v4a6 6 0 0 1-12 0z M12 18v3",
-  close: "M6 6l12 12 M18 6L6 18",
   copy: "M8 8h11v11H8z M5 16V5h11",
-  plus: "M12 5v14 M5 12h14",
-  minus: "M5 12h14",
   chevron: "M6 9l6 6 6-6",
   terminal: "M5 8l5 4-5 4 M12 16h7",
   host: "M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18z M3 12h18 M12 3c2.5 3 2.5 15 0 18 M12 3c-2.5 3-2.5 15 0 18",
-  download: "M12 4v12 M7 12l5 5 5-5 M5 20h14",
-  warn: "M12 3l9 16H3z M12 10v4 M12 16.5v.5",
 };
 
 export function Icon({ name, size = 22 }: { name: IconName; size?: number }) {

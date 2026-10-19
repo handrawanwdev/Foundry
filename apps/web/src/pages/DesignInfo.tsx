@@ -31,7 +31,7 @@ export function Features({ project }: { project: Project }) {
   );
 }
 
-const KINDS: PlatformKind[] = ["web", "android", "ios", "desktop", "backend"];
+const KINDS: PlatformKind[] = ["web", "android", "ios", "desktop", "backend", "cli", "embedded", "other"];
 
 export function PlatformStructure({ project }: { project: Project }) {
   const { run } = useProject();

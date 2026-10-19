@@ -92,6 +92,10 @@ func fakeAgent() {
 			fmt.Println("maaf, saya tidak bisa")
 			return
 		}
+		if mode == "embedded" {
+			fmt.Println(embeddedDiscoveryJSON)
+			return
+		}
 		fmt.Println(discoveryJSON)
 	case strings.Contains(prompt, "design analyst"):
 		if mode == "ref_error" {
@@ -139,11 +143,63 @@ func fakeAgent() {
 			return
 		}
 		fmt.Println(`{"status": "pass"}`)
+	case strings.Contains(prompt, "workflow planner"):
+		countRun("workflow")
+		switch {
+		case strings.Contains(prompt, "CURRENT COMMANDS"):
+			fmt.Println(workflowRevisionJSON)
+		case mode == "embedded":
+			fmt.Println(embeddedWorkflowJSON)
+		case mode == "cycle_once" && !strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED"):
+			fmt.Println(cyclicWorkflowJSON)
+		default:
+			fmt.Println(workflowJSON)
+		}
+	case strings.Contains(prompt, "blueprint editor"):
+		fmt.Println(artifactsJSON)
 	default:
 		fmt.Fprintln(os.Stderr, "unknown prompt")
 		os.Exit(3)
 	}
 }
+
+const workflowJSON = `{"commands": [
+ {"id": "C1", "name": "Kontrak API janji temu", "objective": "Tetapkan kontrak API", "instructions": "Periksa repository. Tulis kontrak API janji temu.",
+  "artifacts": ["requirements", "architecture"], "expected_outputs": ["openapi.yaml"], "acceptance_criteria": ["Kontrak mencakup REQ-001"]},
+ {"id": "C2", "name": "Backend janji temu", "objective": "Endpoint janji", "instructions": "Implementasikan endpoint sesuai kontrak C1.",
+  "depends_on": ["C1"], "artifacts": ["architecture"]},
+ {"id": "C3", "name": "Layar janji", "objective": "Layar janji temu", "instructions": "Bangun layar sesuai desain.",
+  "depends_on": ["C1"], "artifacts": ["ui-design", "requirements"]}]}`
+
+const cyclicWorkflowJSON = `{"commands": [
+ {"id": "C1", "name": "A", "objective": "a", "instructions": "a", "depends_on": ["C2"], "artifacts": ["requirements"]},
+ {"id": "C2", "name": "B", "objective": "b", "instructions": "b", "depends_on": ["C1"], "artifacts": ["requirements"]}]}`
+
+const workflowRevisionJSON = `{"commands": [
+ {"id": "CMD-002", "name": "Backend janji temu + notifikasi", "objective": "Endpoint janji", "instructions": "Implementasikan endpoint dan notifikasi.",
+  "depends_on": ["CMD-001"], "artifacts": ["architecture"]},
+ {"id": "NEW1", "name": "Test integrasi", "objective": "Uji alur janji", "instructions": "Tulis test integrasi alur janji.",
+  "depends_on": ["CMD-002", "CMD-003"], "artifacts": ["requirements"], "acceptance_criteria": ["Alur buat janji lulus"]}]}`
+
+const artifactsJSON = `{"artifacts": [{"id": "Threat Model", "title": "Threat Model", "category": "quality", "summary": "Ancaman utama",
+  "body": "## Aset\n\n- Data pasien", "refs": ["requirements", "ghost"]}]}`
+
+const embeddedWorkflowJSON = `{"commands": [
+ {"id": "C1", "name": "Driver sensor", "objective": "Baca sensor suhu", "instructions": "Periksa repository. Implementasikan driver I2C.",
+  "artifacts": ["firmware-architecture"]},
+ {"id": "C2", "name": "Protokol MQTT", "objective": "Kirim data", "instructions": "Kirim pembacaan lewat MQTT.", "artifacts": ["requirements"]},
+ {"id": "C3", "name": "Integrasi", "objective": "Gabungkan", "instructions": "Hubungkan driver dan protokol.", "depends_on": ["C1", "C2"],
+  "artifacts": ["firmware-architecture"]}]}`
+
+const embeddedDiscoveryJSON = `{"name": "Sensor Suhu",
+ "discovery": {"summary": "Firmware sensor suhu", "business": "Pantau suhu gudang", "users": ["Operator"], "roles": [], "data": [], "integrations": ["MQTT broker"],
+   "security": [], "workflows": []},
+ "requirements": [{"id": "R1", "text": "Kirim suhu tiap menit", "priority": "MUST"}],
+ "features": [{"id": "F1", "name": "Telemetri", "description": "Kirim suhu", "requirement_ids": ["R1"], "platforms": ["embedded"], "sub_features": [{"name": "Baca sensor"}, {"name": "Kirim MQTT"}]}],
+ "flows": [],
+ "platform": {"targets": [{"kind": "embedded", "audience": ["Operator"], "rationale": "perangkat"}], "reason": "Perangkat di gudang."},
+ "artifacts": [{"id": "firmware-architecture", "title": "Arsitektur Firmware", "category": "architecture", "body": "## Task\n\n- sensor\n- mqtt"},
+               {"id": "requirements", "title": "Bentrok", "body": "id bawaan"}]}`
 
 // countRun appends label to $FAKE_RUNS, so a test can count agent runs.
 func countRun(label string) {
@@ -277,8 +333,8 @@ func TestEndToEndAgent(t *testing.T) {
 	if p.Stage != core.StageReady || p.Design.Status != core.DesignApproved || p.Job != nil && p.Job.Status == core.JobRunning {
 		t.Fatalf("finalize: stage=%s design=%s job=%+v", p.Stage, p.Design.Status, p.Job)
 	}
-	// The final spec lands in docs/ for an external implementation tool.
-	raw, err := os.ReadFile(filepath.Join(p.Dir, "docs", "spec.json"))
+	// The export package lands in docs/foundry for an external coding agent.
+	raw, err := os.ReadFile(filepath.Join(p.Dir, "docs", "foundry", "spec.json"))
 	if err != nil {
 		t.Fatalf("spec.json missing: %v", err)
 	}
@@ -286,8 +342,14 @@ func TestEndToEndAgent(t *testing.T) {
 	if err := json.Unmarshal(raw, &out); err != nil || len(out.Pages) != 3 || out.Pages[0].Route != "/dokter" {
 		t.Fatalf("spec.json = %s, %v", raw, err)
 	}
-	if _, err := os.Stat(filepath.Join(p.Dir, "docs", "pages.md")); err != nil {
-		t.Fatalf("pages.md missing: %v", err)
+	for _, f := range []string{"README.md", "manifest.json", "blueprint/ui-design.md", "blueprint/requirements.md",
+		"workflow/workflow.json", "workflow/CMD-001.md", "design-brief.md"} {
+		if _, err := os.Stat(filepath.Join(p.Dir, "docs", "foundry", filepath.FromSlash(f))); err != nil {
+			t.Errorf("%s missing: %v", f, err)
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(p.Dir, "docs", "foundry", "blueprint", "ui-design.md")); err != nil || !strings.Contains(string(b), "/dokter") {
+		t.Fatalf("ui-design.md = %s, %v", b, err)
 	}
 	// No code is written: no scaffold folders.
 	if _, err := os.Stat(filepath.Join(p.Dir, "apps", "api", "modules")); err == nil {
@@ -1080,11 +1142,14 @@ func TestTechStack(t *testing.T) {
 	if _, err := s.ApproveStructure(); err != nil {
 		t.Fatal(err)
 	}
+	if err := workflowReady(s); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.ApproveDesign(); err != nil {
 		t.Fatal(err)
 	}
 	// The final spec carries the approved decision.
-	raw, err := os.ReadFile(filepath.Join(s.Store.Dir, "docs", "README.md"))
+	raw, err := os.ReadFile(filepath.Join(s.Store.Dir, "docs", "foundry", "blueprint", "technology.md"))
 	if err != nil || !strings.Contains(string(raw), "Vue + TypeScript + Vite") || !strings.Contains(string(raw), "Rust + Axum") ||
 		!strings.Contains(string(raw), "Tim sudah pakai Vue") {
 		t.Fatalf("spec = %s, %v", raw, err)
@@ -1251,7 +1316,7 @@ func TestStructureDecision(t *testing.T) {
 	if err := approve(s); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(s.Store.Dir, "docs", "README.md"))
+	raw, err := os.ReadFile(filepath.Join(s.Store.Dir, "docs", "foundry", "blueprint", "technology.md"))
 	if err != nil || !strings.Contains(string(raw), "Tipe: modular") || !strings.Contains(string(raw), "apps/api") {
 		t.Fatalf("spec = %s, %v", raw, err)
 	}
@@ -1310,5 +1375,31 @@ func approve(s *pipeline.Service) error {
 	if _, err := s.ApproveStructure(); err != nil && !errors.Is(err, pipeline.ErrWrongStage) && !errors.Is(err, structure.ErrExisting) {
 		return err
 	}
+	if err := workflowReady(s); err != nil {
+		return err
+	}
 	return s.ApproveDesign()
+}
+
+// workflowReady writes the command workflow when there is none, with the
+// agent or (MCP mode) by submitting the fake answer.
+func workflowReady(s *pipeline.Service) error {
+	p, err := s.Store.Load()
+	if err != nil {
+		return err
+	}
+	if p.Workflow != nil && len(p.Workflow.Commands) > 0 {
+		return nil
+	}
+	if err := s.GenerateWorkflow(); err != nil {
+		return err
+	}
+	s.Wait()
+	if p, _ = s.Store.Load(); p.Job != nil && p.Job.Status == core.JobWaiting {
+		return s.SubmitWork(work.KindWorkflow, workflowJSON)
+	}
+	if p.Workflow == nil || len(p.Workflow.Commands) == 0 {
+		return fmt.Errorf("workflow not written: job %+v", p.Job)
+	}
+	return nil
 }

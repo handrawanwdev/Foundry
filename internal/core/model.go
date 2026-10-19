@@ -8,8 +8,9 @@ import (
 	"time"
 )
 
-// Stage is the pipeline position: Prompt → Design (with preview) → Final.
-// StageReady means the design is approved and the final spec is exported.
+// Stage is the pipeline position: Prompt (TELL, DISCOVERY) → Blueprint and
+// Workflow (DESIGN, with the UI design when the product has screens) →
+// Finalized (READY: blueprint and workflow approved, export written).
 type Stage string
 
 const (
@@ -25,7 +26,7 @@ type Project struct {
 	Dir     string `json:"dir"`
 	Stage   Stage  `json:"stage"`
 	Story   string `json:"story"`
-	// Survey is FOUNDRY.md bagian 3: 8 pertanyaan yang mengikat keputusan.
+	// Survey holds the optional answers that bind technical decisions.
 	Survey    *Survey    `json:"survey,omitempty"`
 	Discovery *Discovery `json:"discovery,omitempty"`
 	// Blueprint is the production architecture decided during discovery.
@@ -48,12 +49,18 @@ type Project struct {
 	DesignTemplate string `json:"design_template,omitempty"`
 	// Reference is the website or app the design takes inspiration from.
 	Reference *DesignReference `json:"reference,omitempty"`
-	Job       *Job             `json:"job,omitempty"`
-	Events    []Event          `json:"events"`
-	UpdatedAt time.Time        `json:"updated_at"`
+	// Artifacts are the blueprint documents written for this project
+	// besides the built-in ones; ArtifactRequest a change waiting for the AI.
+	Artifacts       []Artifact     `json:"artifacts,omitempty"`
+	ArtifactRequest *ChangeRequest `json:"artifact_request,omitempty"`
+	// Workflow is the command workflow for external coding agents.
+	Workflow  *Workflow `json:"workflow,omitempty"`
+	Job       *Job      `json:"job,omitempty"`
+	Events    []Event   `json:"events"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Survey answers (FOUNDRY.md bagian 3). Empty fields use the ★ defaults.
+// Survey answers. Empty fields use the defaults.
 const (
 	SurveyUsersSelf      = "self"
 	SurveyUsersTeam      = "team"
@@ -72,7 +79,7 @@ const (
 	SurveyServicesMany   = "many"
 )
 
-// SurveyKind values match FOUNDRY.md question 2.
+// SurveyKind values: what kind of software is built.
 const (
 	SurveyKindWeb     = "web"
 	SurveyKindMobile  = "mobile"
@@ -175,6 +182,11 @@ const (
 	PlatformDesktop = "desktop"
 	PlatformBackend = "backend"
 	PlatformCLI     = "cli"
+	// PlatformEmbedded is firmware, IoT and robotics software;
+	// PlatformOther any software without its own screens or server
+	// (library, SDK, data pipeline, infrastructure, tooling).
+	PlatformEmbedded = "embedded"
+	PlatformOther    = "other"
 )
 
 type PlatformPlan struct {

@@ -142,7 +142,7 @@ type RealtimeArch struct {
 	Retry  string   `json:"retry,omitempty"`
 }
 
-// EventArch is FOUNDRY.md bagian 5: event antar-modul berformat seragam.
+// EventArch describes events between modules in one uniform envelope.
 type EventArch struct {
 	Durable   string      `json:"durable,omitempty"`   // Redis Streams + consumer group
 	Ephemeral string      `json:"ephemeral,omitempty"` // Redis Pub/Sub

@@ -9,46 +9,35 @@ import (
 	"github.com/handrawanw/foundry/internal/core"
 )
 
-func TestDocumentAndProfile(t *testing.T) {
-	p := &core.Project{
-		Name: "Klinik", Story: "Aplikasi klinik",
-		Survey: &core.Survey{Users: core.SurveyUsersSelf, Stage: core.SurveyStageMVP, Latency: core.SurveyLatency500, Webhook: core.SurveyWebhookNone, Services: core.SurveyServicesOne},
-		Stack: &core.TechStack{Profile: "saas", Decisions: []core.TechDecision{
-			{Area: core.TechBackend, Recommended: "NestJS + TypeScript", Reason: "API"},
-			{Area: core.TechCache, Recommended: "Redis", Reason: "wajib"},
-		}},
-		Structure: &core.Structure{IR: &core.StructureIR{Type: core.StructModular,
-			Apps:     []core.StructurePart{{Name: "web", Path: "apps/web/"}},
-			Services: []core.StructurePart{{Name: "api", Path: "apps/api/", Modules: []string{"identity"}}},
-		}},
-		Features: []core.Feature{{ID: "FEAT-001", Name: "Janji", Description: "Buat janji"}},
-	}
-	doc := Document(p)
-	for _, w := range []string{"Delapan aturan wajib", "Redis required", "apps/api", "Definition of Done"} {
-		if !strings.Contains(doc, w) {
-			t.Errorf("FOUNDRY.md missing %q", w)
+// The rules adapt to the project: no stack or tool is mandatory.
+func TestRulesForceNoStack(t *testing.T) {
+	for _, w := range []string{"Redis required", "ORM required"} {
+		if strings.Contains(Rules, w) {
+			t.Errorf("Rules force %q", w)
 		}
 	}
-	prof := Profile(p)
-	for _, w := range []string{"Foundry Profile", "saas", "Redis", "apps/api"} {
-		if !strings.Contains(prof, w) {
-			t.Errorf("profile missing %q", w)
-		}
-	}
-	req := RequirementsDoc(p)
-	if !strings.Contains(req, "Janji") || !strings.Contains(req, "Aplikasi klinik") {
-		t.Errorf("requirements = %s", req)
-	}
-	if !strings.Contains(AgentsMD, "FOUNDRY.md") {
-		t.Fatal("AGENTS.md")
+	if !strings.Contains(AgentsMD, "docs/foundry/") || !strings.Contains(PackageGuide, "gelombang") {
+		t.Fatal("agent guide does not point to the export package")
 	}
 }
 
-// Rules is pinned: the text lands in discovery prompts and the exported
-// FOUNDRY.md. Update this hash on purpose when rules change.
+func TestDesignBriefOnlyWithUI(t *testing.T) {
+	cli := &core.Project{Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformEmbedded}}}}
+	if got := DesignBrief(cli); !strings.Contains(got, "Tidak ada frontend") {
+		t.Errorf("embedded brief = %q", got)
+	}
+	web := &core.Project{Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}},
+		Design: &core.Design{Pages: []core.Page{{Name: "Antrean", Route: "/antrean"}}}}
+	if got := DesignBrief(web); !strings.Contains(got, "Antrean") {
+		t.Errorf("web brief = %q", got)
+	}
+}
+
+// Rules is pinned: the text lands in discovery prompts. Update this hash on
+// purpose when rules change.
 func TestRulesPinned(t *testing.T) {
 	sum := sha256.Sum256([]byte(Rules))
-	if got := hex.EncodeToString(sum[:8]); got != "b9feb3fc7ba3dbc5" {
-		t.Fatalf("Rules changed (hash %s): update this test and expect memory to be invalidated", got)
+	if got := hex.EncodeToString(sum[:8]); got != "90db9be0a66c8cd2" {
+		t.Fatalf("Rules changed (hash %s): update this test", got)
 	}
 }

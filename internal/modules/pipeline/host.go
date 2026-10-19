@@ -9,7 +9,7 @@ import (
 
 // WorkItem is what an MCP host must do next.
 type WorkItem struct {
-	Kind   string `json:"kind"` // discovery | design | design_qa | reference | stack | structure | none
+	Kind   string `json:"kind"` // discovery | design | design_qa | reference | stack | structure | blueprint | workflow | none
 	Prompt string `json:"prompt"`
 	Submit string `json:"submit"` // how to hand the result back
 }
@@ -24,7 +24,8 @@ func (s *Service) NextWork() (*WorkItem, error) {
 		return &WorkItem{Kind: "none", Prompt: nothingMessage(p)}, nil
 	}
 	switch p.Job.Kind {
-	case work.KindDiscovery, work.KindDesign, work.KindDesignQA, work.KindReference, work.KindStack, work.KindStructure:
+	case work.KindDiscovery, work.KindDesign, work.KindDesignQA, work.KindReference, work.KindStack, work.KindStructure,
+		work.KindArtifacts, work.KindWorkflow:
 		return &WorkItem{Kind: p.Job.Kind, Prompt: s.promptFor(p, p.Job.Kind),
 			Submit: fmt.Sprintf(`submit_work {"kind": %q, "result": "<the JSON object>"}`, p.Job.Kind)}, nil
 	}
@@ -36,14 +37,14 @@ func nothingMessage(p *core.Project) string {
 	case core.StageTell:
 		return "User belum menuliskan prompt di UI Foundry."
 	case core.StageDesign:
-		return "Rancangan menunggu tinjauan user di UI Foundry."
+		return "Blueprint dan workflow menunggu tinjauan user di UI Foundry."
 	case core.StageReady:
-		return "Rancangan sudah difinalisasi; spesifikasi ada di docs/."
+		return "Blueprint dan workflow sudah difinalisasi; paket ekspor ada di docs/foundry/."
 	}
 	return "Tidak ada pekerjaan saat ini."
 }
 
-// SubmitWork applies a discovery/design answer from the MCP host.
+// SubmitWork applies an AI answer from the MCP host.
 func (s *Service) SubmitWork(kind, result string) error {
 	p, err := s.Store.Load()
 	if err != nil {

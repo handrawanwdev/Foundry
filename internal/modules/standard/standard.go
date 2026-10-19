@@ -1,109 +1,43 @@
-// Package standard encodes FOUNDRY.md as the contract generated projects
-// follow. Foundry itself stays an orchestrator; this package writes the
-// standard into the project the coding agents build.
+// Package standard holds the engineering principles Foundry designs with
+// and the guide an external coding agent reads in the export package.
+// Foundry itself never implements; these texts tell the agent how.
 package standard
 
-import (
-	"strings"
+// Rules are the design principles injected into the discovery prompt.
+// They adapt to the project instead of forcing one stack or architecture.
+const Rules = `FOUNDRY DESIGN PRINCIPLES:
+1. Fit the project. Derive architecture, data, interfaces and quality needs from THIS product and its constraints; do not force a stack, layer or tool it does not need.
+2. Honor what is given. Technology, platform, conventions or an existing codebase named by the user are constraints; do not replace them without a stated reason.
+3. Clear boundaries. Split by domain or responsibility, not by file type. Each part owns its data and exposes an explicit interface; dependencies have one direction and no cycles.
+4. Proportional design. Start as simple as the requirements allow; record when to evolve (scale, team, isolation) instead of designing for it now.
+5. Explicit contracts. Data models, APIs, events, messages and protocols are written down before the parts that use them.
+6. Quality is designed. State the test strategy, failure handling, security controls and performance budgets the product needs; omit those it does not.
+7. No invented facts. Mark assumptions. Never invent file paths, endpoints, tables or runtime facts of an existing system; mark them for the coding agent to verify in the repository.
 
-	"github.com/handrawanw/foundry/internal/core"
-)
+Stop and ask (problem → ≥2 options → recommendation → impact) when: a requirement conflicts with a constraint; a platform cannot support a feature; the existing structure conflicts with the request; a budget or limit looks unreachable.
+`
 
-// The compact FOUNDRY.md contract injected into the discovery prompt. Pieces
-// keep the original numbering.
-const (
-	rulesHead = `FOUNDRY RULES (mandatory, FOUNDRY.md):
-1. Modular + Clean Architecture. Dependency points inward: entry → use case → domain. Domain has no framework, DB, or UI.
-2. Readable code: function ≤ 40 lines, params ≤ 4, nesting ≤ 3, file ≤ 300 lines. No magic values, dead code, or loose types (any).
-3. ORM required. Database access only in the repository layer. Raw SQL only for documented heavy aggregation or bulk. A query builder without a model layer is not an ORM.
-`
-	ruleRedis = `4. Redis required: cache, job queue, rate limit, and events. Database stays source of truth; Redis may die without data loss.
-`
-	ruleEvents = `5. Cross-module side effects go through events with a uniform envelope. No direct cross-module calls for side effects.
-`
-	ruleLatency = `6. Low latency: budget from the survey, measured. No N+1, no heavy sync work, no unindexed filter/join/sort.
-`
-	ruleFrontend = `7. Frontend is not AI slop: tokens only, realistic copy, loading/empty/error/success, WCAG AA, one primary action per screen.
-`
-	ruleStructure = `8. Structure is the contract. Follow the existing tree. New folder/helper needs a reason. Architecture change needs an ADR and user approval.
-`
-	eventsBlock = `
-Event envelope (packages/contracts): {"eventId":"uuid","type":"domain.event","version":1,"occurredAt":"RFC3339","correlationId":"uuid","payload":{}}.
-Name events domain.happened (past tense). Consumers are idempotent by eventId. Payload change bumps version.
-Durable events: Redis Streams + consumer group + ack + retry + dead-letter. Ephemeral (UI, cache invalidation): Redis Pub/Sub.
-Outbox: write the event to table outbox in the same DB transaction, then a relay publishes to Redis.
-`
-	webhookBlock = `Inbound webhook: verify HMAC+timestamp, reply 2xx, process via queue, idempotent, store raw payload.
-Outbound webhook: per-endpoint secret, HMAC+eventId+timestamp, backoff+jitter, dead-letter, send from worker.
-`
-	stopAsk = `
-Stop and ask (problem → ≥2 options → recommendation → impact) when: structure/framework/old-migration change; a feature cannot run on a target platform; two existing structures conflict; a requirement fights these rules; the latency budget looks unreachable.
-`
-)
+// PackageGuide is the "how to use" part of the export README.
+const PackageGuide = `Paket ini dibuat oleh Foundry. Foundry merancang dan menyusun instruksi; **coding agent eksternal yang mengimplementasikan**.
 
-// Rules is the full contract (every piece), used by discovery and planning.
-const Rules = rulesHead + ruleRedis + ruleEvents + ruleLatency + ruleFrontend + ruleStructure + eventsBlock + webhookBlock + stopAsk
+## Cara memakai paket ini
 
+1. Baca ` + "`manifest.json`" + ` untuk daftar artefak, command, dependency, dan urutan.
+2. Blueprint (` + "`blueprint/`" + `) adalah sumber kebenaran. Setiap command menyebut artefak yang menjadi acuannya; baca itu sebelum mengerjakan.
+3. Kerjakan command per gelombang. Command dalam satu gelombang tidak saling bergantung dan boleh dikerjakan paralel. Jangan mulai command sebelum semua dependency-nya selesai.
+4. Sebelum mengubah kode, periksa repository: pakai struktur, konvensi, dan komponen yang sudah ada. Jangan mengarang path, API, atau tabel yang tidak ada.
+5. Satu command selesai bila semua acceptance criteria terpenuhi dan output yang diharapkan diserahkan, dengan bukti (test, perintah, hasil).
+6. Bila blueprint bertentangan dengan kondisi repository atau dengan command lain, berhenti dan laporkan; jangan memutuskan sendiri.
+`
+
+// AgentsMD is written at the project root when it has no AGENTS.md.
 const AgentsMD = `# Agents
 
-Ikuti FOUNDRY.md di root dan docs/foundry-profile.md.
+Rancangan project ini ada di docs/foundry/ (dibuat oleh Foundry).
 
-Alur tugas: Inspect → Plan → Implement → Verify → Report.
-- Inspect: pakai kode yang sudah ada. Jangan buat folder, helper, atau duplikasi baru.
-- Implement: 8 aturan wajib FOUNDRY.md. ORM hanya di repository. Efek samping lintas modul lewat event. Frontend hanya token dari packages/ui dan docs/design-brief.md.
-- Verify: test untuk logic yang berubah; lint + typecheck + test; ukur latency terhadap anggaran.
-- Perubahan struktur, framework, atau migration lama: tulis ADR di docs/adr/ lalu berhenti menunggu persetujuan.
+- Mulai dari docs/foundry/README.md dan docs/foundry/manifest.json.
+- Blueprint di docs/foundry/blueprint/ adalah sumber kebenaran.
+- Kerjakan command di docs/foundry/workflow/ sesuai urutan gelombang dan dependency.
+- Periksa repository sebelum mengubah kode; jangan mengarang path atau API.
+- Penuhi acceptance criteria tiap command dan laporkan buktinya.
 `
-
-// Document is the FOUNDRY.md written to a generated project's root.
-func Document(p *core.Project) string {
-	var b strings.Builder
-	b.WriteString("# FOUNDRY.md\n\n")
-	b.WriteString("> Standar wajib project ini. Foundry menulis file ini dari keputusan yang sudah disetujui.\n")
-	b.WriteString("> Coding agent membaca FOUNDRY.md, docs/foundry-profile.md, dan docs/requirements.md sebelum menulis kode.\n\n")
-	b.WriteString("## Delapan aturan wajib\n\n")
-	b.WriteString(Rules)
-	b.WriteString("\n## Struktur folder\n\n")
-	b.WriteString("Ambil hanya yang dibutuhkan; tidak ada folder kosong.\n\n")
-	b.WriteString("```text\n")
-	b.WriteString("apps/api  apps/worker  apps/web  apps/mobile  apps/desktop  apps/cli\n")
-	b.WriteString("packages/domain  packages/contracts  packages/ui  packages/config\n")
-	b.WriteString("docs/  scripts/  docker-compose.yml  .env.example  FOUNDRY.md\n")
-	b.WriteString("```\n\n")
-	b.WriteString("Backend per fitur, bukan per jenis file:\n\n")
-	b.WriteString("```text\n")
-	b.WriteString("src/config  src/infra  src/common  src/modules/{fitur}/\n")
-	b.WriteString("  {fitur}.controller  {fitur}.service  {fitur}.repository\n")
-	b.WriteString("  {fitur}.events  dto/  {fitur}.mapper\n")
-	b.WriteString("```\n\n")
-	b.WriteString("Dilarang: folder helpers/utils/misc/manager sebagai penampung; business logic di common; model ORM bocor ke domain atau response.\n\n")
-	if p != nil && p.Structure != nil && p.Structure.IR != nil {
-		b.WriteString("Struktur yang disetujui untuk project ini ada di docs/foundry-profile.md.\n\n")
-	}
-	b.WriteString("## Definition of Done\n\n")
-	b.WriteString("- Lokasi file sesuai struktur dan Profile; tidak ada duplikasi atau folder kosong\n")
-	b.WriteString("- Dependency direction benar; domain bebas dari framework/DB/UI\n")
-	b.WriteString("- Akses database hanya lewat ORM di repository\n")
-	b.WriteString("- Efek samping lintas modul lewat event berformat seragam; consumer idempotent\n")
-	b.WriteString("- Webhook (jika ada): tanda tangan diverifikasi, diproses lewat queue, retry dan dead-letter ada\n")
-	b.WriteString("- Latency operasi yang disentuh diukur dan dalam anggaran\n")
-	b.WriteString("- Frontend: token dipakai, state loading/kosong/error ada, tidak tertukar dengan template generik\n")
-	b.WriteString("- Test untuk logic yang berubah; lint, typecheck, dan test lulus\n")
-	b.WriteString("- Tidak ada secret hardcode, dead code, atau tipe longgar tanpa alasan\n")
-	return b.String()
-}
-
-func latencyLabel(p *core.Project) string {
-	if p != nil && p.Survey != nil {
-		switch p.Survey.Latency {
-		case core.SurveyLatency200:
-			return "< 200 ms p95"
-		case core.SurveyLatency100:
-			return "< 100 ms p95"
-		}
-	}
-	if p != nil && p.Blueprint != nil && p.Blueprint.Performance.Budget != "" {
-		return p.Blueprint.Performance.Budget
-	}
-	return "< 500 ms p95"
-}

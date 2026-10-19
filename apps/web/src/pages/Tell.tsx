@@ -28,7 +28,7 @@ export function TellPage() {
 
   if (discovering) {
     return (
-      <section className="card narrow">
+      <section className="tell">
         <h1><span className="spinner" /> Foundry memahami kebutuhan</h1>
         <p className="muted">{tellWaiting(existing)}</p>
         {components && <p className="muted small">Kode yang dibaca: {components}</p>}
@@ -48,7 +48,7 @@ export function TellPage() {
   };
 
   return (
-    <section className="card narrow">
+    <section className="tell">
       <h1>{tellTitle(existing)}</h1>
       <p className="muted">{tellIntro(existing)}</p>
       {components && <p className="muted small">Kode yang dibaca: {components}</p>}
@@ -66,75 +66,77 @@ export function TellPage() {
           ))}
         </div>
       )}
-      <details className="theme-pick" open={!hasDownstream}>
-        <summary className="muted small">Survey FOUNDRY: {surveySummary(survey)}</summary>
-        <p className="muted small">Jawaban mengikat stack, latency, event, dan struktur. Kosong = default MVP.</p>
-        <div className="survey-kinds">
-          {SURVEY_KINDS.map((k) => {
-            const on = (survey.kinds ?? []).includes(k.id);
-            return (
-              <button key={k.id} type="button" className={on ? "chip on" : "chip"} onClick={() => {
-                const cur = survey.kinds ?? [];
-                const next = on ? cur.filter((x) => x !== k.id) : [...cur, k.id];
-                setSurvey({ ...survey, kinds: next as SurveyKind[] });
-              }}>{k.label}</button>
-            );
-          })}
-        </div>
-        <div className="survey">
-          <label>Pengguna
-            <select value={survey.users} onChange={(e) => setSurvey({ ...survey, users: e.target.value as Survey["users"] })}>
-              <option value="self">hanya saya</option>
-              <option value="team">tim kecil</option>
-              <option value="public">publik</option>
-            </select>
-          </label>
-          <label>Tahap
-            <select value={survey.stage} onChange={(e) => setSurvey({ ...survey, stage: e.target.value as Survey["stage"] })}>
-              <option value="prototype">prototipe</option>
-              <option value="mvp">MVP</option>
-              <option value="production">produksi</option>
-            </select>
-          </label>
-          <label>Latency p95
-            <select value={survey.latency} onChange={(e) => setSurvey({ ...survey, latency: e.target.value as Survey["latency"] })}>
-              <option value="500">&lt; 500 ms</option>
-              <option value="200">&lt; 200 ms</option>
-              <option value="100">&lt; 100 ms</option>
-            </select>
-          </label>
-          <label>Webhook
-            <select value={survey.webhook} onChange={(e) => setSurvey({ ...survey, webhook: e.target.value as Survey["webhook"] })}>
-              <option value="none">tidak</option>
-              <option value="in">terima</option>
-              <option value="out">kirim</option>
-              <option value="both">keduanya</option>
-            </select>
-          </label>
-          <label>Service
-            <select value={survey.services} onChange={(e) => setSurvey({ ...survey, services: e.target.value as Survey["services"] })}>
-              <option value="one">satu aplikasi modular</option>
-              <option value="many">beberapa service terpisah</option>
-            </select>
-          </label>
-          <label>Stack (kosong = Foundry pilih)
-            <input value={survey.stack ?? ""} onChange={(e) => setSurvey({ ...survey, stack: e.target.value })} placeholder="opsional" />
-          </label>
-        </div>
-      </details>
-      <details className="theme-pick" open={!hasDownstream && !existing}>
-        <summary className="muted small">Theme visual (opsional): {project.theme || (existing ? "dari UI yang ada" : "otomatis")}</summary>
-        <ThemeGallery project={project} compact />
-      </details>
-      {existing ? (
-        <p className="muted small">Struktur mengikuti kode yang sudah ada; tidak memakai template folder baru.</p>
-      ) : (
+      <div className="tell-options">
         <details className="theme-pick" open={!hasDownstream}>
-          <summary className="muted small">Template awal (opsional): {project.design_template === "blank" ? "kanvas kosong" : project.design_template || "otomatis"}</summary>
-          <p className="muted small">Hanya struktur awal halaman; fitur tetap dari ceritamu.</p>
-          <TemplatePicker project={project} />
+          <summary className="muted small">Survey FOUNDRY: {surveySummary(survey)}</summary>
+          <p className="muted small">Jawaban mengikat stack, latency, event, dan struktur. Kosong = default MVP.</p>
+          <div className="survey-kinds">
+            {SURVEY_KINDS.map((k) => {
+              const on = (survey.kinds ?? []).includes(k.id);
+              return (
+                <button key={k.id} type="button" className={on ? "chip on" : "chip"} onClick={() => {
+                  const cur = survey.kinds ?? [];
+                  const next = on ? cur.filter((x) => x !== k.id) : [...cur, k.id];
+                  setSurvey({ ...survey, kinds: next as SurveyKind[] });
+                }}>{k.label}</button>
+              );
+            })}
+          </div>
+          <div className="survey">
+            <label>Pengguna
+              <select value={survey.users} onChange={(e) => setSurvey({ ...survey, users: e.target.value as Survey["users"] })}>
+                <option value="self">hanya saya</option>
+                <option value="team">tim kecil</option>
+                <option value="public">publik</option>
+              </select>
+            </label>
+            <label>Tahap
+              <select value={survey.stage} onChange={(e) => setSurvey({ ...survey, stage: e.target.value as Survey["stage"] })}>
+                <option value="prototype">prototipe</option>
+                <option value="mvp">MVP</option>
+                <option value="production">produksi</option>
+              </select>
+            </label>
+            <label>Latency p95
+              <select value={survey.latency} onChange={(e) => setSurvey({ ...survey, latency: e.target.value as Survey["latency"] })}>
+                <option value="500">&lt; 500 ms</option>
+                <option value="200">&lt; 200 ms</option>
+                <option value="100">&lt; 100 ms</option>
+              </select>
+            </label>
+            <label>Webhook
+              <select value={survey.webhook} onChange={(e) => setSurvey({ ...survey, webhook: e.target.value as Survey["webhook"] })}>
+                <option value="none">tidak</option>
+                <option value="in">terima</option>
+                <option value="out">kirim</option>
+                <option value="both">keduanya</option>
+              </select>
+            </label>
+            <label>Service
+              <select value={survey.services} onChange={(e) => setSurvey({ ...survey, services: e.target.value as Survey["services"] })}>
+                <option value="one">satu aplikasi modular</option>
+                <option value="many">beberapa service terpisah</option>
+              </select>
+            </label>
+            <label>Stack (kosong = Foundry pilih)
+              <input value={survey.stack ?? ""} onChange={(e) => setSurvey({ ...survey, stack: e.target.value })} placeholder="opsional" />
+            </label>
+          </div>
         </details>
-      )}
+        <details className="theme-pick" open={!hasDownstream && !existing}>
+          <summary className="muted small">Theme visual (opsional): {project.theme || (existing ? "dari UI yang ada" : "otomatis")}</summary>
+          <ThemeGallery project={project} compact />
+        </details>
+        {existing ? (
+          <p className="muted small">Struktur mengikuti kode yang sudah ada; tidak memakai template folder baru.</p>
+        ) : (
+          <details className="theme-pick" open={!hasDownstream}>
+            <summary className="muted small">Template awal (opsional): {project.design_template === "blank" ? "kanvas kosong" : project.design_template || "otomatis"}</summary>
+            <p className="muted small">Hanya struktur awal halaman; fitur tetap dari ceritamu.</p>
+            <TemplatePicker project={project} />
+          </details>
+        )}
+      </div>
       {confirmReset && (
         <p className="warn">Cerita baru akan membuat ulang rancangan yang sudah ada. Tekan lagi untuk lanjut.</p>
       )}

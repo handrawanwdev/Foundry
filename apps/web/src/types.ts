@@ -1,8 +1,8 @@
 // Mirrors internal/core/model.go — the single project context.
 
-// READY: the design is finalized and the final spec exported.
+// DESIGN: blueprint and workflow in progress; READY: both finalized, export written.
 export type Stage = "TELL" | "DISCOVERY" | "DESIGN" | "READY";
-export type PlatformKind = "web" | "android" | "ios" | "desktop" | "backend" | "cli";
+export type PlatformKind = "web" | "android" | "ios" | "desktop" | "backend" | "cli" | "embedded" | "other";
 export type SurveyKind = "web" | "mobile" | "desktop" | "cli" | "api" | "bot";
 export interface Survey {
   what?: string;
@@ -280,6 +280,7 @@ export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string; survey?: Survey;
   discovery?: Discovery; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
   platform?: PlatformPlan; structure?: Structure; stack?: TechStack; design?: Design; theme?: string; design_template?: string; reference?: DesignReference;
+  artifacts?: Artifact[]; artifact_request?: ChangeRequest; workflow?: Workflow;
   job?: Job; events: Event[] | null; updated_at: string;
 }
 
@@ -296,3 +297,39 @@ export interface Browse {
   path: string; parent: string; is_project: boolean;
   dirs: { name: string; path: string; is_project: boolean }[];
 }
+
+// Blueprint artifacts: built-in ones are rendered from structured data.
+export type ArtifactCategory = "requirements" | "domain" | "architecture" | "ui" | "data" | "platform" | "quality" | "other";
+export interface Artifact {
+  id: string; title: string; category: ArtifactCategory; summary?: string; body: string;
+  refs?: string[]; version: number; updated_at: string; builtin?: boolean;
+}
+export interface ChangeRequest { text: string; focus?: string[]; rejected?: string }
+export interface BlueprintView { artifacts: Artifact[]; has_ui: boolean; request: ChangeRequest | null; blueprint_hash: string }
+
+// Command workflow for external coding agents. Statuses are design states only.
+export type CommandStatus = "draft" | "needs_review" | "finalized";
+export interface ArtifactRef { id: string; hash?: string }
+export interface Command {
+  id: string; name: string; objective: string; context?: string; inputs?: string[]; instructions: string;
+  depends_on?: string[]; artifacts?: ArtifactRef[]; expected_outputs?: string[]; acceptance_criteria?: string[];
+  constraints?: string[]; status: CommandStatus; review?: string;
+}
+export interface Workflow { status: "draft" | "finalized"; commands: Command[]; request?: ChangeRequest; version: number; finalized_at?: string }
+export interface WorkflowIssue { command?: string; message: string }
+export interface WorkflowReport {
+  issues: WorkflowIssue[]; waves: string[][]; stale: Record<string, string[]>; ready: boolean;
+  review: Record<string, string>; docs: Record<string, { title: string; category: ArtifactCategory }>;
+}
+export interface WorkflowView { workflow: Workflow | null; report: WorkflowReport }
+export interface CommandEdit {
+  name: string; objective: string; context: string; inputs: string[]; instructions: string; depends_on: string[];
+  artifacts: string[]; expected_outputs: string[]; acceptance_criteria: string[]; constraints: string[];
+}
+export interface ExportManifest {
+  format: string; project: string; status: "draft" | "finalized"; finalized_at?: string; blueprint_hash: string;
+  workflow_version: number; entry: string; waves: string[][];
+  artifacts: { id: string; title: string; category: string; file: string; hash: string }[];
+  commands: { id: string; name: string; file: string; depends_on: string[]; artifacts: string[]; wave: number }[];
+}
+export interface ExportView { dir: string; finalized: boolean; manifest: ExportManifest; files: { path: string; size: number }[]; blockers: string[] | null }

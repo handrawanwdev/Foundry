@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent } from "react";
-import { api, SPEC_JSON_URL, SPEC_MD_URL } from "../api";
+import { useNavigate } from "react-router-dom";
+import { api } from "../api";
 import { changeRequest, changeScope, componentName, DENSITY_LABEL, designChecks, featuresWithoutPage, fixRequest, flowPages, incoming, KIND_LABEL, navTarget, pageDensity, pageKind, requirementsOf, type PageRequest } from "../design";
 import { isWorking, PLATFORM_LABEL } from "../flow";
 import { useProject } from "../store/project";
@@ -341,14 +342,14 @@ export function AskChange({ page, pages, component, device, onClose }: AskProps)
 interface ReviewProps {
   project: Project;
   blockers: Blocker[];
-  onAsk: () => void;
   onTry: (flowId: string) => void;
   onInfo: (v: "platform") => void;
   onOpen: (pageId: string) => void;
 }
 
-export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: ReviewProps) {
+export function Review({ project, blockers, onTry, onInfo, onOpen }: ReviewProps) {
   const { run, pending } = useProject();
+  const nav = useNavigate();
   const findings = designChecks(project);
   const d = project.design!;
   const pages = d.pages ?? [];
@@ -389,7 +390,7 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
           : <li className="ok">✓ Design system ada; tiap halaman punya route, akses, satu aksi utama, urutan informasi dan kondisi data</li>}
         {findings.length ? <li className="warn">! Kualitas rancangan: {findings.length} temuan</li>
           : <li className="ok">✓ Kualitas rancangan: tiap halaman punya layout sesuai jenisnya</li>}
-        {d.revision && !approved && <li className="warn">! Perubahan terakhir belum disimpan. Finalisasi akan menyimpannya.</li>}
+        {d.revision && !approved && <li className="warn">! Perubahan terakhir belum disimpan atau dibatalkan.</li>}
         {d.qa && !d.revision && <li className={d.qa.status === "failed" ? "warn" : "ok"} style={{ whiteSpace: "pre-line" }}>{qaText(d.qa)}
           {!!d.qa.issues?.length && <QAIssues issues={d.qa.issues} pages={pages} onOpen={onOpen} />}</li>}
       </ul>
@@ -448,16 +449,13 @@ export function Review({ project, blockers, onAsk, onTry, onInfo, onOpen }: Revi
       <div className="review-foot">
         {approved ? (
           <>
-            <span className="ok-text">✓ Rancangan final — spesifikasi ada di <code>docs/</code></span>
-            <a className="button primary" href={SPEC_MD_URL} download>Unduh spesifikasi (.md)</a>
-            <a className="button" href={SPEC_JSON_URL} download>Unduh JSON</a>
-            <button disabled={working || pending === "reopen"} onClick={() => run("reopen", api.reopenDesign)}>Revisi lagi</button>
+            <span className="ok-text">✓ Desain final — bagian dari paket ekspor</span>
+            <button className="primary" onClick={() => nav("/export")}>Buka Export</button>
           </>
         ) : (
           <>
-            <button className="primary" disabled={working || pending === "finalize" || blockers.length > 0 || !!gate}
-              title={blockers.length ? "Lengkapi dulu hal wajib di atas" : gate ?? undefined} onClick={() => run("finalize", api.finalizeDesign)}>Finalisasi Rancangan</button>
-            <button disabled={working} onClick={onAsk}>Minta perubahan</button>
+            <span className="muted small">{blockers.length > 0 || gate ? "Lengkapi hal wajib di atas sebelum finalisasi." : "Desain siap. Finalisasi dilakukan bersama command workflow."}</span>
+            <button className="primary" onClick={() => nav("/workflow")}>Lanjut ke Workflow →</button>
           </>
         )}
       </div>

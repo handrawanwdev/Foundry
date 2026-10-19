@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Browse, CanvasOp, CanvasResult, ChangeScope, DesignSpec, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Prototype, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
+import type { AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, ExportView, WorkflowView, CanvasOp, CanvasResult, ChangeScope, DesignSpec, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Prototype, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code = "") {
@@ -83,12 +83,30 @@ export const api = {
   // to 0 = the current design.
   compareVersions: (from: number, to = 0) => call<VersionComparison>("GET", `/project/design/versions/compare?from=${from}&to=${to}`),
   restoreVersion: (id: number) => call<Project>("POST", `/project/design/versions/${id}/restore`),
-  // Finalize: locks the design and writes the final spec into docs/.
-  finalizeDesign: () => call("POST", "/project/design/approve", {}),
-  // Unlocks a finalized design for another revision.
-  reopenDesign: () => call("POST", "/project/design/reopen", {}),
+
+  // Blueprint: built-in artifacts plus the ones written for the project.
+  blueprint: () => call<BlueprintView>("GET", "/project/blueprint"),
+  reviseBlueprint: (text: string, focus: string[] = []) => call("POST", "/project/blueprint/revise", { text, focus }),
+  editArtifact: (id: string, a: Pick<Artifact, "title" | "summary" | "body" | "category" | "refs">) =>
+    call<Project>("PUT", `/project/blueprint/artifacts/${encodeURIComponent(id)}`, a),
+  removeArtifact: (id: string) => call<Project>("DELETE", `/project/blueprint/artifacts/${encodeURIComponent(id)}`),
+
+  // Command workflow: instructions for external coding agents, never run by Foundry.
+  workflow: () => call<WorkflowView>("GET", "/project/workflow"),
+  generateWorkflow: () => call("POST", "/project/workflow/generate", {}),
+  reviseWorkflow: (text: string, focus: string[] = []) => call("POST", "/project/workflow/revise", { text, focus }),
+  editCommand: (id: string, edit: CommandEdit) => call<Project>("PUT", `/project/workflow/commands/${encodeURIComponent(id)}`, edit),
+  // needs true marks it for review; false records it as reviewed.
+  reviewCommand: (id: string, needs: boolean, reason = "") =>
+    call<Project>("POST", `/project/workflow/commands/${encodeURIComponent(id)}/review`, { needs_review: needs, reason }),
+
+  // Finalize approves blueprint + workflow and writes the export package.
+  finalize: () => call("POST", "/project/finalize", {}),
+  reopen: () => call("POST", "/project/reopen", {}),
+  exportInfo: () => call<ExportView>("GET", "/project/export"),
 };
 
-// Final spec downloads for an external implementation tool.
+// Downloads for external coding agents.
+export const EXPORT_ZIP_URL = "/api/v1/project/export.zip";
 export const SPEC_MD_URL = "/api/v1/project/spec.md";
 export const SPEC_JSON_URL = "/api/v1/project/spec.json";

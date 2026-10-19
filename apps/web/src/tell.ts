@@ -40,7 +40,7 @@ export function tellTitle(existing: boolean): string {
 export function tellIntro(existing: boolean): string {
   return existing
     ? "Ceritakan fitur atau perubahan. Foundry mengikuti struktur, teknologi, dan UI project ini — tidak diganti template."
-    : "Ceritakan dengan bahasa biasa. Foundry menyusun blueprint arsitektur dulu — modul, data, auth, file, worker.";
+    : "Ceritakan dengan bahasa biasa: aplikasi, layanan, pipeline data, firmware, atau perubahan teknis. Foundry menyusun blueprint dan command workflow untuk coding agent eksternal.";
 }
 
 export function tellWaiting(existing: boolean): string {
@@ -50,7 +50,7 @@ export function tellWaiting(existing: boolean): string {
 }
 
 export function tellPlaceholder(existing: boolean): string {
-  return existing ? "Saya ingin menambahkan fitur ..." : "Saya ingin membuat aplikasi klinik...";
+  return existing ? "Saya ingin menambahkan fitur ..." : "Contoh: aplikasi klinik untuk janji temu pasien, atau firmware sensor suhu yang mengirim data lewat MQTT…";
 }
 
 export function existingComponents(p: Project | null | undefined): string {

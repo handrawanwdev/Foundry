@@ -1,13 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AskChange, ChangeBar, Inspect, Review } from "../components/DesignPanels";
+import { Menu } from "../components/Menu";
 import { Wireframe, type PageState } from "../components/Wireframe";
-import { DEVICES, defaultDevice, flowPages, groupPages, pageOrder, roleOf, SCREEN_WIDTH, type Device } from "../design";
+import { DEVICES, defaultDevice, flowPages, groupPages, pageOrder, SCREEN_WIDTH, type Device } from "../design";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
-import { useWorkbench } from "../store/workbench";
 import { api } from "../api";
-import type { Blocker, DesignSpec, PageSpec, PageStates, Project, TechStack } from "../types";
+import type { Blocker, DesignSpec, Page, PageSpec, PageStates, Project, TechStack } from "../types";
 import { NONE, TECH_AREA, techChoice } from "../tech";
 import { ThemeGallery } from "../components/ThemeGallery";
 import { RegenerateButton, TemplateLibrary } from "../components/TemplateGallery";
@@ -17,13 +17,16 @@ import { CanvasComponent, CanvasPage, CanvasWarnings, Layers, PrototypeMap, Vers
 type Mode = "pratinjau" | "prototipe" | "spek" | "tinjau";
 type Info = "fitur" | "platform" | "kebutuhan" | "arsitektur" | "tema" | "template" | "peta" | "versi";
 
-const MODES: [Mode, string][] = [["pratinjau", "Desain"], ["prototipe", "Prototipe"], ["spek", "Spesifikasi"], ["tinjau", "Tinjau & Finalisasi"]];
+// Review (finalize) is reached from the Finalize button, not from the tabs.
+const MODES: [Mode, string][] = [["pratinjau", "Desain"], ["prototipe", "Prototipe"], ["spek", "Spesifikasi"]];
 const STATES: [PageState, string, keyof PageStates | null][] = [
   ["normal", "Normal", null], ["loading", "Memuat", "loading"], ["empty", "Kosong", "empty"],
   ["no_results", "Tanpa hasil", "no_results"], ["error", "Error", "error"], ["success", "Berhasil", "success"],
 ];
 const INFOS: [Info, string][] = [["fitur", "Fitur & Alur"], ["platform", "Platform & Teknologi"], ["kebutuhan", "Kebutuhan"], ["arsitektur", "Arsitektur"], ["tema", "Theme"], ["template", "Template"], ["peta", "Peta Prototipe"], ["versi", "Versi"]];
-// Explorer deep links use ?tab=fitur|platform|ringkasan|arsitektur.
+// Where the second group of the "Lainnya" menu starts.
+const INFOS_VISUAL = 4;
+// Deep links use ?tab=fitur|platform|ringkasan|arsitektur.
 const TAB_INFO: Record<string, Info> = { fitur: "fitur", platform: "platform", ringkasan: "kebutuhan", arsitektur: "arsitektur" };
 
 // Logical screen width per device; the frame is scaled down to fit.
@@ -50,19 +53,11 @@ function Workspace({ project }: { project: Project }) {
   const [device, setDevice] = useState<Device | null>(null); // null = follows the page platform
   const [selected, setSelected] = useState<number | null>(null);
   const [inspect, setInspect] = useState(false);
-  const [sideOpen, setSideOpen] = useState(false);
   const [asking, setAsking] = useState(false);
   const [flowId, setFlowId] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [pstate, setPstate] = useState<PageState>("normal");
   const [spec, setSpec] = useState<DesignSpec | null>(null);
-
-  // The explorer takes canvas space; hide it here and restore it on leave.
-  useEffect(() => {
-    if (!useWorkbench.getState().sidebar) return;
-    useWorkbench.getState().toggleSidebar();
-    return () => { if (!useWorkbench.getState().sidebar) useWorkbench.getState().toggleSidebar(); };
-  }, []);
 
   // Page specs and blockers are derived by the server; refresh on every change.
   useEffect(() => {
@@ -87,7 +82,7 @@ function Workspace({ project }: { project: Project }) {
   const working = isWorking(project);
   const changed = new Set((design.revision?.changes ?? []).map((c) => c.page_id).filter(Boolean));
 
-  const show = (id: string) => { setPageId(id); setPstate("normal"); setSelected(null); setInfo(null); setSideOpen(false); };
+  const show = (id: string) => { setPageId(id); setPstate("normal"); setSelected(null); setInfo(null); };
   const switchMode = (m: Mode) => { setMode(m); setInfo(null); setSelected(null); if (m === "prototipe") startFlow(currentFlow()?.id ?? null); };
 
   // ---- prototype ----
@@ -116,75 +111,96 @@ function Workspace({ project }: { project: Project }) {
     setHistory(history.slice(0, -1));
     show(prev);
   };
+  // Picking a page leaves the review and info views.
+  const pick = (id: string) => { if (mode === "tinjau") setMode("pratinjau"); go(id); };
+  const openPage = (id: string) => { setMode("pratinjau"); show(id); };
 
   const states = STATES.filter(([, , key]) => !key || !!page?.states?.[key]);
   const idx = order.findIndex((p) => p.id === page?.id);
   const showInspect = inspect && mode === "pratinjau" && !info && !!page;
+  const onCanvas = !info && (mode === "pratinjau" || mode === "prototipe");
+  const proto = mode === "prototipe" && !info && !!page;
+  const composer = !approved && !proto;
 
   return (
     <div className="dw">
-      <header className="dw-head">
-        <button className="ghost dw-side-toggle" onClick={() => setSideOpen(!sideOpen)}>Halaman</button>
-        <div className="dw-title">
-          <strong>Rancangan</strong>
+      <header className="dw-bar">
+        <div className="dw-bar-l">
+          <div className="pager">
+            <button className="icon-btn prev" aria-label="Halaman sebelumnya" disabled={idx <= 0} onClick={() => pick(order[idx - 1].id)}>‹</button>
+            <Menu className="pager-btn" trigger={<><span className="pager-name">{page?.name}</span><span className="muted small">{idx + 1}/{order.length}</span></>}>
+              {(done) => groups.map((g) => (
+                <div key={g.role}>
+                  <div className="menu-label">{g.role}</div>
+                  {g.loose.map((p) => <PageItem key={p.id} page={p} active={p.id === page?.id} changed={changed.has(p.id)} onClick={() => { done(); pick(p.id); }} />)}
+                  {g.flows.map(({ flow: f, pages: ps }) => (
+                    <div key={f.id}>
+                      <div className="menu-sub">{f.name}</div>
+                      {ps.map((p) => <PageItem key={p.id} page={p} active={p.id === page?.id} changed={changed.has(p.id)} onClick={() => { done(); pick(p.id); }} />)}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </Menu>
+            <button className="icon-btn" aria-label="Halaman berikutnya" disabled={idx >= order.length - 1} onClick={() => pick(order[idx + 1].id)}>›</button>
+          </div>
           <Status project={project} />
         </div>
-        <div className="seg">
+
+        <div className="seg dw-modes">
           {MODES.map(([k, l]) => (
             <button key={k} className={mode === k && !info ? "on" : ""} onClick={() => switchMode(k)}>{l}</button>
           ))}
         </div>
-        <div className="dw-actions">
-          {(mode === "pratinjau" || mode === "prototipe") && !info && (
-            <div className="seg subtle">
+
+        <div className="dw-bar-r">
+          {onCanvas && (
+            <div className="seg subtle" title="Perangkat">
               {DEVICES.map((d) => <button key={d.key} className={dev === d.key ? "on" : ""} onClick={() => setDevice(d.key)}>{d.label}</button>)}
             </div>
           )}
-          {!approved && <RegenerateButton project={project} />}
-          {!approved && <button className="ask-btn" disabled={working} onClick={() => setAsking(!asking)}>✦ Minta perubahan</button>}
+          {mode === "pratinjau" && !info && states.length > 1 && (
+            <select className="dw-select" title="Kondisi halaman" aria-label="Kondisi halaman" value={pstate} onChange={(e) => setPstate(e.target.value as PageState)}>
+              {states.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          )}
           {mode === "pratinjau" && !info && (
             <button className={`ghost ${inspect ? "on" : ""}`} title="Panel detail" onClick={() => setInspect(!inspect)}>Detail</button>
           )}
+          <Menu align="right" className="ghost" trigger="Lainnya">
+            {(done) => (
+              <>
+                {INFOS.map(([k, l], i) => (
+                  <div key={k}>
+                    {i === INFOS_VISUAL && <div className="menu-sep" />}
+                    <button className={`menu-item ${info === k ? "on" : ""}`} onClick={() => { done(); setInfo(k); }}>{l}</button>
+                  </div>
+                ))}
+                {!approved && <div className="menu-sep" />}
+                {!approved && <RegenerateButton project={project} className="menu-item" />}
+              </>
+            )}
+          </Menu>
+          <button className={approved ? "final" : "primary"} aria-pressed={mode === "tinjau" && !info}
+            onClick={() => { setMode("tinjau"); setInfo(null); }}>{approved ? "✓ Final" : "Tinjau"}</button>
         </div>
       </header>
 
-      {asking && <AskChange page={mode !== "tinjau" && !info ? page : undefined} pages={order} component={selected} device={dev} onClose={() => setAsking(false)} />}
-      <ChangeBar project={project} onOpen={(id) => { setMode("pratinjau"); show(id); }} />
+      <ChangeBar project={project} onOpen={openPage} />
       {!info && mode === "pratinjau" && <CanvasWarnings page={page} />}
 
-      <div className={`dw-main ${sideOpen ? "side-open" : ""}`}>
-        <aside className="dw-side">
-          {groups.map((g) => (
-            <div key={g.role} className="dw-group">
-              <div className="dw-role">{g.role}</div>
-              {g.loose.map((p) => <PageItem key={p.id} name={p.name} active={!info && p.id === page?.id} changed={changed.has(p.id)} onClick={() => go(p.id)} />)}
-              {g.flows.map(({ flow: f, pages: ps }) => (
-                <div key={f.id} className="dw-flow">
-                  <div className="dw-flow-name">{f.name}</div>
-                  {ps.map((p) => <PageItem key={p.id} name={p.name} active={!info && p.id === page?.id} changed={changed.has(p.id)} onClick={() => go(p.id)} />)}
-                </div>
-              ))}
-            </div>
-          ))}
-          <div className="dw-side-foot">
-            {INFOS.map(([k, l]) => (
-              <button key={k} className={`dw-page ${info === k ? "active" : ""}`} onClick={() => { setInfo(k); setSideOpen(false); }}>{l}</button>
-            ))}
-          </div>
-        </aside>
-
-        <main className="dw-center">
+      <div className="dw-main">
+        <main className={`dw-center ${composer || proto ? "docked" : ""}`}>
           {info === "fitur" ? <Features project={project} />
             : info === "platform" ? <PlatformStructure project={project} />
             : info === "kebutuhan" ? <Summary project={project} />
             : info === "arsitektur" ? <Architecture project={project} />
             : info === "tema" ? <div className="info"><h1>Theme</h1><ThemeGallery project={project} /></div>
             : info === "template" ? <TemplateLibrary project={project} />
-            : info === "peta" ? <PrototypeMap project={project} onOpen={(id) => { setMode("pratinjau"); show(id); }} onTry={(id) => { setMode("prototipe"); setInfo(null); startFlow(id, true); }} />
-            : info === "versi" ? <Versions project={project} onOpen={(id) => { setMode("pratinjau"); show(id); }} />
+            : info === "peta" ? <PrototypeMap project={project} onOpen={openPage} onTry={(id) => { setMode("prototipe"); setInfo(null); startFlow(id, true); }} />
+            : info === "versi" ? <Versions project={project} onOpen={openPage} />
             : mode === "tinjau" ? (
-              <Review project={project} blockers={spec?.blockers ?? []} onAsk={() => setAsking(true)} onInfo={setInfo}
-                onOpen={(id) => { setMode("pratinjau"); show(id); }}
+              <Review project={project} blockers={spec?.blockers ?? []} onInfo={setInfo} onOpen={openPage}
                 onTry={(id) => { setMode("prototipe"); startFlow(id, true); }} />
             ) : mode === "spek" ? (
               page && <PageSpecView key={page.id} stack={spec?.stack} spec={spec?.pages?.find((h) => h.page_id === page.id)} blockers={(spec?.blockers ?? []).filter((b) => b.page_id === page.id)} />
@@ -210,41 +226,42 @@ function Workspace({ project }: { project: Project }) {
         )}
       </div>
 
-      {!info && mode === "pratinjau" && page && (
-        <footer className="dw-foot">
-          <button className="ghost" disabled={idx <= 0} onClick={() => go(order[idx - 1].id)}>← Sebelumnya</button>
-          <span className="inline">
-            <span className="muted">{roleOf(page)} / <strong className="fg">{page.name}</strong></span>
-            {states.length > 1 && (
-              <span className="seg subtle" title="Kondisi halaman">
-                {states.map(([k, l]) => <button key={k} className={pstate === k ? "on" : ""} onClick={() => setPstate(k)}>{l}</button>)}
-              </span>
-            )}
-          </span>
-          <button className="ghost" disabled={idx >= order.length - 1} onClick={() => go(order[idx + 1].id)}>Berikutnya →</button>
-        </footer>
+      {composer && (
+        <div className="dw-dock">
+          {asking ? (
+            <AskChange page={mode !== "tinjau" && !info ? page : undefined} pages={order} component={selected} device={dev} onClose={() => setAsking(false)} />
+          ) : (
+            <button className="composer" disabled={working} onClick={() => setAsking(true)}>
+              <span className="composer-spark" aria-hidden>✦</span>
+              <span className="composer-text">Minta perubahan{page && !info && mode !== "tinjau" ? ` pada ${page.name}` : ""}…</span>
+            </button>
+          )}
+        </div>
       )}
-      {!info && mode === "prototipe" && page && (
-        <footer className="dw-foot">
-          <button className="ghost" disabled={history.length === 0} onClick={back}>← Kembali</button>
-          <span className="inline">
-            {runnable.length > 0 ? (
-              <select value={flowId ?? ""} onChange={(e) => startFlow(e.target.value, true)}>
-                {runnable.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </select>
-            ) : <span className="muted">Belum ada alur</span>}
-            {flow && <span className="muted">{step >= 0 ? `Langkah ${step + 1} dari ${steps.length}` : "Di luar alur"}</span>}
-          </span>
-          {flow && step >= 0 && step < steps.length - 1 ? (
-            <button className="ghost" onClick={() => go(steps[step + 1].id)}>Lanjut →</button>
-          ) : flow ? (
-            <button className="ghost" onClick={() => { setHistory([]); show(steps[0].id); }}>Ulangi</button>
-          ) : <span />}
-        </footer>
+      {proto && (
+        <div className="dw-dock">
+          <div className="dock-bar">
+            <button className="ghost" disabled={history.length === 0} onClick={back}>← Kembali</button>
+            <span className="inline">
+              {runnable.length > 0 ? (
+                <select className="dw-select" value={flowId ?? ""} onChange={(e) => startFlow(e.target.value, true)}>
+                  {runnable.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+              ) : <span className="muted">Belum ada alur</span>}
+              {flow && <span className="muted">{step >= 0 ? `Langkah ${step + 1} dari ${steps.length}` : "Di luar alur"}</span>}
+            </span>
+            {flow && step >= 0 && step < steps.length - 1 ? (
+              <button className="ghost" onClick={() => go(steps[step + 1].id)}>Lanjut →</button>
+            ) : flow ? (
+              <button className="ghost" onClick={() => { setHistory([]); show(steps[0].id); }}>Ulangi</button>
+            ) : <span />}
+          </div>
+        </div>
       )}
     </div>
   );
 }
+
 
 // Spec: the implementation-ready spec of one page, derived from the Design
 // IR; the final export carries exactly this.
@@ -270,10 +287,10 @@ function PageSpecView({ spec: handoff, blockers, stack }: { spec?: PageSpec; blo
   );
 }
 
-function PageItem({ name, active, changed, onClick }: { name: string; active: boolean; changed: boolean; onClick: () => void }) {
+function PageItem({ page, active, changed, onClick }: { page: Page; active: boolean; changed: boolean; onClick: () => void }) {
   return (
-    <button className={`dw-page ${active ? "active" : ""}`} onClick={onClick}>
-      <span>{name}</span>
+    <button className={`menu-item ${active ? "on" : ""}`} onClick={onClick}>
+      <span className="menu-text">{page.name}</span>
       {changed && <span className="dw-dot" title="Berubah di revisi terakhir" />}
     </button>
   );

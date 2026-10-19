@@ -158,7 +158,7 @@ func TestCompleteBlueprintKeepsAIAndOverridesPattern(t *testing.T) {
 func TestDiscoveryPromptAsksForBlueprint(t *testing.T) {
 	p := &core.Project{Story: "Aplikasi klinik pasien buat janji"}
 	got := DiscoveryPrompt(p)
-	for _, want := range []string{"discovery analyst", "blueprint", "modules", "tech_needs", "files", "FOUNDRY RULES", p.Story} {
+	for _, want := range []string{"discovery analyst", "blueprint", "modules", "tech_needs", "files", "FOUNDRY DESIGN PRINCIPLES", "embedded", "artifacts", p.Story} {
 		if !strings.Contains(got, want) {
 			t.Errorf("prompt missing %q", want)
 		}

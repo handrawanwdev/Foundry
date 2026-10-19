@@ -1,41 +1,145 @@
 package spec
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/standard"
 	"github.com/handrawanw/foundry/internal/modules/structure"
 	"github.com/handrawanw/foundry/internal/modules/work"
+	"github.com/handrawanw/foundry/internal/modules/workflow"
 )
 
-// Markdown renders the final spec from the single context: story,
-// requirements, features, design system and per-page specs.
+// Markdown renders the whole spec as one document: story, blueprint
+// artifacts and the command workflow.
 func Markdown(p *core.Project) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n%s\n\n", p.Name, p.Story)
 	b.WriteString(overviewMarkdown(p))
+	for _, a := range Artifacts(p) {
+		fmt.Fprintf(&b, "## %s\n\n", a.Title)
+		if a.Summary != "" {
+			fmt.Fprintf(&b, "%s\n\n", a.Summary)
+		}
+		b.WriteString(demote(a.Body))
+		b.WriteString("\n")
+	}
+	if w := p.Workflow; w != nil && len(w.Commands) > 0 {
+		b.WriteString("## Command Workflow\n\n")
+		for i, wave := range workflow.Waves(w.Commands) {
+			fmt.Fprintf(&b, "%d. %s\n", i+1, strings.Join(wave, ", "))
+		}
+		b.WriteString("\n")
+		for _, c := range w.Commands {
+			b.WriteString(demote(CommandMarkdown(c, nil)))
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+// demote moves every Markdown heading one level down, so a document can
+// sit under a "##" heading. Code blocks are left alone.
+func demote(md string) string {
+	lines := strings.Split(md, "\n")
+	code := false
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "```") {
+			code = !code
+		}
+		if !code && strings.HasPrefix(l, "#") && len(l) < 200 {
+			lines[i] = "##" + l
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// requirementsMarkdown is the requirements artifact: problem, users,
+// requirements, features and flows.
+func requirementsMarkdown(p *core.Project) string {
+	if len(p.Requirements) == 0 && p.Discovery == nil {
+		return ""
+	}
+	var b strings.Builder
 	if d := p.Discovery; d != nil {
-		fmt.Fprintf(&b, "## Ringkasan\n\n%s\n\n**Bisnis:** %s\n\n", d.Summary, d.Business)
+		if d.Summary != "" {
+			fmt.Fprintf(&b, "%s\n\n", d.Summary)
+		}
+		if d.Business != "" {
+			fmt.Fprintf(&b, "**Tujuan bisnis:** %s\n\n", d.Business)
+		}
 		if len(d.Roles) > 0 {
-			b.WriteString("**Peran:**\n")
+			b.WriteString("## Pengguna dan peran\n\n")
 			for _, r := range d.Roles {
-				fmt.Fprintf(&b, "- %s (%s): %s\n", r.Name, r.Platform, r.Description)
+				fmt.Fprintf(&b, "- **%s** (%s): %s\n", r.Name, r.Platform, r.Description)
 			}
 			b.WriteString("\n")
 		}
 	}
-	if p.Platform != nil {
+	if p.Platform != nil && len(p.Platform.Targets) > 0 {
 		b.WriteString("## Platform\n\n")
 		for _, t := range p.Platform.Targets {
-			fmt.Fprintf(&b, "- %s: %s\n", t.Kind, strings.Join(t.Audience, ", "))
+			fmt.Fprintf(&b, "- %s", t.Kind)
+			if len(t.Audience) > 0 {
+				fmt.Fprintf(&b, ": %s", strings.Join(t.Audience, ", "))
+			}
+			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "\n%s\n\n", p.Platform.Reason)
+		if p.Platform.Reason != "" {
+			fmt.Fprintf(&b, "\n%s\n", p.Platform.Reason)
+		}
+		b.WriteString("\n")
 	}
+	if len(p.Requirements) > 0 {
+		b.WriteString("## Requirements\n\n| ID | Prioritas | Kebutuhan |\n|---|---|---|\n")
+		for _, r := range p.Requirements {
+			fmt.Fprintf(&b, "| %s | %s | %s |\n", r.ID, r.Priority, cell(r.Text))
+		}
+		b.WriteString("\n")
+	}
+	if len(p.Features) > 0 {
+		b.WriteString("## Fitur\n\n")
+		for _, f := range p.Features {
+			fmt.Fprintf(&b, "### %s %s\n\n%s\n\nRequirement: %s · Platform: %s\n\n", f.ID, f.Name, f.Description,
+				strings.Join(f.RequirementIDs, ", "), strings.Join(f.Platforms, ", "))
+			for _, s := range f.SubFeatures {
+				fmt.Fprintf(&b, "- %s %s\n", s.ID, s.Name)
+			}
+			if len(f.SubFeatures) > 0 {
+				b.WriteString("\n")
+			}
+		}
+	}
+	if len(p.Flows) > 0 {
+		b.WriteString("## Alur pengguna\n\n")
+		for _, fl := range p.Flows {
+			fmt.Fprintf(&b, "- **%s %s** (%s, %s): %s\n", fl.ID, fl.Name, fl.Role, fl.FeatureID, strings.Join(fl.Steps, " → "))
+		}
+		b.WriteString("\n")
+	}
+	if d := p.Discovery; d != nil {
+		list := func(title string, items []string) {
+			if len(items) == 0 {
+				return
+			}
+			fmt.Fprintf(&b, "## %s\n\n", title)
+			for _, it := range items {
+				fmt.Fprintf(&b, "- %s\n", it)
+			}
+			b.WriteString("\n")
+		}
+		list("Data utama", d.Data)
+		list("Integrasi", d.Integrations)
+		list("Keamanan", d.Security)
+		list("Kebutuhan teknis", d.TechNeeds)
+	}
+	return b.String()
+}
+
+// techMarkdown is the technology artifact: the stack decision and the
+// project structure.
+func techMarkdown(p *core.Project) string {
+	var b strings.Builder
 	if st := p.Stack; st != nil && len(st.Decisions) > 0 {
 		b.WriteString("## Teknologi\n\n")
 		for _, d := range st.Decisions {
@@ -48,68 +152,62 @@ func Markdown(p *core.Project) string {
 		b.WriteString("\n")
 	}
 	if s := p.Structure; s != nil {
-		b.WriteString("## Struktur Project\n\n")
-		if s.Mode == core.StructureExisting {
+		switch {
+		case s.Mode == core.StructureExisting && len(s.Components) > 0:
+			b.WriteString("## Struktur project (existing)\n\n")
 			for _, c := range s.Components {
 				fmt.Fprintf(&b, "- %s: `%s` %s\n", c.Kind, c.Path, c.Tech)
 			}
-		} else if s.IR != nil {
-			fmt.Fprintf(&b, "Tipe: %s (v%d)\n\n```text\n%s```\n\n", s.IR.Type, s.Version(), structure.Tree(s.IR))
+			b.WriteString("\n")
+		case s.IR != nil:
+			fmt.Fprintf(&b, "## Struktur project\n\nTipe: %s (v%d)\n\n```text\n%s```\n\n", s.IR.Type, s.Version(), structure.Tree(s.IR))
 			for _, ps := range [][]core.StructurePart{s.IR.Apps, s.IR.Services, s.IR.Workers, s.IR.Packages} {
 				for _, x := range ps {
 					fmt.Fprintf(&b, "- `%s` %s\n", x.Path, x.Reason)
 				}
 			}
-		} else {
-			fmt.Fprintf(&b, "Template: %s\n\n", s.Template)
-			for _, l := range s.Layout {
-				fmt.Fprintf(&b, "- `%s`\n", l)
-			}
-		}
-		b.WriteString("\n")
-	}
-	b.WriteString(architectureMarkdown(p))
-	b.WriteString("## Requirements\n\n")
-	for _, r := range p.Requirements {
-		fmt.Fprintf(&b, "- **%s** [%s] %s\n", r.ID, r.Priority, r.Text)
-	}
-	b.WriteString("\n## Features\n\n")
-	for _, f := range p.Features {
-		fmt.Fprintf(&b, "### %s %s\n\n%s\n\nRequirement: %s · Platform: %s\n\n", f.ID, f.Name, f.Description,
-			strings.Join(f.RequirementIDs, ", "), strings.Join(f.Platforms, ", "))
-		for _, s := range f.SubFeatures {
-			fmt.Fprintf(&b, "- %s %s\n", s.ID, s.Name)
-		}
-		b.WriteString("\n")
-	}
-	if p.Design != nil {
-		b.WriteString("## Halaman\n\n")
-		for _, pg := range p.Design.Pages {
-			fmt.Fprintf(&b, "- **%s** %s (%s, %s): %s\n", pg.ID, pg.Name, pg.Platform, pg.FeatureID, pg.Purpose)
-		}
-		b.WriteString("\n")
-		if s := p.Design.System; s != nil {
-			b.WriteString("## Design system\n\n")
-			if s.Direction != "" {
-				b.WriteString("Arah visual: " + s.Direction + "\n\n")
-			}
-			b.WriteString("| Grup | Token | Nilai | Pemakaian |\n|---|---|---|---|\n")
-			for _, g := range []struct {
-				name   string
-				tokens []core.Token
-			}{{"Warna", s.Colors}, {"Tipografi", s.Typography}, {"Spacing", s.Spacing}, {"Radius", s.Radius},
-				{"Shadow", s.Shadow}, {"Breakpoint", s.Breakpoints}, {"Komponen", s.Components}} {
-				for _, t := range g.tokens {
-					cell := strings.NewReplacer("|", "\\|", "\n", " ")
-					fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", g.name, cell.Replace(t.Name), cell.Replace(t.Value), cell.Replace(t.Use))
-				}
-			}
 			b.WriteString("\n")
 		}
+	}
+	return b.String()
+}
+
+// designMarkdown is the UI/UX artifact: pages, design system and the spec
+// of every page, all from the Design IR.
+func designMarkdown(p *core.Project) string {
+	d := p.Design
+	if d == nil || len(d.Pages) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Halaman\n\n")
+	for _, pg := range d.Pages {
+		fmt.Fprintf(&b, "- **%s** %s (%s, %s): %s\n", pg.ID, pg.Name, pg.Platform, pg.FeatureID, pg.Purpose)
+	}
+	b.WriteString("\n")
+	if s := d.System; s != nil {
+		b.WriteString("## Design system\n\n")
+		if s.Direction != "" {
+			b.WriteString("Arah visual: " + s.Direction + "\n\n")
+		}
+		b.WriteString("| Grup | Token | Nilai | Pemakaian |\n|---|---|---|---|\n")
+		for _, g := range []struct {
+			name   string
+			tokens []core.Token
+		}{{"Warna", s.Colors}, {"Tipografi", s.Typography}, {"Spacing", s.Spacing}, {"Radius", s.Radius},
+			{"Shadow", s.Shadow}, {"Breakpoint", s.Breakpoints}, {"Komponen", s.Components}} {
+			for _, t := range g.tokens {
+				fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", g.name, cell(t.Name), cell(t.Value), cell(t.Use))
+			}
+		}
+		b.WriteString("\n")
 	}
 	b.WriteString(pagesMarkdown(p))
 	return b.String()
 }
+
+// cell makes text safe inside a Markdown table cell.
+func cell(s string) string { return strings.NewReplacer("|", "\\|", "\n", " ").Replace(s) }
 
 func overviewMarkdown(p *core.Project) string {
 	b := p.Blueprint
@@ -301,191 +399,6 @@ func databaseMarkdown(bp *core.Blueprint) string {
 	return b.String()
 }
 
-// WriteDocs writes the architecture documentation into docs/, plus FOUNDRY.md
-// at the project root for new projects. Coding agents read these on disk.
-func WriteDocs(dir string, p *core.Project) error {
-	if dir == "" || p == nil {
-		return nil
-	}
-	root := filepath.Join(dir, "docs")
-	if err := os.MkdirAll(filepath.Join(root, "adr"), 0o755); err != nil {
-		return err
-	}
-	for name, body := range DocsFiles(p) {
-		path := filepath.Join(root, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			return err
-		}
-	}
-	if p.Structure != nil && p.Structure.Mode == core.StructureExisting {
-		return nil
-	}
-	for name, body := range RootFiles(p) {
-		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// DocsFiles is the documentation set derived from the project context.
-func DocsFiles(p *core.Project) map[string]string {
-	out := map[string]string{
-		"README.md":         Markdown(p),
-		"architecture.md":   "# Architecture\n\n" + strings.TrimPrefix(architectureMarkdown(p), "## Architecture\n\n"),
-		"database.md":       "# Database\n\n" + databaseDoc(p),
-		"api.md":            "# API\n\n" + apiDoc(p),
-		"security.md":       "# Security\n\n" + securityDoc(p),
-		"storage.md":        "# Storage\n\n" + storageDoc(p),
-		"performance.md":    "# Performance\n\n" + performanceDoc(p),
-		"workflow.md":       "# Workflow\n\n" + workflowDoc(p),
-		"deployment.md":     "# Deployment\n\n" + deploymentDoc(p),
-		"adr/0001-stack.md": adrStack(p),
-	}
-	out["pages.md"] = "# Halaman\n\n" + pagesMarkdown(p)
-	if b, err := json.MarshalIndent(Export(p), "", "  "); err == nil {
-		out["spec.json"] = string(b)
-	}
-	out["foundry-profile.md"] = standard.Profile(p)
-	out["requirements.md"] = standard.RequirementsDoc(p)
-	out["design-brief.md"] = standard.DesignBrief(p)
-	return out
-}
-
-// RootFiles are FOUNDRY.md and agent pointers at the project root.
-func RootFiles(p *core.Project) map[string]string {
-	return map[string]string{
-		"FOUNDRY.md": standard.Document(p),
-		"AGENTS.md":  standard.AgentsMD,
-		"CLAUDE.md":  standard.AgentsMD,
-	}
-}
-
-func databaseDoc(p *core.Project) string {
-	if p.Blueprint == nil {
-		return "Belum ada blueprint.\n"
-	}
-	return databaseMarkdown(p.Blueprint)
-}
-
-func apiDoc(p *core.Project) string {
-	if p.Blueprint == nil {
-		return "Belum ada blueprint.\n"
-	}
-	a := p.Blueprint.Coding.API
-	var b strings.Builder
-	fmt.Fprintf(&b, "Style: %s\n\nVersion: `%s`\n\nError: `%s`\n\nPagination: `%s`\n\n", a.Style, a.Versioning, a.Errors, a.Pagination)
-	b.WriteString("Public interface per module:\n\n")
-	for _, m := range p.Blueprint.Modules {
-		if len(m.Interface) == 0 {
-			continue
-		}
-		fmt.Fprintf(&b, "### %s\n\n", m.ID)
-		for _, i := range m.Interface {
-			fmt.Fprintf(&b, "- `%s`\n", i)
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
-func securityDoc(p *core.Project) string {
-	if p.Blueprint == nil {
-		return "Belum ada blueprint.\n"
-	}
-	var b strings.Builder
-	au, az := p.Blueprint.Auth, p.Blueprint.Authz
-	fmt.Fprintf(&b, "## Authentication\n\n%s\n\nHash: %s\n\n%s\n\nRefresh: %s\n\nSession: %s\n\n",
-		au.Method, au.Hashing, au.Tokens, au.Refresh, au.Session)
-	fmt.Fprintf(&b, "## Authorization\n\n%s `%s`\n\n", az.Model, az.Convention)
-	for _, perm := range az.Permissions {
-		fmt.Fprintf(&b, "- `%s`\n", perm)
-	}
-	if d := p.Discovery; d != nil && len(d.Security) > 0 {
-		b.WriteString("\n## Requirements\n\n")
-		for _, s := range d.Security {
-			fmt.Fprintf(&b, "- %s\n", s)
-		}
-	}
-	return b.String()
-}
-
-func storageDoc(p *core.Project) string {
-	if p.Blueprint == nil {
-		return "Belum ada blueprint.\n"
-	}
-	s := p.Blueprint.Storage
-	if s.Strategy == "" || s.Strategy == "none" {
-		return "Tidak ada penyimpanan file terpisah; file besar dilarang masuk database.\n"
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Strategy: **%s** (%s)\n\nUpload: %s\n\nCDN: %s\n\nLifecycle: %s\n\n",
-		s.Strategy, s.Provider, s.Upload, s.CDN, s.Lifecycle)
-	if len(s.Types) > 0 {
-		fmt.Fprintf(&b, "Jenis: %s\n\n", strings.Join(s.Types, ", "))
-	}
-	if len(s.Security) > 0 {
-		b.WriteString("## Security\n\n")
-		for _, x := range s.Security {
-			fmt.Fprintf(&b, "- %s\n", x)
-		}
-	}
-	if len(s.Processing) > 0 {
-		b.WriteString("\n## Worker\n\n")
-		for _, x := range s.Processing {
-			fmt.Fprintf(&b, "- %s\n", x)
-		}
-	}
-	b.WriteString("\n## Metadata File\n\n`id, original_name, storage_key, bucket, mime_type, size, checksum, uploaded_by, created_at`\n")
-	return b.String()
-}
-
-func performanceDoc(p *core.Project) string {
-	if p.Blueprint == nil {
-		return "Belum ada blueprint.\n"
-	}
-	pf := p.Blueprint.Performance
-	var b strings.Builder
-	fmt.Fprintf(&b, "Anggaran: %s\n\nHealth: %s\n\n%s\n\nCache: %s\n\nIndex: %s\n\n", pf.Budget, pf.Health, pf.Pagination, pf.Caching, pf.Indexing)
-	if p.Blueprint.Aggregation.Needed {
-		fmt.Fprintf(&b, "\n## Read model\n\n%s\n\n%s\n", p.Blueprint.Aggregation.Approach, strings.Join(p.Blueprint.Aggregation.Reads, ", "))
-	}
-	if len(pf.Avoid) > 0 {
-		b.WriteString("\n## Hindari\n\n")
-		for _, a := range pf.Avoid {
-			fmt.Fprintf(&b, "- %s\n", a)
-		}
-	}
-	return b.String()
-}
-
-func workflowDoc(p *core.Project) string {
-	if p.Blueprint == nil {
-		return "Belum ada blueprint.\n"
-	}
-	var b strings.Builder
-	b.WriteString("## Development\n\n" + strings.Join(p.Blueprint.Workflow, " → ") + "\n\n")
-	b.WriteString("## Change request\n\n" + strings.Join(p.Blueprint.ChangeFlow, " → ") + "\n\n")
-	if len(p.Blueprint.AIGuidelines) > 0 {
-		b.WriteString("## AI coding agent\n\n")
-		for _, r := range p.Blueprint.AIGuidelines {
-			fmt.Fprintf(&b, "- %s\n", r)
-		}
-	}
-	return b.String()
-}
-
-func deploymentDoc(p *core.Project) string {
-	if p.Blueprint != nil && p.Blueprint.Platform.Deployment != "" {
-		return p.Blueprint.Platform.Deployment + "\n"
-	}
-	return "Container untuk API; klien web/mobile di-build terpisah.\n"
-}
-
 func adrStack(p *core.Project) string {
 	var b strings.Builder
 	b.WriteString("# ADR 0001 — Technology stack\n\nStatus: accepted\n\n")
@@ -503,8 +416,8 @@ func adrStack(p *core.Project) string {
 	return b.String()
 }
 
-// Spec is the machine-readable final spec an external implementation tool
-// consumes: the structured design (Design IR) is the source of truth.
+// Spec is the machine-readable spec an external coding agent consumes:
+// the structured blueprint, the Design IR and the command workflow.
 type Spec struct {
 	Name         string             `json:"name"`
 	Story        string             `json:"story"`
@@ -517,12 +430,20 @@ type Spec struct {
 	Blueprint    *core.Blueprint    `json:"blueprint,omitempty"`
 	System       *core.DesignSystem `json:"design_system,omitempty"`
 	Pages        []work.PageSpec    `json:"pages"`
+	// Artifacts are the blueprint documents written for this project
+	// (the built-in ones are the structured fields above).
+	Artifacts []core.Artifact `json:"artifacts"`
+	Workflow  *core.Workflow  `json:"workflow,omitempty"`
 }
 
 // Export builds the Spec from the project.
 func Export(p *core.Project) Spec {
 	s := Spec{Name: p.Name, Story: p.Story, Requirements: p.Requirements, Features: p.Features, Flows: p.Flows,
-		Platform: p.Platform, Stack: p.Stack, Structure: p.Structure, Blueprint: p.Blueprint, Pages: work.PageSpecs(p)}
+		Platform: p.Platform, Stack: p.Stack, Structure: p.Structure, Blueprint: p.Blueprint, Pages: work.PageSpecs(p),
+		Artifacts: p.Artifacts, Workflow: p.Workflow}
+	if s.Artifacts == nil {
+		s.Artifacts = []core.Artifact{}
+	}
 	if p.Design != nil {
 		s.System = p.Design.System
 	}

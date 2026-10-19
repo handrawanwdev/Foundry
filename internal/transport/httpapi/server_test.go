@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -289,13 +292,14 @@ func TestDownloadSpec(t *testing.T) {
 		return w
 	}
 	if w := do("/api/v1/project/spec.md"); w.Code != http.StatusNotFound {
-		t.Fatalf("spec without design: %d %s", w.Code, w.Body)
+		t.Fatalf("spec without blueprint: %d %s", w.Code, w.Body)
 	}
 	st, err := core.NewStore(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.Update(func(p *core.Project) error {
+		p.Discovery = &core.Discovery{Summary: "Klinik"}
 		p.Design = &core.Design{Pages: []core.Page{{ID: "PAGE-001", Name: "Antrean", Route: "/antrean", Platform: "web"}}}
 		return nil
 	}); err != nil {
@@ -314,6 +318,59 @@ func TestDownloadSpec(t *testing.T) {
 	}
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil || len(out.Pages) != 1 || out.Pages[0].PageID != "PAGE-001" {
 		t.Fatalf("spec.json: %d %s", w.Code, w.Body)
+	}
+}
+
+// The export zip exists only for a finalized project and holds the same
+// package finalize writes.
+func TestDownloadExport(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	dir := t.TempDir()
+	s := New(nil, "/bin/foundry")
+	if _, err := s.Open(dir, "Klinik Sehat", true); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	do := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.RemoteAddr = "127.0.0.1:50000"
+		r.Host = "127.0.0.1:8080"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if w := do("/api/v1/project/export.zip"); w.Code != http.StatusConflict {
+		t.Fatalf("draft export: %d %s", w.Code, w.Body)
+	}
+	st, _ := core.NewStore(dir)
+	if _, err := st.Update(func(p *core.Project) error {
+		p.Stage, p.Discovery = core.StageReady, &core.Discovery{Summary: "Klinik"}
+		p.Requirements = []core.Requirement{{ID: "REQ-001", Text: "Buat janji", Priority: "MUST"}}
+		p.Workflow = &core.Workflow{Status: core.CommandFinalized, Version: 1, Commands: []core.Command{
+			{ID: "CMD-001", Name: "Kontrak", Objective: "o", Instructions: "i", Status: core.CommandFinalized}}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w := do("/api/v1/project/export.zip")
+	if w.Code != 200 || w.Header().Get("Content-Type") != "application/zip" {
+		t.Fatalf("export.zip: %d %s", w.Code, w.Body)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range zr.File {
+		names = append(names, f.Name)
+	}
+	for _, want := range []string{"foundry-Klinik-Sehat/manifest.json", "foundry-Klinik-Sehat/workflow/CMD-001.md", "foundry-Klinik-Sehat/blueprint/requirements.md"} {
+		if !slices.Contains(names, want) {
+			t.Errorf("zip misses %s: %v", want, names)
+		}
+	}
+	if w := do("/api/v1/project/workflow"); w.Code != 200 || !strings.Contains(w.Body.String(), `"waves":[["CMD-001"]]`) {
+		t.Fatalf("workflow: %d %s", w.Code, w.Body)
 	}
 }
 

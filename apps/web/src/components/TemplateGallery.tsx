@@ -121,13 +121,13 @@ export function TemplatePicker({ project, templates }: { project: Project; templ
 
 // A new design from the current features and flows; the old one stays in
 // Versi and remains until the new one is ready.
-export function RegenerateButton({ project, label = "↻ Buat ulang" }: { project: Project; label?: string }) {
+export function RegenerateButton({ project, label = "↻ Buat ulang", className = "ghost" }: { project: Project; label?: string; className?: string }) {
   const { run, pending } = useProject();
   const d = project.design;
   const busy = isWorking(project) || pending === "regenerate";
   const why = d?.revision ? "Simpan atau batalkan perubahan terakhir dulu" : "Buat rancangan baru dari fitur dan alur yang sama (template dan theme dipilih ulang)";
   return (
-    <button className="ghost" disabled={busy || !!d?.revision} title={why}
+    <button className={className} disabled={busy || !!d?.revision} title={why}
       onClick={() => {
         if (window.confirm("Buat ulang seluruh rancangan? Rancangan sekarang tetap tersimpan di tab Versi.")) void run("regenerate", api.regenerateDesign);
       }}>{label}</button>

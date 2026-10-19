@@ -2,6 +2,8 @@
 package httpapi
 
 import (
+	"archive/zip"
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -15,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -413,7 +416,96 @@ func (s *Server) Handler() http.Handler {
 		return map[string]any{"markdown": spec.Markdown(p), "spec": spec.Export(p)}, nil
 	}))
 
+	// Blueprint: the built-in artifacts and the ones written for the project.
+	api("GET /api/v1/project/blueprint", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		p, err := svc.Store.Load()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"artifacts": spec.Artifacts(p), "has_ui": p.HasUI(), "request": p.ArtifactRequest,
+			"blueprint_hash": spec.BlueprintHash(spec.Artifacts(p))}, nil
+	}))
+	api("POST /api/v1/project/blueprint/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			Text  string
+			Focus []string
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.ReviseArtifacts(in.Text, in.Focus))
+	}))
+	api("PUT /api/v1/project/blueprint/artifacts/{id}", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in core.Artifact
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.EditArtifact(r.PathValue("id"), in)
+	}))
+	api("DELETE /api/v1/project/blueprint/artifacts/{id}", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		return svc.RemoveArtifact(r.PathValue("id"))
+	}))
+	// Command workflow: instructions for external coding agents; never run here.
+	api("GET /api/v1/project/workflow", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		p, err := svc.Store.Load()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"workflow": p.Workflow, "report": pipeline.CheckWorkflow(p)}, nil
+	}))
+	api("POST /api/v1/project/workflow/generate", s.action(func(svc *pipeline.Service) error { return svc.GenerateWorkflow() }))
+	api("POST /api/v1/project/workflow/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			Text  string
+			Focus []string
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.ReviseWorkflow(in.Text, in.Focus))
+	}))
+	api("PUT /api/v1/project/workflow/commands/{id}", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in work.CommandEdit
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.EditCommand(r.PathValue("id"), in)
+	}))
+	// needs_review true marks the command for review; false records it as
+	// reviewed against the current artifacts.
+	api("POST /api/v1/project/workflow/commands/{id}/review", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			NeedsReview bool `json:"needs_review"`
+			Reason      string
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.ReviewCommand(r.PathValue("id"), in.NeedsReview, in.Reason)
+	}))
+	// Finalize approves blueprint + workflow and writes the export package.
+	api("POST /api/v1/project/finalize", s.action(func(svc *pipeline.Service) error { return svc.Finalize() }))
+	api("POST /api/v1/project/reopen", s.action(func(svc *pipeline.Service) error { return svc.Reopen() }))
+	api("GET /api/v1/project/export", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		p, err := svc.Store.Load()
+		if err != nil {
+			return nil, err
+		}
+		type file struct {
+			Path string `json:"path"`
+			Size int    `json:"size"`
+		}
+		files := []file{}
+		for path, body := range spec.Files(p) {
+			files = append(files, file{path, len(body)})
+		}
+		slices.SortFunc(files, func(a, b file) int { return strings.Compare(a.Path, b.Path) })
+		return map[string]any{"dir": spec.ExportDir, "finalized": p.Finalized(), "manifest": spec.BuildManifest(p),
+			"files": files, "blockers": pipeline.Blockers(p)}, nil
+	}))
+
 	mux.HandleFunc("GET /api/v1/events", s.events)
+	mux.HandleFunc("GET /api/v1/project/export.zip", s.downloadExport)
 	mux.HandleFunc("GET /api/v1/project/spec.md", s.downloadSpec)
 	mux.HandleFunc("GET /api/v1/project/spec.json", s.downloadSpec)
 	mux.HandleFunc("/", s.spa)
@@ -433,8 +525,8 @@ func (s *Server) downloadSpec(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, err)
 		return
 	}
-	if p.Design == nil || len(p.Design.Pages) == 0 {
-		respond.Fail(w, respond.CodeNotFound, "rancangan belum dibuat", http.StatusNotFound)
+	if p.Discovery == nil {
+		respond.Fail(w, respond.CodeNotFound, "blueprint belum dibuat", http.StatusNotFound)
 		return
 	}
 	if strings.HasSuffix(r.URL.Path, ".json") {
@@ -451,6 +543,52 @@ func (s *Server) downloadSpec(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+specDownloadName(p.Name, ".md")+`"`)
 	w.Write([]byte(spec.Markdown(p)))
+}
+
+// downloadExport sends the export package of a finalized project as a
+// zip: the same files finalize wrote into docs/foundry.
+func (s *Server) downloadExport(w http.ResponseWriter, r *http.Request) {
+	svc, err := s.service()
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	p, err := svc.Store.Load()
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	if !p.Finalized() {
+		respond.Fail(w, respond.CodeConflict, "finalisasi blueprint dan workflow dulu", http.StatusConflict)
+		return
+	}
+	files := spec.Files(p)
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	name := "foundry" + strings.TrimPrefix(specDownloadName(p.Name, ""), "spec")
+	folder := name + "/"
+	for _, path := range names {
+		f, err := zw.Create(folder + path)
+		if err == nil {
+			_, err = f.Write([]byte(files[path]))
+		}
+		if err != nil {
+			fail(w, r, err)
+			return
+		}
+	}
+	if err := zw.Close(); err != nil {
+		fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.zip"`)
+	w.Write(buf.Bytes())
 }
 
 func specDownloadName(name, ext string) string {
@@ -748,7 +886,7 @@ func statusFor(err error) int {
 	switch {
 	case errors.As(err, &he):
 		return he.code
-	case errors.Is(err, pipeline.ErrBusy):
+	case errors.Is(err, pipeline.ErrBusy), errors.Is(err, pipeline.ErrFinalized):
 		return http.StatusConflict
 	case errors.Is(err, pipeline.ErrWrongStage), errors.Is(err, pipeline.ErrNothingToDo), errors.Is(err, pipeline.ErrIncomplete):
 		return http.StatusConflict

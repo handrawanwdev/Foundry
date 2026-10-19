@@ -26,18 +26,22 @@ type discoveryOut struct {
 	Features     []core.Feature     `json:"features"`
 	Flows        []core.Flow        `json:"flows"`
 	Platform     core.PlatformPlan  `json:"platform"`
+	Artifacts    []core.Artifact    `json:"artifacts"`
 }
 
 func DiscoveryPrompt(p *core.Project) string {
 	var b strings.Builder
-	b.WriteString(`You are the discovery analyst of Foundry, acting as an Enterprise Solution Architect.
-Understand the product idea below BEFORE anything is built. Do not write application code. Do not modify files.
-Produce a production-grade architecture blueprint that a developer or AI coding agent can follow:
-clear domain modules, data, auth, file storage, workers, performance, and coding rules.
-The system must stay fast, safe, and readable as data and files grow. Do not design a toy that merely runs.
+	b.WriteString(`You are the discovery analyst of Foundry, acting as a software architect for any kind of software:
+web, mobile, desktop, backend, APIs/SDKs, distributed and real-time systems, data pipelines, infrastructure,
+AI/ML systems, embedded/firmware/IoT, systems programming and developer tooling.
+Understand the request below BEFORE anything is built. Foundry designs; an external coding agent implements.
+Do not write application code. Do not modify files.
+Produce a blueprint a developer or AI coding agent can follow, sized to THIS project. Do not design a toy that merely runs,
+and do not add parts the project does not need.
 
-Analyze: business goal, problem, users, roles, workflows, core features, main data, external integrations,
-platform/device, offline, realtime, files, background jobs, read-heavy reports, security.
+Analyze what applies: goal, problem, users, roles, workflows, core features, data, interfaces and integrations,
+platform/device/hardware, constraints (technology, performance, resources, compliance), failure handling, security, quality.
+Mark assumptions; if something essential is unknown, record it as an assumption instead of inventing it.
 
 Write every human-readable text in the same language as the story.
 
@@ -70,11 +74,15 @@ STORY:
 	if p.Design != nil && len(p.Design.Feedback) > 0 {
 		b.WriteString("USER CORRECTIONS (must be applied):\n- " + strings.Join(p.Design.Feedback, "\n- ") + "\n\n")
 	}
-	b.WriteString(`Platform kinds allowed: web, android, ios, desktop, backend, cli. Choose them from who uses the product and on which device.
+	b.WriteString(`Platform kinds allowed: web, android, ios, desktop, backend, cli, embedded (firmware, IoT, robotics), other (library, SDK,
+data pipeline, ML system, infrastructure, tooling). Choose them from who or what uses the software and where it runs.
 tech_needs lists only the technical needs the product really has, from: realtime, offline, seo, ai, high_concurrency,
-flexible_schema, transactions, independent_scaling, enterprise, files, webhook. Foundry picks the technology stack from them;
-do not choose frameworks, languages, or databases in the blueprint (Foundry decides those).
-List domain events (name domain.happened, producer module, consumers) in blueprint.events.events. Set performance.budget from the survey latency.
+flexible_schema, transactions, independent_scaling, enterprise, files, webhook. For web, mobile, desktop and backend parts Foundry
+picks the technology stack from them; do not choose those frameworks or databases in the blueprint. For other software
+(embedded, cli, other) write the technology constraints (language, toolchain, runtime, hardware) the request names or needs
+into an artifact, marked as recommendation when the user did not name them.
+When modules exchange domain events, list them (name domain.happened, producer module, consumers) in blueprint.events.events.
+Set performance.budget from the survey latency when the product has a request/response path.
 Every requirement must be covered by at least one feature. Every feature needs 2-6 concrete sub-features.
 
 Blueprint rules:
@@ -85,6 +93,14 @@ Blueprint rules:
 - dashboards and reports read summary/read-model, not heavy queries on the transaction tables.
 - authn + RBAC with permission names resource:action.
 - keep the blueprint specific to THIS product; omit unused areas (empty realtime if none, storage.strategy "none" if no files).
+- the blueprint object below has web/backend-oriented fields; leave the fields that do not apply empty (no database, auth or
+  REST API for firmware, a library or a pipeline) and describe the real design in artifacts instead.
+
+Artifacts: 0-6 extra blueprint documents for what THIS project needs beyond requirements, architecture and screens
+(e.g. domain model and business rules, API or event contracts, protocol spec, data pipeline design, evaluation plan,
+threat model, test strategy, deployment and recovery, hardware interfaces). Skip what is not needed.
+Do not use the ids requirements, architecture, technology, ui-design (Foundry writes those).
+` + artifactRules + `
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
@@ -113,7 +129,8 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
   "features": [{"id": "FEAT-001", "name": "", "description": "", "requirement_ids": ["REQ-001"], "platforms": ["web","backend"],
                 "sub_features": [{"id": "FEAT-001.1", "name": ""}]}],
   "flows": [{"id": "FLOW-001", "name": "", "feature_id": "FEAT-001", "role": "", "steps": [""]}],
-  "platform": {"targets": [{"kind": "web", "audience": ["Admin"], "rationale": ""}], "reason": "one short sentence for a non-technical user"}
+  "platform": {"targets": [{"kind": "web", "audience": ["Admin"], "rationale": ""}], "reason": "one short sentence for a non-technical user"},
+  "artifacts": [{"id": "domain-model", "title": "", "category": "domain", "summary": "", "body": "Markdown", "refs": []}]
 }`)
 	return b.String()
 }
@@ -121,11 +138,13 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 var validPlatforms = map[string]bool{
 	core.PlatformWeb: true, core.PlatformAndroid: true, core.PlatformIOS: true,
 	core.PlatformDesktop: true, core.PlatformBackend: true, core.PlatformCLI: true,
+	core.PlatformEmbedded: true, core.PlatformOther: true,
 }
 
 // ApplyDiscovery validates the AI answer, renumbers IDs and writes the
-// discovery layers. Downstream artifacts (design, tasks) are reset because
-// they derive from these features.
+// discovery layers and the project's artifacts. The design is reset
+// because it derives from these features; the workflow is kept and its
+// commands are reported stale by the workflow check.
 func ApplyDiscovery(p *core.Project, raw string) error {
 	var out discoveryOut
 	if err := ExtractJSON(raw, &out); err != nil {
@@ -211,6 +230,7 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	p.Blueprint = NormalizeBlueprint(out.Blueprint)
 	p.Requirements, p.Features, p.Flows = reqs, feats, flows
 	p.Platform = &core.PlatformPlan{Targets: targets, Reason: out.Platform.Reason}
+	SetArtifacts(p, out.Artifacts)
 	p.Design = nil
 	return nil
 }

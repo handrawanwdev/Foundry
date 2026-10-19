@@ -211,6 +211,12 @@ func CompleteBlueprint(p *core.Project) {
 			b.Platform.Devices = append(b.Platform.Devices, t.Kind)
 		}
 	}
+	if !AppLike(p) {
+		// Firmware, libraries, pipelines and tools get no web or SaaS
+		// defaults: the blueprint keeps what the analyst wrote.
+		p.Blueprint = NormalizeBlueprint(b)
+		return
+	}
 	needs := map[string]bool{}
 	if d != nil {
 		for _, n := range d.TechNeeds {
@@ -246,10 +252,24 @@ func CompleteBlueprint(p *core.Project) {
 	completePerformance(b, p, needs)
 	completeCoding(b, p)
 	fillSlice(&b.Docs, defaultDocs)
-	fillSlice(&b.Workflow, defaultWorkflow)
-	fillSlice(&b.ChangeFlow, defaultChangeFlow)
 	fillSlice(&b.AIGuidelines, defaultAIGuidelines)
 	p.Blueprint = NormalizeBlueprint(b)
+}
+
+// AppLike reports whether the product has an app or server part the
+// default architecture (API, database, auth, workers) is meant for. No
+// platform yet keeps the defaults.
+func AppLike(p *core.Project) bool {
+	if p.Platform == nil || len(p.Platform.Targets) == 0 {
+		return true
+	}
+	for _, t := range p.Platform.Targets {
+		switch t.Kind {
+		case core.PlatformWeb, core.PlatformAndroid, core.PlatformIOS, core.PlatformDesktop, core.PlatformBackend:
+			return true
+		}
+	}
+	return false
 }
 
 func completeStack(b *core.Blueprint, p *core.Project, needs map[string]bool) {
@@ -741,34 +761,22 @@ func firstNonEmpty(xs ...string) string {
 	return ""
 }
 
+// defaultDocs is the export package an agent reads; the order of work
+// comes from the command workflow, not from fixed phases.
 var defaultDocs = []string{
-	"FOUNDRY.md", "AGENTS.md", "docs/foundry-profile.md", "docs/requirements.md", "docs/design-brief.md",
-	"docs/README.md", "docs/architecture.md", "docs/database.md", "docs/api.md",
-	"docs/security.md", "docs/storage.md", "docs/performance.md", "docs/workflow.md",
-	"docs/deployment.md", "docs/adr/",
-}
-
-var defaultWorkflow = []string{
-	"IDEA", "DISCOVERY", "REQUIREMENT", "DOMAIN ANALYSIS", "TECHNICAL DESIGN",
-	"DATABASE DESIGN", "STORAGE DESIGN", "API DESIGN", "UI DESIGN",
-	"IMPLEMENTATION", "TESTING", "DOCUMENTATION UPDATE",
-}
-
-var defaultChangeFlow = []string{
-	"Feature Request", "Impact Analysis", "Database Impact", "API Impact",
-	"UI Impact", "Performance Impact", "Storage Impact", "Implementation",
-	"Testing", "Documentation Update",
+	"AGENTS.md", "docs/foundry/README.md", "docs/foundry/manifest.json", "docs/foundry/blueprint/",
+	"docs/foundry/workflow/", "docs/foundry/adr/",
 }
 
 var defaultAIGuidelines = []string{
-	"Ikuti FOUNDRY.md dan docs/foundry-profile.md; 8 aturan wajib tidak ditawar",
+	"Ikuti docs/foundry/README.md dan kerjakan command di docs/foundry/workflow/ sesuai gelombang dan dependency",
 	"Blueprint dan stack adalah source of truth; jangan ganti arsitektur, framework, atau database tanpa keputusan Foundry",
 	"Ikuti batas module: data dan logic milik module tidak diakses langsung dari module lain",
 	"Jangan membuat folder berdasarkan jenis file (controllers/, services/ global) atau helpers/utils/misc/manager",
 	"Jangan menduplikasi logic; perluas yang sudah ada",
 	"Proses berat (laporan, export, resize, email, sync, webhook) lewat worker",
 	"Jangan simpan file besar di database",
-	"Update docs/ setelah mengubah kontrak API, skema, atau alur",
+	"Laporkan perubahan kontrak API, skema, atau alur agar blueprint di Foundry diperbarui",
 	"Naming konsisten dengan konvensi blueprint (snake_case DB, resource:action permission, event domain.kejadian)",
 	"Perubahan struktur, framework, atau migration lama: tulis ADR lalu berhenti menunggu persetujuan",
 }
