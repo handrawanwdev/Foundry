@@ -52,6 +52,13 @@ func owner(ir *core.StructureIR, m string) int {
 func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 	name, to := Slug(op.Name), Slug(op.To)
 	kind := strings.ToLower(strings.TrimSpace(op.Kind))
+	if kind == core.PartRule {
+		if err := applyRule(ir, op); err != nil {
+			return err
+		}
+		Normalize(ir)
+		return nil
+	}
 	switch strings.ToLower(strings.TrimSpace(op.Op)) {
 	case "type":
 		t := strings.ToLower(strings.TrimSpace(op.Name))
@@ -172,6 +179,42 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 	return nil
 }
 
+// applyRule adds, removes or rewrites a structure rule; Name is its text.
+func applyRule(ir *core.StructureIR, op core.StructureOp) error {
+	text := strings.Join(strings.Fields(op.Name), " ")
+	if text == "" {
+		return errors.New("teks aturan kosong")
+	}
+	i := ruleIndex(ir.Rules, text)
+	switch strings.ToLower(strings.TrimSpace(op.Op)) {
+	case "add":
+		if i >= 0 {
+			return fmt.Errorf("aturan “%s” sudah ada", text)
+		}
+		if len(ir.Rules) >= maxRules {
+			return fmt.Errorf("aturan maksimal %d", maxRules)
+		}
+		ir.Rules = append(ir.Rules, text)
+	case "remove":
+		if i < 0 {
+			return fmt.Errorf("aturan “%s” tidak ditemukan", text)
+		}
+		ir.Rules = slices.Delete(ir.Rules, i, i+1)
+	case "rename":
+		to := strings.Join(strings.Fields(op.To), " ")
+		if i < 0 {
+			return fmt.Errorf("aturan “%s” tidak ditemukan", text)
+		}
+		if to == "" {
+			return errors.New("teks aturan baru kosong")
+		}
+		ir.Rules[i] = to
+	default:
+		return errors.New("aturan hanya bisa ditambah, diubah (rename) atau dihapus")
+	}
+	return nil
+}
+
 // ---------- diff, validation, impact ----------
 
 var typeName = map[string]string{core.StructSimple: "Simple", core.StructModular: "Modular",
@@ -231,6 +274,16 @@ func Diff(a, b *core.StructureIR) []string {
 	}
 	parts("Worker", a.Workers, b.Workers, none)
 	parts("Package", a.Packages, b.Packages, none)
+	for _, r := range b.Rules {
+		if ruleIndex(a.Rules, r) < 0 {
+			out = append(out, "Aturan ditambah: "+r)
+		}
+	}
+	for _, r := range a.Rules {
+		if ruleIndex(b.Rules, r) < 0 {
+			out = append(out, "Aturan dihapus: "+r)
+		}
+	}
 	return out
 }
 
@@ -427,6 +480,10 @@ func Impact(a, b *core.StructureIR, tech []core.TechChange) []core.StructureImpa
 		add("Shared packages", "Kode bersama berubah: "+strings.Join(diffNames(a.Packages, b.Packages), ", ")+".")
 		add("Dependency management", "Dependency workspace antar app/package berubah.")
 	}
+	if !slices.Equal(a.Rules, b.Rules) {
+		add("Struktur internal", "Isi tiap modul (layer, file, dependensi, penamaan) mengikuti aturan struktur.")
+		add("Code review", "Task build dicek terhadap aturan struktur.")
+	}
 	add("Build", "Folder scaffold dan task build mengikuti struktur ini.")
 	return out
 }
@@ -484,6 +541,31 @@ func Propose(s *core.Structure, p *core.Project, ops []core.StructureOp, source,
 		}
 	}
 	return ProposeIR(s, p, next, append(slices.Clone(prev), ops...), source, request, note)
+}
+
+// Usable splits ops into those that apply in order to the structure (or
+// the waiting proposal) and why the others were skipped, so one wrong op
+// from the AI does not drop the whole request.
+func Usable(s *core.Structure, p *core.Project, ops []core.StructureOp) ([]core.StructureOp, []string) {
+	if s == nil || s.IR == nil {
+		return nil, nil
+	}
+	base := s.IR
+	if s.Proposal != nil {
+		base = s.Proposal.IR
+	}
+	next := base.Clone()
+	var ok []core.StructureOp
+	var skipped []string
+	for _, op := range ops {
+		try := next.Clone()
+		if err := ApplyOp(try, op, p); err != nil {
+			skipped = append(skipped, err.Error())
+			continue
+		}
+		next, ok = try, append(ok, op)
+	}
+	return ok, skipped
 }
 
 // ProposeIR records ir as the proposal.

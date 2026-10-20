@@ -16,6 +16,8 @@ import (
 const (
 	workersSeparate = "Worker terpisah + antrean"
 	maxDomains      = 16
+	maxRules        = 40
+	maxRuleLen      = 400
 )
 
 type platform struct{ web, mobile, desktop, backend, cli bool }
@@ -303,6 +305,31 @@ func Normalize(ir *core.StructureIR) {
 		}
 		ir.Services[i].Modules = mods
 	}
+	ir.Rules = cleanRules(ir.Rules)
+}
+
+// cleanRules trims the rules and drops empty and duplicate ones.
+func cleanRules(rules []string) []string {
+	var out []string
+	for _, r := range rules {
+		r = strings.Join(strings.Fields(r), " ")
+		if len(r) > maxRuleLen {
+			r = strings.TrimSpace(r[:maxRuleLen])
+		}
+		if r == "" || slices.ContainsFunc(out, func(x string) bool { return strings.EqualFold(x, r) }) {
+			continue
+		}
+		if out = append(out, r); len(out) == maxRules {
+			break
+		}
+	}
+	return out
+}
+
+// ruleIndex finds a rule by its text, ignoring case and spacing.
+func ruleIndex(rules []string, text string) int {
+	text = strings.Join(strings.Fields(text), " ")
+	return slices.IndexFunc(rules, func(r string) bool { return strings.EqualFold(r, text) })
 }
 
 // Layout is every folder of the IR, in scaffold order.
@@ -406,4 +433,4 @@ func Convert(ir *core.StructureIR, t string, p *core.Project) *core.StructureIR 
 	return out
 }
 
-var errUnknownKind = errors.New("jenis bagian tidak dikenal (app, service, module, worker, package)")
+var errUnknownKind = errors.New("jenis bagian tidak dikenal (app, service, module, worker, package, rule)")

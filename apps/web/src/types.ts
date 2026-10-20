@@ -66,8 +66,10 @@ export interface StructurePart { name: string; path: string; modules?: string[];
 export interface StructureIR {
   type: StructureType; apps?: StructurePart[]; services?: StructurePart[]; workers?: StructurePart[];
   packages?: StructurePart[]; docs: string;
+  // Conventions every part follows: internal module layout, layers, dependencies, naming.
+  rules?: string[];
 }
-export interface StructureOp { op: "type" | "add" | "remove" | "rename" | "move"; kind?: PartKind; name: string; to?: string; reason?: string }
+export interface StructureOp { op: "type" | "add" | "remove" | "rename" | "move"; kind?: PartKind | "rule"; name: string; to?: string; reason?: string }
 export interface StructureImpact { area: string; message: string }
 export interface StructureProposal {
   source: "user" | "ai" | "recommend"; request?: string; note?: string; ops?: StructureOp[]; ir: StructureIR; changes: string[];

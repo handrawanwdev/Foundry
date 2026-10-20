@@ -99,8 +99,12 @@ func (s *Service) dropStructureRequest(cause error) error {
 		if p.Structure != nil {
 			req, p.Structure.Request = p.Structure.Request, ""
 		}
+		if r := []rune(req); len(r) > 160 {
+			req = string(r[:160]) + "…"
+		}
 		msg := fmt.Sprintf("Permintaan “%s” tidak mengubah struktur: %v. Struktur tidak diubah. "+
-			"Tulis lebih spesifik, mis. “Reporting jangan jadi service sendiri, jadikan modul di operations”.", req, cause)
+			"Tulis lebih spesifik, mis. “Reporting jangan jadi service sendiri, jadikan modul di operations” "+
+			"atau “Tiap modul pakai layer domain, application, infrastructure, presentation”.", req, cause)
 		p.Job = &core.Job{Kind: work.KindStructure, Status: core.JobFailed, Message: "Permintaan perubahan struktur", Error: msg, Started: time.Now().UTC()}
 		p.Log("system", msg)
 		return nil

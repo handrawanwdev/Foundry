@@ -19,6 +19,7 @@ export function StructurePanel({ project }: { project: Project }) {
   const [types, setTypes] = useState<Template[]>([]);
   const [ask, setAsk] = useState("");
   const [editing, setEditing] = useState(false);
+  const [typeOpen, setTypeOpen] = useState(false);
   useEffect(() => { void api.templates().then(setTypes, () => {}); }, []);
   const s = project.structure!;
   const ir = s.ir!;
@@ -28,7 +29,6 @@ export function StructurePanel({ project }: { project: Project }) {
   const state = structureState(s);
   const shown = s.proposal?.ir ?? ir;
   const errors = (s.issues ?? []).filter((i) => i.level === "error");
-  const propose = (ops: StructureOp[]) => run("structure", () => api.proposeStructure(ops));
   const send = async () => { if (await run("structure", () => api.requestStructure(ask))) setAsk(""); };
 
   return (
@@ -42,35 +42,32 @@ export function StructurePanel({ project }: { project: Project }) {
         {s.reason && <> — {s.reason}</>}. Kamu yang memutuskan; yang disetujui masuk spesifikasi final.
       </p>
 
-      <div className="tech-modes">
-        {types.map((t) => (
-          <label key={t.id} className="check small">
-            <input type="radio" name="structure-type" checked={shown.type === t.id} disabled={!editable}
-              onChange={() => void propose([{ op: "type", name: t.id }])} />
-            <strong>{t.name}</strong>{s.recommended === t.id && <span className="tech-tag">rekomendasi</span>} <span className="muted">{t.description}</span>
-          </label>
-        ))}
-      </div>
-
-      <p className="small muted">{s.proposal ? "Preview usulan (belum diterapkan):" : "Preview:"}</p>
-      <pre className="code small">{tree(shown)}</pre>
-      <Parts ir={shown} />
-
       {!designApproved && (
         <div className="tech-ask">
-          <textarea rows={2} maxLength={1000} value={ask} disabled={!editable}
-            placeholder="mis. Reporting jangan jadi service sendiri, jadikan modul di operations."
+          <textarea rows={3} maxLength={6000} value={ask} disabled={!editable}
+            placeholder="mis. Reporting jangan jadi service sendiri, jadikan modul di operations. Atau standar: tiap modul pakai layer domain, application, infrastructure, presentation."
             onChange={(e) => setAsk(e.target.value)} />
           <button disabled={!editable || !ask.trim()} onClick={() => void send()}>✦ Minta Perubahan dengan AI</button>
           {s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}”</p>}
         </div>
       )}
 
+      {s.proposal && <Proposal p={s.proposal} disabled={busy || designApproved} />}
+
+      <div className="tech-list">
+        <TypeRow s={s} type={shown.type} types={types} editable={editable && !s.proposal} open={typeOpen}
+          onToggle={() => setTypeOpen(!typeOpen)} onDone={() => setTypeOpen(false)} />
+      </div>
+
+      <p className="small muted">{s.proposal ? "Preview usulan (belum diterapkan):" : "Preview:"}</p>
+      <pre className="code small">{tree(shown)}</pre>
+      <Parts ir={shown} />
+      <Rules rules={shown.rules ?? []} editable={editable} />
+
       {editable && (editing
         ? <StructureEdit ir={shown} onDone={() => setEditing(false)} />
         : <button className="ghost small" onClick={() => setEditing(true)}>✎ Edit Structure</button>)}
 
-      {s.proposal && <Proposal p={s.proposal} disabled={busy || designApproved} />}
       {!s.proposal && <Issues issues={s.issues} />}
 
       <div className="tech-foot">
@@ -91,6 +88,60 @@ export function StructurePanel({ project }: { project: Project }) {
   );
 }
 
+// The structure type, changed like a technology decision: keep the
+// recommendation or pick another type, then see the impact.
+function TypeRow({ s, type, types, editable, open, onToggle, onDone }: {
+  s: Structure; type: string; types: Template[]; editable: boolean; open: boolean; onToggle: () => void; onDone: () => void;
+}) {
+  const recommended = s.recommended ?? "";
+  const label = (id: string) => types.find((t) => t.id === id)?.name ?? STRUCTURE_TYPE[id] ?? id;
+  return (
+    <div className="tech-row">
+      <div className="tech-head">
+        <span className="tech-area">Tipe</span>
+        <strong>{label(type)}</strong>
+        {recommended && type !== recommended && <span className="tech-tag">pilihan kamu</span>}
+        {editable && <button className="ghost small" onClick={onToggle}>Ubah</button>}
+      </div>
+      <div className="small muted">
+        {recommended && type !== recommended ? <>Rekomendasi: {label(recommended)}{s.reason && <> — {s.reason}</>}</> : <>Alasan: {s.reason || "—"}</>}
+      </div>
+      {open && <TypeEdit type={type} recommended={recommended} types={types} label={label} onDone={onDone} />}
+    </div>
+  );
+}
+
+function TypeEdit({ type, recommended, types, label, onDone }: {
+  type: string; recommended: string; types: Template[]; label: (id: string) => string; onDone: () => void;
+}) {
+  const { run, pending } = useProject();
+  const others = types.filter((t) => t.id !== recommended);
+  const [mode, setMode] = useState<"recommended" | "alternative">("alternative");
+  const [pick, setPick] = useState(type !== recommended ? type : others[0]?.id ?? "");
+  const value = mode === "recommended" ? recommended : pick;
+  const save = async () => { if (await run("structure", () => api.proposeStructure([{ op: "type", name: value }]))) onDone(); };
+  const radio = (m: typeof mode, text: string) => (
+    <label className="check small"><input type="radio" checked={mode === m} onChange={() => setMode(m)} /> {text}</label>
+  );
+  return (
+    <div className="tech-edit">
+      <div className="tech-modes">
+        {recommended && radio("recommended", `Gunakan rekomendasi (${label(recommended)})`)}
+        {others.length > 0 && radio("alternative", "Pilih alternatif")}
+      </div>
+      {mode === "alternative" && (
+        <select value={pick} onChange={(e) => setPick(e.target.value)}>
+          {others.map((t) => <option key={t.id} value={t.id}>{t.name} — {t.description}</option>)}
+        </select>
+      )}
+      <div className="tech-actions">
+        <button disabled={pending === "structure" || !value || value === type} onClick={() => void save()}>Lihat dampak</button>
+        <button className="ghost" onClick={onDone}>Batal</button>
+      </div>
+    </div>
+  );
+}
+
 // Why each part exists.
 function Parts({ ir }: { ir: StructureIR }) {
   const parts = [...(ir.apps ?? []), ...(ir.services ?? []), ...(ir.workers ?? []), ...(ir.packages ?? [])];
@@ -99,6 +150,34 @@ function Parts({ ir }: { ir: StructureIR }) {
       <summary>Alasan tiap bagian</summary>
       <ul>{parts.map((p) => <li key={p.path}><code>{p.path}</code> {p.reason || <span className="muted">ditambahkan user</span>}
         {!!p.modules?.length && <span className="muted"> · modul: {p.modules.join(", ")}</span>}</li>)}</ul>
+    </details>
+  );
+}
+
+// Conventions inside the structure (layers, dependencies, naming); the
+// scaffold and the build follow them like the folders.
+function Rules({ rules, editable }: { rules: string[]; editable: boolean }) {
+  const { run, pending } = useProject();
+  const [text, setText] = useState("");
+  const propose = (op: StructureOp) => run("structure", () => api.proposeStructure([op]));
+  const add = async () => { if (await propose({ op: "add", kind: "rule", name: text.trim() })) setText(""); };
+  if (!rules.length && !editable) return null;
+  return (
+    <details className="small" open={rules.length > 0}>
+      <summary>Aturan struktur ({rules.length})</summary>
+      {rules.length > 0
+        ? <ol>{rules.map((r) => (
+          <li key={r}>{r}{editable && (
+            <> <button className="ghost small" disabled={pending === "structure"} onClick={() => void propose({ op: "remove", kind: "rule", name: r })}>Hapus</button></>
+          )}</li>
+        ))}</ol>
+        : <p className="muted">Belum ada. Tulis standar di kotak AI di atas, atau tambah satu per satu.</p>}
+      {editable && (
+        <div className="tech-actions">
+          <input value={text} maxLength={400} placeholder="mis. Dependensi antar-modul lewat public API atau event" onChange={(e) => setText(e.target.value)} />
+          <button disabled={pending === "structure" || !text.trim()} onClick={() => void add()}>Tambah aturan</button>
+        </div>
+      )}
     </details>
   );
 }

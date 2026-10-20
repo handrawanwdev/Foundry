@@ -26,6 +26,9 @@ const (
 	PartModule  = "module"
 	PartWorker  = "worker"
 	PartPackage = "package"
+	// PartRule is a structure convention (internal module layout, layers,
+	// dependency or naming rules); its Name is the rule text.
+	PartRule = "rule"
 )
 
 // StructureIR is the project structure: what is built and where. Paths are
@@ -37,6 +40,10 @@ type StructureIR struct {
 	Workers  []StructurePart `json:"workers,omitempty"`
 	Packages []StructurePart `json:"packages,omitempty"`
 	Docs     string          `json:"docs"`
+	// Rules are the conventions every part follows: internal module layout,
+	// layers, dependencies between modules, naming. The scaffold and the
+	// build follow them like the folders.
+	Rules []string `json:"rules,omitempty"`
 }
 
 // StructurePart is one application, service, worker or package. Modules
@@ -62,12 +69,14 @@ func (ir *StructureIR) Clone() *StructureIR {
 		return out
 	}
 	c.Apps, c.Services, c.Workers, c.Packages = cp(ir.Apps), cp(ir.Services), cp(ir.Workers), cp(ir.Packages)
+	c.Rules = slices.Clone(ir.Rules)
 	return &c
 }
 
 // StructureOp is one edit of the structure:
 //   - type: Name is the new structure type
-//   - add: Kind and Name; a module goes into service To
+//   - add: Kind and Name; a module goes into service To; a rule's Name is
+//     its text
 //   - remove: Kind and Name
 //   - rename: Kind and Name to To
 //   - move: a module Name into service To, or a service Name (with its

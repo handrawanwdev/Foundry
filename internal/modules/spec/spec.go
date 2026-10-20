@@ -166,6 +166,12 @@ func techMarkdown(p *core.Project) string {
 					fmt.Fprintf(&b, "- `%s` %s\n", x.Path, x.Reason)
 				}
 			}
+			if len(s.IR.Rules) > 0 {
+				b.WriteString("\n### Aturan struktur\n\n")
+				for i, r := range s.IR.Rules {
+					fmt.Fprintf(&b, "%d. %s\n", i+1, r)
+				}
+			}
 			b.WriteString("\n")
 		}
 	}
