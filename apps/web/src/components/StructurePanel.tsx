@@ -23,9 +23,9 @@ export function StructurePanel({ project }: { project: Project }) {
   useEffect(() => { void api.templates().then(setTypes, () => {}); }, []);
   const s = project.structure!;
   const ir = s.ir!;
-  const designApproved = project.design?.status === "approved";
+  const finalized = project.stage === "READY";
   const busy = isWorking(project) || pending === "structure";
-  const editable = !designApproved && !busy && !s.request;
+  const editable = !finalized && !busy && !s.request;
   const state = structureState(s);
   const shown = s.proposal?.ir ?? ir;
   const errors = (s.issues ?? []).filter((i) => i.level === "error");
@@ -42,7 +42,7 @@ export function StructurePanel({ project }: { project: Project }) {
         {s.reason && <> — {s.reason}</>}. Kamu yang memutuskan; yang disetujui masuk spesifikasi final.
       </p>
 
-      {!designApproved && (
+      {!finalized && (
         <div className="tech-ask">
           <textarea rows={3} maxLength={6000} value={ask} disabled={!editable}
             placeholder="mis. Reporting jangan jadi service sendiri, jadikan modul di operations. Atau standar: tiap modul pakai layer domain, application, infrastructure, presentation."
@@ -52,7 +52,7 @@ export function StructurePanel({ project }: { project: Project }) {
         </div>
       )}
 
-      {s.proposal && <Proposal p={s.proposal} disabled={busy || designApproved} />}
+      {s.proposal && <Proposal p={s.proposal} disabled={busy || finalized} />}
 
       <div className="tech-list">
         <TypeRow s={s} type={shown.type} types={types} editable={editable && !s.proposal} open={typeOpen}
@@ -74,8 +74,8 @@ export function StructurePanel({ project }: { project: Project }) {
         {editable && !s.proposal && s.recommended && (
           <button className="ghost small" onClick={() => void run("structure", api.recommendStructure)}>↻ Gunakan rekomendasi</button>
         )}
-        {state === "approved" ? <span className="ok-text small">✓ Struktur v{structureVersion(s)} disetujui{designApproved ? " dan masuk spesifikasi final" : ""}</span>
-          : !designApproved && (
+        {state === "approved" ? <span className="ok-text small">✓ Struktur v{structureVersion(s)} disetujui{finalized ? " dan masuk spesifikasi final" : ""}</span>
+          : !finalized && (
             <button className="primary" disabled={!editable || !!s.proposal || errors.length > 0}
               title={s.proposal ? "Terapkan atau batalkan perubahan dulu" : errors.length ? "Selesaikan masalah di atas dulu" : undefined}
               onClick={() => void run("structure", api.approveStructure)}>Approve Structure</button>

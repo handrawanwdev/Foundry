@@ -18,13 +18,13 @@ import (
 
 var ErrStructureNotApproved = errors.New("setujui struktur project dulu")
 
-// structureEditable: the structure may change until the design is
-// approved; after that it is scaffolded and tasks follow it.
+// structureEditable: the structure may change until the blueprint is
+// finalized.
 func structureEditable(p *core.Project) error {
 	if p.Busy() {
 		return ErrBusy
 	}
-	if p.Platform == nil || p.Structure == nil || p.Design != nil && p.Design.Status == core.DesignApproved {
+	if p.Platform == nil || p.Structure == nil || p.Finalized() {
 		return ErrWrongStage
 	}
 	if p.Structure.Mode == core.StructureExisting {
@@ -179,7 +179,7 @@ func (s *Service) ApproveStructure() (*core.Project, error) {
 	})
 }
 
-// structureReady is what the design approval needs from the structure: an
+// structureReady is what finalizing needs from the structure: an
 // approved IR without errors. An existing project keeps its own structure.
 func structureReady(p *core.Project) error {
 	st := p.Structure
@@ -202,7 +202,7 @@ func structureReady(p *core.Project) error {
 // syncStructure keeps the structure in step with the technology without
 // overriding the user's structure (structure.Sync).
 func syncStructure(p *core.Project, why string) {
-	if p.Design != nil && p.Design.Status == core.DesignApproved {
+	if p.Finalized() {
 		return
 	}
 	structure.Sync(p, why)

@@ -19,6 +19,10 @@ type Issue struct {
 	Message string `json:"message"`
 }
 
+// Required are the artifacts at least one command must refer to when they
+// exist: the UI design reaches the code only through commands.
+var Required = []string{core.ArtifactDesignRules, core.ArtifactLayoutSpec}
+
 // Validate lists what is wrong with the commands. artifacts are the ids of
 // the blueprint artifacts that exist now.
 func Validate(cmds []core.Command, artifacts map[string]bool) []Issue {
@@ -58,10 +62,20 @@ func Validate(cmds []core.Command, artifacts map[string]bool) []Issue {
 				add(c.ID, "dependency %s tidak ada", d)
 			}
 		}
+		if len(c.Artifacts) == 0 {
+			add(c.ID, "belum merujuk artefak blueprint")
+		}
 		for _, r := range c.Artifacts {
 			if !artifacts[r.ID] {
 				add(c.ID, "artefak blueprint %q tidak ada", r.ID)
 			}
+		}
+	}
+	for _, id := range Required {
+		if artifacts[id] && len(cmds) > 0 && !slices.ContainsFunc(cmds, func(c core.Command) bool {
+			return slices.ContainsFunc(c.Artifacts, func(r core.ArtifactRef) bool { return r.ID == id })
+		}) {
+			add("", "tidak ada command yang merujuk artefak %s", id)
 		}
 	}
 	if cycle := Cycle(cmds); len(cycle) > 0 {

@@ -121,10 +121,13 @@ func TestOpenCloseBrowse(t *testing.T) {
 	}
 }
 
-func TestDesignVersionRoutes(t *testing.T) {
+// UI design routes: read, AI generate/revise and hand edits that are
+// validated whole. The visual design workspace routes are gone.
+func TestDesignRoutes(t *testing.T) {
 	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	dir := t.TempDir()
 	s := New(nil, "/bin/foundry")
-	if _, err := s.Open(t.TempDir(), "demo", false); err != nil {
+	if _, err := s.Open(dir, "demo", false); err != nil {
 		t.Fatal(err)
 	}
 	h := s.Handler()
@@ -136,50 +139,61 @@ func TestDesignVersionRoutes(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
-	if w := do("GET", "/api/v1/project/design/versions", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"data":[]`) {
-		t.Fatalf("versions: %d %s", w.Code, w.Body)
+	if w := do("GET", "/api/v1/project/design", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"design":null`) ||
+		!strings.Contains(w.Body.String(), `"issues":[]`) || !strings.Contains(w.Body.String(), `"patterns":["sidebar"`) {
+		t.Fatalf("design: %d %s", w.Code, w.Body)
 	}
-	if w := do("GET", "/api/v1/project/design/prototype", ""); w.Code != 200 {
-		t.Fatalf("prototype: %d %s", w.Code, w.Body)
-	}
-	if w := do("GET", "/api/v1/project/design/versions/compare?from=x", ""); w.Code != http.StatusBadRequest {
-		t.Fatalf("compare bad id: %d", w.Code)
-	}
-	if w := do("POST", "/api/v1/project/design/versions/0/restore", ""); w.Code != http.StatusBadRequest {
-		t.Fatalf("restore bad id: %d", w.Code)
-	}
-	// No design yet: canvas edits and restores are refused.
-	if w := do("POST", "/api/v1/project/design/edit", `{"page":"PAGE-001","ops":[{"op":"remove","id":"x"}]}`); w.Code != http.StatusConflict {
-		t.Fatalf("edit without design: %d %s", w.Code, w.Body)
-	}
-	if w := do("POST", "/api/v1/project/design/versions/1/restore", ""); w.Code != http.StatusConflict {
-		t.Fatalf("restore without design: %d %s", w.Code, w.Body)
-	}
-}
-
-func TestDesignTemplateRoute(t *testing.T) {
-	t.Setenv("FOUNDRY_HOME", t.TempDir())
-	h := New(nil, "/bin/foundry").Handler()
-	r := httptest.NewRequest("GET", "/api/v1/design-templates?theme=sakura-light&domain=ticketing", nil)
-	r.RemoteAddr = "127.0.0.1:50000"
-	r.Host = "127.0.0.1:8080"
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, r)
-	var env struct {
-		Data struct {
-			Templates []struct{ ID string }
-			Previews  map[string]struct{ Name string }
-			Theme     struct{ ID string }
-			Domain    string
+	for _, route := range []string{"GET /api/v1/themes", "GET /api/v1/design-templates", "GET /api/v1/project/design/versions",
+		"GET /api/v1/project/design/prototype", "GET /api/v1/project/design/handoff", "POST /api/v1/project/design/edit",
+		"POST /api/v1/project/design/keep", "POST /api/v1/project/design/undo", "POST /api/v1/project/design/approve",
+		"PUT /api/v1/project/theme", "PUT /api/v1/project/reference", "PUT /api/v1/project/design-template"} {
+		method, path, _ := strings.Cut(route, " ")
+		if w := do(method, path, "{}"); w.Code != http.StatusNotFound {
+			t.Errorf("%s: %d %s", route, w.Code, w.Body)
 		}
 	}
-	err := json.Unmarshal(w.Body.Bytes(), &env)
-	g := env.Data
-	if w.Code != 200 || err != nil {
-		t.Fatalf("%d %s", w.Code, w.Body)
+	// No blueprint yet: edits are refused.
+	if w := do("PUT", "/api/v1/project/design/rules", `{}`); w.Code != http.StatusConflict {
+		t.Fatalf("rules before discovery: %d %s", w.Code, w.Body)
 	}
-	if len(g.Templates) != 8 || g.Theme.ID != "sakura-light" || g.Domain != "ticketing" || g.Previews["workspace-agent"].Name != "Helpdesk tiket" {
-		t.Fatalf("gallery = %+v", g)
+	st, _ := core.NewStore(dir)
+	if _, err := st.Update(func(p *core.Project) error {
+		p.Discovery, p.Stage = &core.Discovery{Summary: "Klinik"}, core.StageDesign
+		p.Platform = &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w := do("PUT", "/api/v1/project/design/rules", `{"principles": ["Padat"]}`)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), `"field":"rules"`) || !strings.Contains(w.Body.String(), "accessibility belum diisi") {
+		t.Fatalf("invalid rules: %d %s", w.Code, w.Body)
+	}
+	rules := `{"source": "new", "principles": ["Padat"], "ux_guidelines": ["Konfirmasi hapus"], "accessibility": ["AA"], "responsive": ["list di mobile"],
+	  "tokens": {"colors": [{"name": "action.primary", "value": "#123456"}], "typography": [{"name": "type.body", "value": "Inter 14px"}],
+	             "spacing": [{"name": "space.md", "value": "16px"}]}}`
+	layout := `{"pages": [{"id": "antrean", "name": "Antrean", "platform": "web", "route": "/antrean", "purpose": "Lihat antrean", "pattern": "detail",
+	  "sections": [{"id": "isi", "name": "Isi", "content": ["Nomor"]}], "states": {"loading": "Memuat", "error": "Gagal"}}]}`
+	if w := do("PUT", "/api/v1/project/design/layout", layout); w.Code != 400 || !strings.Contains(w.Body.String(), "aturan desain belum ada") {
+		t.Fatalf("layout without rules: %d %s", w.Code, w.Body)
+	}
+	if w := do("PUT", "/api/v1/project/design/rules", rules); w.Code != 400 || !strings.Contains(w.Body.String(), "belum berisi halaman") {
+		t.Fatalf("rules without layout: %d %s", w.Code, w.Body)
+	}
+	// Rules and layout land together the first time through the store; the
+	// routes then edit each part.
+	if _, err := st.Update(func(p *core.Project) error {
+		return json.Unmarshal([]byte(`{"rules": `+rules+`, "layout": `+layout+`}`), &p.UI)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if w := do("PUT", "/api/v1/project/design/layout", strings.Replace(layout, "Antrean", "Antrian", 1)); w.Code != 200 || !strings.Contains(w.Body.String(), "Antrian") {
+		t.Fatalf("layout: %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/api/v1/project/blueprint", ""); !strings.Contains(w.Body.String(), `"id":"layout-spec"`) || !strings.Contains(w.Body.String(), `"id":"design-rules"`) {
+		t.Fatalf("blueprint: %s", w.Body)
+	}
+	if w := do("POST", "/api/v1/project/design/revise", `{"text": "lebih padat"}`); w.Code != http.StatusPreconditionFailed {
+		t.Fatalf("revise without AI: %d %s", w.Code, w.Body)
 	}
 }
 
@@ -300,7 +314,7 @@ func TestDownloadSpec(t *testing.T) {
 	}
 	if _, err := st.Update(func(p *core.Project) error {
 		p.Discovery = &core.Discovery{Summary: "Klinik"}
-		p.Design = &core.Design{Pages: []core.Page{{ID: "PAGE-001", Name: "Antrean", Route: "/antrean", Platform: "web"}}}
+		p.UI = &core.UIDesign{Layout: &core.LayoutSpec{Pages: []core.LayoutPage{{ID: "antrean", Name: "Antrean", Route: "/antrean", Platform: "web"}}}}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -312,11 +326,13 @@ func TestDownloadSpec(t *testing.T) {
 	}
 	w = do("/api/v1/project/spec.json")
 	var out struct {
-		Pages []struct {
-			PageID string `json:"page_id"`
-		} `json:"pages"`
+		Layout struct {
+			Pages []struct {
+				ID string `json:"id"`
+			} `json:"pages"`
+		} `json:"layout"`
 	}
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil || len(out.Pages) != 1 || out.Pages[0].PageID != "PAGE-001" {
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil || len(out.Layout.Pages) != 1 || out.Layout.Pages[0].ID != "antrean" {
 		t.Fatalf("spec.json: %d %s", w.Code, w.Body)
 	}
 }

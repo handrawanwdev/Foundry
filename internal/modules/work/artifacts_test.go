@@ -15,10 +15,10 @@ func TestApplyArtifacts(t *testing.T) {
 		t.Fatalf("set = %+v", p.Artifacts)
 	}
 	for raw, want := range map[string]string{
-		`{"artifacts": [{"id": "ui-design", "title": "x", "body": "y"}]}`: "bawaan",
-		`{"remove": ["requirements"]}`:                                    "bawaan",
-		`{"remove": ["ghost"]}`:                                           "tidak ada",
-		`{"artifacts": []}`:                                               "tidak menemukan perubahan",
+		`{"artifacts": [{"id": "layout-spec", "title": "x", "body": "y"}]}`: "bawaan",
+		`{"remove": ["requirements"]}`:                                      "bawaan",
+		`{"remove": ["ghost"]}`:                                             "tidak ada",
+		`{"artifacts": []}`:                                                 "tidak menemukan perubahan",
 	} {
 		if err := ApplyArtifacts(p, raw); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", raw, err, want)

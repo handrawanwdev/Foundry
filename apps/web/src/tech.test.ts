@@ -10,7 +10,7 @@ const stack = (over: Partial<TechStack>): TechStack => ({
   mode: "new", platform: { web: true, mobile: false, desktop: false, backend: true }, decisions: [], approved: false, ...over,
 });
 const project = (s: TechStack, techVersion = 1) => ({
-  stack: s, design: { pages: [{ id: "P1" }], status: "draft", feedback: null, tech_version: techVersion },
+  stage: "DESIGN", stack: s, ui: { layout: { shells: null, pages: [{ id: "p1" }] }, version: 1, tech_version: techVersion },
 }) as unknown as Project;
 
 describe("tech", () => {

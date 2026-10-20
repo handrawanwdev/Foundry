@@ -162,30 +162,13 @@ func Blockers(p *core.Project) []string {
 		case p.Stack.Mode != core.StructureExisting && p.Stack.State() != core.TechApproved:
 			out = append(out, "teknologi belum disetujui")
 		case len(p.TechReview()) > 0:
-			out = append(out, "desain belum ditinjau terhadap perubahan teknologi")
+			out = append(out, "rancangan UI belum ditinjau terhadap perubahan teknologi")
 		}
 		if st := p.Structure; st == nil || st.Mode != core.StructureExisting && st.State() != core.TechApproved {
 			out = append(out, "struktur project belum disetujui")
 		}
 	}
 	return append(out, workflowBlockers(p)...)
-}
-
-// designBlockers: a product with screens needs a complete UI design.
-func designBlockers(p *core.Project) []string {
-	if !p.HasUI() {
-		return nil
-	}
-	switch {
-	case p.Design == nil || len(p.Design.Pages) == 0:
-		return []string{"desain UI belum dibuat"}
-	case p.Design.Revision != nil:
-		return []string{"perubahan desain terakhir belum disimpan atau dibatalkan"}
-	}
-	if b := work.Blockers(p); len(b) > 0 {
-		return []string{fmt.Sprintf("desain UI: %d hal wajib dilengkapi", len(b))}
-	}
-	return nil
 }
 
 func workflowBlockers(p *core.Project) []string {
@@ -241,9 +224,6 @@ func (s *Service) Finalize() error {
 		if b := workflowBlockers(p); len(b) > 0 {
 			return fmt.Errorf("%w: %s", ErrIncomplete, b[0])
 		}
-		if d := p.Design; d != nil && len(d.Pages) > 0 {
-			d.Status = core.DesignApproved
-		}
 		if p.Platform != nil {
 			p.Platform.Approved = true
 		}
@@ -290,11 +270,8 @@ func (s *Service) Reopen() error {
 	return err
 }
 
-// unfinalize returns the design and the workflow to draft.
+// unfinalize returns the workflow to draft.
 func unfinalize(p *core.Project) {
-	if p.Design != nil && p.Design.Status == core.DesignApproved {
-		p.Design.Status = core.DesignDraft
-	}
 	if w := p.Workflow; w != nil {
 		w.Status, w.FinalizedAt = core.CommandDraft, nil
 		for i := range w.Commands {

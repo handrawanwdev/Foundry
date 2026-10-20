@@ -87,13 +87,7 @@ func (s *Store) Load() (*Project, error) {
 	case "PLAN", "BUILD", "VERIFY":
 		p.Stage = StageReady
 	}
-	if d := p.Design; d != nil {
-		// Designs saved before the Design IR get their layout here, once.
-		EnsureIR(d.Pages, p.Name)
-		if d.Revision != nil {
-			EnsureIR(d.Revision.PreviousPages, p.Name)
-		}
-	}
+	migrateLegacyDesign(&p, b)
 	return &p, nil
 }
 

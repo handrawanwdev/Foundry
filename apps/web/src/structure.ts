@@ -52,7 +52,7 @@ export function tree(ir: StructureIR): string {
   return lines.join("\n");
 }
 
-// Why the design cannot be approved yet because of the structure, or null.
+// Why the project cannot be finalized yet because of the structure, or null.
 export function structureGate(p: Project): string | null {
   const s = p.structure;
   if (!s || s.mode === "existing" || !s.ir) return null;

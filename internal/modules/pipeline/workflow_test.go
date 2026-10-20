@@ -26,7 +26,7 @@ func TestWorkflowLifecycle(t *testing.T) {
 	if _, err := s.ApproveStructure(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrIncomplete) {
+	if err := s.Finalize(); !errors.Is(err, pipeline.ErrIncomplete) {
 		t.Fatalf("finalize without workflow err = %v", err)
 	}
 	if err := s.ReviseWorkflow("tambah test", nil); err == nil {
@@ -74,15 +74,18 @@ func TestWorkflowLifecycle(t *testing.T) {
 		t.Fatal("refused edit changed the command")
 	}
 
-	// A design change makes the commands that follow the UI design stale.
-	if _, err := s.EditDesign("PAGE-001", []work.CanvasOp{{Op: "set_page", Fields: map[string]string{"name": "Pilih Dokter"}}}); err != nil {
+	// A design change makes the commands that follow the layout stale.
+	l := *load(t, s).UI.Layout
+	l.Pages = slices.Clone(l.Pages)
+	l.Pages[0].Name = "Pilih Dokter"
+	if _, err := s.EditLayout(l); err != nil {
 		t.Fatal(err)
 	}
 	r = pipeline.CheckWorkflow(load(t, s))
-	if r.Ready || !slices.Equal(r.Stale["CMD-003"], []string{"ui-design"}) || len(r.Stale["CMD-001"]) != 0 {
+	if r.Ready || !slices.Equal(r.Stale["CMD-003"], []string{core.ArtifactLayoutSpec}) || len(r.Stale["CMD-001"]) != 0 {
 		t.Fatalf("stale = %+v", r.Stale)
 	}
-	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrIncomplete) {
+	if err := s.Finalize(); !errors.Is(err, pipeline.ErrIncomplete) {
 		t.Fatalf("finalize with stale command err = %v", err)
 	}
 	if _, err := s.ReviewCommand("CMD-003", false, ""); err != nil {
@@ -187,8 +190,11 @@ func TestEmbeddedProject(t *testing.T) {
 	s.Wait()
 	p := load(t, s)
 	mustJob(t, p, work.KindDiscovery, core.JobDone)
-	if p.HasUI() || p.Design != nil || p.Stage != core.StageDesign {
-		t.Fatalf("stage=%s design=%+v", p.Stage, p.Design)
+	if p.HasUI() || p.UI != nil || p.Stage != core.StageDesign {
+		t.Fatalf("stage=%s design=%+v", p.Stage, p.UI)
+	}
+	if err := s.GenerateDesign(); err == nil {
+		t.Fatal("design generated for a product without screens")
 	}
 	if len(p.Artifacts) != 1 || p.Artifacts[0].ID != "firmware-architecture" {
 		t.Fatalf("artifacts = %+v", p.Artifacts)
@@ -212,8 +218,10 @@ func TestEmbeddedProject(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(s.Store.Dir, "docs", "foundry", "blueprint", "firmware-architecture.md")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(s.Store.Dir, "docs", "foundry", "design-brief.md")); !os.IsNotExist(err) {
-		t.Fatalf("design brief written without UI: %v", err)
+	for _, f := range []string{"design-brief.md", "blueprint/design-rules.md", "blueprint/layout-spec.md", "design"} {
+		if _, err := os.Stat(filepath.Join(s.Store.Dir, "docs", "foundry", filepath.FromSlash(f))); !os.IsNotExist(err) {
+			t.Fatalf("%s written without UI: %v", f, err)
+		}
 	}
 }
 
@@ -233,7 +241,7 @@ func TestWorkflowMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	item, err := s.NextWork()
-	if err != nil || item.Kind != work.KindWorkflow || !strings.Contains(item.Prompt, "workflow planner") || !strings.Contains(item.Prompt, "=== ui-design") {
+	if err != nil || item.Kind != work.KindWorkflow || !strings.Contains(item.Prompt, "workflow planner") || !strings.Contains(item.Prompt, "=== layout-spec") {
 		t.Fatalf("next = %+v, %v", item, err)
 	}
 	if err := s.SubmitWork(work.KindWorkflow, cyclicWorkflowJSON); err == nil {

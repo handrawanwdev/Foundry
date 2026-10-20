@@ -6,7 +6,6 @@ import (
 
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/structure"
-	"github.com/handrawanw/foundry/internal/modules/work"
 	"github.com/handrawanw/foundry/internal/modules/workflow"
 )
 
@@ -175,40 +174,6 @@ func techMarkdown(p *core.Project) string {
 			b.WriteString("\n")
 		}
 	}
-	return b.String()
-}
-
-// designMarkdown is the UI/UX artifact: pages, design system and the spec
-// of every page, all from the Design IR.
-func designMarkdown(p *core.Project) string {
-	d := p.Design
-	if d == nil || len(d.Pages) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("## Halaman\n\n")
-	for _, pg := range d.Pages {
-		fmt.Fprintf(&b, "- **%s** %s (%s, %s): %s\n", pg.ID, pg.Name, pg.Platform, pg.FeatureID, pg.Purpose)
-	}
-	b.WriteString("\n")
-	if s := d.System; s != nil {
-		b.WriteString("## Design system\n\n")
-		if s.Direction != "" {
-			b.WriteString("Arah visual: " + s.Direction + "\n\n")
-		}
-		b.WriteString("| Grup | Token | Nilai | Pemakaian |\n|---|---|---|---|\n")
-		for _, g := range []struct {
-			name   string
-			tokens []core.Token
-		}{{"Warna", s.Colors}, {"Tipografi", s.Typography}, {"Spacing", s.Spacing}, {"Radius", s.Radius},
-			{"Shadow", s.Shadow}, {"Breakpoint", s.Breakpoints}, {"Komponen", s.Components}} {
-			for _, t := range g.tokens {
-				fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", g.name, cell(t.Name), cell(t.Value), cell(t.Use))
-			}
-		}
-		b.WriteString("\n")
-	}
-	b.WriteString(pagesMarkdown(p))
 	return b.String()
 }
 
@@ -423,7 +388,8 @@ func adrStack(p *core.Project) string {
 }
 
 // Spec is the machine-readable spec an external coding agent consumes:
-// the structured blueprint, the Design IR and the command workflow.
+// the structured blueprint, the design rules, the layout spec and the
+// command workflow.
 type Spec struct {
 	Name         string             `json:"name"`
 	Story        string             `json:"story"`
@@ -434,8 +400,8 @@ type Spec struct {
 	Stack        *core.TechStack    `json:"stack,omitempty"`
 	Structure    *core.Structure    `json:"structure,omitempty"`
 	Blueprint    *core.Blueprint    `json:"blueprint,omitempty"`
-	System       *core.DesignSystem `json:"design_system,omitempty"`
-	Pages        []work.PageSpec    `json:"pages"`
+	DesignRules  *core.DesignRules  `json:"design_rules,omitempty"`
+	Layout       *core.LayoutSpec   `json:"layout,omitempty"`
 	// Artifacts are the blueprint documents written for this project
 	// (the built-in ones are the structured fields above).
 	Artifacts []core.Artifact `json:"artifacts"`
@@ -445,55 +411,13 @@ type Spec struct {
 // Export builds the Spec from the project.
 func Export(p *core.Project) Spec {
 	s := Spec{Name: p.Name, Story: p.Story, Requirements: p.Requirements, Features: p.Features, Flows: p.Flows,
-		Platform: p.Platform, Stack: p.Stack, Structure: p.Structure, Blueprint: p.Blueprint, Pages: work.PageSpecs(p),
+		Platform: p.Platform, Stack: p.Stack, Structure: p.Structure, Blueprint: p.Blueprint,
 		Artifacts: p.Artifacts, Workflow: p.Workflow}
 	if s.Artifacts == nil {
 		s.Artifacts = []core.Artifact{}
 	}
-	if p.Design != nil {
-		s.System = p.Design.System
-	}
-	if s.Pages == nil {
-		s.Pages = []work.PageSpec{}
+	if p.UI != nil {
+		s.DesignRules, s.Layout = p.UI.Rules, p.UI.Layout
 	}
 	return s
-}
-
-// pagesMarkdown lists each page's spec: route, access, actions, data,
-// interactions, states and validation.
-func pagesMarkdown(p *core.Project) string {
-	var b strings.Builder
-	list := func(title string, items []string) {
-		if len(items) == 0 {
-			return
-		}
-		fmt.Fprintf(&b, "**%s:**\n", title)
-		for _, it := range items {
-			fmt.Fprintf(&b, "- %s\n", it)
-		}
-		b.WriteString("\n")
-	}
-	for _, h := range work.PageSpecs(p) {
-		fmt.Fprintf(&b, "### %s %s\n\n%s\n\n", h.PageID, h.Name, h.Purpose)
-		fmt.Fprintf(&b, "Route `%s` · %s · akses: %s", h.Route, h.Platform, h.Access)
-		if h.Role != "" {
-			fmt.Fprintf(&b, " · peran: %s", h.Role)
-		}
-		b.WriteString("\n\n")
-		if h.PrimaryAction != "" {
-			fmt.Fprintf(&b, "Aksi utama: %s\n\n", h.PrimaryAction)
-		}
-		list("Aksi sekunder", h.Secondary)
-		list("Komponen", h.Components)
-		list("Interaksi", h.Interactions)
-		list("State", h.States)
-		list("Validasi", h.Validation)
-		if h.Responsive != "" {
-			fmt.Fprintf(&b, "Responsive: %s\n\n", h.Responsive)
-		}
-	}
-	if b.Len() == 0 {
-		return ""
-	}
-	return "## Spesifikasi Halaman\n\n" + b.String()
 }

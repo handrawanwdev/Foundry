@@ -1,5 +1,6 @@
 // Package pipeline is the Foundry orchestrator: it moves one project through
-// Prompt → Blueprint (with UI design when the product has screens) →
+// Prompt → Blueprint (with design rules and layout spec when the product has
+// screens) →
 // Command Workflow → Finalize → Export. Foundry never runs the workflow. AI work is done
 // either by a connected agent CLI (Foundry drives it) or by an MCP host (the
 // host pulls work with next_work and pushes answers with submit_work). Both
@@ -7,11 +8,9 @@
 package pipeline
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -59,9 +58,6 @@ func (ConfigAI) Runner() (*agent.Runner, bool, error) {
 type Service struct {
 	Store *core.Store
 	AI    AI
-	// Render takes browser screenshots for the visual check of a new
-	// design and of a revision; nil skips the check.
-	Render Renderer
 
 	// ctx ends with Shutdown; every job this service runs derives from it.
 	ctx  context.Context
@@ -175,72 +171,6 @@ func attachStructure(p *core.Project) {
 	}
 }
 
-// ---------- Design ----------
-
-// ReviseDesign asks the AI for a change as a patch. screens are the page
-// outlines the user saw; scope is what the change may touch (nil: any page).
-func (s *Service) ReviseDesign(feedback string, screens map[string]string, scope *core.ChangeScope) error {
-	feedback = strings.TrimSpace(feedback)
-	if feedback == "" {
-		return errors.New("tuliskan perubahan yang diinginkan")
-	}
-	_, err := s.Store.Update(func(p *core.Project) error {
-		if p.Busy() {
-			return ErrBusy
-		}
-		if p.Design == nil || p.Design.Status == core.DesignApproved {
-			return ErrWrongStage
-		}
-		p.Design.Feedback = append(p.Design.Feedback, feedback)
-		p.Design.Screens = screens
-		p.Design.Scope = cleanScope(p, scope)
-		p.Design.Rejected = ""
-		p.Design.Status = core.DesignChanges
-		p.Stage = core.StageDesign
-		p.Log("ui", "Minta perubahan rancangan: "+feedback)
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	return s.startAI(work.KindDesign)
-}
-
-// KeepDesignChange accepts the last design revision.
-func (s *Service) KeepDesignChange() error {
-	return s.reviseStep("Perubahan rancangan disimpan", "keep", work.KeepRevision)
-}
-
-// UndoDesignChange restores the design from before the last revision.
-func (s *Service) UndoDesignChange() error {
-	return s.reviseStep("Perubahan rancangan dibatalkan", "undo", work.UndoRevision)
-}
-
-func (s *Service) reviseStep(msg, source string, fn func(*core.Project) error) error {
-	p, err := s.Store.Update(func(p *core.Project) error {
-		if p.Busy() {
-			return ErrBusy
-		}
-		if p.Design == nil || p.Design.Status == core.DesignApproved {
-			return ErrWrongStage
-		}
-		if err := fn(p); err != nil {
-			return err
-		}
-		if j := p.Job; j != nil && j.Kind == work.KindDesignQA && j.Status == core.JobWaiting {
-			j.Status, j.Message = core.JobDone, "Pemeriksaan visual dilewati"
-		}
-		measureQuality(p)
-		recordVersion(p, source, "")
-		p.Log("ui", msg)
-		return nil
-	})
-	if err == nil {
-		saveQuality(p)
-	}
-	return err
-}
-
 // SetPlatform lets the user override the suggested platforms.
 func (s *Service) SetPlatform(targets []core.PlatformTarget) (*core.Project, error) {
 	return s.Store.Update(func(p *core.Project) error {
@@ -259,58 +189,13 @@ func (s *Service) SetPlatform(targets []core.PlatformTarget) (*core.Project, err
 			return errors.New("pilih minimal satu platform")
 		}
 		p.Platform.Targets = ok
-		if p.Design == nil || p.Design.Status != core.DesignApproved {
+		if !p.Finalized() {
 			decideStack(p, "Platform diubah")
 		}
 		p.Log("ui", "Platform diubah")
 		return nil
 	})
 }
-
-// SetTheme picks the design's theme ("" lets Foundry select one from the
-// requirement). A draft design follows it at once: its tokens and style
-// change, its pages (Design IR) do not.
-func (s *Service) SetTheme(id string) (*core.Project, error) {
-	p, err := s.Store.Update(func(p *core.Project) error {
-		if p.Busy() {
-			return ErrBusy
-		}
-		if id != "" {
-			themes, _ := work.Themes(p.Dir)
-			if !slices.ContainsFunc(themes, func(t core.Theme) bool { return t.ID == id }) {
-				return fmt.Errorf("theme %q tidak tersedia", id)
-			}
-		}
-		d := p.Design
-		designed := d != nil && len(d.Pages) > 0
-		if designed && d.Status == core.DesignApproved {
-			return ErrWrongStage
-		}
-		if designed && d.Revision != nil {
-			return errors.New("simpan atau batalkan perubahan rancangan dulu")
-		}
-		p.Theme = id
-		if designed {
-			t, ctx := work.ResolveTheme(p)
-			work.ApplyTheme(d, t, ctx)
-			measureQuality(p)
-			recordVersion(p, "theme", cmp.Or(id, "otomatis"))
-		}
-		p.Log("ui", "Theme: "+cmp.Or(id, "otomatis"))
-		return nil
-	})
-	if err == nil {
-		saveQuality(p)
-	}
-	return p, err
-}
-
-// ApproveDesign is Finalize, kept for the design workspace and older
-// clients. ReopenDesign is Reopen.
-func (s *Service) ApproveDesign() error { return s.Finalize() }
-
-// ReopenDesign unlocks a finalized project so it can be revised again.
-func (s *Service) ReopenDesign() error { return s.Reopen() }
 
 // ---------- AI jobs (shared by agent and MCP) ----------
 
@@ -320,10 +205,6 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 		return work.DiscoveryPrompt(p)
 	case work.KindDesign:
 		return work.DesignPrompt(p)
-	case work.KindDesignQA:
-		return work.QAPrompt(p)
-	case work.KindReference:
-		return work.ReferencePrompt(p)
 	case work.KindStack:
 		return work.StackPrompt(p)
 	case work.KindStructure:
@@ -366,17 +247,6 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 	if err != nil {
 		return err
 	}
-	if kind == work.KindDesignQA {
-		if p, err = s.prepareQA(p); err != nil || p == nil {
-			return err // nil project: check skipped, job closed
-		}
-	}
-	if kind == work.KindReference {
-		if p, err = s.prepareReference(p); err != nil {
-			s.failJob(kind, err)
-			return err
-		}
-	}
 	if isMCP {
 		return nil
 	}
@@ -405,11 +275,7 @@ func jobMessage(kind string) string {
 	case work.KindDiscovery:
 		return "Memahami kebutuhan"
 	case work.KindDesign:
-		return "Membuat rancangan aplikasi"
-	case work.KindDesignQA:
-		return "Memeriksa hasil visual di browser"
-	case work.KindReference:
-		return "Menganalisis referensi desain"
+		return "Menyusun aturan desain dan spesifikasi layout"
 	case work.KindStack:
 		return "Memahami permintaan perubahan teknologi"
 	case work.KindStructure:
@@ -420,28 +286,6 @@ func jobMessage(kind string) string {
 		return "Menyusun command workflow"
 	}
 	return kind
-}
-
-// dropUnclearRequest ends a change request the AI found nothing to change
-// for: the request is removed and the design is back to draft, unchanged,
-// so a retry does not ask the same thing again. The user is told to write
-// a clearer request.
-func (s *Service) dropUnclearRequest() error {
-	_, err := s.Store.Update(func(p *core.Project) error {
-		req := ""
-		if d := p.Design; d != nil && d.Status == core.DesignChanges {
-			if n := len(d.Feedback); n > 0 {
-				req, d.Feedback = d.Feedback[n-1], d.Feedback[:n-1]
-			}
-			d.Status, d.Scope, d.Screens, d.Rejected = core.DesignDraft, nil, nil, ""
-		}
-		msg := fmt.Sprintf("AI tidak menemukan perubahan untuk permintaan “%s”. Rancangan tidak diubah. "+
-			"Tulis lebih spesifik: halaman, bagian, dan hasil yang diinginkan (mis. “Halaman Antrean: tabel lebih compact, filter di atas”).", req)
-		p.Job = &core.Job{Kind: work.KindUnclear, Status: core.JobFailed, Message: "Permintaan perubahan", Error: msg, Started: time.Now().UTC()}
-		p.Log("system", "Permintaan perubahan tidak jelas: "+req)
-		return nil
-	})
-	return err
 }
 
 func (s *Service) failJob(kind string, err error) { s.failJobIf(kind, err, nil) }
@@ -464,8 +308,7 @@ func (s *Service) failJobIf(kind string, err error, expect func(*core.Project) e
 // applyAI lands an AI answer in the project and chains the next step.
 func (s *Service) applyAI(kind, raw, source string) error {
 	var next string
-	measured := false
-	p, err := s.Store.Update(func(p *core.Project) error {
+	_, err := s.Store.Update(func(p *core.Project) error {
 		if p.Job == nil || p.Job.Kind != kind || p.Job.Status == core.JobDone {
 			return fmt.Errorf("%w: tidak ada job %s yang aktif", ErrWrongStage, kind)
 		}
@@ -480,43 +323,11 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			p.Stage = core.StageDesign
 			if p.HasUI() {
 				next = work.KindDesign
-				if r := p.Reference; r != nil && r.Status == "pending" {
-					next = work.KindReference // the design follows the reference's theme
-				}
-			}
-		case work.KindReference:
-			if err := applyReference(p, raw); err != nil {
-				return err
-			}
-			measured = p.Design != nil && p.Design.Quality != nil
-			if p.Design == nil || len(p.Design.Pages) == 0 {
-				next = work.KindDesign
 			}
 		case work.KindDesign:
-			revising := p.Design != nil && p.Design.Status == core.DesignChanges && len(p.Design.Pages) > 0
 			if err := work.ApplyDesign(p, raw); err != nil {
 				return err
 			}
-			if !revising {
-				p.Design.TechVersion = p.Stack.Version() // made with this decision
-			}
-			switch {
-			case revising && s.Render != nil && p.Design.Revision != nil:
-				p.Design.Revision.QA = &core.DesignQA{Status: "running", Round: 1}
-				next = work.KindDesignQA
-			case !revising && s.Render != nil:
-				// A new design is critiqued before the user sees it.
-				p.Design.QA = &core.DesignQA{Status: "running", Round: 1}
-				next = work.KindDesignQA
-			case !revising:
-				// No browser: only the design rules are checked.
-				if lint := work.LintDesign(p, nil); len(lint) > 0 {
-					p.Design.QA = &core.DesignQA{Status: "skipped", Notes: "browser tidak tersedia; hanya aturan desain yang diperiksa", Issues: lint}
-				}
-			}
-			p.Stage = core.StageDesign
-			measureQuality(p)
-			measured = true
 		case work.KindStack:
 			if err := work.ApplyStackChange(p, raw); err != nil {
 				return err
@@ -533,27 +344,13 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			if err := work.ApplyWorkflow(p, raw, spec.Artifacts(p)); err != nil {
 				return err
 			}
-		case work.KindDesignQA:
-			again, err := work.ApplyQA(p, raw)
-			if err != nil {
-				return err
-			}
-			measureQuality(p) // re-measure after the critic round
-			measured = true
-			if again {
-				next = work.KindDesignQA
-			}
 		default:
 			return fmt.Errorf("jenis pekerjaan %q tidak dikenal", kind)
 		}
-		recordAIVersion(p, kind)
 		p.Job = &core.Job{Kind: kind, Status: core.JobDone, Message: jobMessage(kind) + " selesai", Started: time.Now().UTC()}
 		p.Log(source, jobMessage(kind)+" selesai")
 		return nil
 	})
-	if kind == work.KindDesign && errors.Is(err, work.ErrNoChange) {
-		return s.dropUnclearRequest()
-	}
 	if kind == work.KindStack && err != nil {
 		return s.dropStackRequest(err)
 	}
@@ -563,13 +360,45 @@ func (s *Service) applyAI(kind, raw, source string) error {
 	if err != nil {
 		return err
 	}
-	if measured {
-		saveQuality(p)
-	}
 	if next != "" {
 		return s.startAI(next)
 	}
 	return nil
+}
+
+// noteRejection keeps why a design, workflow or blueprint answer was
+// refused on its request, for the retry prompt. Only the first refusal
+// retries automatically.
+func (s *Service) noteRejection(kind string, err error) bool {
+	if err == nil || kind != work.KindWorkflow && kind != work.KindArtifacts && kind != work.KindDesign {
+		return false
+	}
+	retry := false
+	s.Store.Update(func(p *core.Project) error {
+		var r **core.ChangeRequest
+		switch kind {
+		case work.KindArtifacts:
+			r = &p.ArtifactRequest
+		case work.KindDesign:
+			if p.UI == nil {
+				p.UI = &core.UIDesign{}
+			}
+			r = &p.UI.Request
+		default:
+			if p.Workflow == nil {
+				p.Workflow = &core.Workflow{Status: core.CommandDraft}
+			}
+			r = &p.Workflow.Request
+		}
+		if *r == nil {
+			*r = &core.ChangeRequest{}
+		}
+		retry = (*r).Rejected == ""
+		(*r).Rejected = err.Error()
+		p.Log("system", err.Error())
+		return nil
+	})
+	return retry
 }
 
 // RetryJob reruns the last failed AI job.
@@ -583,6 +412,13 @@ func (s *Service) DismissJob() error {
 		switch p.Job.Kind {
 		case work.KindArtifacts:
 			p.ArtifactRequest = nil
+		case work.KindDesign:
+			if p.UI != nil {
+				p.UI.Request = nil
+				if !p.UI.Written() {
+					p.UI = nil
+				}
+			}
 		case work.KindWorkflow:
 			if p.Workflow != nil {
 				p.Workflow.Request = nil
@@ -607,7 +443,7 @@ func (s *Service) RetryJob() error {
 	// the update that starts the job, so concurrent retries start it once.
 	kind := p.Job.Kind
 	switch kind {
-	case work.KindDiscovery, work.KindDesign, work.KindDesignQA, work.KindReference:
+	case work.KindDiscovery, work.KindDesign:
 		return s.startAIIf(kind, failedJob(kind))
 	case work.KindStack:
 		if p.Stack != nil && p.Stack.Request != "" {

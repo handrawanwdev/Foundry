@@ -5,8 +5,6 @@ import (
 	"encoding/hex"
 	"strings"
 	"testing"
-
-	"github.com/handrawanw/foundry/internal/core"
 )
 
 // The rules adapt to the project: no stack or tool is mandatory.
@@ -18,18 +16,6 @@ func TestRulesForceNoStack(t *testing.T) {
 	}
 	if !strings.Contains(AgentsMD, "docs/foundry/") || !strings.Contains(PackageGuide, "gelombang") {
 		t.Fatal("agent guide does not point to the export package")
-	}
-}
-
-func TestDesignBriefOnlyWithUI(t *testing.T) {
-	cli := &core.Project{Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformEmbedded}}}}
-	if got := DesignBrief(cli); !strings.Contains(got, "Tidak ada frontend") {
-		t.Errorf("embedded brief = %q", got)
-	}
-	web := &core.Project{Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}},
-		Design: &core.Design{Pages: []core.Page{{Name: "Antrean", Route: "/antrean"}}}}
-	if got := DesignBrief(web); !strings.Contains(got, "Antrean") {
-		t.Errorf("web brief = %q", got)
 	}
 }
 

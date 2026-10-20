@@ -26,19 +26,19 @@ export function TechStackPanel({ project }: { project: Project }) {
   useEffect(() => { api.stackCatalog().then(setCat, () => {}); }, []);
   const s = project.stack;
   const busy = isWorking(project) || pending === "stack";
-  const designApproved = project.design?.status === "approved";
+  const finalized = project.stage === "READY";
   if (!s) {
     return (
       <section className="info-sec">
         <h3>Teknologi</h3>
         <p className="small muted">Belum ada rekomendasi teknologi.</p>
-        {project.platform && <button disabled={busy || designApproved} onClick={() => void run("stack", api.recommendStack)}>Buat rekomendasi</button>}
+        {project.platform && <button disabled={busy || finalized} onClick={() => void run("stack", api.recommendStack)}>Buat rekomendasi</button>}
       </section>
     );
   }
   const state = techState(s);
   const profile = cat?.profiles.find((p) => p.id === s.profile);
-  const editable = s.mode === "new" && !designApproved && !busy && !s.request;
+  const editable = s.mode === "new" && !finalized && !busy && !s.request;
   const used = s.decisions.filter((d) => techChoice(d) !== NONE);
   const unused = s.decisions.filter((d) => techChoice(d) === NONE);
   const errors = (s.issues ?? []).filter((i) => i.level === "error");
@@ -60,7 +60,7 @@ export function TechStackPanel({ project }: { project: Project }) {
       </p>
       {s.needs?.length ? <p className="small">Kebutuhan teknis: <span className="theme-tags">{s.needs.map((n) => <i key={n}>{NEED[n] ?? n}</i>)}</span></p> : null}
 
-      {s.mode === "new" && !designApproved && (
+      {s.mode === "new" && !finalized && (
         <div className="tech-ask">
           <textarea rows={2} maxLength={1000} value={ask} disabled={!editable || !!s.proposal}
             placeholder="mis. Ganti backend ke Rust. Tetap gunakan PostgreSQL dan Redis. Arsitektur modular monolith."
@@ -70,7 +70,7 @@ export function TechStackPanel({ project }: { project: Project }) {
         </div>
       )}
 
-      {s.proposal && <Proposal p={s.proposal} disabled={busy || designApproved} />}
+      {s.proposal && <Proposal p={s.proposal} disabled={busy || finalized} />}
 
       {review.length > 0 && <DesignReview project={project} />}
 
@@ -87,8 +87,8 @@ export function TechStackPanel({ project }: { project: Project }) {
       {s.mode === "new" && (
         <div className="tech-foot">
           {editable && !s.proposal && <button className="ghost small" onClick={() => void run("stack", api.recommendStack)}>↻ Analisa ulang</button>}
-          {state === "approved" ? <span className="ok-text small">✓ Teknologi v{techVersion(s)} disetujui{designApproved ? " dan masuk spesifikasi final" : ""}</span>
-            : !designApproved && (
+          {state === "approved" ? <span className="ok-text small">✓ Teknologi v{techVersion(s)} disetujui{finalized ? " dan masuk spesifikasi final" : ""}</span>
+            : !finalized && (
               <button className="primary" disabled={!editable || !!s.proposal || errors.length > 0}
                 title={s.proposal ? "Terapkan atau batalkan perubahan dulu" : errors.length ? "Selesaikan masalah di atas dulu" : undefined}
                 onClick={() => void run("stack", api.approveStack)}>Review & Approve</button>
@@ -183,7 +183,7 @@ function Proposal({ p, disabled }: { p: TechProposal; disabled: boolean }) {
           <ul>{p.impact.map((i) => <li key={i.area}>{TECH_AREA[i.area] ?? i.area}: {i.affects.join(", ")}</li>)}</ul>
         </details>
       )}
-      {design && <p className="small warn-text">Rancangan perlu diperiksa ulang setelah perubahan ini; rancangan tidak diubah otomatis.</p>}
+      {design && <p className="small warn-text">Rancangan UI perlu diperiksa ulang setelah perubahan ini; rancangan tidak diubah otomatis.</p>}
       <div className="tech-actions">
         <button className="primary" disabled={disabled || pending === "stack"} onClick={() => void run("stack", api.applyStack)}>Terapkan Perubahan</button>
         <button className="ghost" disabled={disabled || pending === "stack"} onClick={() => void run("stack", api.discardStack)}>Batalkan</button>
@@ -205,20 +205,20 @@ function Issues({ issues, ok }: { issues?: TechIssue[]; ok?: string }) {
   );
 }
 
-// Technology changed after the design was made: the user checks the design,
-// Foundry does not change it.
+// Technology changed after the UI design was written: the user checks the
+// design rules and layout, Foundry does not change them.
 export function DesignReview({ project }: { project: Project }) {
   const { run, pending } = useProject();
   const changes = techReview(project);
   if (!changes.length) return null;
-  const affects = [...new Set((project.stack?.history ?? []).filter((v) => v.version > (project.design?.tech_version ?? 0))
+  const affects = [...new Set((project.stack?.history ?? []).filter((v) => v.version > (project.ui?.tech_version ?? 0))
     .flatMap((v) => v.impact ?? []).filter((i) => i.design).flatMap((i) => i.affects))];
   return (
     <div className="tech-proposal">
-      <strong>⚠️ Rancangan perlu diperiksa ulang</strong>
+      <strong>⚠️ Rancangan UI perlu diperiksa ulang</strong>
       <ul className="small">{changes.map((c, i) => <li key={i}>{changeText(c)}</li>)}</ul>
       {affects.length > 0 && <p className="small muted">Dampak: {affects.join(", ")}</p>}
-      <p className="small muted">Rancangan tidak diubah otomatis. Minta perubahan rancangan bila perlu, lalu tandai sudah diperiksa.</p>
+      <p className="small muted">Aturan desain dan layout tidak diubah otomatis. Minta perubahan bila perlu, lalu tandai sudah diperiksa.</p>
       <div className="tech-actions">
         <button disabled={isWorking(project) || pending === "stack"} onClick={() => void run("stack", api.reviewedDesignTech)}>Sudah saya periksa</button>
       </div>

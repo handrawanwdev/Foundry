@@ -1,13 +1,16 @@
-import type { AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, ExportView, WorkflowView, CanvasOp, CanvasResult, ChangeScope, DesignSpec, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Prototype, Template, TemplateGallery, Theme, ThemeProblem, VersionComparison, VersionSummary } from "./types";
+import type { AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DesignRules, DesignView, ExportView, LayoutSpec, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Template, WorkflowView } from "./types";
+
+// details lists what an invalid request broke (field = where).
+export interface ErrorDetail { field?: string; message: string }
 
 export class ApiError extends Error {
-  constructor(message: string, public status: number, public code = "") {
+  constructor(message: string, public status: number, public code = "", public details: ErrorDetail[] = []) {
     super(message);
   }
 }
 
 // Standard envelope: {success:true,data,meta} | {success:false,error:{code,message,details}}.
-type Envelope<T> = { success: true; data: T; meta: unknown } | { success: false; error: { code: string; message: string; details: unknown[] } };
+type Envelope<T> = { success: true; data: T; meta: unknown } | { success: false; error: { code: string; message: string; details: ErrorDetail[] } };
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api/v1${path}`, {
@@ -17,7 +20,10 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   });
   if (res.status === 204) return undefined as T;
   const env = (await res.json().catch(() => null)) as Envelope<T> | null;
-  if (!env || !env.success) throw new ApiError(env && !env.success ? env.error.message : res.statusText, res.status, env && !env.success ? env.error.code : "");
+  if (!env || !env.success) {
+    const err = env && !env.success ? env.error : null;
+    throw new ApiError(err?.message ?? res.statusText, res.status, err?.code ?? "", err?.details ?? []);
+  }
   return env.data;
 }
 
@@ -34,10 +40,6 @@ export const api = {
   closeProject: () => call("POST", "/projects/close", {}),
   browse: (path?: string) => call<Browse>("GET", `/fs${path ? `?path=${encodeURIComponent(path)}` : ""}`),
   templates: () => call<Template[]>("GET", "/templates"),
-  // Design templates with previews; theme/domain "" = the open project's.
-  designTemplates: (theme = "", domain = "") =>
-    call<TemplateGallery>("GET", `/design-templates?theme=${encodeURIComponent(theme)}&domain=${encodeURIComponent(domain)}`),
-  themes: () => call<{ themes: Theme[] | null; invalid: ThemeProblem[] | null }>("GET", "/themes"),
 
   project: () => call<Project>("GET", "/project"),
   story: (story: string, survey?: Survey) => call<Project>("POST", "/project/story", { story, survey }),
@@ -61,28 +63,14 @@ export const api = {
   reviewedDesignTech: () => call<Project>("POST", "/project/stack/review-design", {}),
   recommendStack: () => call<Project>("POST", "/project/stack/recommend", {}),
   stackCatalog: () => call<StackCatalog>("GET", "/stack/catalog"),
-  // theme "" lets Foundry select one; a draft design is re-themed at once.
-  setTheme: (theme: string) => call<Project>("PUT", "/project/theme", { theme }),
-  // template "" lets the AI choose, "blank" asks for none; applies on generate.
-  setDesignTemplate: (template: string) => call<Project>("PUT", "/project/design-template", { template }),
-  // url "" removes the reference; otherwise it is analyzed into a theme.
-  setReference: (url: string, notes = "") => call<Project>("PUT", "/project/reference", { url, notes }),
-  // screens: what the user sees on each page, so the designer AI sees it too.
-  // scope: what the change may touch; the server rejects a patch outside it.
-  reviseDesign: (feedback: string, screens: Record<string, string>, scope: ChangeScope) =>
-    call("POST", "/project/design/revise", { feedback, screens, scope }),
-  keepDesign: () => call("POST", "/project/design/keep", {}),
-  // A new design from the current features and flows (no discovery).
-  regenerateDesign: () => call("POST", "/project/design/regenerate", {}),
-  undoDesign: () => call("POST", "/project/design/undo", {}),
-  designSpec: () => call<DesignSpec>("GET", "/project/design/handoff"),
-  // Canvas: direct Design IR edits of one page; rejected as a whole when invalid.
-  editDesign: (page: string, ops: CanvasOp[]) => call<CanvasResult>("POST", "/project/design/edit", { page, ops }),
-  prototype: () => call<Prototype>("GET", "/project/design/prototype"),
-  versions: () => call<VersionSummary[]>("GET", "/project/design/versions"),
-  // to 0 = the current design.
-  compareVersions: (from: number, to = 0) => call<VersionComparison>("GET", `/project/design/versions/compare?from=${from}&to=${to}`),
-  restoreVersion: (id: number) => call<Project>("POST", `/project/design/versions/${id}/restore`),
+  // UI design: design rules + layout spec, blueprint artifacts edited as data.
+  design: () => call<DesignView>("GET", "/project/design"),
+  generateDesign: () => call("POST", "/project/design/generate", {}),
+  // focus: design-rules, layout-spec, or shell/page ids.
+  reviseDesign: (text: string, focus: string[] = []) => call("POST", "/project/design/revise", { text, focus }),
+  // Saved whole; refused with ApiError.details when invalid.
+  editDesignRules: (rules: DesignRules) => call<Project>("PUT", "/project/design/rules", rules),
+  editLayout: (layout: LayoutSpec) => call<Project>("PUT", "/project/design/layout", layout),
 
   // Blueprint: built-in artifacts plus the ones written for the project.
   blueprint: () => call<BlueprintView>("GET", "/project/blueprint"),

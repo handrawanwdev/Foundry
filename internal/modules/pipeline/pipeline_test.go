@@ -1,7 +1,6 @@
 package pipeline_test
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,35 +48,50 @@ const discoveryJSON = `Here you go:
                           {"kind": "backend", "audience": [], "rationale": "API"}], "reason": "Pasien memakai HP, admin memakai web."}}
 ` + "```"
 
-const designJSON = `{"system": {"colors": [{"name": "primary", "value": "#1f6feb"}, {"name": "", "value": "#fff"}],
-   "typography": [{"name": "body", "value": "Inter 14px"}], "spacing": [{"name": "space-2", "value": "8px"}]},
+// designJSON is the designer's first answer: rules, one shell, three pages
+// and the pages of the flow. Ids, platform and access are not normalized
+// yet; a blank principle, token and state are dropped.
+const designJSON = `{"rules": {"source": "NEW", "direction": "Tenang dan jelas", "principles": ["Satu aksi utama per layar", " "],
+  "ux_guidelines": ["Konfirmasi sebelum membatalkan janji"],
+  "tokens": {"colors": [{"name": "action.primary", "value": "#1f6feb", "use": "aksi utama"}, {"name": " ", "value": " "}],
+             "typography": [{"name": "type.body", "value": "Inter 14px/20px 400"}], "spacing": [{"name": "space.md", "value": "16px"}],
+             "breakpoints": [{"name": "breakpoint.tablet", "value": "768px"}]},
+  "components": [{"name": "Button", "use": "aksi", "variants": ["primary"], "rules": ["disabled saat mengirim"]}, {"name": "DataTable", "use": "daftar data"}],
+  "accessibility": ["Kontras WCAG AA"], "responsive": ["Tabel jadi list di bawah breakpoint.tablet"],
+  "platforms": [{"platform": "Android", "rules": ["Material 3"]}]},
+ "shells": [{"id": "admin", "name": "Admin", "platform": "web", "pattern": "sidebar", "navigation": "Menu kiri: Jadwal",
+   "regions": [{"id": "nav", "name": "Navigasi", "content": ["Logo", "Menu"]}]}],
  "pages": [
-  {"id": "P1", "name": "Daftar Dokter", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "sub_feature_ids": ["FEAT-001.1"], "purpose": "Cari dokter",
-   "hierarchy": ["Daftar dokter"], "secondary_actions": ["pilih", "Filter", " "], "states": {"loading": "Memuat dokter", "error": "Gagal memuat. Coba lagi."},
-   "route": "Dokter", "access": "AUTH", "primary_action": {"label": "Pilih", "target": "P2"}, "data": {"required": ["Nama dokter"], "api": ["get /doctors", "ambil dokter"]},
-   "components": [{"type": "header", "label": "Dokter"}, {"type": "list", "label": "Dokter", "columns": ["x"], "items": ["dr. A", "dr. B"]}, {"type": "button", "label": "Pilih", "target": "P2"}]},
-  {"id": "P2", "name": "Konfirmasi Janji", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "sub_feature_ids": ["FEAT-001.2"], "purpose": "Konfirmasi", "kind": "form",
-   "hierarchy": ["Ringkasan janji", "Form"], "route": "/janji/konfirmasi", "access": "auth", "primary_action": {"label": "Kirim", "target": "P9"},
-   "components": [{"type": "form", "label": "Janji", "items": ["x"], "fields": [{"label": "Tanggal", "type": "DATE", "required": true, "group": "Jadwal"}, {"label": " "}]}, {"type": "button", "label": "Ke halaman hilang", "target": "P9"}]},
-  {"id": "P3", "name": "Admin Jadwal", "platform": "web", "role": "Admin", "feature_id": "FEAT-002", "sub_feature_ids": ["FEAT-002.1"], "purpose": "Kelola jadwal",
-   "kind": "ADMIN", "density": "padat", "hierarchy": ["Tabel jadwal"], "states": {"loading": "Memuat jadwal", "empty": "Belum ada jadwal. Tambahkan jadwal dokter.", "error": "Jadwal gagal dimuat. Muat ulang."}, "route": "/jadwal", "access": "PUBLIC", "primary_action": {"reason": "Halaman baca saja"},
-   "components": [{"type": "table", "label": "Jadwal", "columns": ["Hari"], "items": ["Senin"]}]}],
- "flows": [{"id": "FLOW-001", "page_ids": ["P1", "P2"]}]}`
+  {"id": "Dokter", "name": "Daftar Dokter", "platform": "android", "route": "Dokter", "role": "Pasien", "access": "AUTH", "feature_id": "FEAT-001",
+   "purpose": "Cari dokter", "pattern": "list",
+   "sections": [{"id": "daftar", "name": "Daftar dokter", "content": ["Kartu dokter: nama, spesialis, jadwal"], "components": ["Button"]}],
+   "links": [{"to": "konfirmasi", "via": "Tombol Pilih"}],
+   "states": {"loading": "Memuat dokter", "empty": "Belum ada dokter", "error": "Gagal memuat. Coba lagi.", "success": " "}},
+  {"id": "konfirmasi", "name": "Konfirmasi Janji", "platform": "android", "route": "Konfirmasi", "role": "Pasien", "access": "auth",
+   "feature_id": "FEAT-001", "purpose": "Konfirmasi janji", "pattern": "form", "primary_action": "Kirim",
+   "sections": [{"id": "ringkasan", "name": "Ringkasan", "content": ["Dokter, tanggal, jam"]},
+                {"id": "form", "name": "Form", "content": ["Tanggal", "Catatan"], "components": ["Button"]}],
+   "hierarchy": ["form", "ringkasan"],
+   "states": {"error": "Jadwal bentrok", "success": "Janji dibuat", "disabled": "Tombol Kirim nonaktif saat mengirim"}},
+  {"id": "jadwal", "name": "Admin Jadwal", "platform": "web", "route": "/jadwal", "role": "Admin", "access": "auth", "feature_id": "FEAT-002",
+   "shell": "admin", "purpose": "Kelola jadwal", "pattern": "table",
+   "sections": [{"id": "tabel", "name": "Tabel jadwal", "content": ["Hari, Dokter, Jam"], "components": ["DataTable"], "spacing": "space.md"}],
+   "states": {"loading": "Skeleton tabel", "empty": "Belum ada jadwal", "error": "Jadwal gagal dimuat"}}],
+ "flows": {"FLOW-001": ["Dokter", "konfirmasi"]}}`
 
-// revisedDesignJSON is a patch: one changed component, one new page, a
-// longer flow. Everything else stays as it is.
-const revisedDesignJSON = `{"patches": [{"page": "PAGE-003", "operations": [
-   {"op": "update", "target": 0, "component": {"type": "table", "label": "Jadwal", "columns": ["Hari"], "items": ["Senin", "Selasa"]}}]}],
- "pages": [
-  {"id": "NEW-1", "name": "Profil", "platform": "android", "role": "Pasien", "feature_id": "FEAT-001", "purpose": "Data diri",
-   "components": [{"type": "form", "label": "Profil", "items": ["Nama"]}, {"type": "button", "label": "Dokter", "target": "PAGE-001"}]}],
- "flows": [{"id": "FLOW-001", "page_ids": ["PAGE-001", "PAGE-002", "NEW-1"]}]}`
+// webDesignJSON is the design of the web platform only.
+var webDesignJSON = designJSON[:strings.Index(designJSON, `  {"id": "Dokter"`)] + designJSON[strings.Index(designJSON, `  {"id": "jadwal"`):strings.Index(designJSON, `,
+ "flows"`)] + "}"
 
-// fullPageJSON sends an existing page whole: a revision must reject it.
-const fullPageJSON = `{"pages": [{"id": "PAGE-003", "name": "Admin Jadwal", "platform": "web", "role": "Admin", "feature_id": "FEAT-002",
-   "components": [{"type": "table", "label": "Jadwal"}]}]}`
-
-const movePatchJSON = `{"patches": [{"page": "PAGE-001", "operations": [{"op": "move", "target": 2, "after": -1}]}]}`
+// revisedDesignJSON adds a page, removes one and changes the flow; the
+// link to the removed page is dropped by Foundry.
+const revisedDesignJSON = `{"pages": [{"id": "profil", "name": "Profil", "platform": "android", "route": "Profil", "access": "auth",
+   "feature_id": "FEAT-001", "purpose": "Data diri", "pattern": "form",
+   "sections": [{"id": "form", "name": "Form profil", "content": ["Nama", "Telepon"]}],
+   "states": {"error": "Gagal menyimpan", "success": "Tersimpan", "disabled": "Simpan nonaktif saat mengirim"},
+   "links": [{"to": "dokter", "via": "Kembali"}]}],
+ "remove_pages": ["konfirmasi"],
+ "flows": {"FLOW-001": ["dokter", "profil"]}}`
 
 func fakeAgent() {
 	in, _ := io.ReadAll(os.Stdin)
@@ -97,52 +111,19 @@ func fakeAgent() {
 			return
 		}
 		fmt.Println(discoveryJSON)
-	case strings.Contains(prompt, "design analyst"):
-		if mode == "ref_error" {
-			fmt.Println(`{"error": "hanya halaman login"}`)
-			return
-		}
-		if !strings.Contains(prompt, "voiceflow.com") || mode == "ref_shots" && !strings.Contains(prompt, "Voiceflow-desktop.png") {
-			fmt.Fprintln(os.Stderr, "reference missing in prompt")
-			os.Exit(4)
-		}
-		fmt.Println(referenceJSON)
-	case strings.Contains(prompt, "product designer"):
-		if strings.Contains(prompt, "Tambahkan halaman profil") {
+	case strings.Contains(prompt, "UI/UX designer of Foundry"):
+		countRun("design")
+		refused := strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED")
+		switch {
+		case strings.Contains(prompt, "Tambahkan halaman profil"):
 			fmt.Println(revisedDesignJSON)
-			return
+		case strings.Contains(prompt, "rubah ini"):
+			fmt.Println("```json\n{}\n```")
+		case mode == "design_invalid_once" && !refused:
+			fmt.Println(strings.Replace(designJSON, `"to": "konfirmasi"`, `"to": "ghost"`, 1))
+		default:
+			fmt.Println(designJSON)
 		}
-		if strings.Contains(prompt, "Pindahkan tombol") {
-			if mode == "reject_once" && !strings.Contains(prompt, "YOUR PREVIOUS PATCH WAS REJECTED") || mode == "reject_always" {
-				fmt.Println(fullPageJSON)
-				return
-			}
-			fmt.Println(movePatchJSON)
-			return
-		}
-		if mode == "ir_invalid_once" && !strings.Contains(prompt, "YOUR PREVIOUS DESIGN WAS REJECTED") {
-			fmt.Println(strings.Replace(designJSON, `"kind": "ADMIN",`, `"kind": "ADMIN", "layout": {"frame": "app", "root": {"type": "stack", "children": ["ghost"]}},`, 1))
-			return
-		}
-		fmt.Println(designJSON)
-	case strings.Contains(prompt, "visual QA checker"):
-		if mode == "initial_fix" && strings.Contains(prompt, "A new design was just generated") && strings.Contains(prompt, "-i1.png") {
-			fmt.Println(`{"status": "fix", "notes": "aksi utama tenggelam", "issues": [
-  {"page": "PAGE-001", "device": "mobile", "severity": "high", "category": "hierarchy", "component": "button-3", "problem": "Tombol Pilih ada di bawah daftar panjang", "fix": "Pindahkan tombol Pilih ke atas"},
-  {"page": "PAGE-002", "severity": "low", "category": "spacing", "problem": "Make it cleaner", "fix": "improve the UI"}],
- "patches": [{"page": "PAGE-001", "operations": [{"op": "move", "target": 2, "after": -1}]}]}`)
-			return
-		}
-		if mode == "degrade_fix" && strings.Contains(prompt, "-i1.png") {
-			// Removing the primary button lowers the quality score.
-			fmt.Println(`{"status": "fix", "notes": "tombol mengganggu", "patches": [{"page": "PAGE-001", "operations": [{"op": "remove", "target": 2}]}]}`)
-			return
-		}
-		if mode == "qa_fix" && strings.Contains(prompt, "-r1.png") {
-			fmt.Println(`{"status": "fix", "notes": "tombol terlalu atas", "patches": [{"page": "PAGE-001", "operations": [{"op": "move", "target": 0, "after": 1}]}]}`)
-			return
-		}
-		fmt.Println(`{"status": "pass"}`)
 	case strings.Contains(prompt, "workflow planner"):
 		countRun("workflow")
 		switch {
@@ -169,7 +150,7 @@ const workflowJSON = `{"commands": [
  {"id": "C2", "name": "Backend janji temu", "objective": "Endpoint janji", "instructions": "Implementasikan endpoint sesuai kontrak C1.",
   "depends_on": ["C1"], "artifacts": ["architecture"]},
  {"id": "C3", "name": "Layar janji", "objective": "Layar janji temu", "instructions": "Bangun layar sesuai desain.",
-  "depends_on": ["C1"], "artifacts": ["ui-design", "requirements"]}]}`
+  "depends_on": ["C1"], "artifacts": ["design-rules", "layout-spec", "requirements"]}]}`
 
 const cyclicWorkflowJSON = `{"commands": [
  {"id": "C1", "name": "A", "objective": "a", "instructions": "a", "depends_on": ["C2"], "artifacts": ["requirements"]},
@@ -288,35 +269,29 @@ func TestEndToEndAgent(t *testing.T) {
 	if p.Structure.Mode != core.StructureNew || p.Structure.Template != "monorepo" {
 		t.Fatalf("structure = %+v", p.Structure)
 	}
-	// Design traces to features; dead link P9 removed; flow linked to pages.
-	if len(p.Design.Pages) != 3 || p.Design.Pages[1].Components[1].Target != "" {
-		t.Fatalf("design pages = %+v", p.Design.Pages)
+	// The design is written and normalized: ids, platform, access and
+	// source are lowercased, blanks are dropped.
+	r := p.UI.Rules
+	if r.Source != core.RulesNew || len(r.Principles) != 1 || len(r.Tokens.Colors) != 1 || r.Platforms[0].Platform != "android" {
+		t.Fatalf("rules = %+v", r)
 	}
-	if p.Design.Pages[0].Components[2].Target != "PAGE-002" {
-		t.Fatalf("prototype link = %q", p.Design.Pages[0].Components[2].Target)
+	pg := p.UI.Layout.Pages
+	if len(pg) != 3 || pg[0].ID != "dokter" || pg[0].Access != "auth" || pg[0].States["success"] != "" || len(pg[0].States) != 3 {
+		t.Fatalf("pages = %+v", pg)
 	}
-	if got := p.Flows[0].PageIDs; len(got) != 2 {
+	if got := p.Flows[0].PageIDs; !slices.Equal(got, []string{"dokter", "konfirmasi"}) {
 		t.Fatalf("flow pages = %v", got)
 	}
-	// Contract fields are normalized: route gets a slash, access and field
-	// types are lowercased, invalid api calls and empty fields are dropped,
-	// form items follow the field spec, dead action targets are cleared.
-	pg := p.Design.Pages
-	if pg[0].Route != "/dokter" || pg[0].Access != "auth" || pg[2].Access != "public" ||
-		!slices.Equal(pg[0].Data.API, []string{"GET /doctors"}) || pg[0].PrimaryAction.Target != "PAGE-002" || pg[1].PrimaryAction.Target != "" {
-		t.Fatalf("contract = %+v", pg)
+	if errs := core.Errors(p.DesignIssues(nil)); len(errs) != 0 || p.UI.Version != 1 || p.UI.TechVersion != p.Stack.Version() {
+		t.Fatalf("issues = %+v ui = %+v", errs, p.UI)
 	}
-	form := pg[1].Components[0]
-	if len(form.Fields) != 1 || form.Fields[0].Type != "date" || !slices.Equal(form.Items, []string{"# Jadwal", "Tanggal"}) {
-		t.Fatalf("form = %+v", form)
+	// Both parts are blueprint artifacts.
+	ids := map[string]bool{}
+	for _, a := range spec.Artifacts(p) {
+		ids[a.ID] = true
 	}
-	if b := work.Blockers(p); len(b) != 0 {
-		t.Fatalf("blockers = %+v", b)
-	}
-	h := work.PageSpecs(p)[0]
-	if h.Route != "/dokter" || h.PrimaryAction != "Pilih → Konfirmasi Janji (/janji/konfirmasi)" ||
-		!slices.Contains(h.Tests, "Tanpa login diarahkan ke halaman masuk") || !slices.Contains(work.PageSpecs(p)[1].Validation, "Tanggal: wajib, date") {
-		t.Fatalf("handoff = %+v", h)
+	if !ids[core.ArtifactDesignRules] || !ids[core.ArtifactLayoutSpec] || ids["ui-design"] {
+		t.Fatalf("artifacts = %v", ids)
 	}
 
 	// User override: structure type, applied after its impact.
@@ -330,26 +305,35 @@ func TestEndToEndAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	p = load(t, s)
-	if p.Stage != core.StageReady || p.Design.Status != core.DesignApproved || p.Job != nil && p.Job.Status == core.JobRunning {
-		t.Fatalf("finalize: stage=%s design=%s job=%+v", p.Stage, p.Design.Status, p.Job)
+	if p.Stage != core.StageReady || p.Job != nil && p.Job.Status == core.JobRunning {
+		t.Fatalf("finalize: stage=%s job=%+v", p.Stage, p.Job)
 	}
 	// The export package lands in docs/foundry for an external coding agent.
-	raw, err := os.ReadFile(filepath.Join(p.Dir, "docs", "foundry", "spec.json"))
+	root := filepath.Join(p.Dir, "docs", "foundry")
+	raw, err := os.ReadFile(filepath.Join(root, "spec.json"))
 	if err != nil {
 		t.Fatalf("spec.json missing: %v", err)
 	}
 	var out spec.Spec
-	if err := json.Unmarshal(raw, &out); err != nil || len(out.Pages) != 3 || out.Pages[0].Route != "/dokter" {
+	if err := json.Unmarshal(raw, &out); err != nil || out.Layout == nil || len(out.Layout.Pages) != 3 || out.DesignRules == nil {
 		t.Fatalf("spec.json = %s, %v", raw, err)
 	}
-	for _, f := range []string{"README.md", "manifest.json", "blueprint/ui-design.md", "blueprint/requirements.md",
-		"workflow/workflow.json", "workflow/CMD-001.md", "design-brief.md"} {
-		if _, err := os.Stat(filepath.Join(p.Dir, "docs", "foundry", filepath.FromSlash(f))); err != nil {
+	for _, f := range []string{"README.md", "manifest.json", "blueprint/design-rules.md", "blueprint/layout-spec.md", "blueprint/requirements.md",
+		"design/design-rules.json", "design/layout-spec.json", "workflow/workflow.json", "workflow/CMD-001.md"} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(f))); err != nil {
 			t.Errorf("%s missing: %v", f, err)
 		}
 	}
-	if b, err := os.ReadFile(filepath.Join(p.Dir, "docs", "foundry", "blueprint", "ui-design.md")); err != nil || !strings.Contains(string(b), "/dokter") {
-		t.Fatalf("ui-design.md = %s, %v", b, err)
+	if _, err := os.Stat(filepath.Join(root, "design-brief.md")); !os.IsNotExist(err) {
+		t.Errorf("design-brief.md written: %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(root, "blueprint", "layout-spec.md")); err != nil || !strings.Contains(string(b), "/jadwal") {
+		t.Fatalf("layout-spec.md = %s, %v", b, err)
+	}
+	// The screen command points at the design it implements.
+	if b, err := os.ReadFile(filepath.Join(root, "workflow", "CMD-003.md")); err != nil ||
+		!strings.Contains(string(b), "blueprint/design-rules.md") || !strings.Contains(string(b), "blueprint/layout-spec.md") {
+		t.Fatalf("CMD-003.md = %s, %v", b, err)
 	}
 	// No code is written: no scaffold folders.
 	if _, err := os.Stat(filepath.Join(p.Dir, "apps", "api", "modules")); err == nil {
@@ -364,17 +348,19 @@ func TestFinalizeThenReopen(t *testing.T) {
 	if err := approve(s); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ReviseDesign("ubah warna", nil, nil); !errors.Is(err, pipeline.ErrWrongStage) {
+	if err := s.ReviseDesign("ubah warna", nil); !errors.Is(err, pipeline.ErrFinalized) {
 		t.Fatalf("revise after finalize err = %v", err)
 	}
-	if err := s.ReopenDesign(); err != nil {
+	if _, err := s.EditDesignRules(core.DesignRules{}); !errors.Is(err, pipeline.ErrFinalized) {
+		t.Fatalf("edit after finalize err = %v", err)
+	}
+	if err := s.Reopen(); err != nil {
 		t.Fatal(err)
 	}
-	p := load(t, s)
-	if p.Stage != core.StageDesign || p.Design.Status != core.DesignDraft {
-		t.Fatalf("reopen: stage=%s design=%s", p.Stage, p.Design.Status)
+	if p := load(t, s); p.Stage != core.StageDesign {
+		t.Fatalf("reopen: stage=%s", p.Stage)
 	}
-	if err := s.ReopenDesign(); !errors.Is(err, pipeline.ErrWrongStage) {
+	if err := s.Reopen(); !errors.Is(err, pipeline.ErrWrongStage) {
 		t.Fatalf("reopen twice err = %v", err)
 	}
 }
@@ -414,78 +400,6 @@ func TestDiscoveryCompletesBlueprint(t *testing.T) {
 	}
 }
 
-func TestDesignRevise(t *testing.T) {
-	s := newService(t, fakeAI{}, "")
-	designReady(t, s)
-	if err := s.ReviseDesign("Tambahkan halaman profil", nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	p := load(t, s)
-	if p.Design.Status != core.DesignDraft || len(p.Design.Feedback) != 1 {
-		t.Fatalf("design = %+v", p.Design)
-	}
-	rev := p.Design.Revision
-	if rev == nil || rev.Request != "Tambahkan halaman profil" || len(rev.Changes) != 2 {
-		t.Fatalf("revision = %+v", rev)
-	}
-	if c := rev.Changes[0]; c.Kind != "changed" || c.Page != "Admin Jadwal" || len(c.Details) != 1 {
-		t.Fatalf("change 0 = %+v", c)
-	}
-	if c := rev.Changes[1]; c.Kind != "added" || c.Page != "Profil" || c.PageID != "PAGE-004" {
-		t.Fatalf("change 1 = %+v", c)
-	}
-	// Untouched pages keep id and content; the new page links to them.
-	if pg := findPage(p, "PAGE-002"); pg == nil || pg.Route != "/janji/konfirmasi" || len(pg.Components[0].Fields) != 1 {
-		t.Fatalf("untouched page = %+v", pg)
-	}
-	if got := findPage(p, "PAGE-004").Components[1].Target; got != "PAGE-001" {
-		t.Fatalf("new page target = %q", got)
-	}
-	if got := p.Flows[0].PageIDs; !slices.Equal(got, []string{"PAGE-001", "PAGE-002", "PAGE-004"}) {
-		t.Fatalf("flow pages = %v", got)
-	}
-
-	if err := s.UndoDesignChange(); err != nil {
-		t.Fatal(err)
-	}
-	p = load(t, s)
-	if len(p.Design.Pages) != 3 || len(p.Design.Feedback) != 0 || p.Design.Revision != nil {
-		t.Fatalf("after undo: %+v", p.Design)
-	}
-	if got := p.Flows[0].PageIDs; len(got) != 2 {
-		t.Fatalf("flow pages after undo = %v", got)
-	}
-	if err := s.KeepDesignChange(); err == nil {
-		t.Fatal("keep without a revision must fail")
-	}
-
-	if err := s.ReviseDesign("Tambahkan halaman profil", nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	if err := s.KeepDesignChange(); err != nil {
-		t.Fatal(err)
-	}
-	p = load(t, s)
-	if len(p.Design.Pages) != 4 || len(p.Design.Feedback) != 1 || p.Design.Revision != nil {
-		t.Fatalf("after keep: %+v", p.Design)
-	}
-	// The new profile page has no route, access or primary action.
-	if err := approve(s); !errors.Is(err, pipeline.ErrIncomplete) {
-		t.Fatalf("approve incomplete err = %v", err)
-	}
-}
-
-func findPage(p *core.Project, id string) *core.Page {
-	for i := range p.Design.Pages {
-		if p.Design.Pages[i].ID == id {
-			return &p.Design.Pages[i]
-		}
-	}
-	return nil
-}
-
 func finalize(t *testing.T, s *pipeline.Service) {
 	t.Helper()
 	designReady(t, s)
@@ -506,16 +420,26 @@ func TestExistingProjectKeepsStructure(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "web", "src", "components", "Sidebar.tsx"), []byte(`[{ label: "Pesanan" }]`), 0o644)
 	os.WriteFile(filepath.Join(dir, "web", "src", "index.css"), []byte(`:root { --primary: #7c3aed; --background: #ffffff; --foreground: #111827; --border: #e5e7eb; }`), 0o644)
 	p := designReady(t, s)
-	// The existing frontend is read: the design follows its tokens and the
-	// prompts know its routes, navigation and components.
-	if ui := p.Structure.UI; ui == nil || ui.Navigation != "side" || len(ui.Routes) != 2 || ui.ThemeID != "existing-ui" {
+	// The existing frontend is read: the design rules follow its tokens and
+	// components, and the prompt knows its routes and navigation.
+	ui := p.Structure.UI
+	if ui == nil || ui.Navigation != "side" || len(ui.Routes) != 2 || ui.Tokens == nil || !slices.Equal(ui.TokenSources, []string{"web/src/index.css"}) {
 		t.Fatalf("ui = %+v", p.Structure.UI)
 	}
-	if p.Theme != "existing-ui" || p.Design.Theme == nil || p.Design.Theme.ID != "existing-ui" {
-		t.Fatalf("theme = %q %+v", p.Theme, p.Design.Theme)
-	}
-	if prompt := work.DesignPrompt(p); !strings.Contains(prompt, "EXISTING UI") || !strings.Contains(prompt, "/orders, /settings") || !strings.Contains(prompt, "Pesanan") {
+	if prompt := work.DesignPrompt(p); !strings.Contains(prompt, "EXISTING UI") || !strings.Contains(prompt, "/orders, /settings") ||
+		!strings.Contains(prompt, "Pesanan") || !strings.Contains(prompt, "#7c3aed") {
 		t.Fatalf("design prompt misses the existing ui")
+	}
+	r := p.UI.Rules
+	primary := slices.IndexFunc(r.Tokens.Colors, func(t core.Token) bool { return t.Name == "action.primary" })
+	if r.Source != core.RulesExisting || primary < 0 || r.Tokens.Colors[primary].Value != "#7c3aed" ||
+		!slices.Contains(r.Sources, "web/src/index.css") {
+		t.Fatalf("rules = %+v", r)
+	}
+	if !slices.ContainsFunc(r.Components, func(c core.ComponentRule) bool {
+		return c.Name == "Sidebar" && c.Source == "web/src/components/Sidebar.tsx"
+	}) {
+		t.Fatalf("components = %+v", r.Components)
 	}
 	if p.Structure.Mode != core.StructureExisting {
 		t.Fatalf("mode = %s", p.Structure.Mode)
@@ -588,20 +512,14 @@ func TestMCPHostFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustJob(t, load(t, s), work.KindDesign, core.JobWaiting) // chained
+	if w, _ := s.NextWork(); w.Kind != work.KindDesign || !strings.Contains(w.Prompt, "UI/UX designer") || !strings.Contains(w.Prompt, "FLOW-001") {
+		t.Fatalf("work = %+v", w)
+	}
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
-	// Kind is normalized, unknown density is dropped, columns only stay on
-	// tables, secondary actions drop blanks and the primary action.
-	d := load(t, s).Design
-	pg := d.Pages
-	if pg[2].Kind != "admin" || pg[2].Density != "" || pg[0].Components[1].Columns != nil || !slices.Equal(pg[0].SecondaryActions, []string{"Filter"}) {
-		t.Fatalf("pages = %+v", pg)
-	}
-	// The theme gives the tokens; the designer's component rules stay.
-	if d.Theme == nil || d.Theme.Source != "auto" || d.System == nil || len(d.System.Colors) != len(core.ThemeColorTokens) ||
-		!strings.HasPrefix(d.System.Direction, d.Theme.Name) {
-		t.Fatalf("theme = %+v system = %+v", d.Theme, d.System)
+	if d := load(t, s).UI; d == nil || len(d.Layout.Pages) != 3 || d.Layout.Shells[0].ID != "admin" {
+		t.Fatalf("design = %+v", d)
 	}
 	if err := approve(s); err != nil {
 		t.Fatal(err)
@@ -611,375 +529,9 @@ func TestMCPHostFlow(t *testing.T) {
 	}
 }
 
-type fakeRender struct{ fail bool }
-
-func (f fakeRender) Capture(_ context.Context, url, device, out string) error {
-	if f.fail {
-		return errors.New("chrome tidak ada")
-	}
-	return nil
-}
-
-func (f fakeRender) Shot(_ context.Context, _, pageID, device, out string) (string, error) {
-	if f.fail {
-		return "", errors.New("chrome tidak ada")
-	}
-	return "Tampilan " + device + ":\n[0] header: Judul", nil
-}
-
-func types(pg *core.Page) string {
-	var out []string
-	for _, c := range pg.Components {
-		out = append(out, c.Type)
-	}
-	return strings.Join(out, ",")
-}
-
-func scopePage1() *core.ChangeScope {
-	return &core.ChangeScope{Pages: []core.ScopePage{{ID: "PAGE-001", Request: "Pindahkan tombol ke atas", Components: []int{2}, Device: "mobile"}}}
-}
-
-func TestDesignPatchRejectedRetriesOnce(t *testing.T) {
-	s := newService(t, fakeAI{}, "reject_once")
-	designReady(t, s)
-	if err := s.ReviseDesign("Pindahkan tombol ke atas", nil, scopePage1()); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	p := load(t, s)
-	mustJob(t, p, work.KindDesign, core.JobDone)
-	if got := types(findPage(p, "PAGE-001")); got != "button,header,list" {
-		t.Fatalf("components = %s", got)
-	}
-	if !strings.Contains(p.Design.Rejected, "PATCH DITOLAK") && p.Design.Revision == nil {
-		t.Fatalf("design = %+v", p.Design)
-	}
-
-	s = newService(t, fakeAI{}, "reject_always")
-	designReady(t, s)
-	if err := s.ReviseDesign("Pindahkan tombol ke atas", nil, scopePage1()); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	p = load(t, s)
-	mustJob(t, p, work.KindDesign, core.JobFailed)
-	if !strings.Contains(p.Job.Error, "PAGE-003 dikirim utuh") || p.Design.Revision != nil || types(findPage(p, "PAGE-001")) != "header,list,button" {
-		t.Fatalf("rejected patch applied: %+v / %s", p.Design, p.Job.Error)
-	}
-}
-
-// An invalid Design IR is rejected, not rendered; the designer gets the
-// errors and one retry.
-func TestDesignIRInvalidRetriesOnce(t *testing.T) {
-	s := newService(t, fakeAI{}, "ir_invalid_once")
-	p := designReady(t, s)
-	if len(p.Design.Pages) != 3 || p.Design.Rejected != "" {
-		t.Fatalf("design = %+v", p.Design)
-	}
-	for _, pg := range p.Design.Pages {
-		if pg.Layout == nil {
-			t.Fatalf("page %s without layout", pg.ID)
-		}
-	}
-	if !strings.Contains(strings.Join(logTexts(p), "\n"), "DESIGN_IR_INVALID") {
-		t.Fatal("rejection not logged")
-	}
-}
-
-func logTexts(p *core.Project) []string {
-	var out []string
-	for _, e := range p.Events {
-		out = append(out, e.Message)
-	}
-	return out
-}
-
-func TestDesignVisualQA(t *testing.T) {
-	s := newService(t, fakeAI{}, "qa_fix")
-	designReady(t, s)
-	s.Render = fakeRender{}
-	if err := s.ReviseDesign("Pindahkan tombol ke atas", nil, scopePage1()); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	p := load(t, s)
-	mustJob(t, p, work.KindDesignQA, core.JobDone)
-	qa := p.Design.Revision.QA
-	if qa.Status != "fixed" || qa.Round != 2 || qa.Notes != "tombol terlalu atas" || len(qa.Shots) != 1 || qa.Shots[0].Device != "mobile" {
-		t.Fatalf("qa = %+v", qa)
-	}
-	if got := types(findPage(p, "PAGE-001")); got != "header,button,list" {
-		t.Fatalf("components after QA fix = %s", got)
-	}
-	if err := s.UndoDesignChange(); err != nil {
-		t.Fatal(err)
-	}
-	if got := types(findPage(load(t, s), "PAGE-001")); got != "header,list,button" {
-		t.Fatalf("undo must restore the design from before the request: %s", got)
-	}
-
-	s = newService(t, fakeAI{}, "")
-	designReady(t, s)
-	s.Render = fakeRender{fail: true}
-	if err := s.ReviseDesign("Pindahkan tombol ke atas", nil, scopePage1()); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	p = load(t, s)
-	if qa := p.Design.Revision.QA; qa.Status != "skipped" || !strings.Contains(qa.Notes, "chrome tidak ada") {
-		t.Fatalf("qa = %+v", qa)
-	}
-	if types(findPage(p, "PAGE-001")) != "button,header,list" {
-		t.Fatal("a skipped check keeps the applied patch")
-	}
-}
-
-// A new design is critiqued before the user sees it: every page on its base
-// device plus the mobile view of web pages; a fix is an IR patch, the next
-// round renders only the patched page on the device of its finding.
-func TestInitialDesignCritic(t *testing.T) {
-	s := newService(t, fakeAI{}, "initial_fix")
-	s.Render = fakeRender{}
-	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	p := load(t, s)
-	mustJob(t, p, work.KindDesignQA, core.JobDone)
-	qa := p.Design.QA
-	if qa == nil || qa.Status != "fixed" || qa.Round != 2 || qa.Notes != "aksi utama tenggelam" {
-		t.Fatalf("qa = %+v", qa)
-	}
-	if len(qa.Shots) != 1 || qa.Shots[0].PageID != "PAGE-001" || qa.Shots[0].Device != "mobile" {
-		t.Fatalf("second round must render only the patched page: %+v", qa.Shots)
-	}
-	if got := types(findPage(p, "PAGE-001")); got != "button,header,list" {
-		t.Fatalf("components after critic fix = %s", got)
-	}
-	if p.Design.Revision != nil {
-		t.Fatal("the critic fix of a new design is not a user revision")
-	}
-	// Measured after generation, after the patch and after the last round.
-	q := p.Design.Quality
-	if q == nil || len(q.Pages) != 3 || q.Confidence == "low" || q.Compared == nil || q.Compared.Verdict == "degraded" || len(qa.Compared) != 1 {
-		t.Fatalf("quality = %+v compared = %+v", q, qa.Compared)
-	}
-	if _, err := os.Stat(filepath.Join(p.Dir, core.StateDir, "design-quality.json")); err != nil {
-		t.Fatal(err)
-	}
-	var hist []work.QualityRecord
-	b, _ := os.ReadFile(filepath.Join(p.Dir, core.StateDir, "design-quality-history.json"))
-	if err := json.Unmarshal(b, &hist); err != nil || len(hist) != 9 || hist[0].Round != 0 ||
-		hist[6].PageID != "PAGE-001" || hist[6].Round != 2 || !slices.Equal(hist[6].Devices, []string{"mobile"}) || len(hist[8].Devices) != 0 {
-		t.Fatalf("history (%v) = %+v", err, hist)
-	}
-
-	// Round 1 checked 3 pages on their base device + the web page on mobile.
-	s = newService(t, fakeAI{}, "initial_fix")
-	s.Render = &countRender{}
-	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	shots := s.Render.(*countRender).shots
-	want := []string{"PAGE-001 mobile", "PAGE-002 mobile", "PAGE-003 desktop", "PAGE-003 mobile", "PAGE-001 mobile"}
-	if strings.Join(shots, ",") != strings.Join(want, ",") {
-		t.Fatalf("shots = %v", shots)
-	}
-}
-
-// A critic patch that lowers the quality score is rejected; the design the
-// generator made stays.
-func TestCriticPatchDegradesRejected(t *testing.T) {
-	s := newService(t, fakeAI{}, "degrade_fix")
-	s.Render = fakeRender{}
-	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	p := load(t, s)
-	qa := p.Design.QA
-	if qa.Status != "failed" || !strings.Contains(qa.Notes, "memperburuk kualitas") || len(qa.Compared) != 1 || !qa.Compared[0].Rejected {
-		t.Fatalf("qa = %+v", qa)
-	}
-	if got := types(findPage(p, "PAGE-001")); got != "header,list,button" {
-		t.Fatalf("components = %s", got)
-	}
-	if p.Design.Quality.Compared == nil || p.Design.Quality.Compared.Verdict != "degraded" {
-		t.Fatalf("quality = %+v", p.Design.Quality)
-	}
-}
-
-type countRender struct{ shots []string }
-
-func (c *countRender) Shot(_ context.Context, _, pageID, device, _ string) (string, error) {
-	c.shots = append(c.shots, pageID+" "+device)
-	return "Tampilan " + device, nil
-}
-
-// A theme picked before the design is followed by it; picking another
-// re-themes the draft without touching its pages.
-func TestSetTheme(t *testing.T) {
-	s := newService(t, fakeAI{}, "")
-	if _, err := s.SetTheme("nope"); err == nil || !strings.Contains(err.Error(), "tidak tersedia") {
-		t.Fatalf("unknown theme err = %v", err)
-	}
-	if _, err := s.SetTheme("finance-minimal"); err != nil {
-		t.Fatal(err)
-	}
-	p := designReady(t, s)
-	if th := p.Design.Theme; th == nil || th.ID != "finance-minimal" || th.Source != "user" || p.Design.System.Colors[6].Value != "#0f766e" {
-		t.Fatalf("theme = %+v", th)
-	}
-	pages, _ := json.Marshal(p.Design.Pages)
-	p, err := s.SetTheme("trading-terminal")
-	if err != nil {
-		t.Fatal(err)
-	}
-	after, _ := json.Marshal(p.Design.Pages)
-	if string(after) != string(pages) || p.Design.Theme.ID != "trading-terminal" || p.Design.Theme.ColorMode != "dark" || p.Design.Quality == nil {
-		t.Fatalf("re-theme: theme = %+v", p.Design.Theme)
-	}
-	// Back to automatic: selected from the detected domain.
-	if p, err = s.SetTheme(""); err != nil || p.Theme != "" || p.Design.Theme.ID != "enterprise-dark" || p.Design.Theme.Source != "auto" {
-		t.Fatalf("auto: err = %v theme = %+v", err, p.Design.Theme)
-	}
-	finalize(t, s)
-	if _, err := s.SetTheme("trading-terminal"); !errors.Is(err, pipeline.ErrWrongStage) {
-		t.Fatalf("approved design re-themed: %v", err)
-	}
-}
-
-const referenceJSON = `{"reference": "Voiceflow", "category": "editor", "personality": ["modern", "creative", "technical"],
- "layout": ["canvas", "split-panel"], "navigation": "side", "density": "comfortable",
- "visual": {"color_mode": "light", "spacing": "comfortable", "surface": "soft", "radius": "medium"},
- "typography": {"scale": "balanced", "personality": "geometric"},
- "colors": {"primary": "#3d5afe", "background": "#f7f7f8", "surface": "#ffffff", "text": "#1a1a1a", "text_muted": "#5f6368", "border": "#e4e4e7",
-            "success": "#16a34a", "warning": "#b45309", "danger": "#dc2626"},
- "components": {"button": "soft", "nav": "light"}, "avoid": ["hero_section"]}`
-
-// A reference named before the story is analyzed after discovery; the
-// first design follows its theme.
-func TestReferenceBeforeDesign(t *testing.T) {
-	s := newService(t, fakeAI{}, "ref_shots")
-	s.Render = fakeRender{}
-	if _, err := s.SetReference("ftp://x", ""); err == nil {
-		t.Fatal("invalid reference accepted")
-	}
-	p, err := s.SetReference("voiceflow.com", "suka kanvasnya")
-	if err != nil || p.Reference.Status != "pending" || p.Job != nil {
-		t.Fatalf("err = %v ref = %+v job = %+v", err, p.Reference, p.Job)
-	}
-	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	p = load(t, s)
-	r := p.Reference
-	if r.Status != "done" || r.ThemeID != "voiceflow-inspired" || len(r.Shots) != 2 || p.Theme != r.ThemeID {
-		t.Fatalf("reference = %+v", r)
-	}
-	if th := p.Design.Theme; th == nil || th.ID != "voiceflow-inspired" || th.Source != "user" || p.Design.Quality.Dimensions["reference"] == 0 {
-		t.Fatalf("design theme = %+v", th)
-	}
-	if _, err := os.Stat(filepath.Join(p.Dir, core.StateDir, "themes", "voiceflow-inspired", "reference.json")); err != nil {
-		t.Fatal(err)
-	}
-	// Removing the reference goes back to automatic selection.
-	if p, err = s.SetReference("", ""); err != nil || p.Reference != nil || p.Theme != "" {
-		t.Fatalf("remove: %v %+v", err, p.Reference)
-	}
-}
-
-// A reference that cannot be analyzed fails; the design falls back to the
-// theme selected from the requirement.
-func TestReferenceInvalidFallsBack(t *testing.T) {
-	s := newService(t, fakeAI{}, "ref_error")
-	s.SetReference("voiceflow.com", "")
-	p := designReady(t, s)
-	if p.Reference.Status != "failed" || !strings.Contains(p.Reference.Error, "login") || len(p.Reference.Shots) != 0 {
-		t.Fatalf("reference = %+v", p.Reference)
-	}
-	if p.Design.Theme == nil || p.Design.Theme.Source != "auto" {
-		t.Fatalf("theme = %+v", p.Design.Theme)
-	}
-}
-
-// A reference on an existing draft re-themes it; the pages stay.
-func TestReferenceOnDraft(t *testing.T) {
-	s := newService(t, fakeAI{}, "")
-	p := designReady(t, s)
-	pages, _ := json.Marshal(p.Design.Pages)
-	if _, err := s.SetReference("https://voiceflow.com", ""); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	p = load(t, s)
-	after, _ := json.Marshal(p.Design.Pages)
-	mustJob(t, p, work.KindReference, core.JobDone)
-	if string(after) != string(pages) || p.Design.Theme.ID != "voiceflow-inspired" || p.Design.System.Colors[6].Value != "#3d5afe" {
-		t.Fatalf("theme = %+v", p.Design.Theme)
-	}
-}
-
-func TestDesignVersionsAndCanvas(t *testing.T) {
-	s := newService(t, fakeAI{}, "")
-	designReady(t, s)
-	if err := s.ReviseDesign("Tambahkan halaman profil", nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	if _, err := s.EditDesign("PAGE-001", []work.CanvasOp{{Op: "set_page", Fields: map[string]string{"density": "compact"}}}); err == nil {
-		t.Fatal("canvas edit must wait for the pending revision")
-	}
-	if err := s.UndoDesignChange(); err != nil {
-		t.Fatal(err)
-	}
-	res, err := s.EditDesign("PAGE-001", []work.CanvasOp{{Op: "set_page", Fields: map[string]string{"density": "compact"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := res.Project
-	if findPage(p, "PAGE-001").Density != "compact" || p.Design.Quality == nil {
-		t.Fatalf("canvas edit = %+v", findPage(p, "PAGE-001"))
-	}
-	list, err := work.Versions(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var sources []string
-	for _, v := range list {
-		sources = append(sources, v.Source)
-	}
-	if !slices.Equal(sources, []string{"canvas", "undo", "revision", "generate"}) || !list[0].Current {
-		t.Fatalf("versions = %+v", list)
-	}
-
-	p, err = s.RestoreDesignVersion(list[3].ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if findPage(p, "PAGE-001").Density == "compact" || len(p.Design.Pages) != 3 {
-		t.Fatalf("restore = %+v", p.Design.Pages[0])
-	}
-	if list, _ = work.Versions(p); list[0].Source != "restore" || !list[0].Current {
-		t.Fatalf("versions after restore = %+v", list)
-	}
-	if _, err := s.RestoreDesignVersion(99); err == nil {
-		t.Fatal("unknown version must fail")
-	}
-
-	if err := approve(s); err != nil {
-		t.Fatal(err)
-	}
-	s.Wait()
-	if _, err := s.EditDesign("PAGE-001", []work.CanvasOp{{Op: "set_page", Fields: map[string]string{"name": "X"}}}); !errors.Is(err, pipeline.ErrWrongStage) {
-		t.Fatalf("edit after approval err = %v", err)
-	}
-}
-
-func TestUnclearChangeRequestDropped(t *testing.T) {
-	s := newService(t, fakeAI{mcp: true}, "")
+// mcpDesigned drives an MCP project to a written design.
+func mcpDesigned(t *testing.T, s *pipeline.Service) {
+	t.Helper()
 	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
 		t.Fatal(err)
 	}
@@ -989,37 +541,176 @@ func TestUnclearChangeRequestDropped(t *testing.T) {
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
-	before := load(t, s).Design.Pages
-	if err := s.ReviseDesign("rubah ini", nil, nil); err != nil {
+}
+
+func TestDesignRevise(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	designReady(t, s)
+	if err := workflowReady(s); err != nil {
 		t.Fatal(err)
 	}
-	// The AI finds nothing to change: the request is dropped, not retried.
-	if err := s.SubmitWork(work.KindDesign, "```json\n{\"pages\": []}\n```"); err != nil {
+	if err := s.ReviseDesign("Tambahkan halaman profil", []string{"ghost"}); err == nil {
+		t.Fatal("unknown focus accepted")
+	}
+	if err := s.ReviseDesign("Tambahkan halaman profil", []string{core.ArtifactLayoutSpec, "dokter"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindDesign, core.JobDone)
+	var ids []string
+	for _, pg := range p.UI.Layout.Pages {
+		ids = append(ids, pg.ID)
+	}
+	if !slices.Equal(ids, []string{"dokter", "jadwal", "profil"}) || p.UI.Request != nil || p.UI.Version != 2 {
+		t.Fatalf("pages = %v ui = %+v", ids, p.UI)
+	}
+	// The link and flow step to the removed page are dropped.
+	if len(p.UI.Layout.Pages[0].Links) != 0 || !slices.Equal(p.Flows[0].PageIDs, []string{"dokter", "profil"}) {
+		t.Fatalf("links = %+v flow = %v", p.UI.Layout.Pages[0].Links, p.Flows[0].PageIDs)
+	}
+	// Only the layout changed: the screen command needs review, the others
+	// do not.
+	r := pipeline.CheckWorkflow(p)
+	if !slices.Equal(r.Stale["CMD-003"], []string{core.ArtifactLayoutSpec}) || len(r.Stale["CMD-001"]) != 0 || r.Ready {
+		t.Fatalf("report = %+v", r)
+	}
+	if b := pipeline.Blockers(p); !slices.Contains(b, "workflow: 1 command perlu ditinjau") {
+		t.Fatalf("blockers = %v", b)
+	}
+	if _, err := s.ApproveStack(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ApproveStructure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Finalize(); !errors.Is(err, pipeline.ErrIncomplete) {
+		t.Fatalf("finalize with stale command err = %v", err)
+	}
+	if _, err := s.ReviewCommand("CMD-003", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if r := pipeline.CheckWorkflow(load(t, s)); len(r.Review) != 0 {
+		t.Fatalf("review = %+v", r.Review)
+	}
+}
+
+// An invalid answer is refused as a whole and retried once with the reason.
+func TestDesignInvalidRetriedOnce(t *testing.T) {
+	runs := filepath.Join(t.TempDir(), "runs")
+	t.Setenv("FAKE_RUNS", runs)
+	s := newService(t, fakeAI{}, "design_invalid_once")
+	p := designReady(t, s)
+	if b, _ := os.ReadFile(runs); strings.Count(string(b), "design") != 2 {
+		t.Fatalf("design runs = %q", b)
+	}
+	if p.UI.Request != nil || len(p.UI.Layout.Pages) != 3 || !slices.ContainsFunc(p.Events, func(e core.Event) bool { return strings.Contains(e.Message, "ghost") }) {
+		t.Fatalf("ui = %+v", p.UI)
+	}
+}
+
+// A request the AI finds nothing for fails after one retry; the design is
+// unchanged and the request can be dismissed.
+func TestDesignNoChange(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	before := designReady(t, s).UI
+	if err := s.ReviseDesign("rubah ini", nil); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindDesign, core.JobFailed)
+	if p.UI.Request == nil || !strings.Contains(p.UI.Request.Rejected, "tidak menemukan perubahan") || !reflect.DeepEqual(p.UI.Layout, before.Layout) {
+		t.Fatalf("ui = %+v", p.UI)
+	}
+	if err := s.DismissJob(); err != nil {
+		t.Fatal(err)
+	}
+	if p := load(t, s); p.Job != nil || p.UI.Request != nil || !p.UI.Written() {
+		t.Fatalf("after dismiss: job %+v ui %+v", p.Job, p.UI)
+	}
+	// Generate only starts while nothing is written.
+	if err := s.GenerateDesign(); !errors.Is(err, pipeline.ErrWrongStage) {
+		t.Fatalf("generate twice err = %v", err)
+	}
+}
+
+// The user edits rules and layout by hand; an invalid edit is refused
+// whole and the change marks the commands that follow it for review.
+func TestDesignEdit(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	mcpDesigned(t, s)
+	if err := workflowReady(s); err != nil {
 		t.Fatal(err)
 	}
 	p := load(t, s)
-	mustJob(t, p, work.KindUnclear, core.JobFailed)
-	if d := p.Design; d.Status != core.DesignDraft || len(d.Feedback) != 0 || d.Scope != nil || !reflect.DeepEqual(d.Pages, before) {
-		t.Fatalf("design = %+v", d)
+	l := *p.UI.Layout
+	l.Pages = slices.Clone(l.Pages)
+	l.Pages[2].States = map[string]string{"loading": "Skeleton"} // a table needs empty and error too
+	_, err := s.EditLayout(l)
+	var invalid *core.DesignInvalid
+	if !errors.As(err, &invalid) || !strings.Contains(err.Error(), `state "empty" wajib`) {
+		t.Fatalf("invalid edit err = %v", err)
 	}
-	if !strings.Contains(p.Job.Error, "“rubah ini”") {
-		t.Fatalf("job = %+v", p.Job)
+	if load(t, s).UI.Version != p.UI.Version {
+		t.Fatal("invalid edit saved")
 	}
-	if err := s.RetryJob(); !errors.Is(err, pipeline.ErrNothingToDo) {
-		t.Fatalf("retry err = %v", err)
-	}
-	// The user closes the message; only a failed job can be closed.
-	if err := s.DismissJob(); err != nil || load(t, s).Job != nil {
-		t.Fatalf("dismiss err = %v", err)
-	}
-	if err := s.DismissJob(); !errors.Is(err, pipeline.ErrNothingToDo) {
-		t.Fatalf("dismiss err = %v", err)
-	}
-	// A clearer request works as usual.
-	if err := s.ReviseDesign("Tambahkan halaman profil", nil, nil); err != nil {
+	// Removing a page drops the links and flow steps to it.
+	l.Pages = []core.LayoutPage{p.UI.Layout.Pages[0], p.UI.Layout.Pages[2]}
+	if _, err := s.EditLayout(l); err != nil {
 		t.Fatal(err)
 	}
-	mustJob(t, load(t, s), work.KindDesign, core.JobWaiting)
+	p = load(t, s)
+	if len(p.UI.Layout.Pages[0].Links) != 0 || !slices.Equal(p.Flows[0].PageIDs, []string{"dokter"}) {
+		t.Fatalf("after remove: %+v %v", p.UI.Layout.Pages[0].Links, p.Flows[0].PageIDs)
+	}
+	rules := *p.UI.Rules
+	rules.Principles = nil
+	if _, err := s.EditDesignRules(rules); err == nil || !strings.Contains(err.Error(), "principles belum diisi") {
+		t.Fatalf("rules err = %v", err)
+	}
+	rules.Principles = []string{"Data dulu, dekorasi belakangan"}
+	if _, err := s.EditDesignRules(rules); err != nil {
+		t.Fatal(err)
+	}
+	r := pipeline.CheckWorkflow(load(t, s))
+	if !slices.Equal(r.Stale["CMD-003"], []string{core.ArtifactDesignRules, core.ArtifactLayoutSpec}) || len(r.Stale["CMD-002"]) != 0 {
+		t.Fatalf("stale = %+v", r.Stale)
+	}
+}
+
+// A product with screens is not finalized while its design has errors,
+// and a workflow must implement the design.
+func TestFinalizeNeedsValidDesign(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	mcpDesigned(t, s)
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.UI.Rules.Accessibility = nil // e.g. a design migrated from an older version
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if b := pipeline.Blockers(load(t, s)); !slices.Contains(b, "rancangan UI: accessibility belum diisi") {
+		t.Fatalf("blockers = %v", b)
+	}
+	if err := approve(s); !errors.Is(err, pipeline.ErrIncomplete) {
+		t.Fatalf("finalize err = %v", err)
+	}
+	// A workflow that never refers to the layout spec is refused.
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.UI.Rules.Accessibility = []string{"Kontras AA"}
+		p.Workflow = nil
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.GenerateWorkflow(); err != nil {
+		t.Fatal(err)
+	}
+	noUI := strings.Replace(workflowJSON, `"design-rules", "layout-spec", `, ``, 1)
+	if err := s.SubmitWork(work.KindWorkflow, noUI); err == nil || !strings.Contains(err.Error(), "tidak ada command yang merujuk artefak design-rules") {
+		t.Fatalf("workflow without design err = %v", err)
+	}
 }
 
 func TestTechStack(t *testing.T) {
@@ -1094,13 +785,19 @@ func TestTechStack(t *testing.T) {
 		d.Override.Reason != "Tim sudah pakai Vue" || p.Stack.Choice(core.TechRepository) != core.RepoSimple || p.Stack.Version() != 3 {
 		t.Fatalf("stack = %+v", p.Stack)
 	}
-	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
+	if err := s.SubmitWork(work.KindDesign, designJSON); err == nil || !strings.Contains(err.Error(), `platform "android" tidak dipilih`) {
+		t.Fatalf("pages of a dropped platform err = %v", err)
+	}
+	if err := s.RetryJob(); err != nil && !errors.Is(err, pipeline.ErrNothingToDo) {
 		t.Fatal(err)
 	}
-	if p = load(t, s); p.Design.TechVersion != 3 {
-		t.Fatalf("design tech version = %d", p.Design.TechVersion)
+	if err := s.SubmitWork(work.KindDesign, webDesignJSON); err != nil {
+		t.Fatal(err)
 	}
-	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrStackNotApproved) {
+	if p = load(t, s); p.UI.TechVersion != 3 {
+		t.Fatalf("design tech version = %d", p.UI.TechVersion)
+	}
+	if err := s.Finalize(); !errors.Is(err, pipeline.ErrStackNotApproved) {
 		t.Fatalf("approve design before stack err = %v", err)
 	}
 	if _, err := s.ApproveStack(); err != nil {
@@ -1124,19 +821,19 @@ func TestTechStack(t *testing.T) {
 	if p.Blueprint.Backend.Background == "BullMQ" {
 		t.Fatalf("blueprint kept the old backend: %+v", p.Blueprint.Backend)
 	}
-	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrStackNotApproved) {
+	if err := s.Finalize(); !errors.Is(err, pipeline.ErrStackNotApproved) {
 		t.Fatalf("changed stack err = %v", err)
 	}
 	if _, err := s.ApproveStack(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrTechReview) {
+	if err := s.Finalize(); !errors.Is(err, pipeline.ErrTechReview) {
 		t.Fatalf("unreviewed design err = %v", err)
 	}
 	if _, err := s.AckTechReview(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ApproveDesign(); !errors.Is(err, pipeline.ErrStructureNotApproved) {
+	if err := s.Finalize(); !errors.Is(err, pipeline.ErrStructureNotApproved) {
 		t.Fatalf("unapproved structure err = %v", err)
 	}
 	if _, err := s.ApproveStructure(); err != nil {
@@ -1145,7 +842,7 @@ func TestTechStack(t *testing.T) {
 	if err := workflowReady(s); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ApproveDesign(); err != nil {
+	if err := s.Finalize(); err != nil {
 		t.Fatal(err)
 	}
 	// The final spec carries the approved decision.
@@ -1322,51 +1019,6 @@ func TestStructureDecision(t *testing.T) {
 	}
 }
 
-func TestRegenerateDesign(t *testing.T) {
-	s := newService(t, fakeAI{mcp: true}, "")
-	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
-		t.Fatal(err)
-	}
-	features := load(t, s).Features
-	if _, err := s.SetDesignTemplate("landing-page"); err == nil {
-		t.Fatal("unknown template must fail")
-	}
-	// The user's template applies when the design is generated again.
-	if _, err := s.SetDesignTemplate("trading-terminal"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RegenerateDesign(); err != nil {
-		t.Fatal(err)
-	}
-	// A full design prompt, not a revision; discovery is not run again.
-	w, _ := s.NextWork()
-	if w.Kind != work.KindDesign || !strings.Contains(w.Prompt, "the user picked trading-terminal") || strings.Contains(w.Prompt, "CHANGE") {
-		t.Fatalf("work = %+v", w)
-	}
-	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
-		t.Fatal(err)
-	}
-	p := load(t, s)
-	if !reflect.DeepEqual(p.Features, features) || p.Design.Status != core.DesignDraft {
-		t.Fatalf("project = %+v", p.Design)
-	}
-	if c := p.Design.Template; c == nil || c.ID != "trading-terminal" || c.Source != "user" {
-		t.Fatalf("template = %+v", c)
-	}
-	if err := approve(s); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RegenerateDesign(); !errors.Is(err, pipeline.ErrWrongStage) {
-		t.Fatalf("approved err = %v", err)
-	}
-}
-
 // approve approves the technology decision and structure, then the design.
 func approve(s *pipeline.Service) error {
 	if _, err := s.ApproveStack(); err != nil && !errors.Is(err, pipeline.ErrWrongStage) {
@@ -1378,7 +1030,7 @@ func approve(s *pipeline.Service) error {
 	if err := workflowReady(s); err != nil {
 		return err
 	}
-	return s.ApproveDesign()
+	return s.Finalize()
 }
 
 // workflowReady writes the command workflow when there is none, with the

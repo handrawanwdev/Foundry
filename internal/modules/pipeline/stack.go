@@ -17,16 +17,16 @@ import (
 
 var (
 	ErrStackNotApproved = errors.New("setujui keputusan teknologi dulu")
-	ErrTechReview       = errors.New("teknologi berubah setelah rancangan dibuat: periksa dampaknya ke rancangan dulu")
+	ErrTechReview       = errors.New("teknologi berubah setelah rancangan UI dibuat: periksa dampaknya ke aturan desain dan layout dulu")
 )
 
-// stackEditable: the decision may change until the design is approved;
-// after that the structure is scaffolded and tasks follow it.
+// stackEditable: the decision may change until the blueprint is
+// finalized.
 func stackEditable(p *core.Project) error {
 	if p.Busy() {
 		return ErrBusy
 	}
-	if p.Platform == nil || p.Structure == nil || p.Design != nil && p.Design.Status == core.DesignApproved {
+	if p.Platform == nil || p.Structure == nil || p.Finalized() {
 		return ErrWrongStage
 	}
 	if p.Stack == nil {
@@ -160,7 +160,7 @@ func (s *Service) RecommendStack() (*core.Project, error) {
 	})
 }
 
-// AckTechReview marks the design as checked against the current
+// AckTechReview marks the UI design as checked against the current
 // technology; the design itself is not changed.
 func (s *Service) AckTechReview() (*core.Project, error) {
 	return s.Store.Update(func(p *core.Project) error {
@@ -170,14 +170,14 @@ func (s *Service) AckTechReview() (*core.Project, error) {
 		if len(p.TechReview()) == 0 {
 			return ErrNothingToDo
 		}
-		p.Design.TechVersion = p.Stack.Version()
+		p.UI.TechVersion = p.Stack.Version()
 		p.Log("ui", fmt.Sprintf("Rancangan diperiksa terhadap teknologi v%d", p.Stack.Version()))
 		return nil
 	})
 }
 
-// stackReady is what the design approval needs from the technology: an
-// approved decision and no unreviewed change that affects the design. An
+// stackReady is what finalizing needs from the technology: an
+// approved decision and no unreviewed change that affects the UI design. An
 // existing project's stack is read from its code and approved with it.
 func stackReady(p *core.Project) error {
 	st := p.Stack

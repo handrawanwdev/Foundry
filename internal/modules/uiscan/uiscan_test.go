@@ -9,7 +9,6 @@ import (
 
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/uiscan"
-	"github.com/handrawanw/foundry/internal/modules/work"
 )
 
 func write(t *testing.T, dir string, files map[string]string) {
@@ -25,9 +24,9 @@ func write(t *testing.T, dir string, files map[string]string) {
 	}
 }
 
-func colors(th *core.Theme) map[string]string {
+func colors(tk *core.DesignTokens) map[string]string {
 	out := map[string]string{}
-	for _, c := range th.Colors {
+	for _, c := range tk.Colors {
 		out[c.Name] = c.Value + " " + c.Use
 	}
 	return out
@@ -76,24 +75,20 @@ body { font-family: "Inter", sans-serif; }`,
 		t.Errorf("components = %v", ui.Components)
 	}
 
-	builtin, _ := work.Themes("")
-	th, sources := uiscan.Theme(dir, ui, builtin)
-	if th == nil {
-		t.Fatal("no theme")
+	tk, sources := uiscan.Tokens(dir, ui)
+	if tk == nil {
+		t.Fatal("no tokens")
 	}
-	if err := core.ValidateTheme(*th); err != nil {
-		t.Fatal(err)
-	}
-	c := colors(th)
-	if c["surface.page"] != "#ffffff dari kode" || c["action.primary"] != "#171717 dari kode" || c["text.secondary"] != "#737373 dari kode" ||
-		!strings.HasSuffix(c["status.success"], "dari theme modern-saas") {
+	c := colors(tk)
+	if c["surface.page"] != "#ffffff dari web/app/globals.css" || c["action.primary"] != "#171717 dari web/app/globals.css" ||
+		c["text.secondary"] != "#737373 dari web/app/globals.css" || c["status.success"] != "" {
 		t.Errorf("colors = %v", c)
 	}
-	if th.Tokens.ColorMode != "light" || th.Tokens.Radius != "medium" || th.Preferences.Navigation != "side" {
-		t.Errorf("tokens = %+v %+v", th.Tokens, th.Preferences)
+	if len(tk.Radius) != 1 || tk.Radius[0] != (core.Token{Name: "radius.md", Value: "0.625rem", Use: "dari web/app/globals.css"}) {
+		t.Errorf("radius = %v", tk.Radius)
 	}
-	if th.Radius[1].Value != "0.625rem" || !strings.HasPrefix(th.Typography[0].Value, "Inter ") {
-		t.Errorf("radius = %v type = %v", th.Radius, th.Typography)
+	if len(tk.Typography) != 1 || tk.Typography[0].Value != "Inter" || len(tk.Spacing) != 0 {
+		t.Errorf("type = %v spacing = %v", tk.Typography, tk.Spacing)
 	}
 	if !slices.Equal(sources, []string{"web/app/globals.css"}) {
 		t.Errorf("sources = %v", sources)
@@ -117,18 +112,17 @@ func TestViteBootstrapTailwind(t *testing.T) {
 	if !slices.Equal(ui.Routes, []string{"/login", "/tickets"}) || ui.Navigation != "top" || !slices.Equal(ui.NavItems, []string{"Tiket"}) {
 		t.Fatalf("ui = %+v", ui)
 	}
-	builtin, _ := work.Themes("")
-	th, sources := uiscan.Theme(dir, ui, builtin)
-	if th == nil {
-		t.Fatal("no theme")
+	tk, sources := uiscan.Tokens(dir, ui)
+	if tk == nil {
+		t.Fatal("no tokens")
 	}
-	c := colors(th)
-	if c["action.primary"] != "#0d6efd dari kode" || c["action.danger"] != "#dc3545 dari kode" || c["text.primary"] != "#212529 dari kode" ||
-		c["status.success"] != "hsl(142 71% 45%) dari kode" {
+	c := colors(tk)
+	if c["action.primary"] != "#0d6efd dari src/styles/_variables.scss" || c["action.danger"] != "#dc3545 dari src/styles/_variables.scss" ||
+		c["text.primary"] != "#212529 dari src/styles/_variables.scss" || c["status.success"] != "hsl(142 71% 45%) dari tailwind.config.js" {
 		t.Errorf("colors = %v", c)
 	}
-	if !strings.HasPrefix(th.Typography[0].Value, "Plus Jakarta Sans ") {
-		t.Errorf("type = %v", th.Typography)
+	if len(tk.Typography) != 1 || tk.Typography[0].Value != "Plus Jakarta Sans" {
+		t.Errorf("type = %v", tk.Typography)
 	}
 	if !slices.Contains(sources, "tailwind.config.js") || !slices.Contains(sources, "src/styles/_variables.scss") {
 		t.Errorf("sources = %v", sources)
@@ -142,8 +136,7 @@ func TestNoFrontendOrTokens(t *testing.T) {
 		t.Fatal("backend only must give no ui")
 	}
 	ui := uiscan.Scan(dir, []core.Component{{Kind: "web", Path: "web"}})
-	builtin, _ := work.Themes("")
-	if th, _ := uiscan.Theme(dir, ui, builtin); th != nil {
-		t.Fatalf("one color is not a design system: %+v", th)
+	if tk, _ := uiscan.Tokens(dir, ui); tk != nil {
+		t.Fatalf("one color is not a design system: %+v", tk)
 	}
 }

@@ -25,26 +25,26 @@ export function techState(s: TechStack): TechStatus {
 
 export const techVersion = (s: TechStack) => s.history?.at(-1)?.version ?? 0;
 
-// Areas whose change is reviewed against the design (core.AffectsDesign).
+// Areas whose change is reviewed against the UI design (core.AffectsDesign).
 const DESIGN_AREAS = new Set<TechArea>(["frontend", "mobile", "desktop", "backend", "database"]);
 
-// Technology changes made after the draft design was last checked that
+// Technology changes made after the UI design was last checked that
 // affect it (core.Project.TechReview).
 export function techReview(p: Project): TechChange[] {
-  const d = p.design, s = p.stack;
-  if (!d || !d.pages?.length || d.status === "approved" || !s) return [];
+  const d = p.ui, s = p.stack;
+  if (!d || !(d.rules || d.layout?.pages?.length) || p.stage === "READY" || !s) return [];
   const since = d.tech_version ?? 0;
   return (s.history ?? []).filter((v) => v.version > since && v.design)
     .flatMap((v) => (v.changes ?? []).filter((c) => DESIGN_AREAS.has(c.area)));
 }
 
-// Why the design cannot be approved yet because of the technology, or null.
+// Why the project cannot be finalized yet because of the technology, or null.
 export function techGate(p: Project): string | null {
   const s = p.stack;
   if (!s) return "Keputusan teknologi belum ada";
   if (s.mode === "existing") return null;
   if (techState(s) !== "approved") return "Setujui keputusan teknologi dulu";
-  if (techReview(p).length) return "Teknologi berubah setelah rancangan dibuat; periksa dampaknya dulu";
+  if (techReview(p).length) return "Teknologi berubah setelah rancangan UI dibuat; periksa dampaknya dulu";
   return null;
 }
 

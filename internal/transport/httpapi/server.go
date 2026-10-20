@@ -4,7 +4,6 @@ package httpapi
 import (
 	"archive/zip"
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,7 +17,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -41,8 +39,6 @@ import (
 type Server struct {
 	UI     fs.FS // built SPA; may be nil
 	Binary string
-	// Render screenshots designed pages for the visual check; may be nil.
-	Render pipeline.Renderer
 
 	mu  sync.RWMutex
 	svc *pipeline.Service
@@ -77,9 +73,6 @@ func (s *Server) Open(dir, name string, create bool) (*core.Project, error) {
 		return nil, err
 	}
 	svc := pipeline.New(st, pipeline.ConfigAI{})
-	if s.Render != nil {
-		svc.Render = s.Render
-	}
 	if err := svc.RecoverStale(); err != nil {
 		return nil, err
 	}
@@ -279,134 +272,48 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/v1/stack/catalog", func(r *http.Request) (any, error) {
 		return map[string]any{"catalog": stack.Catalog, "profiles": stack.Profiles, "areas": core.TechAreas}, nil
 	})
-	api("GET /api/v1/themes", func(r *http.Request) (any, error) {
-		dir := ""
-		if svc, err := s.service(); err == nil {
-			dir = svc.Store.Dir
-		}
-		themes, invalid := work.Themes(dir)
-		return map[string]any{"themes": themes, "invalid": invalid}, nil
-	})
-	// Design templates: the library with previews for one domain and theme
-	// (default: the open project's).
-	api("GET /api/v1/design-templates", func(r *http.Request) (any, error) {
-		var p *core.Project
-		if svc, err := s.service(); err == nil {
-			p, _ = svc.Store.Load()
-		}
-		q := r.URL.Query()
-		return work.Gallery(p, q.Get("theme"), q.Get("domain")), nil
-	})
-	api("PUT /api/v1/project/theme", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct{ Theme string }
-		if err := decode(r, &in); err != nil {
+	// UI design: design rules and layout spec (blueprint artifacts).
+	api("GET /api/v1/project/design", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		p, err := svc.Store.Load()
+		if err != nil {
 			return nil, err
 		}
-		return svc.SetTheme(strings.TrimSpace(in.Theme))
-	}))
-	api("PUT /api/v1/project/design-template", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct{ Template string }
-		if err := decode(r, &in); err != nil {
-			return nil, err
+		var issues []core.DesignIssue
+		if p.UI.Written() {
+			issues = p.DesignIssues(nil)
 		}
-		return svc.SetDesignTemplate(strings.TrimSpace(in.Template))
-	}))
-	api("PUT /api/v1/project/reference", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct{ URL, Notes string }
-		if err := decode(r, &in); err != nil {
-			return nil, err
+		if issues == nil {
+			issues = []core.DesignIssue{}
 		}
-		return svc.SetReference(in.URL, in.Notes)
+		vocab := map[string]any{"patterns": core.LayoutPatterns, "states": core.UIStates, "required_states": core.RequiredStates,
+			"platforms": core.UIPlatform}
+		return map[string]any{"design": p.UI, "issues": issues, "has_ui": p.HasUI(), "platforms": p.UIPlatforms(), "vocabulary": vocab}, nil
 	}))
+	api("POST /api/v1/project/design/generate", s.action(func(svc *pipeline.Service) error { return svc.GenerateDesign() }))
 	api("POST /api/v1/project/design/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {
-			Feedback string
-			Screens  map[string]string
-			Scope    *core.ChangeScope
+			Text  string
+			Focus []string
 		}
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		return ok(svc.ReviseDesign(in.Feedback, in.Screens, in.Scope))
+		return ok(svc.ReviseDesign(in.Text, in.Focus))
 	}))
-	api("POST /api/v1/project/design/keep", s.action(func(svc *pipeline.Service) error { return svc.KeepDesignChange() }))
-	api("POST /api/v1/project/design/regenerate", s.action(func(svc *pipeline.Service) error { return svc.RegenerateDesign() }))
-	api("POST /api/v1/project/design/undo", s.action(func(svc *pipeline.Service) error { return svc.UndoDesignChange() }))
-	api("GET /api/v1/project/design/handoff", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		p, err := svc.Store.Load()
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"pages": work.PageSpecs(p), "blockers": work.Blockers(p), "stack": p.Stack, "structure": p.Structure}, nil
-	}))
-	// Canvas: direct edits of one page's Design IR tree, no AI.
-	api("POST /api/v1/project/design/edit", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		var in struct {
-			Page string
-			Ops  []work.CanvasOp
-		}
+	api("PUT /api/v1/project/design/rules", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in core.DesignRules
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		return svc.EditDesign(in.Page, in.Ops)
+		return svc.EditDesignRules(in)
 	}))
-	api("GET /api/v1/project/design/prototype", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		p, err := svc.Store.Load()
-		if err != nil {
+	api("PUT /api/v1/project/design/layout", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in core.LayoutSpec
+		if err := decode(r, &in); err != nil {
 			return nil, err
 		}
-		return work.BuildPrototype(p), nil
+		return svc.EditLayout(in)
 	}))
-	// Versions: list, compare (to=0 or empty is the current design), restore.
-	api("GET /api/v1/project/design/versions", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		p, err := svc.Store.Load()
-		if err != nil {
-			return nil, err
-		}
-		return work.Versions(p)
-	}))
-	api("GET /api/v1/project/design/versions/compare", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		from, err1 := strconv.Atoi(r.URL.Query().Get("from"))
-		to, err2 := strconv.Atoi(cmp.Or(r.URL.Query().Get("to"), "0"))
-		if err1 != nil || err2 != nil {
-			return nil, badRequest("from dan to harus nomor versi")
-		}
-		p, err := svc.Store.Load()
-		if err != nil {
-			return nil, err
-		}
-		a, err := work.FindVersion(p, from)
-		if err != nil {
-			return nil, err
-		}
-		b, err := work.FindVersion(p, to)
-		if err != nil {
-			return nil, err
-		}
-		c := work.CompareVersions(*a, *b)
-		c.To = to
-		return c, nil
-	}))
-	api("GET /api/v1/project/design/versions/{id}", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		id, err := strconv.Atoi(r.PathValue("id"))
-		if err != nil || id <= 0 {
-			return nil, badRequest("nomor versi tidak sah")
-		}
-		p, err := svc.Store.Load()
-		if err != nil {
-			return nil, err
-		}
-		return work.FindVersion(p, id)
-	}))
-	api("POST /api/v1/project/design/versions/{id}/restore", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		id, err := strconv.Atoi(r.PathValue("id"))
-		if err != nil || id <= 0 {
-			return nil, badRequest("nomor versi tidak sah")
-		}
-		return svc.RestoreDesignVersion(id)
-	}))
-	api("POST /api/v1/project/design/approve", s.action(func(svc *pipeline.Service) error { return svc.ApproveDesign() }))
-	api("POST /api/v1/project/design/reopen", s.action(func(svc *pipeline.Service) error { return svc.ReopenDesign() }))
 	// Final spec: the same documents Finalize writes into docs/.
 	api("GET /api/v1/project/spec", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		p, err := svc.Store.Load()
@@ -941,6 +848,16 @@ func fail(w http.ResponseWriter, r *http.Request, err error) {
 	if status >= http.StatusInternalServerError {
 		log.Printf("api %s %s: %v", r.Method, r.URL.Path, err)
 		msg = internalMessage
+	}
+	// An invalid design lists every problem, so the editor can show them.
+	var invalid *core.DesignInvalid
+	if errors.As(err, &invalid) {
+		details := make([]respond.Detail, len(invalid.Issues))
+		for i, is := range invalid.Issues {
+			details[i] = respond.Detail{Field: is.Where, Message: is.Message}
+		}
+		respond.Fail(w, respond.CodeFor(status), msg, status, details...)
+		return
 	}
 	respond.Fail(w, respond.CodeFor(status), msg, status)
 }

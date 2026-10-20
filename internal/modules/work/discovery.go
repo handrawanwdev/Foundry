@@ -15,7 +15,9 @@ import (
 
 const (
 	KindDiscovery = "discovery"
-	KindDesign    = "design"
+	// KindDesign writes the design rules and layout spec, or revises them
+	// for the pending request.
+	KindDesign = "design"
 )
 
 type discoveryOut struct {
@@ -71,9 +73,6 @@ STORY:
 		}
 		b.WriteString("\n")
 	}
-	if p.Design != nil && len(p.Design.Feedback) > 0 {
-		b.WriteString("USER CORRECTIONS (must be applied):\n- " + strings.Join(p.Design.Feedback, "\n- ") + "\n\n")
-	}
 	b.WriteString(`Platform kinds allowed: web, android, ios, desktop, backend, cli, embedded (firmware, IoT, robotics), other (library, SDK,
 data pipeline, ML system, infrastructure, tooling). Choose them from who or what uses the software and where it runs.
 tech_needs lists only the technical needs the product really has, from: realtime, offline, seo, ai, high_concurrency,
@@ -99,7 +98,7 @@ Blueprint rules:
 Artifacts: 0-6 extra blueprint documents for what THIS project needs beyond requirements, architecture and screens
 (e.g. domain model and business rules, API or event contracts, protocol spec, data pipeline design, evaluation plan,
 threat model, test strategy, deployment and recovery, hardware interfaces). Skip what is not needed.
-Do not use the ids requirements, architecture, technology, ui-design (Foundry writes those).
+Do not use the ids requirements, architecture, technology, design-rules, layout-spec (Foundry writes those).
 ` + artifactRules + `
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
@@ -142,7 +141,7 @@ var validPlatforms = map[string]bool{
 }
 
 // ApplyDiscovery validates the AI answer, renumbers IDs and writes the
-// discovery layers and the project's artifacts. The design is reset
+// discovery layers and the project's artifacts. The UI design is reset
 // because it derives from these features; the workflow is kept and its
 // commands are reported stale by the workflow check.
 func ApplyDiscovery(p *core.Project, raw string) error {
@@ -231,7 +230,7 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	p.Requirements, p.Features, p.Flows = reqs, feats, flows
 	p.Platform = &core.PlatformPlan{Targets: targets, Reason: out.Platform.Reason}
 	SetArtifacts(p, out.Artifacts)
-	p.Design = nil
+	p.UI = nil
 	return nil
 }
 

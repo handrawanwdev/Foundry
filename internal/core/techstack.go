@@ -273,12 +273,12 @@ func (s *TechStack) Brief() string {
 	return b.String()
 }
 
-// TechReview lists the technology changes made after the design was last
-// checked that affect it; the design is not approved until the user has
-// reviewed them. Empty when there is no draft design.
+// TechReview lists the technology changes made after the UI design was
+// last checked that affect it; the project is not finalized until the user
+// has reviewed them. Empty when there is no draft design.
 func (p *Project) TechReview() []TechChange {
-	d, s := p.Design, p.Stack
-	if d == nil || len(d.Pages) == 0 || d.Status == DesignApproved || s == nil {
+	d, s := p.UI, p.Stack
+	if !d.Written() || p.Finalized() || s == nil {
 		return nil
 	}
 	var out []TechChange

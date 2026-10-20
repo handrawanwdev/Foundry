@@ -1,16 +1,11 @@
-import { useLocation } from "react-router-dom";
 import { api } from "../api";
-import { DESIGN_PATH } from "../flow";
 import { useProject } from "../store/project";
 
 // Shows what Foundry is doing right now, for every step.
 export function JobBanner() {
   const { project, run, pending } = useProject();
-  const loc = useLocation();
   const job = project?.job;
   if (!job || job.status === "done") return null;
-  // The design workspace shows its own progress.
-  if (job.status === "running" && job.kind === "design" && loc.pathname === DESIGN_PATH) return null;
 
   if (job.status === "failed") {
     return (
@@ -18,9 +13,8 @@ export function JobBanner() {
         <div>
           <strong>{job.message} gagal.</strong> <JobError text={job.error ?? ""} />
         </div>
-        {/* An unclear change request is not retried: the user writes a clearer one. */}
         <div className="banner-actions">
-          {job.kind !== "revise" && <button disabled={pending === "retry"} onClick={() => run("retry", api.retry)}>Coba lagi</button>}
+          <button disabled={pending === "retry"} onClick={() => run("retry", api.retry)}>Coba lagi</button>
           <button className="ghost" title="Tutup" aria-label="Tutup" disabled={pending === "dismiss"} onClick={() => run("dismiss", api.dismissJob)}>✕</button>
         </div>
       </div>
@@ -43,7 +37,7 @@ export function JobBanner() {
   );
 }
 
-// Long errors (a rejected patch lists every operation) show their first
+// Long errors (a refused answer lists every problem) show their first
 // lines; the rest folds away so the banner does not cover the page.
 const SHOWN_LINES = 4;
 

@@ -41,8 +41,10 @@ func Artifacts(p *core.Project) []core.Artifact {
 		"Pola arsitektur, modul, data, keamanan, dan aturan teknis.", strings.ReplaceAll("\n"+arch, "\n### ", "\n## ")[1:])
 	add("technology", "Teknologi & Struktur", core.ArtifactPlatform,
 		"Keputusan teknologi dan struktur project.", techMarkdown(p))
-	add("ui-design", "Desain UI/UX", core.ArtifactUI,
-		"Halaman, design system, dan spesifikasi per halaman dari Design IR.", designMarkdown(p))
+	add(core.ArtifactDesignRules, "Aturan Desain", core.ArtifactUI,
+		"Prinsip, panduan UX, design tokens, komponen, aksesibilitas, responsif, interaksi, dan aturan platform.", designRulesMarkdown(p))
+	add(core.ArtifactLayoutSpec, "Spesifikasi Layout", core.ArtifactUI,
+		"Shell, halaman, section, hierarki, grid, responsif, navigasi, dan state UI per halaman.", layoutMarkdown(p))
 	return append(out, p.Artifacts...)
 }
 
@@ -246,8 +248,37 @@ func Files(p *core.Project) map[string]string {
 	if p.Stack != nil && len(p.Stack.Decisions) > 0 {
 		out["adr/0001-stack.md"] = adrStack(p)
 	}
-	if p.HasUI() && p.Design != nil && len(p.Design.Pages) > 0 {
-		out["design-brief.md"] = standard.DesignBrief(p)
+	if d := p.UI; d != nil {
+		if d.Rules != nil {
+			out[designFile(core.ArtifactDesignRules)] = jsonFile(d.Rules)
+		}
+		if d.Layout != nil && len(d.Layout.Pages) > 0 {
+			out[designFile(core.ArtifactLayoutSpec)] = jsonFile(struct {
+				*core.LayoutSpec
+				Flows []core.Flow `json:"flows,omitempty"`
+			}{d.Layout, pageFlowList(p.Flows)})
+		}
+	}
+	return out
+}
+
+func designFile(id string) string { return "design/" + id + ".json" }
+
+func jsonFile(v any) string {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(b) + "\n"
+}
+
+// pageFlowList keeps the flows that pass through pages.
+func pageFlowList(flows []core.Flow) []core.Flow {
+	var out []core.Flow
+	for _, f := range flows {
+		if len(f.PageIDs) > 0 {
+			out = append(out, f)
+		}
 	}
 	return out
 }
@@ -298,7 +329,12 @@ func WriteDocs(dir string, p *core.Project) error {
 	}
 	root := filepath.Join(dir, filepath.FromSlash(ExportDir))
 	files := Files(p)
-	for _, sub := range []string{"blueprint", "workflow", "adr"} {
+	// design-brief.md was written by older versions; the design rules
+	// replace it.
+	if err := os.Remove(filepath.Join(root, "design-brief.md")); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, sub := range []string{"blueprint", "workflow", "adr", "design"} {
 		entries, _ := os.ReadDir(filepath.Join(root, sub))
 		for _, e := range entries {
 			name := sub + "/" + e.Name()

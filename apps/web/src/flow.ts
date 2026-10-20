@@ -1,6 +1,6 @@
 import type { Project, Stage } from "./types";
 
-// User-facing steps: Prompt → Blueprint (with the UI design) → Workflow →
+// User-facing steps: Prompt → Blueprint (with design rules and layout) → Workflow →
 // Export (finalize + download). Discovery lives inside Prompt.
 export const STEPS = [
   { key: "tell", label: "Prompt", path: "/simple/tell" },
@@ -28,9 +28,6 @@ export function stepFor(stage: Stage) {
 export function reachable(stage: Stage, step: number): boolean {
   return step === 0 || stage === "DESIGN" || stage === "READY";
 }
-
-// The design workspace is part of the Blueprint step.
-export const DESIGN_PATH = "/blueprint/ui";
 
 export function stepOfPath(path: string): number {
   if (path.startsWith("/blueprint")) return 1;

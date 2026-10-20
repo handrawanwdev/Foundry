@@ -14,7 +14,7 @@ Cakupannya tidak terbatas pada web/backend. Platform yang dikenal: `web`, `andro
 
 Blueprint adalah sumber kebenaran. Isinya kumpulan artefak (`GET /api/v1/project/blueprint`):
 
-- **Bawaan** (dirender dari data terstruktur, hanya bila ada isinya): `requirements`, `architecture`, `technology`, `ui-design` (Design IR, hanya bila produk punya layar).
+- **Bawaan** (dirender dari data terstruktur, hanya bila ada isinya): `requirements`, `architecture`, `technology`, `design-rules` dan `layout-spec` (hanya bila produk punya layar; lihat Desain UI).
 - **Khusus proyek** (`project.artifacts`): dokumen Markdown yang ditulis AI saat discovery atau lewat revisi, mis. model domain, kontrak API/event, spesifikasi protokol, desain pipeline, threat model, strategi test. Bisa diedit manual (`PUT /api/v1/project/blueprint/artifacts/{id}`), dihapus, atau direvisi lewat prompt (`POST /api/v1/project/blueprint/revise` `{text, focus}`). Revisi hanya mengubah artefak yang dikembalikan AI.
 
 Setiap artefak punya hash isi. Hash ini dipakai untuk mendeteksi command yang terdampak perubahan.
@@ -27,15 +27,15 @@ Setiap artefak punya hash isi. Hash ini dipakai untuk mendeteksi command yang te
 - **Revisi lewat prompt**: `POST /api/v1/project/workflow/revise` `{text, focus}`. AI mengembalikan command yang diubah atau ditambah saja; yang lain tidak disentuh.
 - **Edit manual**: `PUT /api/v1/project/workflow/commands/{id}`.
 - **Tandai perlu ditinjau / sudah ditinjau**: `POST /api/v1/project/workflow/commands/{id}/review` `{needs_review, reason}`. "Sudah ditinjau" mencatat ulang hash artefak.
-- **Validasi** (`internal/modules/workflow`): ID unik, dependency ada, tanpa self-dependency, tanpa siklus (DAG), artefak yang dirujuk ada, field wajib terisi. Jawaban AI atau edit yang tidak valid ditolak utuh. Jawaban AI yang ditolak dicoba ulang sekali dengan alasan penolakan di prompt.
+- **Validasi** (`internal/modules/workflow`): ID unik, dependency ada, tanpa self-dependency, tanpa siklus (DAG), setiap command merujuk minimal satu artefak dan artefak itu ada, field wajib terisi; bila blueprint punya `design-rules`/`layout-spec`, minimal satu command merujuk masing-masing. Jawaban AI atau edit yang tidak valid ditolak utuh. Jawaban AI yang ditolak dicoba ulang sekali dengan alasan penolakan di prompt.
 - **Urutan**: command dikelompokkan per **gelombang**. Satu gelombang hanya bergantung pada gelombang sebelumnya, jadi command di dalamnya boleh paralel.
 - **Dampak perubahan**: command yang merujuk artefak dengan hash berbeda, atau artefak yang sudah dihapus, dilaporkan "perlu ditinjau" (`GET /api/v1/project/workflow` → `report.stale`/`report.review`). Deteksi hanya berdasarkan relasi command→artefak yang tersimpan.
 
 ## Finalisasi & Export
 
-`POST /api/v1/project/finalize` (alias lama `/design/approve`) menyetujui blueprint dan workflow sebagai satu versi. Syaratnya:
+`POST /api/v1/project/finalize` menyetujui blueprint dan workflow sebagai satu versi. Syaratnya:
 
-- desain UI lengkap bila produk punya layar
+- aturan desain dan spesifikasi layout ada dan tanpa error bila produk punya layar
 - teknologi dan struktur disetujui untuk produk app/server
 - workflow ada, valid, dan tidak ada command yang perlu ditinjau
 
@@ -49,12 +49,12 @@ manifest.json        format, status, blueprint_hash, workflow_version, artefak, 
 blueprint/<id>.md    setiap artefak
 workflow/<CMD>.md    instruksi lengkap per command
 workflow/workflow.json
-spec.json            spesifikasi terstruktur (termasuk Design IR, artefak, workflow)
+spec.json            spesifikasi terstruktur (termasuk aturan desain, layout, artefak, workflow)
 adr/0001-stack.md    bila ada keputusan teknologi
-design-brief.md      bila produk punya layar
+design/design-rules.json, design/layout-spec.json   bila produk punya layar (versi JSON artefak desain)
 ```
 
-File lama di `docs/foundry/blueprint|workflow|adr` yang tidak lagi ada di paket dihapus saat finalisasi berikutnya. File lain di project tidak disentuh.
+File lama di `docs/foundry/blueprint|workflow|adr|design` (dan `design-brief.md` versi lama) yang tidak lagi ada di paket dihapus saat finalisasi berikutnya. File lain di project tidak disentuh.
 
 ## Struktur (monorepo modular)
 
@@ -65,12 +65,11 @@ internal/config/            koneksi AI + recent project (~/.foundry/foundry.json
 internal/modules/
   agent/                    runner CLI agent (Claude Code, Codex, Qwen Code, Grok, Gemini, OpenCode, custom) untuk job AI rancangan
   scan/                     deteksi komponen project existing
-  uiscan/                   UI project existing: route, layout shell, navigasi, komponen, token desain → theme
+  uiscan/                   UI project existing: route, layout shell, navigasi, komponen, token desain dari kode
   stack/                    keputusan teknologi (level spesifikasi): kebutuhan → profil (profiles/*.json) → aturan; override user
   structure/                struktur project (level rancangan): existing vs simple/modular/monorepo/microservices
-  work/                     prompt + apply job AI: discovery, artefak blueprint, workflow, design, revisi, QA visual, theme, template
+  work/                     prompt + apply job AI: discovery, artefak blueprint, workflow, aturan desain + layout, revisi
   workflow/                 validasi command workflow: DAG, referensi, gelombang, command terdampak
-  render/                   screenshot Chrome untuk QA visual rancangan
   spec/                     artefak blueprint bawaan + paket ekspor (Markdown + JSON) ke docs/foundry/
   pipeline/                 orchestrator: job AI, revisi, finalisasi
 internal/transport/
@@ -89,7 +88,7 @@ make build                         # build UI + binary bin/foundry
 ```
 
 UI: satu top bar (menu project, langkah **Prompt · Blueprint · Workflow · Export**, status AI).
-- **Blueprint**: daftar artefak di kiri dan satu dokumen di kanan. "Desain UI/UX" membuka workspace desain (`/blueprint/ui`: Desain / Prototipe / Spesifikasi / Tinjau). "Platform & Teknologi" untuk persetujuan stack dan struktur.
+- **Blueprint**: daftar artefak di kiri dan satu dokumen di kanan. "Aturan Desain" dan "Spesifikasi Layout" adalah artefak biasa: dibaca sebagai dokumen, diedit sebagai data (JSON, divalidasi server), direvisi lewat prompt. "Platform & Teknologi" untuk persetujuan stack dan struktur.
 - **Workflow**: command per gelombang di kiri dan detail command di kanan, dengan aksi Salin instruksi / Edit / Tandai perlu ditinjau.
 - **Export**: finalisasi dan unduhan.
 
@@ -106,18 +105,18 @@ Semua keputusan teknologi dan struktur berada di level rancangan/spesifikasi —
 - **Satu keputusan**: disimpan di `project.stack`, dipakai prompt design, spesifikasi halaman, spesifikasi final, dan MCP `get_project`/`get_spec`. Terkunci saat rancangan difinalisasi.
 - Project existing: teknologi dibaca dari kode, tidak bisa diganti.
 
-## Desain UI (Design IR, bagian dari blueprint bila produk punya layar)
+## Desain UI (aturan desain + spesifikasi layout, bila produk punya layar)
 
-Prompt → discovery → design intelligence → theme → template → adaptasi → Design IR → renderer → prototipe. Design IR satu-satunya sumber untuk pratinjau, prototipe, dan spesifikasi final.
+Hanya teks dan data terstruktur: tidak ada gambar, kanvas, editor visual, prototipe visual, atau screenshot. Model: `project.ui` (`internal/core/uidesign.go`).
 
-- **Revisi AI**: permintaan ("buat lebih compact") → patch IR dalam scope → QA visual; tidak regenerate project.
-- **Kanvas**: mode Desain / Prototipe / Spesifikasi / Tinjau & Finalisasi. Panel Layer (tree IR) + Properti. `POST /api/v1/project/design/edit` mengedit tree IR satu halaman (add/remove/move/update/set_node/wrap/unwrap/set_page) tanpa AI; hasil invalid ditolak utuh; penurunan kualitas dikembalikan sebagai `warnings`. Mode Spesifikasi = spesifikasi implementasi per halaman dari IR (`GET /api/v1/project/design/handoff`).
-- **Finalisasi**: lihat bagian Finalisasi & Export. Unduhan satu file: `GET /api/v1/project/spec.md`, `GET /api/v1/project/spec.json`; ringkasan: `GET /api/v1/project/spec`.
-- **Versi**: tiap perubahan tersimpan di `.foundry/design-versions.json` (maks 50); bandingkan dan kembalikan via `/api/v1/project/design/versions`.
-- **Peta prototipe**: `GET /api/v1/project/design/prototype` — navigasi dari IR, halaman tak terjangkau, halaman buntu, celah alur.
-- **Template desain**: 8 pola UX (`internal/modules/work/design-templates/<id>/{intent,layout,rules,examples}.json`): auth-clean, dashboard-executive, workspace-agent, table-management, master-detail, finance-overview, trading-terminal, developer-tool. Foundry merekomendasikan dari domain/peran/kata kunci, AI memilih + menjelaskan alasan (`design.template`), lalu mengadaptasi ke fitur. Template = keputusan struktur, bukan HTML; theme tetap mengatur visual. Lint kategori `template` masuk skor kualitas. Template awal opsional dipilih user sebelum generate (`PUT /api/v1/project/design-template`, `""` = AI memilih, `blank` = tanpa template); pilihan user mengikat AI. Galeri: `GET /api/v1/design-templates?theme=&domain=`. Buat ulang rancangan (fitur/alur sama, tanpa discovery): `POST /api/v1/project/design/regenerate`.
-- **Referensi**: website/screenshot hanya menghasilkan Theme DNA; HTML/CSS/aset/konten tidak disalin.
-- **Project existing**: setelah discovery Foundry membaca frontend yang ada (`structure.ui`): route (Next.js app/pages, SvelteKit, Nuxt, config router), layout shell + navigasi (samping/atas, label menu), komponen bersama, dan token desain (CSS custom properties, SCSS, Tailwind config; termasuk format shadcn/oklch). Token jadi theme `.foundry/themes/existing-ui/` (yang tidak ada di kode diisi theme bawaan, ditandai di `use`) dan dipakai rancangan bila user belum memilih theme. Prompt design: halaman baru masuk shell + menu yang ada, pakai ulang komponen, jangan buat ulang halaman lama. `existing-ui` ditulis ulang tiap discovery; untuk edit manual salin ke folder theme lain.
+- **Aturan desain** (`ui.rules` → artefak `design-rules`): `source` (`new` | `existing`), arah visual, prinsip, panduan UX, token (`colors`, `typography`, `spacing` wajib; `radius`, `shadow`, `breakpoints`), komponen (pemakaian, varian, aturan state interaktif, `source` = file komponen yang sudah ada), hierarki visual, aksesibilitas, responsif, interaksi, aturan per platform (web/android/ios/desktop).
+- **Spesifikasi layout** (`ui.layout` → artefak `layout-spec`): `shells` (layout bersama) dan `pages`: route, akses, fitur, shell, `pattern` (sidebar, navbar, dashboard, form, table, list, detail, …), `sections` berurutan (isi, komponen, grid, perataan, spasi, ukuran, responsif, state), `hierarchy`, `links` antarhalaman, `states` (`loading`, `empty`, `no_results`, `error`, `success`, `disabled`, `interactive`), data. Alur (`flows[].page_ids`) memetakan halaman per alur.
+- **Validasi** (`Project.DesignIssues`): kosakata dikenal, id unik, referensi (shell, link, fitur, alur, platform project) ada, state wajib per pattern (mis. table: loading/empty/error; form: error/success/disabled). Error memblokir simpan dan finalisasi; peringatan (komponen tak terdaftar, fitur tanpa halaman) hanya saran.
+- **AI**: setelah discovery, produk dengan layar langsung disusun (job `design`). `GET /api/v1/project/design` (data, issues, kosakata), `POST /api/v1/project/design/generate` (hanya bila belum ada), `POST /api/v1/project/design/revise` `{text, focus}` (focus: `design-rules`, `layout-spec`, id shell/halaman). AI mengembalikan bagian yang berubah saja; jawaban invalid ditolak utuh dan dicoba ulang sekali dengan alasannya.
+- **Edit manual**: `PUT /api/v1/project/design/rules`, `PUT /api/v1/project/design/layout` (dokumen utuh; invalid → 400 dengan `details` per masalah). Link dan langkah alur ke halaman yang dihapus ikut dibuang.
+- **Dampak**: perubahan mengubah hash artefak → command yang merujuknya dilaporkan perlu ditinjau.
+- **Project existing**: Foundry membaca route, layout shell + navigasi, komponen bersama, dan token desain dari kode (CSS custom properties, SCSS, Tailwind config; termasuk shadcn/oklch) ke `structure.ui`. Saat AI menyusun: `source` = `existing`, token dari kode menang atas usulan AI (AI hanya menambah yang belum ada), komponen yang ada didaftarkan dengan file-nya, halaman pada route yang sudah ada ditandai `existing` (diubah seperlunya, tidak dibuat ulang).
+- **Migrasi**: project lama dengan Design IR dimigrasi sekali saat dibuka: token dan komponen → aturan desain, halaman → layout (pattern dari jenis halaman, komponen → section, target → link); yang tidak tercatat dulu (prinsip, aksesibilitas, …) dibiarkan kosong dan muncul sebagai error untuk dilengkapi. Command yang merujuk `ui-design` dialihkan ke dua artefak baru dan perlu ditinjau.
 
 ## MCP
 
@@ -125,13 +124,13 @@ Prompt → discovery → design intelligence → theme → template → adaptasi
 ./bin/foundry mcp --print-config     # snippet config untuk AI Host
 ```
 
-Loop host: `next_work` → kerjakan prompt → `submit_work` (jenis: discovery, design, design_qa, reference, stack, structure, blueprint, workflow). Tool baca: `get_project`, `get_requirements`, `get_blueprint` (semua artefak), `get_workflow` (command, gelombang, masalah, yang perlu ditinjau), `get_design`, `get_spec`. Izin: `--allow READ|WRITE|MODIFY|ALL` (default READ; `EXECUTE` masih diterima untuk config lama, tidak dipakai tool mana pun).
+Loop host: `next_work` → kerjakan prompt → `submit_work` (jenis: discovery, design, stack, structure, blueprint, workflow). Tool baca: `get_project`, `get_requirements`, `get_blueprint` (semua artefak), `get_workflow` (command, gelombang, masalah, yang perlu ditinjau), `get_design` (aturan desain, layout, issues), `get_spec`. Izin: `--allow READ|WRITE|MODIFY|ALL` (default READ; `EXECUTE` masih diterima untuk config lama, tidak dipakai tool mana pun).
 
 ## Aturan penting
 
 - Foundry tidak menulis kode aplikasi, tidak menjalankan build/test/deploy, tidak menjalankan coding agent untuk implementasi, dan tidak membuat folder scaffold. Selain state `.foundry/`, file yang ditulis ke project hanya paket ekspor saat finalisasi (`docs/foundry/`, plus `AGENTS.md` bila belum ada).
 - Aturan desain (`internal/modules/standard`) menyesuaikan proyek; tidak ada stack atau tool yang diwajibkan. Arsitektur default web/SaaS (REST, ORM, worker) hanya dilengkapi untuk produk app/server.
-- Project existing tidak pernah diganti template; rancangan mengikuti UI yang sudah ada.
+- Project existing tidak pernah diganti template; aturan desain dan layout mengikuti design system dan UI yang sudah ada.
 - Project lama (tahap `PLAN`/`BUILD`/`VERIFY`) dibuka sebagai `READY`; data task/build lama diabaikan dan hilang saat state disimpan berikutnya. Project yang difinalisasi sebelum ada workflow: buka kembali (reopen), susun workflow, lalu finalisasi ulang.
 - API hanya menerima request dari host/origin loopback.
 
@@ -141,7 +140,7 @@ Loop host: `next_work` → kerjakan prompt → `submit_work` (jenis: discovery, 
 make test
 ```
 
-E2E Go memakai test binary sebagai fake agent: prompt → blueprint → desain → workflow → revisi → dampak perubahan → finalisasi (paket di `docs/foundry/`) → buka ulang; workflow melingkar ditolak lalu dicoba ulang; proyek embedded tanpa UI; alur MCP host; tanpa AI; output AI rusak; QA visual; project existing.
+E2E Go memakai test binary sebagai fake agent: prompt → blueprint → desain → workflow → revisi → dampak perubahan → finalisasi (paket di `docs/foundry/`) → buka ulang; workflow melingkar ditolak lalu dicoba ulang; proyek embedded tanpa UI; alur MCP host; tanpa AI; output AI rusak; rancangan UI invalid ditolak lalu dicoba ulang; revisi/edit rancangan menandai command terdampak; migrasi desain lama; project existing.
 
 ## Kontrak Response API
 

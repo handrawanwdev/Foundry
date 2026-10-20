@@ -10,14 +10,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	web "github.com/handrawanw/foundry/apps/web"
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/pipeline"
-	"github.com/handrawanw/foundry/internal/modules/render"
 	"github.com/handrawanw/foundry/internal/transport/httpapi"
 	"github.com/handrawanw/foundry/internal/transport/mcp"
 )
@@ -57,24 +55,11 @@ func main() {
 func serve(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	addr := fs.String("addr", "127.0.0.1:8080", "alamat listen")
-	uiURL := fs.String("ui-url", "", "URL UI Foundry untuk render pemeriksaan visual (default: http://<addr>)")
+	fs.String("ui-url", "", "tidak dipakai lagi; diterima untuk perintah lama")
 	fs.Parse(args)
 	dir := fs.Arg(0)
 	bin, _ := os.Executable()
 	srv := httpapi.New(web.FS(), bin)
-	if *uiURL == "" && web.FS() != nil {
-		// ":8081" listens on all interfaces; Chrome needs a concrete host.
-		host := *addr
-		if strings.HasPrefix(host, ":") {
-			host = "127.0.0.1" + host
-		}
-		*uiURL = "http://" + host
-	}
-	if r := render.Find(*uiURL); r != nil {
-		srv.Render = r
-	} else {
-		log.Printf("Pemeriksaan visual nonaktif: butuh Chrome/Chromium dan UI (--ui-url saat dev)")
-	}
 	// Without a folder argument the UI starts on the Start page (Open / New).
 	if dir != "" {
 		if _, err := srv.Open(dir, "", true); err != nil {
@@ -99,7 +84,7 @@ func runMCP(args []string) {
 	allow := fs.String("allow", "READ", "READ, WRITE, MODIFY atau ALL")
 	dir := fs.String("project", "", "folder project (default: folder saat ini)")
 	printCfg := fs.Bool("print-config", false, "cetak konfigurasi MCP client")
-	uiURL := fs.String("ui-url", "http://127.0.0.1:8080", "URL UI Foundry (foundry serve) untuk render pemeriksaan visual")
+	fs.String("ui-url", "", "tidak dipakai lagi; diterima untuk config MCP lama")
 	fs.Parse(args)
 	if *dir == "" {
 		*dir, _ = os.Getwd()
@@ -124,9 +109,6 @@ func runMCP(args []string) {
 	// stdout carries the protocol; logs go to stderr.
 	log.SetOutput(os.Stderr)
 	svc := pipeline.New(st, pipeline.ConfigAI{})
-	if r := render.Find(*uiURL); r != nil {
-		svc.Render = r
-	}
 	s := &mcp.Server{Svc: svc, Allow: perms, Version: version}
 	stop := func() {
 		if err := svc.Shutdown(shutdownTimeout); err != nil {

@@ -2,16 +2,15 @@ package pipeline
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/uiscan"
-	"github.com/handrawanw/foundry/internal/modules/work"
 )
 
 // readExistingUI reads the frontend of an existing project: routes, layout
-// shell, navigation and shared components for the prompts, and its design
-// tokens as the project theme "existing-ui". That theme becomes the
-// design's theme unless the user already picked one.
+// shell, navigation, shared components and the design tokens its code
+// declares. The design rules of the project follow them.
 func readExistingUI(p *core.Project) {
 	s := p.Structure
 	if s == nil || s.Mode != core.StructureExisting {
@@ -22,19 +21,11 @@ func readExistingUI(p *core.Project) {
 	if ui == nil {
 		return
 	}
-	builtin, _ := work.Themes("")
-	theme := "tidak ada token desain yang cukup; theme dipilih seperti biasa"
-	if t, sources := uiscan.Theme(p.Dir, ui, builtin); t != nil {
-		if err := work.SaveTheme(p.Dir, *t); err != nil {
-			theme = "theme dari kode tidak bisa disimpan: " + err.Error()
-		} else {
-			ui.ThemeID, ui.ThemeSources = t.ID, sources
-			theme = "theme " + t.ID
-			if p.Theme == "" {
-				p.Theme = t.ID
-			}
-		}
+	tokens := "tidak ada token desain yang cukup"
+	if t, sources := uiscan.Tokens(p.Dir, ui); t != nil {
+		ui.Tokens, ui.TokenSources = t, sources
+		tokens = "token desain dari " + strings.Join(sources, ", ")
 	}
 	p.Log("system", fmt.Sprintf("UI yang ada dibaca: %d route, %d komponen, navigasi %q; %s",
-		len(ui.Routes), len(ui.Components), ui.Navigation, theme))
+		len(ui.Routes), len(ui.Components), ui.Navigation, tokens))
 }

@@ -1,7 +1,5 @@
 import { useState } from "react";
 import { api } from "../api";
-import { TemplatePicker } from "../components/TemplateGallery";
-import { ThemeGallery } from "../components/ThemeGallery";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
 import type { Survey, SurveyKind } from "../types";
@@ -123,19 +121,6 @@ export function TellPage() {
             </label>
           </div>
         </details>
-        <details className="theme-pick" open={!hasDownstream && !existing}>
-          <summary className="muted small">Theme visual (opsional): {project.theme || (existing ? "dari UI yang ada" : "otomatis")}</summary>
-          <ThemeGallery project={project} compact />
-        </details>
-        {existing ? (
-          <p className="muted small">Struktur mengikuti kode yang sudah ada; tidak memakai template folder baru.</p>
-        ) : (
-          <details className="theme-pick" open={!hasDownstream}>
-            <summary className="muted small">Template awal (opsional): {project.design_template === "blank" ? "kanvas kosong" : project.design_template || "otomatis"}</summary>
-            <p className="muted small">Hanya struktur awal halaman; fitur tetap dari ceritamu.</p>
-            <TemplatePicker project={project} />
-          </details>
-        )}
       </div>
       {confirmReset && (
         <p className="warn">Cerita baru akan membuat ulang rancangan yang sudah ada. Tekan lagi untuk lanjut.</p>

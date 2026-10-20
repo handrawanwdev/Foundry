@@ -8,7 +8,7 @@ import (
 )
 
 // existingUIBrief is the frontend an existing project already has, for the
-// design prompts: new pages fit into it, not beside it.
+// design prompt: new pages fit into it, not beside it.
 func existingUIBrief(p *core.Project) string {
 	if p.Structure == nil || p.Structure.UI == nil {
 		return ""
@@ -32,11 +32,17 @@ func existingUIBrief(p *core.Project) string {
 	if len(ui.Components) > 0 {
 		b.WriteString("- Shared components: " + strings.Join(ui.Components, ", ") + "\n")
 	}
-	if ui.ThemeID != "" {
-		fmt.Fprintf(&b, "- Design tokens (theme %q) read from: %s\n", ui.ThemeID, strings.Join(ui.ThemeSources, ", "))
+	if t := ui.Tokens; t != nil {
+		fmt.Fprintf(&b, "- Design tokens declared in %s (Foundry keeps these; add only missing ones):\n", strings.Join(ui.TokenSources, ", "))
+		for _, g := range t.Groups() {
+			for _, tok := range *g.Tokens {
+				fmt.Fprintf(&b, "  - %s %s = %s\n", g.Name, tok.Name, tok.Value)
+			}
+		}
 	}
-	b.WriteString("Do not redesign or re-create existing pages; design only pages the features need. " +
-		"New pages sit in the same layout shell and navigation: add them as items of the existing menu. " +
-		"Follow existing route style; never give a new page an existing route.\n")
+	b.WriteString("rules.source is \"existing\": the existing design system and components are the rules; do not replace them. " +
+		"Do not redesign or re-create existing pages; a page on an existing route is marked existing and only describes the change. " +
+		"Specify only the pages the features need. New pages sit in the existing layout shell and navigation (mark that shell existing, " +
+		"source = its file) and are added as items of the existing menu. Follow the existing route style; never give a new page an existing route.\n")
 	return b.String()
 }

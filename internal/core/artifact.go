@@ -44,8 +44,14 @@ var ArtifactCategories = []string{ArtifactRequirements, ArtifactDomain, Artifact
 // BuiltinArtifacts are the ids of the artifacts rendered from structured
 // data; AI and user artifacts may not take them.
 var BuiltinArtifacts = map[string]bool{
-	"requirements": true, "architecture": true, "technology": true, "ui-design": true,
+	"requirements": true, "architecture": true, "technology": true, ArtifactDesignRules: true, ArtifactLayoutSpec: true,
 }
+
+// The built-in artifacts of the UI design.
+const (
+	ArtifactDesignRules = "design-rules"
+	ArtifactLayoutSpec  = "layout-spec"
+)
 
 // Hash identifies the artifact's content; a command records it to notice
 // when the artifact changes after the command was written.
@@ -74,7 +80,7 @@ func (p *Project) HasUI() bool {
 			}
 		}
 	}
-	return p.Design != nil && len(p.Design.Pages) > 0
+	return p.UI != nil && p.UI.Layout != nil && len(p.UI.Layout.Pages) > 0
 }
 
 // Finalized reports whether the blueprint and workflow are approved.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentPrompt } from "./blueprint";
+import { agentPrompt, DESIGN_DOCS, designIssuesOf, isDesignDoc } from "./blueprint";
 import type { ExportManifest } from "./types";
 
 const manifest = {
@@ -30,5 +30,18 @@ describe("agentPrompt", () => {
 
   it("falls back to the whole workflow for an unknown wave", () => {
     expect(agentPrompt(manifest, "docs/foundry", 9)).toBe(agentPrompt(manifest, "docs/foundry"));
+  });
+});
+
+describe("design artifacts", () => {
+  it("splits design issues between rules and layout", () => {
+    const issues = [
+      { level: "error" as const, where: "rules", message: "principles belum diisi" },
+      { level: "error" as const, where: "page:antrean", message: "state wajib" },
+      { level: "warning" as const, where: "layout", message: "fitur belum punya halaman" },
+    ];
+    expect(designIssuesOf(issues, DESIGN_DOCS.rules).map((i) => i.message)).toEqual(["principles belum diisi"]);
+    expect(designIssuesOf(issues, DESIGN_DOCS.layout)).toHaveLength(2);
+    expect(isDesignDoc("layout-spec") && isDesignDoc("design-rules") && !isDesignDoc("ui-design")).toBe(true);
   });
 });

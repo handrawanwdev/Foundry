@@ -1,10 +1,9 @@
 import { useEffect, useRef, type ReactElement } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Workbench } from "./components/Workbench";
-import { DESIGN_PATH, stepFor, stepIndex, STEPS } from "./flow";
+import { stepFor, stepIndex, STEPS } from "./flow";
 import { BlueprintPage } from "./pages/Blueprint";
 import { ConnectPage } from "./pages/Connect";
-import { DesignPage } from "./pages/Design";
 import { ExportPage } from "./pages/Export";
 import { StartPage } from "./pages/Start";
 import { TellPage } from "./pages/Tell";
@@ -78,10 +77,8 @@ export default function App() {
         <Route path="/simple/connect" element={<ConnectPage />} />
         <Route path="/simple/tell" element={guard(<TellPage />)} />
         <Route path="/blueprint" element={guard(<BlueprintPage />)} />
-        <Route path={DESIGN_PATH} element={guard(<DesignPage />)} />
         <Route path="/workflow" element={guard(<WorkflowPage />)} />
         <Route path="/export" element={guard(<ExportPage />)} />
-        <Route path="/simple/rancang" element={<Navigate to={DESIGN_PATH} replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Workbench>

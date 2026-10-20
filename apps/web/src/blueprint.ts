@@ -1,4 +1,16 @@
-import type { Artifact, ArtifactCategory, Command, ExportManifest, Workflow, WorkflowReport } from "./types";
+import type { Artifact, ArtifactCategory, Command, DesignIssue, ExportManifest, Workflow, WorkflowReport } from "./types";
+
+// The built-in artifacts of the UI design (core.ArtifactDesignRules / ArtifactLayoutSpec).
+export const DESIGN_DOCS = { rules: "design-rules", layout: "layout-spec" } as const;
+
+export const isDesignDoc = (id: string) => id === DESIGN_DOCS.rules || id === DESIGN_DOCS.layout;
+
+// The design issues one design artifact shows: rules issues on the rules,
+// the rest on the layout.
+export function designIssuesOf(issues: DesignIssue[], doc: string): DesignIssue[] {
+  const onRules = (i: DesignIssue) => i.where === "rules";
+  return issues.filter((i) => (doc === DESIGN_DOCS.rules ? onRules(i) : !onRules(i)));
+}
 
 export const CATEGORY_LABEL: Record<ArtifactCategory, string> = {
   requirements: "Kebutuhan", domain: "Domain & bisnis", architecture: "Arsitektur", ui: "UI/UX",

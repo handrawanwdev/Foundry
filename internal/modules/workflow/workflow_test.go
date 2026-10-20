@@ -87,3 +87,28 @@ func TestStaleAndCheck(t *testing.T) {
 		t.Fatal("empty workflow ready")
 	}
 }
+
+// Every command refers to the blueprint, and the UI design is implemented
+// by some command when the blueprint has one.
+func TestValidateArtifactRefs(t *testing.T) {
+	cmds := []core.Command{
+		{ID: "CMD-001", Name: "A", Objective: "a", Instructions: "a", Artifacts: []core.ArtifactRef{{ID: "requirements"}}},
+		{ID: "CMD-002", Name: "B", Objective: "b", Instructions: "b"},
+	}
+	msgs := func(issues []Issue) string {
+		var out []string
+		for _, is := range issues {
+			out = append(out, is.Command+" "+is.Message)
+		}
+		return strings.Join(out, "; ")
+	}
+	got := msgs(Validate(cmds, map[string]bool{"requirements": true}))
+	if got != "CMD-002 belum merujuk artefak blueprint" {
+		t.Fatalf("issues = %s", got)
+	}
+	cmds[1].Artifacts = []core.ArtifactRef{{ID: core.ArtifactDesignRules}}
+	got = msgs(Validate(cmds, map[string]bool{"requirements": true, core.ArtifactDesignRules: true, core.ArtifactLayoutSpec: true}))
+	if got != " tidak ada command yang merujuk artefak layout-spec" {
+		t.Fatalf("issues = %s", got)
+	}
+}

@@ -13,10 +13,6 @@ import (
 	"github.com/handrawanw/foundry/internal/core"
 )
 
-// ThemeID is the theme generated from the existing code. It is rewritten
-// on every scan; to change it by hand, copy it to another theme folder.
-const ThemeID = "existing-ui"
-
 // def is a token value as the code declares it.
 type def struct{ value, file string }
 
@@ -65,95 +61,43 @@ func normalize(name string) string {
 	return n
 }
 
-// Theme builds a theme from the design tokens in the frontend's code: CSS
-// custom properties, SCSS variables and the Tailwind config. What the code
-// does not define comes from a built-in theme of the same color mode. nil
-// when the code defines too few colors to be a design system of its own.
-// sources are the files the tokens came from.
-func Theme(dir string, ui *core.ExistingUI, builtin []core.Theme) (*core.Theme, []string) {
+// Tokens reads the design tokens the frontend's code declares: CSS custom
+// properties, SCSS variables and the Tailwind config. Only what the code
+// defines is returned; nothing is filled in. nil when the code defines too
+// few colors to be a design system of its own. sources are the files the
+// tokens came from.
+func Tokens(dir string, ui *core.ExistingUI) (*core.DesignTokens, []string) {
 	if ui == nil {
 		return nil, nil
 	}
 	tk := collect(dir, ui.Paths)
-	colors, used := pickColors(tk)
-	if colors["action.primary"] == "" || len(colors) < 4 {
+	colors := pickColors(tk)
+	if colors["action.primary"].value == "" || len(colors) < 4 {
 		return nil, nil
 	}
-	mode := "light"
-	if c, ok := rgbOf(colors["surface.page"]); ok && luminance(c) < 0.35 {
-		mode = "dark"
+	used := map[string]bool{}
+	from := func(d def) string {
+		used[d.file] = true
+		return "dari " + d.file
 	}
-	base := baseTheme(builtin, mode)
-	if base == nil {
-		return nil, nil
-	}
-	t := core.Theme{
-		ID: ThemeID, Name: "UI yang sudah ada", Personality: []string{"existing", "consistent", "familiar"},
-		Tokens:      core.ThemeTokens{ColorMode: mode, Radius: base.Tokens.Radius, Spacing: base.Tokens.Spacing},
-		Components:  map[string]string{},
-		Preferences: core.ThemePreferences{Navigation: ui.Navigation},
-		Rules: []core.ThemeRule{{If: "a page is added to the existing product", Then: "use its layout shell, navigation and component styles",
-			Why: "new features must look like part of the same product"}},
-		Spacing: slices.Clone(base.Spacing), Shadow: slices.Clone(base.Shadow),
-	}
-	for k, v := range base.Components {
-		t.Components[k] = v
-	}
-	for _, name := range core.ThemeColorTokens {
-		v, use := colors[name], "dari kode"
-		if v == "" {
-			v, use = tokenValue(base.Colors, name), "dari theme "+base.ID
+	out := &core.DesignTokens{}
+	for _, r := range colorRoles {
+		if d, ok := colors[r.token]; ok {
+			out.Colors = append(out.Colors, core.Token{Name: r.token, Value: d.value, Use: from(d)})
 		}
-		t.Colors = append(t.Colors, core.Token{Name: name, Value: v, Use: use})
 	}
-	t.Radius, used = radius(tk, base, used)
-	t.Typography, used = typography(tk, base, used)
-	if r, ok := tokenPx(t.Radius, "radius.md"); ok {
-		switch {
-		case r <= 4:
-			t.Tokens.Radius = "small"
-		case r <= 10:
-			t.Tokens.Radius = "medium"
-		default:
-			t.Tokens.Radius = "large"
-		}
+	for _, r := range radius(tk) {
+		out.Radius = append(out.Radius, core.Token{Name: r.name, Value: r.value, Use: from(r.def)})
+	}
+	if f, d, ok := fontFamily(tk); ok {
+		out.Typography = append(out.Typography, core.Token{Name: "font.family", Value: f, Use: from(d)})
 	}
 	sources := make([]string, 0, len(used))
 	for f := range used {
 		sources = append(sources, f)
 	}
 	sort.Strings(sources)
-	t.Description = "Token desain dibaca dari kode: " + strings.Join(sources, ", ")
-	if err := core.ValidateTheme(t); err != nil {
-		return nil, nil
-	}
-	return &t, sources
-}
-
-func baseTheme(themes []core.Theme, mode string) *core.Theme {
-	prefer := map[string]string{"light": "modern-saas", "dark": "enterprise-dark"}[mode]
-	var first *core.Theme
-	for i := range themes {
-		if themes[i].Tokens.ColorMode != mode {
-			continue
-		}
-		if themes[i].ID == prefer {
-			return &themes[i]
-		}
-		if first == nil {
-			first = &themes[i]
-		}
-	}
-	return first
-}
-
-func tokenValue(toks []core.Token, name string) string {
-	for _, t := range toks {
-		if t.Name == name {
-			return t.Value
-		}
-	}
-	return ""
+	return out, sources
 }
 
 // ---------- reading ----------
@@ -420,9 +364,8 @@ var colorRoles = []struct {
 // pickColors maps code colors onto the color tokens. Surfaces must sit
 // close to the page background and text must contrast with it, so a
 // "secondary" button color is not taken for a panel.
-func pickColors(tk *tokens) (map[string]string, map[string]bool) {
-	out := map[string]string{}
-	used := map[string]bool{}
+func pickColors(tk *tokens) map[string]def {
+	out := map[string]def{}
 	var page *[3]float64
 	for _, r := range colorRoles {
 		for _, n := range r.names {
@@ -444,11 +387,11 @@ func pickColors(tk *tokens) (map[string]string, map[string]bool) {
 			if r.token == "surface.page" {
 				page = &c
 			}
-			out[r.token], used[d.file] = v, true
+			out[r.token] = def{v, d.file}
 			break
 		}
 	}
-	return out, used
+	return out
 }
 
 // color finds a usable color under name or its common scale steps.
@@ -474,7 +417,7 @@ var (
 	named     = map[string]string{"white": "#ffffff", "black": "#000000"}
 )
 
-// toColor turns a CSS color into a theme color value (hex, rgb() or
+// toColor turns a CSS color into a token value (hex, rgb() or
 // hsl()); shadcn-style bare "222 47% 11%" and oklch() are converted.
 func toColor(v string) (string, bool) {
 	v = strings.TrimSpace(strings.ReplaceAll(v, "deg", ""))
@@ -575,64 +518,45 @@ func luminance(c [3]float64) float64 {
 
 var length = regexp.MustCompile(`^(\d+(?:\.\d+)?)(px|rem)$`)
 
-// radius takes radius.md from the code (sm and lg from it when the code
-// has only one radius); the base theme fills what is missing.
-func radius(tk *tokens, base *core.Theme, used map[string]bool) ([]core.Token, map[string]bool) {
-	find := func(names ...string) (float64, string, bool) {
-		for _, n := range names {
+type found struct {
+	name, value string
+	def
+}
+
+// radius takes the radius the code declares, at most small, medium and
+// large.
+func radius(tk *tokens) []found {
+	var out []found
+	for _, r := range []struct {
+		token string
+		names []string
+	}{
+		{"radius.sm", []string{"radius-sm", "border-radius-sm"}},
+		{"radius.md", []string{"radius", "radius-md", "border-radius", "radius-base", "rounded", "border-radius-md"}},
+		{"radius.lg", []string{"radius-lg", "border-radius-lg"}},
+	} {
+		for _, n := range r.names {
 			d, ok := tk.norm[n]
 			if !ok {
 				continue
 			}
-			if m := length.FindStringSubmatch(tk.resolve(d.value)); m != nil {
-				f, _ := strconv.ParseFloat(m[1], 64)
-				used[d.file] = true
-				return f, m[2], true
+			if v := tk.resolve(d.value); length.MatchString(v) {
+				out = append(out, found{r.token, v, d})
+				break
 			}
 		}
-		return 0, "", false
 	}
-	out := slices.Clone(base.Radius)
-	md, unit, ok := find("radius", "radius-md", "border-radius", "radius-base", "rounded", "border-radius-md")
-	if !ok {
-		return out, used
-	}
-	format := func(f float64) string { return strconv.FormatFloat(math.Round(f*1000)/1000, 'f', -1, 64) + unit }
-	values := map[string]string{"radius.md": format(md), "radius.sm": format(md / 2), "radius.lg": format(md * 1.5)}
-	if f, u, ok := find("radius-sm", "border-radius-sm"); ok && u == unit {
-		values["radius.sm"] = format(f)
-	}
-	if f, u, ok := find("radius-lg", "border-radius-lg"); ok && u == unit {
-		values["radius.lg"] = format(f)
-	}
-	for i := range out {
-		out[i].Value = values[out[i].Name]
-	}
-	return out, used
-}
-
-func tokenPx(toks []core.Token, name string) (float64, bool) {
-	m := length.FindStringSubmatch(tokenValue(toks, name))
-	if m == nil {
-		return 0, false
-	}
-	f, _ := strconv.ParseFloat(m[1], 64)
-	if m[2] == "rem" {
-		f *= 16
-	}
-	return f, true
+	return out
 }
 
 var (
-	typeSize    = regexp.MustCompile(`\d+(\.\d+)?px`)
 	fontName    = regexp.MustCompile(`^[\w][\w\s-]*$`)
 	genericFont = map[string]bool{"sans-serif": true, "serif": true, "monospace": true, "inherit": true, "initial": true,
 		"ui-sans-serif": true, "ui-serif": true, "ui-monospace": true, "system-ui": true, "-apple-system": true, "blinkmacsystemfont": true}
 )
 
-// typography keeps the base theme's sizes with the code's font family.
-func typography(tk *tokens, base *core.Theme, used map[string]bool) ([]core.Token, map[string]bool) {
-	out := slices.Clone(base.Typography)
+// fontFamily is the first named font family the code declares.
+func fontFamily(tk *tokens) (string, def, bool) {
 	cands := slices.Clone(tk.font)
 	for _, n := range []string{"font-sans", "font-family", "font-body", "font-base", "font-primary", "font-sans-serif", "body-font-family", "font-family-sans-serif"} {
 		if d, ok := tk.norm[n]; ok {
@@ -640,19 +564,11 @@ func typography(tk *tokens, base *core.Theme, used map[string]bool) ([]core.Toke
 		}
 	}
 	for _, d := range cands {
-		family := firstFamily(tk.resolve(d.value))
-		if family == "" {
-			continue
+		if family := firstFamily(tk.resolve(d.value)); family != "" {
+			return family, d, true
 		}
-		for i := range out {
-			if loc := typeSize.FindStringIndex(out[i].Value); loc != nil {
-				out[i].Value = family + " " + out[i].Value[loc[0]:]
-			}
-		}
-		used[d.file] = true
-		break
 	}
-	return out, used
+	return "", def{}, false
 }
 
 // firstFamily is the first named font of a font stack; a system font stack

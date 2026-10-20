@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -329,14 +330,60 @@ func TestLoadLegacyBuildProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Stage != StageReady || p.Design == nil || len(p.Design.Pages) != 1 || p.Design.Status != DesignApproved {
-		t.Fatalf("legacy project = stage %s design %+v", p.Stage, p.Design)
+	if p.Stage != StageReady || p.UI == nil || p.UI.Layout == nil || len(p.UI.Layout.Pages) != 1 || p.UI.Layout.Pages[0].ID != "page-001" {
+		t.Fatalf("legacy project = stage %s ui %+v", p.Stage, p.UI)
 	}
 	if _, err := s.Update(func(*Project) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(filepath.Join(dir, StateDir, "project.json"))
-	if strings.Contains(string(b), `"tasks"`) || strings.Contains(string(b), `"builds"`) {
-		t.Fatalf("build data kept: %s", b)
+	if strings.Contains(string(b), `"tasks"`) || strings.Contains(string(b), `"builds"`) || strings.Contains(string(b), `"design"`) {
+		t.Fatalf("old data kept: %s", b)
+	}
+}
+
+func TestLoadLegacyDesignMigrates(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, StateDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"name":"klinik","stage":"DESIGN","story":"x","theme":"modern-saas",
+		"flows":[{"id":"FLOW-001","page_ids":["PAGE-001","PAGE-002"]}],
+		"design":{"status":"draft","tech_version":3,
+		  "system":{"direction":"tenang","colors":[{"name":"action.primary","value":"#1f6feb"}],"components":[{"name":"Button","value":"rounded","use":"aksi"}]},
+		  "pages":[{"id":"PAGE-001","name":"Masuk","platform":"web","kind":"auth","route":"/masuk","states":{"error":"Gagal"},
+		     "components":[{"id":"form-1","type":"form","label":"Login","items":["Email"]},{"type":"button","label":"Daftar","target":"PAGE-002"}]},
+		   {"id":"PAGE-002","name":"Daftar","platform":"web","components":[]}]},
+		"workflow":{"status":"draft","version":1,"commands":[{"id":"CMD-001","name":"UI","objective":"o","instructions":"i","status":"draft",
+		  "artifacts":[{"id":"ui-design","hash":"abc"}]}]}}`
+	if err := os.WriteFile(filepath.Join(dir, StateDir, "project.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := (&Store{Dir: dir}).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := p.UI
+	if d == nil || d.Rules == nil || d.Layout == nil || d.TechVersion != 3 {
+		t.Fatalf("ui = %+v", d)
+	}
+	if d.Rules.Direction != "tenang" || len(d.Rules.Tokens.Colors) != 1 || d.Rules.Components[0].Name != "Button" {
+		t.Errorf("rules = %+v", d.Rules)
+	}
+	pg := d.Layout.Pages[0]
+	if pg.ID != "page-001" || pg.Pattern != "auth" || len(pg.Sections) != 2 || pg.Sections[0].ID != "form-1" ||
+		len(pg.Links) != 1 || pg.Links[0].To != "page-002" || pg.States["error"] != "Gagal" {
+		t.Errorf("page = %+v", pg)
+	}
+	if got := p.Flows[0].PageIDs; !slices.Equal(got, []string{"page-001", "page-002"}) {
+		t.Errorf("flow pages = %v", got)
+	}
+	refs := p.Workflow.Commands[0].Artifacts
+	if len(refs) != 2 || refs[0].ID != ArtifactDesignRules || refs[1].ID != ArtifactLayoutSpec || refs[0].Hash != "" {
+		t.Errorf("command refs = %+v", refs)
+	}
+	// Nothing is invented: the missing rules show up as errors.
+	if errs := Errors(p.DesignIssues(nil)); len(errs) == 0 {
+		t.Error("migrated design must ask for the missing rules")
 	}
 }

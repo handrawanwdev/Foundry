@@ -89,7 +89,7 @@ export interface Structure {
 // The frontend an existing project already has, read from its code.
 export interface ExistingUI {
   paths: string[]; routes?: string[]; shell?: string[]; navigation?: "side" | "top" | "";
-  nav_items?: string[]; components?: string[]; theme_id?: string; theme_sources?: string[];
+  nav_items?: string[]; components?: string[]; tokens?: DesignTokens; token_sources?: string[];
 }
 // Technology decision: one choice per area with its reason; the user's
 // override wins over the recommendation.
@@ -121,157 +121,44 @@ export interface TechStack {
 export interface TechOption { value: string; language?: string; fit: string }
 export interface TechProfile { id: string; name: string; description: string }
 export interface StackCatalog { catalog: Record<string, TechOption[]>; profiles: TechProfile[]; areas: TechArea[] }
-export interface FormField { label: string; type: string; required?: boolean; validation?: string; error?: string; group?: string }
-// id: what the layout places. emphasis/tone: semantic tokens (action.*, text.* / status.*).
-export interface PageComponent {
-  id?: string; type: string; label: string; items?: string[]; columns?: string[]; fields?: FormField[]; target?: string;
-  emphasis?: string; tone?: string;
-}
-// Design IR layout (internal/core/designir.go). A child is a component id or a node.
-export interface LayoutNode {
-  id?: string; type: string; children?: LayoutChild[]; columns?: number; ratio?: string; side?: string; placement?: string;
-  gap?: string; align?: string; surface?: string; elevation?: string;
-}
-export type LayoutChild = string | LayoutNode;
-export interface NodeChange { type?: string; columns?: number; order?: string[] }
-export interface DeviceLayout {
-  frame?: string; nav?: string; width?: string; hide?: string[]; nodes?: Record<string, NodeChange>; swap?: Record<string, string>;
-}
-export interface PageLayout {
-  frame: string; nav?: string; width?: string; brand?: boolean; back?: string; root: LayoutNode; devices?: Record<string, DeviceLayout>;
-}
-export type PageKind =
-  | "auth" | "dashboard" | "list" | "detail" | "form" | "wizard" | "search"
-  | "settings" | "payment" | "profile" | "analytics" | "admin" | "status"
-  | "table" | "workspace" | "master-detail" | "monitoring" | "report";
-export type Density = "compact" | "comfortable" | "spacious";
-export interface PageStates { loading?: string; empty?: string; no_results?: string; error?: string; success?: string }
-export interface PageAction { label?: string; target?: string; reason?: string }
-// How the page is used (internal/core/model.go PageIntent); the user is the
-// role and the goal the purpose.
-export interface PageIntent {
-  primary_task?: string; frequency?: string; complexity?: string; information_density?: string; comparison?: boolean;
-}
-// Design decisions taken before the layout; ids are component ids.
-export interface PagePlan {
-  layout_strategy?: string; responsive_strategy?: string; primary_focus?: string;
-  secondary_content?: string[]; supporting_content?: string[]; reasons?: Record<string, string>;
-}
-export interface PageData { required?: string[]; optional?: string[]; dynamic?: string[]; api?: string[] }
-export interface Page {
-  id: string; name: string; platform: string; role: string; feature_id: string;
-  sub_feature_ids: string[] | null; purpose: string; components: PageComponent[] | null;
-  kind?: PageKind; density?: Density; states?: PageStates;
-  hierarchy?: string[]; secondary_actions?: string[]; responsive?: string;
-  route?: string; access?: "public" | "auth"; primary_action?: PageAction; data?: PageData;
-  intent?: PageIntent; plan?: PagePlan; layout?: PageLayout;
-}
-// Implementation-ready spec of one page, assembled by the server from the design.
-export interface PageSpec {
-  page_id: string; name: string; route: string; platform: string; access: string; role: string; kind?: string;
-  purpose: string; hierarchy?: string[]; primary_action: string; secondary_actions?: string[]; responsive?: string;
-  density?: string; layout?: PageLayout; plan?: PagePlan; components: string[] | null; data?: PageData;
-  interactions: string[] | null; entry_points: string[] | null; states: string[] | null; validation: string[] | null;
-  tests: string[] | null; feature_id: string; sub_feature_ids?: string[]; requirement_ids: string[] | null; flow_ids: string[] | null;
-}
-export interface Blocker { page_id?: string; page?: string; text: string }
-export interface DesignSpec { pages: PageSpec[] | null; blockers: Blocker[] | null; stack?: TechStack | null; structure?: Structure | null }
-export interface DesignChange { kind: "added" | "changed" | "removed"; page_id?: string; page: string; details?: string[] }
-export interface ScopePage { id: string; request?: string; components?: number[]; fields?: boolean; device?: string }
-// What a change request may touch; the server rejects a patch outside it.
-export interface ChangeScope { open?: boolean; fields?: boolean; general?: string; pages?: ScopePage[] }
-export interface QAShot { page_id: string; device: string; image: string; outline: string }
-export interface QAIssue {
-  page_id?: string; severity: "critical" | "major" | "minor"; problem: string; why?: string; impact?: string; fix?: string;
-  category?: string; component?: string; device?: string; source?: "lint"; rule?: string;
-}
-export interface DesignQA {
-  status: "running" | "pass" | "fixed" | "failed" | "skipped"; round: number; notes?: string; issues?: QAIssue[]; shots?: QAShot[]; next?: QAShot[];
-  compared?: QualityComparison[];
-}
-// Design quality: rule metrics on the Design IR plus the critic's findings.
-// An internal indicator, never a ranking.
-export interface QualityScore { overall: number; dimensions: Record<string, number>; blockers: number }
-export interface QualityComparison { round: number; before: QualityScore; after: QualityScore; verdict: "improved" | "neutral" | "degraded"; rejected?: boolean }
-export interface PageQuality { page_id: string; overall: number; dimensions: Record<string, number>; metrics?: Record<string, number> }
-export interface DesignQuality {
-  overall: number; dimensions: Record<string, number>; pages?: PageQuality[]; findings?: QAIssue[];
-  confidence: "low" | "medium" | "high"; decision: "pass" | "revision_required"; reasons?: QAIssue[];
-  compared_to_previous?: QualityComparison; recommendation?: string; measured_at: string;
-}
-// Canvas: one direct edit of a page's Design IR tree (see work.CanvasOp).
-export interface CanvasOp {
-  op: "add" | "remove" | "move" | "update" | "set_node" | "wrap" | "unwrap" | "set_page";
-  id?: string; parent?: string; index?: number; component?: PageComponent; node?: LayoutNode; ids?: string[];
-  fields?: Partial<Record<"name" | "purpose" | "kind" | "density" | "frame" | "nav" | "width", string>>;
-}
-export interface VersionSummary { id: number; source: string; note?: string; quality?: number; pages: number; theme?: string; at: string; current?: boolean }
-export interface VersionComparison { from: number; to: number; changes: DesignChange[] | null; system_changed?: boolean; theme?: [string, string]; template?: [string, string]; flows_changed?: string[] }
-export interface ProtoLink { to: string; via: string; kind: "target" | "nav" | "back" | "primary" }
-export interface ProtoPage { id: string; name: string; role?: string; platform?: string; route?: string; entry?: boolean; links: ProtoLink[] }
-export interface ProtoFlow { id: string; name: string; steps: string[]; gaps?: string[] }
-export interface Prototype { pages: ProtoPage[] | null; flows: ProtoFlow[] | null; unreachable?: string[]; dead_ends?: string[] }
-export interface DesignRevision { request: string; changes: DesignChange[] | null; scope?: ChangeScope; patch?: string[]; qa?: DesignQA }
 export interface Token { name: string; value: string; use?: string }
-export interface DesignSystem {
-  direction?: string; colors: Token[]; typography: Token[]; spacing: Token[]; radius?: Token[]; shadow?: Token[];
-  breakpoints?: Token[]; components?: Token[];
+export interface DesignTokens {
+  colors: Token[] | null; typography: Token[] | null; spacing: Token[] | null;
+  radius?: Token[] | null; shadow?: Token[] | null; breakpoints?: Token[] | null;
 }
-export interface Design {
-  system?: DesignSystem;
-  pages: Page[] | null; status: "draft" | "changes_requested" | "approved"; feedback: string[] | null;
-  revision?: DesignRevision;
-  rejected?: string; // why the last patch was refused
-  tech_version?: number; // technology version the design was last checked against
-  domain?: string;
-  qa?: DesignQA; // visual critic of a newly generated design
-  quality?: DesignQuality;
-  theme?: ThemeContext; // nil on designs made before themes
-  template?: TemplateChoice; // nil on designs made before templates or when none fits
+export interface ComponentRule { name: string; use: string; variants?: string[]; rules?: string[]; source?: string }
+// Design rules (internal/core/uidesign.go): what every screen follows.
+export interface DesignRules {
+  source: "new" | "existing"; direction?: string; principles: string[] | null; ux_guidelines: string[] | null;
+  tokens: DesignTokens; components: ComponentRule[] | null; visual_hierarchy?: string[]; accessibility: string[] | null;
+  responsive: string[] | null; interaction?: string[]; platforms?: { platform: string; rules: string[] }[]; sources?: string[];
 }
-// A design template: a proven UX pattern (structure), never a page to copy.
-export interface TemplateRegion { region: string; role: "primary" | "secondary" | "supporting" | "action" | "navigation"; type: string; area: string; purpose: string }
-export interface DesignTemplate {
-  id: string; name: string; category: string; intent: string; characteristics: string[];
-  suitable_for: { domains?: string[]; roles?: string[]; tasks?: string[]; frequency?: string; density?: string; page_kinds: string[]; keywords?: string[] };
-  layout_pattern: { strategies: string[]; navigation: string; density: string; structure: string };
-  information_hierarchy: string[];
-  component_composition: TemplateRegion[];
-  responsive_strategy: { strategy: string; desktop: string; mobile: string };
-  quality_rules: { expected_behavior: string[]; avoid: string[]; quality_checks?: string[] };
-  wireframes: TemplateWireframe[];
+export type UIState = "loading" | "empty" | "no_results" | "error" | "success" | "disabled" | "interactive";
+export interface Section {
+  id: string; name: string; pattern?: string; purpose?: string; content: string[] | null; components?: string[];
+  grid?: string; alignment?: string; spacing?: string; sizing?: string; responsive?: string; states?: Partial<Record<UIState, string>>;
 }
-// One page of a template sketched in ASCII: how the pattern carries across a product.
-export interface TemplateWireframe { page: string; kind: string; layout: string; purpose: string; regions: string[]; sketch: string[]; notes?: string[] }
-export interface TemplateChoice { id: string; name: string; secondary?: string; source: "user" | "ai" | "auto"; reasons?: string[] }
-// A landed canvas edit and what it made worse.
-export interface CanvasResult { project: Project; warnings?: string[] }
-export interface TemplateGallery {
-  templates: DesignTemplate[] | null; previews: Record<string, Page>; domain?: string;
-  system?: DesignSystem; theme?: ThemeContext; recommended?: TemplateChoice; invalid?: ThemeProblem[] | null;
+export interface LayoutShell {
+  id: string; name: string; platform?: string; pattern: string; regions: Section[] | null; navigation?: string; grid?: string;
+  responsive?: string[]; existing?: boolean; source?: string;
 }
-// The theme a design follows, as the renderer reads it.
-export interface ThemeContext {
-  id: string; name: string; source: "user" | "auto" | "fallback"; reasons?: string[];
-  color_mode: "light" | "dark"; style?: Record<string, string>;
+export interface LayoutPage {
+  id: string; name: string; platform: string; route?: string; role?: string; access?: "public" | "auth"; feature_id?: string;
+  purpose: string; shell?: string; pattern: string; primary_action?: string; sections: Section[] | null; hierarchy?: string[];
+  grid?: string; responsive?: string[]; links?: { to: string; via: string }[]; states?: Partial<Record<UIState, string>>;
+  data?: string[]; existing?: boolean;
 }
-export interface ThemeRule { if: string; then: string; why: string }
-export interface Theme {
-  id: string; name: string; description?: string; personality: string[];
-  tokens: { color_mode: string; radius: string; spacing: string };
-  colors: Token[]; typography: Token[]; spacing: Token[]; radius: Token[]; shadow: Token[];
-  components: Record<string, string> | null;
-  preferences: { navigation?: string; layout?: string[]; density?: string };
-  avoid?: string[]; use_when: { domains?: string[]; not?: string[] }; rules?: ThemeRule[];
-  interaction?: string[];
-  reference?: { url: string; name: string; category: string }; // theme extracted from a reference
+// Layout specification: shells pages share, then pages of sections.
+export interface LayoutSpec { shells: LayoutShell[] | null; pages: LayoutPage[] | null }
+// The UI design as text and structured data; never drawn or rendered.
+export interface UIDesign {
+  rules?: DesignRules; layout?: LayoutSpec; request?: ChangeRequest; version: number; tech_version?: number; updated_at: string;
 }
-// A website or app named as inspiration; analyzed into a theme, never copied.
-export interface DesignReference {
-  url: string; name: string; notes?: string; status: "pending" | "analyzing" | "done" | "failed";
-  theme_id?: string; error?: string; at: string;
+export interface DesignIssue { level: "error" | "warning"; where?: string; message: string }
+export interface DesignView {
+  design: UIDesign | null; issues: DesignIssue[]; has_ui: boolean; platforms: string[] | null;
+  vocabulary: { patterns: string[]; states: UIState[]; required_states: Record<string, UIState[]>; platforms: string[] };
 }
-export interface ThemeProblem { id: string; error: string }
 export interface Job {
   kind: string; status: "running" | "done" | "failed" | "waiting_host";
   message: string; error?: string; started: string;
@@ -281,7 +168,7 @@ export interface Event { at: string; source: string; message: string }
 export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string; survey?: Survey;
   discovery?: Discovery; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
-  platform?: PlatformPlan; structure?: Structure; stack?: TechStack; design?: Design; theme?: string; design_template?: string; reference?: DesignReference;
+  platform?: PlatformPlan; structure?: Structure; stack?: TechStack; ui?: UIDesign;
   artifacts?: Artifact[]; artifact_request?: ChangeRequest; workflow?: Workflow;
   job?: Job; events: Event[] | null; updated_at: string;
 }

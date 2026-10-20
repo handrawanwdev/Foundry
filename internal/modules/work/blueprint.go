@@ -559,7 +559,7 @@ func completeCoding(b *core.Blueprint, p *core.Project) {
 		"satu aksi utama per layar; konten realistis, bukan lorem ipsum",
 		"semua panggilan API lewat layer client typed",
 		"server state di TanStack Query / setara; UI state di store yang dipilih",
-		"ikuti docs/design-brief.md; jika layar bisa tertukar dengan template generik, kembali ke brief",
+		"ikuti docs/foundry/blueprint/design-rules.md dan layout-spec.md; jangan menambah pola layar di luar spesifikasi",
 		"kontras WCAG AA, navigasi keyboard, label aksesibilitas",
 	})
 	if b.Coding.API.Style == "" {

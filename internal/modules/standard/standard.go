@@ -28,6 +28,7 @@ const PackageGuide = `Paket ini dibuat oleh Foundry. Foundry merancang dan menyu
 4. Sebelum mengubah kode, periksa repository: pakai struktur, konvensi, dan komponen yang sudah ada. Jangan mengarang path, API, atau tabel yang tidak ada.
 5. Satu command selesai bila semua acceptance criteria terpenuhi dan output yang diharapkan diserahkan, dengan bukti (test, perintah, hasil).
 6. Bila blueprint bertentangan dengan kondisi repository atau dengan command lain, berhenti dan laporkan; jangan memutuskan sendiri.
+7. Untuk layar: ` + "`blueprint/design-rules.md`" + ` (aturan desain dan token) dan ` + "`blueprint/layout-spec.md`" + ` (layout per halaman) adalah acuannya; versi JSON ada di ` + "`design/`" + `. Semua nilai visual dari token; jangan nilai hardcode. Halaman bertanda *sudah ada* diubah seperlunya, tidak dibuat ulang.
 `
 
 // AgentsMD is written at the project root when it has no AGENTS.md.
@@ -38,6 +39,7 @@ Rancangan project ini ada di docs/foundry/ (dibuat oleh Foundry).
 - Mulai dari docs/foundry/README.md dan docs/foundry/manifest.json.
 - Blueprint di docs/foundry/blueprint/ adalah sumber kebenaran.
 - Kerjakan command di docs/foundry/workflow/ sesuai urutan gelombang dan dependency.
+- Untuk UI: ikuti docs/foundry/blueprint/design-rules.md dan layout-spec.md.
 - Periksa repository sebelum mengubah kode; jangan mengarang path atau API.
 - Penuhi acceptance criteria tiap command dan laporkan buktinya.
 `
