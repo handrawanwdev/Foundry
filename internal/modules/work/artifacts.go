@@ -23,6 +23,7 @@ const promptBody = 4000
 type artifactsOut struct {
 	Artifacts []core.Artifact `json:"artifacts"`
 	Remove    []string        `json:"remove"`
+	scopeOut
 }
 
 // artifactRules is shared by the discovery and the revision prompt.
@@ -31,7 +32,8 @@ const artifactRules = `Artifact rules:
 - body is Markdown: a short opening paragraph, ## headings, short paragraphs, lists, tables for comparisons, code blocks for technical specs (schemas, contracts, protocols), a mermaid code block only when a diagram really helps.
 - write only what this project needs; no document just to fill a template, no repeat of another artifact.
 - mark assumptions as "Asumsi:" and details an existing codebase must confirm as "Perlu verifikasi:"; never invent file paths, endpoints, tables or runtime facts.
-- refs lists related artifact ids.
+- area: the blueprint area the artifact covers (data, security, integration, operations, migration), empty for others.
+- refs lists related artifact ids; a change of a referenced artifact marks this one for review.
 `
 
 // ArtifactsPrompt asks the AI to revise the blueprint for the pending
@@ -43,6 +45,25 @@ Write every human-readable text in the same language as the story.
 
 PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	writeDocs(&b, docs)
+	b.WriteString("AREA STATUS:\n")
+	for _, a := range core.Coverage(p, docs) {
+		fmt.Fprintf(&b, "- %s: %s", a.ID, a.Status)
+		if a.Reason != "" {
+			fmt.Fprintf(&b, " (%s)", a.Reason)
+		}
+		if a.Errors > 0 {
+			fmt.Fprintf(&b, ", %d errors", a.Errors)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	if issues := scopeIssues(p); len(issues) > 0 {
+		b.WriteString("OPEN PROBLEMS of use cases and acceptance criteria:\n")
+		for _, is := range issues {
+			fmt.Fprintf(&b, "- %s %s: %s\n", is.Level, is.Where, is.Message)
+		}
+		b.WriteString("\n")
+	}
 	r := p.ArtifactRequest
 	if r != nil {
 		b.WriteString("USER REQUEST:\n" + r.Text + "\n\n")
@@ -54,14 +75,32 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		}
 	}
 	b.WriteString(artifactRules)
+	areaGuide(&b, p)
+	b.WriteString(scopeRules)
 	b.WriteString(`Revision rules:
-- change only what the request needs. Return only the artifacts you add or change, each in full; the others stay as they are.
-- builtin artifacts are rendered from structured data and cannot be changed here. When the request is about them, write the decision in a non-builtin artifact and say so in its summary.
+- change only what the request needs. Return only the artifacts, use cases, acceptance entries and decisions you add or change, each in full; the others stay as they are. Omit definition_of_done to keep it.
+- use-cases, acceptance and decisions are built-in artifacts: change them through use_cases, acceptance, definition_of_done and decisions. requirements, architecture, technology, design-rules and layout-spec cannot be changed here; when the request is about them, write the decision in a non-builtin artifact and say so in its summary.
+- a new use case or decision gets an empty id; keep the id of a changed one.
 - do not drop content that still applies.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block:
-{"artifacts": [{"id": "threat-model", "title": "", "category": "quality", "summary": "", "body": "", "refs": []}], "remove": ["artifact-id"]}`)
+{"artifacts": [{"id": "threat-model", "title": "", "category": "quality", "area": "security", "summary": "", "body": "", "refs": []}], "remove": ["artifact-id"],
+ "use_cases": [` + useCaseShape + `], "remove_use_cases": ["FLOW-009"],
+ "acceptance": [{"requirement": "REQ-001", "criteria": [` + criterionShape + `], "untestable": ""}],
+ "definition_of_done": [""], "decisions": [` + decisionShape + `],
+ "skip": [{"area": "migration", "reason": ""}], "unskip": ["area"]}`)
 	return b.String()
+}
+
+const (
+	useCaseShape   = `{"id": "FLOW-001", "name": "", "feature_id": "FEAT-001", "role": "", "goal": "", "preconditions": [""], "steps": [""], "postconditions": [""], "alternatives": [""], "failures": [""], "business_rules": [""], "permissions": [""], "data_effects": [""], "integrations": [""]}`
+	criterionShape = `{"id": "REQ-001-AC1", "kind": "behavior|negative|edge|security|performance|compatibility|accessibility", "text": "", "evidence": ""}`
+	decisionShape  = `{"id": "DEC-001", "kind": "assumption|question|conflict|risk", "text": "", "area": "", "critical": false, "resolution": ""}`
+)
+
+// scopeIssues are the use case and acceptance problems.
+func scopeIssues(p *core.Project) []core.Issue {
+	return append(p.AreaIssues(core.AreaUseCases), p.AreaIssues(core.AreaAcceptance)...)
 }
 
 // writeDocs lists the blueprint for a prompt; long bodies are cut.
@@ -84,7 +123,7 @@ func ApplyArtifacts(p *core.Project, raw string) error {
 	if err := ExtractJSON(raw, &out); err != nil {
 		return err
 	}
-	if len(out.Artifacts) == 0 && len(out.Remove) == 0 {
+	if len(out.Artifacts) == 0 && len(out.Remove) == 0 && out.scopeOut.empty() {
 		return errors.New("AI tidak menemukan perubahan untuk permintaan ini; tulis lebih spesifik")
 	}
 	list := slices.Clone(p.Artifacts)
@@ -105,7 +144,7 @@ func ApplyArtifacts(p *core.Project, raw string) error {
 			return err
 		}
 		if i := slices.IndexFunc(list, func(x core.Artifact) bool { return x.ID == a.ID }); i >= 0 {
-			if list[i].Hash() == a.Hash() && slices.Equal(list[i].Refs, a.Refs) && list[i].Category == a.Category {
+			if list[i].Hash() == a.Hash() && slices.Equal(list[i].Refs, a.Refs) && list[i].Category == a.Category && list[i].Area == a.Area {
 				continue
 			}
 			a.Version = list[i].Version + 1
@@ -118,6 +157,9 @@ func ApplyArtifacts(p *core.Project, raw string) error {
 	}
 	if len(list) > MaxArtifacts {
 		return fmt.Errorf("terlalu banyak artefak (%d, maks %d)", len(list), MaxArtifacts)
+	}
+	if _, err := applyScope(p, out.scopeOut); err != nil {
+		return err
 	}
 	p.Artifacts = dropDanglingRefs(list)
 	p.ArtifactRequest = nil
@@ -161,7 +203,7 @@ func EditArtifact(p *core.Project, id string, in core.Artifact) error {
 		return err
 	}
 	old := p.Artifacts[i]
-	if old.Hash() == a.Hash() && old.Category == a.Category && slices.Equal(old.Refs, a.Refs) {
+	if old.Hash() == a.Hash() && old.Category == a.Category && slices.Equal(old.Refs, a.Refs) && old.Area == a.Area {
 		return nil
 	}
 	a.Version, a.UpdatedAt = old.Version+1, time.Now().UTC()
@@ -204,6 +246,16 @@ func normArtifact(a core.Artifact) (core.Artifact, error) {
 	if !slices.Contains(core.ArtifactCategories, a.Category) {
 		a.Category = core.ArtifactOther
 	}
+	a.Area = strings.TrimSpace(a.Area)
+	if area := core.AreaByID(a.Area); area == nil || area.Builtin {
+		a.Area = ""
+	}
+	for _, area := range core.Areas {
+		if a.Area == "" && !area.Builtin && area.Artifacts[0] == a.ID {
+			a.Area = area.ID
+		}
+	}
+	a.Seen = nil // recorded again by StampRefs
 	var refs []string
 	for _, r := range a.Refs {
 		if r = slugID(r); r != "" && r != a.ID && !slices.Contains(refs, r) {

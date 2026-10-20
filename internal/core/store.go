@@ -88,6 +88,7 @@ func (s *Store) Load() (*Project, error) {
 		p.Stage = StageReady
 	}
 	migrateLegacyDesign(&p, b)
+	migrateArtifactIDs(&p)
 	return &p, nil
 }
 

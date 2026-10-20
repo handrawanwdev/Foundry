@@ -34,11 +34,14 @@ type Command struct {
 	DependsOn    []string `json:"depends_on,omitempty"`
 	// Artifacts are the blueprint artifacts the command implements, with
 	// the content hash seen when it was written or last reviewed.
-	Artifacts   []ArtifactRef `json:"artifacts,omitempty"`
-	Outputs     []string      `json:"expected_outputs,omitempty"`
-	Acceptance  []string      `json:"acceptance_criteria,omitempty"`
-	Constraints []string      `json:"constraints,omitempty"`
-	Status      string        `json:"status"`
+	Artifacts []ArtifactRef `json:"artifacts,omitempty"`
+	// Covers are the requirements the command implements; their acceptance
+	// criteria are what it must prove.
+	Covers      []string `json:"covers,omitempty"`
+	Outputs     []string `json:"expected_outputs,omitempty"`
+	Acceptance  []string `json:"acceptance_criteria,omitempty"`
+	Constraints []string `json:"constraints,omitempty"`
+	Status      string   `json:"status"`
 	// Review is why the command was marked for review.
 	Review string `json:"review,omitempty"`
 }

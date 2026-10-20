@@ -84,6 +84,33 @@ func Validate(cmds []core.Command, artifacts map[string]bool) []Issue {
 	return out
 }
 
+// Covers checks the requirements the commands cover: an unknown id is an
+// issue; uncovered lists the MUST requirements no command covers.
+func Covers(cmds []core.Command, reqs []core.Requirement) (issues []Issue, uncovered []string) {
+	known := map[string]bool{}
+	for _, r := range reqs {
+		known[r.ID] = true
+	}
+	covered := map[string]bool{}
+	for _, c := range cmds {
+		for _, id := range c.Covers {
+			if !known[id] {
+				issues = append(issues, Issue{Command: c.ID, Message: fmt.Sprintf("requirement %s tidak ada", id)})
+			}
+			covered[id] = true
+		}
+	}
+	if len(cmds) == 0 {
+		return issues, nil
+	}
+	for _, r := range reqs {
+		if r.Priority == "MUST" && !covered[r.ID] {
+			uncovered = append(uncovered, r.ID)
+		}
+	}
+	return issues, uncovered
+}
+
 // Cycle returns one dependency cycle (first id repeated at the end), or
 // nil. Unknown and self dependencies are left to Validate.
 func Cycle(cmds []core.Command) []string {
@@ -207,6 +234,9 @@ type Report struct {
 	Ready  bool                 `json:"ready"`
 	Review map[string]string    `json:"review"` // command → why it needs review
 	Docs   map[string]DocHeader `json:"docs"`
+	// Uncovered are the MUST requirements no command covers; shown, not
+	// blocking.
+	Uncovered []string `json:"uncovered"`
 }
 
 // DocHeader names an artifact without its body.
@@ -215,10 +245,12 @@ type DocHeader struct {
 	Category string `json:"category"`
 }
 
-// Check reports the workflow against the current artifacts. Ready means it
-// can be finalized: commands exist, no issue, nothing to review.
-func Check(w *core.Workflow, docs []core.Artifact) Report {
-	r := Report{Issues: []Issue{}, Waves: [][]string{}, Stale: map[string][]string{}, Review: map[string]string{}, Docs: map[string]DocHeader{}}
+// Check reports the workflow against the current artifacts and
+// requirements. Ready means it can be finalized: commands exist, no issue,
+// nothing to review.
+func Check(w *core.Workflow, docs []core.Artifact, reqs []core.Requirement) Report {
+	r := Report{Issues: []Issue{}, Waves: [][]string{}, Stale: map[string][]string{}, Review: map[string]string{}, Docs: map[string]DocHeader{},
+		Uncovered: []string{}}
 	exists := map[string]bool{}
 	for _, d := range docs {
 		exists[d.ID] = true
@@ -228,6 +260,11 @@ func Check(w *core.Workflow, docs []core.Artifact) Report {
 		return r
 	}
 	r.Issues = append(r.Issues, Validate(w.Commands, exists)...)
+	issues, uncovered := Covers(w.Commands, reqs)
+	r.Issues = append(r.Issues, issues...)
+	if uncovered != nil {
+		r.Uncovered = uncovered
+	}
 	if waves := Waves(w.Commands); waves != nil {
 		r.Waves = waves
 	}

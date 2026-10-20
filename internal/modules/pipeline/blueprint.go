@@ -54,6 +54,7 @@ func (s *Service) EditArtifact(id string, in core.Artifact) (*core.Project, erro
 		if err := work.EditArtifact(p, id, in); err != nil {
 			return err
 		}
+		stampRefs(p)
 		p.Log("ui", "Artefak diedit: "+id)
 		return nil
 	})
@@ -143,7 +144,7 @@ func (s *Service) ReviewCommand(id string, needs bool, reason string) (*core.Pro
 
 // CheckWorkflow reports the workflow against the current blueprint.
 func CheckWorkflow(p *core.Project) workflow.Report {
-	return workflow.Check(p.Workflow, spec.Artifacts(p))
+	return workflow.Check(p.Workflow, spec.Artifacts(p), p.Requirements)
 }
 
 // ---------- Finalize ----------
@@ -154,7 +155,7 @@ func Blockers(p *core.Project) []string {
 	if p.Discovery == nil || p.Platform == nil {
 		return []string{"blueprint belum dibuat dari prompt"}
 	}
-	out := designBlockers(p)
+	out := append(designBlockers(p), scopeBlockers(p)...)
 	if work.AppLike(p) {
 		switch {
 		case p.Stack == nil:
@@ -201,7 +202,7 @@ func (s *Service) Finalize() error {
 		if p.Discovery == nil || p.Platform == nil {
 			return ErrWrongStage
 		}
-		if b := designBlockers(p); len(b) > 0 {
+		if b := append(designBlockers(p), scopeBlockers(p)...); len(b) > 0 {
 			return fmt.Errorf("%w: %s", ErrIncomplete, b[0])
 		}
 		if work.AppLike(p) {
@@ -235,6 +236,9 @@ func (s *Service) Finalize() error {
 		// recorded; the workflow must still match what is exported.
 		if r := CheckWorkflow(p); !r.Ready {
 			return fmt.Errorf("%w: workflow perlu ditinjau setelah blueprint dilengkapi", ErrIncomplete)
+		}
+		if b := scopeBlockers(p); len(b) > 0 {
+			return fmt.Errorf("%w: %s setelah blueprint dilengkapi", ErrIncomplete, b[0])
 		}
 		now := time.Now().UTC()
 		w := p.Workflow

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -174,5 +175,62 @@ func TestArtifactsStable(t *testing.T) {
 		if d.ID == core.ArtifactDesignRules && d.Hash() == hashes[d.ID] {
 			t.Error("rules change did not change design-rules hash")
 		}
+	}
+}
+
+// The structured scope is exported as artifacts, with the traceability
+// from requirements to commands and the area coverage in the manifest.
+func TestWriteDocsScope(t *testing.T) {
+	dir := t.TempDir()
+	p := &core.Project{Name: "Klinik", Dir: dir, Stage: core.StageReady,
+		Requirements: []core.Requirement{
+			{ID: "REQ-001", Text: "Buat janji", Priority: "MUST", Acceptance: []core.Criterion{{ID: "REQ-001-AC1", Kind: "negative", Text: "Bentrok ditolak", Evidence: "test integrasi"}}},
+			{ID: "REQ-002", Text: "Laporan", Priority: "MUST", Untestable: "format ditentukan klinik"}},
+		Features: []core.Feature{{ID: "FEAT-001", Name: "Janji", RequirementIDs: []string{"REQ-001"}}},
+		Flows: []core.Flow{{ID: "FLOW-001", Name: "Buat janji", FeatureID: "FEAT-001", Role: "Pasien", Goal: "Dapat jadwal", Steps: []string{"Pilih"},
+			Post: []string{"Janji pending"}, Failures: []string{"Jadwal penuh"}, Permissions: []string{"appointment:create"}}},
+		Done:      []string{"Bukti test dilampirkan"},
+		Decisions: []core.Decision{{ID: "DEC-001", Kind: core.DecisionQuestion, Text: "Gateway?", Critical: true, Resolution: "Midtrans"}},
+		Skips:     []core.AreaSkip{{Area: core.AreaOperations, Reason: "prototipe lokal"}},
+		Workflow: &core.Workflow{Version: 1, Commands: []core.Command{{ID: "CMD-001", Name: "Janji", Objective: "o", Instructions: "i",
+			Artifacts: []core.ArtifactRef{{ID: "acceptance"}}, Covers: []string{"REQ-001"}}}},
+	}
+	if err := WriteDocs(dir, p); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(dir, "docs", "foundry")
+	read := func(f string) string {
+		b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	for f, wants := range map[string][]string{
+		"blueprint/use-cases.md":  {"## FLOW-001 Buat janji", "Requirement: REQ-001", "**Kegagalan**", "appointment:create"},
+		"blueprint/acceptance.md": {"| REQ-001-AC1 | negative | Bentrok ditolak | test integrasi |", "Tidak dapat diuji langsung: format ditentukan klinik", "- [ ] Bukti test dilampirkan", "tidak menjalankan pengujian"},
+		"blueprint/decisions.md":  {"prototipe lokal", "**DEC-001** (Pertanyaan, kritis)", "Keputusan: Midtrans"},
+		"traceability.md":         {"| REQ-001 | MUST | FEAT-001 | FLOW-001 | REQ-001-AC1 | [CMD-001](workflow/CMD-001.md) |", "Requirement MUST tanpa command: REQ-002."},
+		"workflow/CMD-001.md":     {"## Mencakup requirement", "REQ-001"},
+		"README.md":               {"## Cakupan blueprint", "| Observability & Reliability | dilewati | prototipe lokal |"},
+	} {
+		got := read(f)
+		for _, w := range wants {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s lacks %q:\n%s", f, w, got)
+			}
+		}
+	}
+	var m Manifest
+	if err := json.Unmarshal([]byte(read("manifest.json")), &m); err != nil || len(m.Areas) != len(core.Areas) || !slices.Equal(m.Commands[0].Covers, []string{"REQ-001"}) {
+		t.Fatalf("manifest = %+v, %v", m, err)
+	}
+	// Without requirements there is nothing to trace: the old file goes.
+	p.Requirements, p.Workflow = nil, nil
+	if err := WriteDocs(dir, p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "traceability.md")); !os.IsNotExist(err) {
+		t.Errorf("traceability.md kept: %v", err)
 	}
 }

@@ -179,8 +179,8 @@ var str = map[string]any{"type": "string"}
 
 var tools = []tool{
 	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, discovery, architecture blueprint, platform, structure, technology stack, job, counts.", InputSchema: obj(nil)},
-	{Name: "get_requirements", perm: PermRead, Description: "Requirements, features, sub-features and user flows.", InputSchema: obj(nil)},
-	{Name: "get_blueprint", perm: PermRead, Description: "Blueprint: every artifact (requirements, architecture, technology, design rules, layout spec and the project's own documents) as Markdown, plus the structured architecture.", InputSchema: obj(nil)},
+	{Name: "get_requirements", perm: PermRead, Description: "Requirements with acceptance criteria, features, sub-features, use cases (flows) and the Definition of Done.", InputSchema: obj(nil)},
+	{Name: "get_blueprint", perm: PermRead, Description: "Blueprint: every artifact (requirements, architecture, technology, design rules, layout spec, use cases, acceptance criteria, decisions and the project's own documents) as Markdown, the structured architecture, area coverage, artifact states and the decision register.", InputSchema: obj(nil)},
 	{Name: "get_workflow", perm: PermRead, Description: "Command workflow for the coding agent: commands with objective, instructions, dependencies, blueprint references, expected outputs and acceptance criteria; the execution waves; validation issues and commands that need review.", InputSchema: obj(nil)},
 	{Name: "get_design", perm: PermRead, Description: "UI design as structured data: design rules (principles, UX guidelines, tokens, components, accessibility, responsive, interaction, platform rules) and layout spec (shells, pages, sections, hierarchy, grid, states, links), plus validation issues.", InputSchema: obj(nil)},
 	{Name: "get_spec", perm: PermRead, Description: "Whole spec for implementation outside Foundry (JSON: requirements, flows, stack, structure, blueprint, artifacts, design rules, layout spec, workflow) plus the same as Markdown.", InputSchema: obj(nil)},
@@ -228,13 +228,15 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 			"platform":  p.Platform, "structure": p.Structure, "stack": p.Stack, "job": p.Job,
 			"counts": map[string]int{"requirements": len(p.Requirements), "features": len(p.Features), "pages": pages}}, nil
 	case "get_requirements":
-		return map[string]any{"requirements": p.Requirements, "features": p.Features, "flows": p.Flows}, nil
+		return map[string]any{"requirements": p.Requirements, "features": p.Features, "flows": p.Flows, "definition_of_done": p.Done}, nil
 	case "get_blueprint":
-		return map[string]any{"artifacts": spec.Artifacts(p), "blueprint": p.Blueprint}, nil
+		docs := spec.Artifacts(p)
+		return map[string]any{"artifacts": docs, "blueprint": p.Blueprint, "areas": core.Coverage(p, docs),
+			"states": core.ArtifactStates(p, docs), "decisions": p.Decisions}, nil
 	case "get_workflow":
 		return map[string]any{"workflow": p.Workflow, "report": pipeline.CheckWorkflow(p), "finalized": p.Finalized()}, nil
 	case "get_design":
-		var issues []core.DesignIssue
+		var issues []core.Issue
 		if p.UI.Written() {
 			issues = p.DesignIssues(nil)
 		}

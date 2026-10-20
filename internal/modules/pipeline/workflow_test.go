@@ -107,7 +107,8 @@ func TestWorkflowLifecycle(t *testing.T) {
 	}
 	s.Wait()
 	p = load(t, s)
-	if len(p.Artifacts) != 1 || p.Artifacts[0].ID != "threat-model" || !slices.Equal(p.Artifacts[0].Refs, []string{"requirements"}) || p.ArtifactRequest != nil {
+	if len(p.Artifacts) != 2 || p.Artifacts[0].ID != "threat-model" || p.Artifacts[0].Version != 2 || p.Artifacts[0].Area != core.AreaSecurity ||
+		!slices.Equal(p.Artifacts[0].Refs, []string{"requirements"}) || p.ArtifactRequest != nil {
 		t.Fatalf("artifacts = %+v", p.Artifacts)
 	}
 	if _, err := s.EditArtifact("requirements", core.Artifact{Title: "x", Body: "y"}); err == nil {
@@ -154,11 +155,26 @@ func TestWorkflowLifecycle(t *testing.T) {
 	if _, err := s.RemoveArtifact("threat-model"); err != nil {
 		t.Fatal(err)
 	}
+	// Without it the security area is missing: it must be written or
+	// skipped with a reason.
+	if err := s.Finalize(); err == nil || !strings.Contains(err.Error(), "Keamanan") {
+		t.Fatalf("finalize without security err = %v", err)
+	}
+	if _, err := s.SkipArea(core.AreaSecurity, ""); err == nil {
+		t.Fatal("skip without reason accepted")
+	}
+	if _, err := s.SkipArea(core.AreaSecurity, "Aplikasi demo tanpa data nyata"); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Finalize(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "blueprint", "threat-model.md")); !os.IsNotExist(err) {
 		t.Fatalf("stale export file kept: %v", err)
+	}
+	dec, err := os.ReadFile(filepath.Join(root, "blueprint", "decisions.md"))
+	if err != nil || !strings.Contains(string(dec), "Aplikasi demo tanpa data nyata") {
+		t.Fatalf("decisions.md = %s, %v", dec, err)
 	}
 }
 
@@ -196,7 +212,7 @@ func TestEmbeddedProject(t *testing.T) {
 	if err := s.GenerateDesign(); err == nil {
 		t.Fatal("design generated for a product without screens")
 	}
-	if len(p.Artifacts) != 1 || p.Artifacts[0].ID != "firmware-architecture" {
+	if len(p.Artifacts) != 2 || p.Artifacts[0].ID != "firmware-architecture" || p.Artifacts[1].Area != core.AreaIntegration {
 		t.Fatalf("artifacts = %+v", p.Artifacts)
 	}
 	if bp := p.Blueprint; bp != nil && (bp.Coding.API.Style != "" || len(bp.Modules) > 0) {

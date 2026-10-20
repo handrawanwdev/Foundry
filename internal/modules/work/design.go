@@ -229,7 +229,7 @@ func commitDesign(p *core.Project, next *core.UIDesign, flows []core.Flow) error
 	check := *p
 	check.Flows = flows
 	if errs := core.Errors(check.DesignIssues(next)); len(errs) > 0 {
-		return &core.DesignInvalid{Issues: errs}
+		return &core.Invalid{Issues: errs}
 	}
 	next.Request = nil
 	next.Version++

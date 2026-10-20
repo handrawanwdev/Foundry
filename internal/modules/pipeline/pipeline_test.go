@@ -37,13 +37,23 @@ const discoveryJSON = `Here you go:
  "discovery": {"summary": "Aplikasi klinik", "business": "Klinik pratama", "users": ["Pasien", "Admin"],
    "roles": [{"name": "Pasien", "description": "membuat janji", "platform": "android"}, {"name": "Admin", "description": "kelola jadwal", "platform": "web"}],
    "data": ["Appointment: id, pasien, dokter, waktu"], "integrations": [], "security": ["Login wajib"], "workflows": ["Pasien membuat janji"]},
- "requirements": [{"id": "R1", "text": "Pasien dapat membuat janji temu", "priority": "MUST"},
-                  {"id": "R2", "text": "Admin dapat mengelola jadwal dokter", "priority": "MUST"}],
+ "requirements": [{"id": "R1", "text": "Pasien dapat membuat janji temu", "priority": "MUST",
+                   "acceptance": [{"kind": "behavior", "text": "Janji tersimpan dengan status pending", "evidence": "test integrasi"},
+                                  {"kind": "negative", "text": "Jadwal bentrok ditolak dengan pesan jelas", "evidence": "test integrasi"}]},
+                  {"id": "R2", "text": "Admin dapat mengelola jadwal dokter", "priority": "MUST",
+                   "acceptance": [{"id": "ngawur", "kind": "Behavior", "text": "Jadwal baru tampil di tabel"}, {"kind": "edge", "text": "Jadwal di masa lalu ditolak"}]}],
  "features": [{"id": "F1", "name": "Janji Temu", "description": "Pasien membuat janji", "requirement_ids": ["R1"], "platforms": ["android", "backend"],
                "sub_features": [{"id": "x", "name": "Cari dokter"}, {"id": "y", "name": "Buat janji"}]},
               {"id": "F2", "name": "Jadwal Dokter", "description": "Admin kelola jadwal", "requirement_ids": ["R2"], "platforms": ["web", "backend"],
                "sub_features": [{"id": "z", "name": "Tambah jadwal"}]}],
- "flows": [{"id": "FL1", "name": "Buat janji", "feature_id": "F1", "role": "Pasien", "steps": ["Pilih dokter", "Pilih jadwal", "Konfirmasi"]}],
+ "flows": [{"id": "FL1", "name": "Buat janji", "feature_id": "F1", "role": "Pasien", "goal": "Mendapat jadwal periksa",
+            "preconditions": ["Pasien sudah login"], "steps": ["Pilih dokter", "Pilih jadwal", "Konfirmasi"], "postconditions": ["Janji tersimpan (pending)"],
+            "failures": ["Jadwal sudah terisi: pasien memilih jam lain"], "permissions": ["appointment:create"], "data_effects": ["Appointment: dibuat"]}],
+ "artifacts": [{"id": "threat-model", "title": "Threat Model", "category": "quality", "body": "## Aset\n\n- Data pasien", "refs": ["requirements"]},
+               {"id": "siklus-data", "title": "Siklus Data", "category": "data", "area": "data", "body": "## Retensi\n\n- Rekam janji 5 tahun"}],
+ "definition_of_done": ["Semua acceptance criteria terbukti dengan test", "Tidak ada secret di kode"],
+ "decisions": [{"kind": "assumption", "text": "Satu klinik, satu zona waktu", "area": "data"}, {"kind": "aneh", "text": "Notifikasi lewat SMS?"}, {"kind": "question", "text": " "}],
+ "skip": [{"area": "operations", "reason": "Prototipe lokal tanpa server produksi"}, {"area": "acceptance", "reason": "tidak boleh"}],
  "platform": {"targets": [{"kind": "web", "audience": ["Admin"], "rationale": "dashboard"}, {"kind": "android", "audience": ["Pasien"], "rationale": "HP"},
                           {"kind": "backend", "audience": [], "rationale": "API"}], "reason": "Pasien memakai HP, admin memakai web."}}
 ` + "```"
@@ -110,6 +120,11 @@ func fakeAgent() {
 			fmt.Println(embeddedDiscoveryJSON)
 			return
 		}
+		if mode == "critical" {
+			fmt.Println(strings.Replace(discoveryJSON, `{"kind": "aneh", "text": "Notifikasi lewat SMS?"}`,
+				`{"kind": "question", "text": "Notifikasi lewat SMS atau WhatsApp?", "area": "integration", "critical": true}`, 1))
+			return
+		}
 		fmt.Println(discoveryJSON)
 	case strings.Contains(prompt, "UI/UX designer of Foundry"):
 		countRun("design")
@@ -137,6 +152,10 @@ func fakeAgent() {
 			fmt.Println(workflowJSON)
 		}
 	case strings.Contains(prompt, "blueprint editor"):
+		if strings.Contains(prompt, "Lengkapi blueprint: tulis area data") {
+			fmt.Println(`{"artifacts": [{"id": "data-lifecycle", "title": "Siklus Data", "category": "data", "body": "## Retensi\n\nAsumsi: 5 tahun."}]}`)
+			return
+		}
 		fmt.Println(artifactsJSON)
 	default:
 		fmt.Fprintln(os.Stderr, "unknown prompt")
@@ -146,11 +165,11 @@ func fakeAgent() {
 
 const workflowJSON = `{"commands": [
  {"id": "C1", "name": "Kontrak API janji temu", "objective": "Tetapkan kontrak API", "instructions": "Periksa repository. Tulis kontrak API janji temu.",
-  "artifacts": ["requirements", "architecture"], "expected_outputs": ["openapi.yaml"], "acceptance_criteria": ["Kontrak mencakup REQ-001"]},
+  "artifacts": ["requirements", "architecture"], "covers": ["REQ-001", "req-002"], "expected_outputs": ["openapi.yaml"], "acceptance_criteria": ["Kontrak mencakup REQ-001"]},
  {"id": "C2", "name": "Backend janji temu", "objective": "Endpoint janji", "instructions": "Implementasikan endpoint sesuai kontrak C1.",
   "depends_on": ["C1"], "artifacts": ["architecture"]},
  {"id": "C3", "name": "Layar janji", "objective": "Layar janji temu", "instructions": "Bangun layar sesuai desain.",
-  "depends_on": ["C1"], "artifacts": ["design-rules", "layout-spec", "requirements"]}]}`
+  "depends_on": ["C1"], "artifacts": ["design-rules", "layout-spec", "requirements"], "covers": ["REQ-001"]}]}`
 
 const cyclicWorkflowJSON = `{"commands": [
  {"id": "C1", "name": "A", "objective": "a", "instructions": "a", "depends_on": ["C2"], "artifacts": ["requirements"]},
@@ -168,19 +187,22 @@ const artifactsJSON = `{"artifacts": [{"id": "Threat Model", "title": "Threat Mo
 const embeddedWorkflowJSON = `{"commands": [
  {"id": "C1", "name": "Driver sensor", "objective": "Baca sensor suhu", "instructions": "Periksa repository. Implementasikan driver I2C.",
   "artifacts": ["firmware-architecture"]},
- {"id": "C2", "name": "Protokol MQTT", "objective": "Kirim data", "instructions": "Kirim pembacaan lewat MQTT.", "artifacts": ["requirements"]},
+ {"id": "C2", "name": "Protokol MQTT", "objective": "Kirim data", "instructions": "Kirim pembacaan lewat MQTT.", "artifacts": ["requirements"], "covers": ["REQ-001"]},
  {"id": "C3", "name": "Integrasi", "objective": "Gabungkan", "instructions": "Hubungkan driver dan protokol.", "depends_on": ["C1", "C2"],
   "artifacts": ["firmware-architecture"]}]}`
 
 const embeddedDiscoveryJSON = `{"name": "Sensor Suhu",
  "discovery": {"summary": "Firmware sensor suhu", "business": "Pantau suhu gudang", "users": ["Operator"], "roles": [], "data": [], "integrations": ["MQTT broker"],
    "security": [], "workflows": []},
- "requirements": [{"id": "R1", "text": "Kirim suhu tiap menit", "priority": "MUST"}],
+ "requirements": [{"id": "R1", "text": "Kirim suhu tiap menit", "priority": "MUST", "acceptance": [{"kind": "behavior", "text": "Pesan MQTT tiap 60 detik"}, {"kind": "edge", "text": "Broker putus: data disimpan lalu dikirim ulang"}]}],
+ "definition_of_done": ["Diuji di perangkat"],
+ "skip": [{"area": "use-cases", "reason": "Perangkat tanpa interaksi pengguna"}, {"area": "security", "reason": "Jaringan tertutup; dicatat sebagai asumsi"}, {"area": "operations", "reason": "Belum ada server pemantau"}],
  "features": [{"id": "F1", "name": "Telemetri", "description": "Kirim suhu", "requirement_ids": ["R1"], "platforms": ["embedded"], "sub_features": [{"name": "Baca sensor"}, {"name": "Kirim MQTT"}]}],
  "flows": [],
  "platform": {"targets": [{"kind": "embedded", "audience": ["Operator"], "rationale": "perangkat"}], "reason": "Perangkat di gudang."},
  "artifacts": [{"id": "firmware-architecture", "title": "Arsitektur Firmware", "category": "architecture", "body": "## Task\n\n- sensor\n- mqtt"},
-               {"id": "requirements", "title": "Bentrok", "body": "id bawaan"}]}`
+               {"id": "requirements", "title": "Bentrok", "body": "id bawaan"},
+               {"id": "integrations", "title": "Integrasi MQTT", "category": "platform", "body": "## Broker\n\nPerlu verifikasi: alamat broker."}]}`
 
 // countRun appends label to $FAKE_RUNS, so a test can count agent runs.
 func countRun(label string) {
@@ -648,7 +670,7 @@ func TestDesignEdit(t *testing.T) {
 	l.Pages = slices.Clone(l.Pages)
 	l.Pages[2].States = map[string]string{"loading": "Skeleton"} // a table needs empty and error too
 	_, err := s.EditLayout(l)
-	var invalid *core.DesignInvalid
+	var invalid *core.Invalid
 	if !errors.As(err, &invalid) || !strings.Contains(err.Error(), `state "empty" wajib`) {
 		t.Fatalf("invalid edit err = %v", err)
 	}
@@ -796,6 +818,14 @@ func TestTechStack(t *testing.T) {
 	}
 	if p = load(t, s); p.UI.TechVersion != 3 {
 		t.Fatalf("design tech version = %d", p.UI.TechVersion)
+	}
+	// The platform change reached the requirements; the threat model that
+	// refers to them is reviewed before finalize.
+	if b := pipeline.Blockers(load(t, s)); !slices.Contains(b, "1 artefak perlu ditinjau karena artefak acuannya berubah") {
+		t.Fatalf("blockers = %v", b)
+	}
+	if _, err := s.ReviewArtifact("threat-model"); err != nil {
+		t.Fatal(err)
 	}
 	if err := s.Finalize(); !errors.Is(err, pipeline.ErrStackNotApproved) {
 		t.Fatalf("approve design before stack err = %v", err)

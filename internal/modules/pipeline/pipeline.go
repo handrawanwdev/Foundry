@@ -317,6 +317,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			if err := work.ApplyDiscovery(p, raw); err != nil {
 				return err
 			}
+			defer stampRefs(p)
 			p.Structure = structure.Detect(p.Dir, p.Platform)
 			readExistingUI(p)
 			decideStack(p, "")
@@ -340,6 +341,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			if err := work.ApplyArtifacts(p, raw); err != nil {
 				return err
 			}
+			stampRefs(p)
 		case work.KindWorkflow:
 			if err := work.ApplyWorkflow(p, raw, spec.Artifacts(p)); err != nil {
 				return err

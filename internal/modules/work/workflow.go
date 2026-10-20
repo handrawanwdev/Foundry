@@ -26,6 +26,7 @@ type commandOut struct {
 	Instructions string   `json:"instructions"`
 	DependsOn    []string `json:"depends_on"`
 	Artifacts    []string `json:"artifacts"`
+	Covers       []string `json:"covers"`
 	Outputs      []string `json:"expected_outputs"`
 	Acceptance   []string `json:"acceptance_criteria"`
 	Constraints  []string `json:"constraints"`
@@ -42,6 +43,8 @@ const commandRules = `Command rules:
 - depends_on lists only the commands whose result this one needs (a contract, schema, module, interface). Commands without such a need do not depend on each other, so they can be done in parallel. No cycles, no self dependency.
 - artifacts lists the ids of the blueprint artifacts the command implements or must follow (from the list above); at least one.
 - when the blueprint has design-rules and layout-spec, every command that builds or changes screens lists both, and its instructions name the page and shell ids of layout-spec it implements; the design reaches the code only through these commands.
+- covers lists the requirement ids (REQ-...) the command implements; every MUST requirement is covered by at least one command. The command's acceptance_criteria include the criterion ids (REQ-001-AC1) of the acceptance artifact it must prove, and add only command-specific checks.
+- when the blueprint has threat-model, data-lifecycle, integrations, operations or migration artifacts, the commands that build the affected parts list them too, so their rules reach the code.
 - instructions are specific Markdown: what to build or change, behavior, edge cases, which artifact sections to follow. Never generic ("implement this well"). Understandable without this conversation.
 - never invent file paths, endpoints or tables of an existing codebase. When the repository structure is unknown the instruction starts with inspecting the repository.
 - tests and verification are part of the instructions and acceptance criteria (or own commands when they span several commands). Foundry never runs them; the agent does.
@@ -50,7 +53,7 @@ const commandRules = `Command rules:
 `
 
 const commandShape = `{"id": "C1", "name": "", "objective": "", "context": "", "inputs": [""], "instructions": "",
- "depends_on": ["C0"], "artifacts": ["requirements"], "expected_outputs": [""], "acceptance_criteria": [""], "constraints": [""]}`
+ "depends_on": ["C0"], "artifacts": ["requirements"], "covers": ["REQ-001"], "expected_outputs": [""], "acceptance_criteria": [""], "constraints": [""]}`
 
 // WorkflowPrompt asks for the workflow (no commands yet) or for a revision
 // of it (the pending request). docs is the whole blueprint.
@@ -177,8 +180,13 @@ func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 	if len(cmds) > MaxCommands {
 		return fmt.Errorf("terlalu banyak command (%d, maks %d)", len(cmds), MaxCommands)
 	}
-	if err := checkCommands(cmds, hashes); err != nil {
+	if err := checkCommands(cmds, hashes, p.Requirements); err != nil {
 		return err
+	}
+	// A new workflow covers every MUST requirement; an older workflow is
+	// only reported (it may predate covers).
+	if _, uncovered := workflow.Covers(cmds, p.Requirements); fresh && len(uncovered) > 0 {
+		return fmt.Errorf("workflow tidak valid: requirement MUST belum dicakup command mana pun (covers): %s", strings.Join(uncovered, ", "))
 	}
 	if w == nil {
 		w = &core.Workflow{}
@@ -207,6 +215,11 @@ func commandFrom(o commandOut, idMap, hashes map[string]string) (core.Command, e
 		return c, fmt.Errorf("%s: %w", c.ID, err)
 	}
 	c.Artifacts = refs
+	for _, id := range o.Covers {
+		if id = strings.ToUpper(strings.TrimSpace(id)); id != "" && !slices.Contains(c.Covers, id) {
+			c.Covers = append(c.Covers, id)
+		}
+	}
 	return c, nil
 }
 
@@ -227,12 +240,14 @@ func artifactRefs(ids []string, hashes map[string]string) ([]core.ArtifactRef, e
 }
 
 // checkCommands refuses a workflow that fails the check.
-func checkCommands(cmds []core.Command, hashes map[string]string) error {
+func checkCommands(cmds []core.Command, hashes map[string]string, reqs []core.Requirement) error {
 	exists := map[string]bool{}
 	for id := range hashes {
 		exists[id] = true
 	}
 	issues := workflow.Validate(cmds, exists)
+	unknown, _ := workflow.Covers(cmds, reqs)
+	issues = append(issues, unknown...)
 	if len(issues) == 0 {
 		return nil
 	}
@@ -256,6 +271,7 @@ type CommandEdit struct {
 	Instructions string   `json:"instructions"`
 	DependsOn    []string `json:"depends_on"`
 	Artifacts    []string `json:"artifacts"`
+	Covers       []string `json:"covers"`
 	Outputs      []string `json:"expected_outputs"`
 	Acceptance   []string `json:"acceptance_criteria"`
 	Constraints  []string `json:"constraints"`
@@ -274,14 +290,14 @@ func EditCommand(p *core.Project, id string, in CommandEdit, docs []core.Artifac
 	}
 	hashes := workflow.Hashes(docs)
 	next, err := commandFrom(commandOut{ID: id, Name: in.Name, Objective: in.Objective, Context: in.Context, Inputs: in.Inputs,
-		Instructions: in.Instructions, DependsOn: in.DependsOn, Artifacts: in.Artifacts, Outputs: in.Outputs,
+		Instructions: in.Instructions, DependsOn: in.DependsOn, Artifacts: in.Artifacts, Covers: in.Covers, Outputs: in.Outputs,
 		Acceptance: in.Acceptance, Constraints: in.Constraints}, idMap, hashes)
 	if err != nil {
 		return err
 	}
 	cmds := slices.Clone(p.Workflow.Commands)
 	cmds[slices.IndexFunc(cmds, func(x core.Command) bool { return x.ID == id })] = next
-	if err := checkCommands(cmds, hashes); err != nil {
+	if err := checkCommands(cmds, hashes, p.Requirements); err != nil {
 		return err
 	}
 	p.Workflow.Commands = cmds

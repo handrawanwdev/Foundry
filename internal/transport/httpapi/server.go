@@ -278,12 +278,12 @@ func (s *Server) Handler() http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		var issues []core.DesignIssue
+		var issues []core.Issue
 		if p.UI.Written() {
 			issues = p.DesignIssues(nil)
 		}
 		if issues == nil {
-			issues = []core.DesignIssue{}
+			issues = []core.Issue{}
 		}
 		vocab := map[string]any{"patterns": core.LayoutPatterns, "states": core.UIStates, "required_states": core.RequiredStates,
 			"platforms": core.UIPlatform}
@@ -329,8 +329,66 @@ func (s *Server) Handler() http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"artifacts": spec.Artifacts(p), "has_ui": p.HasUI(), "request": p.ArtifactRequest,
-			"blueprint_hash": spec.BlueprintHash(spec.Artifacts(p))}, nil
+		docs := spec.Artifacts(p)
+		issues := append(p.AreaIssues(core.AreaUseCases), p.AreaIssues(core.AreaAcceptance)...)
+		issues = append(issues, core.DecisionIssues(p.Decisions)...)
+		if issues == nil {
+			issues = []core.Issue{}
+		}
+		decisions := p.Decisions
+		if decisions == nil {
+			decisions = []core.Decision{}
+		}
+		return map[string]any{"artifacts": docs, "has_ui": p.HasUI(), "request": p.ArtifactRequest,
+			"blueprint_hash": spec.BlueprintHash(docs), "areas": core.Coverage(p, docs), "states": core.ArtifactStates(p, docs),
+			"issues": issues, "decisions": decisions, "criterion_kinds": core.CriterionKinds}, nil
+	}))
+	// Blueprint scope: areas, use cases, acceptance criteria, decisions.
+	api("POST /api/v1/project/blueprint/complete", s.action(func(svc *pipeline.Service) error { return svc.CompleteScope() }))
+	api("PUT /api/v1/project/blueprint/use-cases", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			UseCases []core.Flow `json:"use_cases"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.EditUseCases(in.UseCases)
+	}))
+	api("PUT /api/v1/project/blueprint/acceptance", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			Acceptance []work.AcceptanceIn `json:"acceptance"`
+			Done       []string            `json:"definition_of_done"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.EditAcceptance(in.Acceptance, in.Done)
+	}))
+	api("PUT /api/v1/project/blueprint/decisions/{id}", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			Resolution string `json:"resolution"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.ResolveDecision(r.PathValue("id"), in.Resolution)
+	}))
+	api("PUT /api/v1/project/blueprint/areas/{id}/skip", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			Reason string `json:"reason"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.SkipArea(r.PathValue("id"), in.Reason)
+	}))
+	api("DELETE /api/v1/project/blueprint/areas/{id}/skip", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		return svc.UnskipArea(r.PathValue("id"))
+	}))
+	// Records that a written artifact was checked against the artifacts it
+	// refers to after they changed.
+	api("POST /api/v1/project/blueprint/artifacts/{id}/review", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		return svc.ReviewArtifact(r.PathValue("id"))
 	}))
 	api("POST /api/v1/project/blueprint/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {
@@ -849,8 +907,8 @@ func fail(w http.ResponseWriter, r *http.Request, err error) {
 		log.Printf("api %s %s: %v", r.Method, r.URL.Path, err)
 		msg = internalMessage
 	}
-	// An invalid design lists every problem, so the editor can show them.
-	var invalid *core.DesignInvalid
+	// Invalid structured data lists every problem, so the editor can show them.
+	var invalid *core.Invalid
 	if errors.As(err, &invalid) {
 		details := make([]respond.Detail, len(invalid.Issues))
 		for i, is := range invalid.Issues {

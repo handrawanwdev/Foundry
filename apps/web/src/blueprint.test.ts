@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentPrompt, DESIGN_DOCS, designIssuesOf, isDesignDoc } from "./blueprint";
+import { agentPrompt, DESIGN_DOCS, designIssuesOf, isDesignDoc, SCOPE_DOCS, scopeIssuesOf } from "./blueprint";
 import type { ExportManifest } from "./types";
 
 const manifest = {
@@ -43,5 +43,20 @@ describe("design artifacts", () => {
     expect(designIssuesOf(issues, DESIGN_DOCS.rules).map((i) => i.message)).toEqual(["principles belum diisi"]);
     expect(designIssuesOf(issues, DESIGN_DOCS.layout)).toHaveLength(2);
     expect(isDesignDoc("layout-spec") && isDesignDoc("design-rules") && !isDesignDoc("ui-design")).toBe(true);
+  });
+});
+
+describe("scopeIssuesOf", () => {
+  const issues = [
+    { level: "error" as const, where: "FLOW-001", message: "tujuan belum diisi" },
+    { level: "error" as const, where: "REQ-002", message: "belum punya acceptance criteria" },
+    { level: "error" as const, where: "acceptance", message: "Definition of Done belum diisi" },
+    { level: "error" as const, where: "DEC-001", message: "isi keputusan kosong" },
+    { level: "error" as const, where: "page:x", message: "bukan scope" },
+  ];
+  it("shows each issue on the artifact it belongs to", () => {
+    expect(scopeIssuesOf(issues, SCOPE_DOCS.useCases).map((i) => i.where)).toEqual(["FLOW-001"]);
+    expect(scopeIssuesOf(issues, SCOPE_DOCS.acceptance).map((i) => i.where)).toEqual(["REQ-002", "acceptance"]);
+    expect(scopeIssuesOf(issues, SCOPE_DOCS.decisions).map((i) => i.where)).toEqual(["DEC-001"]);
   });
 });

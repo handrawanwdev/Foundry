@@ -49,13 +49,20 @@ export interface Blueprint {
   coding: { backend?: string[]; frontend?: string[]; api?: { style?: string; versioning?: string; errors?: string; pagination?: string } };
   docs?: string[]; workflow?: string[]; change_flow?: string[]; ai_guidelines?: string[];
 }
-export interface Requirement { id: string; text: string; priority: string }
+// Acceptance criterion; evidence is the proof the coding agent must hand back, never a result.
+export interface Criterion { id: string; kind: string; text: string; evidence?: string }
+export interface Requirement { id: string; text: string; priority: string; acceptance?: Criterion[]; untestable?: string }
 export interface SubFeature { id: string; name: string }
 export interface Feature {
   id: string; name: string; description: string; requirement_ids: string[];
   platforms: PlatformKind[]; sub_features: SubFeature[];
 }
-export interface Flow { id: string; name: string; feature_id: string; role: string; steps: string[]; page_ids: string[] | null }
+// A use case: role is the actor, steps the main flow.
+export interface Flow {
+  id: string; name: string; feature_id: string; role: string; steps: string[]; page_ids: string[] | null;
+  goal?: string; preconditions?: string[]; postconditions?: string[]; alternatives?: string[]; failures?: string[];
+  business_rules?: string[]; permissions?: string[]; data_effects?: string[]; integrations?: string[];
+}
 export interface PlatformTarget { kind: PlatformKind; audience: string[]; rationale: string }
 export interface PlatformPlan { targets: PlatformTarget[]; reason: string; approved: boolean }
 export interface Component { kind: string; path: string; tech: string; evidence: string }
@@ -170,6 +177,7 @@ export interface Project {
   discovery?: Discovery; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
   platform?: PlatformPlan; structure?: Structure; stack?: TechStack; ui?: UIDesign;
   artifacts?: Artifact[]; artifact_request?: ChangeRequest; workflow?: Workflow;
+  decisions?: Decision[]; area_skips?: AreaSkip[]; definition_of_done?: string[];
   job?: Job; events: Event[] | null; updated_at: string;
 }
 
@@ -191,17 +199,31 @@ export interface Browse {
 export type ArtifactCategory = "requirements" | "domain" | "architecture" | "ui" | "data" | "platform" | "quality" | "other";
 export interface Artifact {
   id: string; title: string; category: ArtifactCategory; summary?: string; body: string;
-  refs?: string[]; version: number; updated_at: string; builtin?: boolean;
+  refs?: string[]; version: number; updated_at: string; builtin?: boolean; area?: string;
 }
+export type DecisionKind = "assumption" | "question" | "conflict" | "risk";
+// A critical decision without resolution blocks finalize.
+export interface Decision { id: string; kind: DecisionKind; text: string; area?: string; critical?: boolean; resolution?: string }
+export interface AreaSkip { area: string; reason: string }
+export type AreaStatusKind = "covered" | "invalid" | "missing" | "skipped" | "not_applicable";
+export interface AreaStatus {
+  id: string; title: string; status: AreaStatusKind; artifacts: string[]; reason?: string; errors?: number; skippable?: boolean;
+}
+export type ArtifactStateKind = "draft" | "valid" | "needs_review" | "finalized";
+export interface ArtifactState { status: ArtifactStateKind; reason?: string }
 export interface ChangeRequest { text: string; focus?: string[]; rejected?: string }
-export interface BlueprintView { artifacts: Artifact[]; has_ui: boolean; request: ChangeRequest | null; blueprint_hash: string }
+export interface BlueprintView {
+  artifacts: Artifact[]; has_ui: boolean; request: ChangeRequest | null; blueprint_hash: string;
+  areas: AreaStatus[]; states: Record<string, ArtifactState>; issues: DesignIssue[]; decisions: Decision[]; criterion_kinds: string[];
+}
+export interface AcceptanceEdit { requirement: string; criteria: Criterion[]; untestable: string }
 
 // Command workflow for external coding agents. Statuses are design states only.
 export type CommandStatus = "draft" | "needs_review" | "finalized";
 export interface ArtifactRef { id: string; hash?: string }
 export interface Command {
   id: string; name: string; objective: string; context?: string; inputs?: string[]; instructions: string;
-  depends_on?: string[]; artifacts?: ArtifactRef[]; expected_outputs?: string[]; acceptance_criteria?: string[];
+  depends_on?: string[]; artifacts?: ArtifactRef[]; covers?: string[]; expected_outputs?: string[]; acceptance_criteria?: string[];
   constraints?: string[]; status: CommandStatus; review?: string;
 }
 export interface Workflow { status: "draft" | "finalized"; commands: Command[]; request?: ChangeRequest; version: number; finalized_at?: string }
@@ -209,16 +231,19 @@ export interface WorkflowIssue { command?: string; message: string }
 export interface WorkflowReport {
   issues: WorkflowIssue[]; waves: string[][]; stale: Record<string, string[]>; ready: boolean;
   review: Record<string, string>; docs: Record<string, { title: string; category: ArtifactCategory }>;
+  // MUST requirements no command covers; shown, not blocking.
+  uncovered: string[];
 }
 export interface WorkflowView { workflow: Workflow | null; report: WorkflowReport }
 export interface CommandEdit {
   name: string; objective: string; context: string; inputs: string[]; instructions: string; depends_on: string[];
-  artifacts: string[]; expected_outputs: string[]; acceptance_criteria: string[]; constraints: string[];
+  artifacts: string[]; covers: string[]; expected_outputs: string[]; acceptance_criteria: string[]; constraints: string[];
 }
 export interface ExportManifest {
   format: string; project: string; status: "draft" | "finalized"; finalized_at?: string; blueprint_hash: string;
   workflow_version: number; entry: string; waves: string[][];
   artifacts: { id: string; title: string; category: string; file: string; hash: string }[];
-  commands: { id: string; name: string; file: string; depends_on: string[]; artifacts: string[]; wave: number }[];
+  commands: { id: string; name: string; file: string; depends_on: string[]; artifacts: string[]; covers: string[]; wave: number }[];
+  areas: AreaStatus[];
 }
 export interface ExportView { dir: string; finalized: boolean; manifest: ExportManifest; files: { path: string; size: number }[]; blockers: string[] | null }

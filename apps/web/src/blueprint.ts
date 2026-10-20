@@ -1,4 +1,4 @@
-import type { Artifact, ArtifactCategory, Command, DesignIssue, ExportManifest, Workflow, WorkflowReport } from "./types";
+import type { AreaStatusKind, Artifact, ArtifactCategory, ArtifactStateKind, Command, DesignIssue, ExportManifest, Workflow, WorkflowReport } from "./types";
 
 // The built-in artifacts of the UI design (core.ArtifactDesignRules / ArtifactLayoutSpec).
 export const DESIGN_DOCS = { rules: "design-rules", layout: "layout-spec" } as const;
@@ -11,6 +11,31 @@ export function designIssuesOf(issues: DesignIssue[], doc: string): DesignIssue[
   const onRules = (i: DesignIssue) => i.where === "rules";
   return issues.filter((i) => (doc === DESIGN_DOCS.rules ? onRules(i) : !onRules(i)));
 }
+
+// The built-in artifacts of the blueprint scope, edited as structured data
+// (core.ArtifactUseCases / ArtifactAcceptance / ArtifactDecisions).
+export const SCOPE_DOCS = { useCases: "use-cases", acceptance: "acceptance", decisions: "decisions" } as const;
+
+// The scope issues one scope artifact shows, by where they point
+// (FLOW-001, REQ-001, DEC-001 or the artifact itself).
+export function scopeIssuesOf(issues: DesignIssue[], doc: string): DesignIssue[] {
+  const owner = (w = "") =>
+    w.startsWith("FLOW-") || w === SCOPE_DOCS.useCases ? SCOPE_DOCS.useCases
+      : w.startsWith("REQ-") || w === SCOPE_DOCS.acceptance ? SCOPE_DOCS.acceptance
+        : w.startsWith("DEC-") ? SCOPE_DOCS.decisions : "";
+  return issues.filter((i) => owner(i.where) === doc);
+}
+
+export const ARTIFACT_STATE_LABEL: Record<ArtifactStateKind, string> = {
+  draft: "Draft", valid: "Valid", needs_review: "Perlu ditinjau", finalized: "Final",
+};
+// CSS state class (styles.css .state.st-*) of an artifact or area status.
+export const ARTIFACT_STATE_CLASS: Record<ArtifactStateKind, string> = { draft: "st-issue", valid: "", needs_review: "st-review", finalized: "st-final" };
+
+export const AREA_LABEL: Record<AreaStatusKind, string> = {
+  covered: "Dicakup", invalid: "Belum valid", missing: "Belum ditulis", skipped: "Dilewati", not_applicable: "Tidak relevan",
+};
+export const AREA_CLASS: Record<AreaStatusKind, string> = { covered: "st-final", invalid: "st-issue", missing: "st-review", skipped: "", not_applicable: "" };
 
 export const CATEGORY_LABEL: Record<ArtifactCategory, string> = {
   requirements: "Kebutuhan", domain: "Domain & bisnis", architecture: "Arsitektur", ui: "UI/UX",
@@ -64,6 +89,7 @@ export function commandText(c: Command, r: WorkflowReport | null): string {
   section("Tujuan", c.objective);
   section("Konteks", c.context);
   list("Acuan blueprint", c.artifacts?.map((a) => `blueprint/${a.id}.md`));
+  if (c.covers?.length) out.push("## Mencakup requirement", "", `${c.covers.join(", ")} — kriteria penerimaannya di blueprint/acceptance.md.`, "");
   list("Input", c.inputs);
   section("Instruksi", c.instructions);
   list("Output yang diharapkan", c.expected_outputs);

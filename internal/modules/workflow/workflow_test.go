@@ -64,26 +64,26 @@ func TestStaleAndCheck(t *testing.T) {
 	for i := range wf.Commands {
 		wf.Commands[i].Artifacts[0].Hash = docs[0].Hash()
 	}
-	r := Check(wf, docs)
+	r := Check(wf, docs, nil)
 	if r.Ready || !slices.Equal(r.Stale["B"], []string{"api"}) || len(r.Stale["A"]) != 0 || !strings.Contains(r.Review["B"], "api") {
 		t.Fatalf("report = %+v", r)
 	}
 	wf.Commands[1].Artifacts[1].Hash = docs[1].Hash()
-	if r = Check(wf, docs); !r.Ready || len(r.Waves) != 2 {
+	if r = Check(wf, docs, nil); !r.Ready || len(r.Waves) != 2 {
 		t.Fatalf("report = %+v", r)
 	}
 	// A removed artifact is stale and a reference error.
-	if r = Check(wf, docs[:1]); r.Ready || len(r.Issues) != 1 || !slices.Equal(r.Stale["B"], []string{"api"}) {
+	if r = Check(wf, docs[:1], nil); r.Ready || len(r.Issues) != 1 || !slices.Equal(r.Stale["B"], []string{"api"}) {
 		t.Fatalf("removed artifact = %+v", r)
 	}
 	wf.Commands[0].Status = core.CommandNeedsReview
-	if r = Check(wf, docs); r.Ready || r.Review["A"] != "" {
+	if r = Check(wf, docs, nil); r.Ready || r.Review["A"] != "" {
 		t.Fatalf("manual review = %+v", r)
 	}
 	if !slices.Equal(Dependents(wf.Commands, "A"), []string{"B"}) {
 		t.Fatal("dependents")
 	}
-	if r = Check(nil, docs); r.Ready {
+	if r = Check(nil, docs, nil); r.Ready {
 		t.Fatal("empty workflow ready")
 	}
 }
@@ -110,5 +110,23 @@ func TestValidateArtifactRefs(t *testing.T) {
 	got = msgs(Validate(cmds, map[string]bool{"requirements": true, core.ArtifactDesignRules: true, core.ArtifactLayoutSpec: true}))
 	if got != " tidak ada command yang merujuk artefak layout-spec" {
 		t.Fatalf("issues = %s", got)
+	}
+}
+
+func TestCovers(t *testing.T) {
+	reqs := []core.Requirement{{ID: "REQ-001", Priority: "MUST"}, {ID: "REQ-002", Priority: "MUST"}, {ID: "REQ-003", Priority: "COULD"}}
+	cmds := []core.Command{{ID: "A", Covers: []string{"REQ-001", "REQ-404"}}}
+	issues, uncovered := Covers(cmds, reqs)
+	if len(issues) != 1 || issues[0].Command != "A" || !slices.Equal(uncovered, []string{"REQ-002"}) {
+		t.Fatalf("issues %+v uncovered %v", issues, uncovered)
+	}
+	if _, uncovered := Covers(nil, reqs); uncovered != nil {
+		t.Fatalf("no commands yet: uncovered = %v", uncovered)
+	}
+	// Uncovered requirements are reported but do not block; unknown ids do.
+	r := Check(&core.Workflow{Commands: []core.Command{{ID: "A", Name: "a", Objective: "o", Instructions: "i",
+		Artifacts: []core.ArtifactRef{{ID: "requirements"}}, Covers: []string{"REQ-001"}}}}, []core.Artifact{{ID: "requirements"}}, reqs)
+	if len(r.Issues) != 0 || !slices.Equal(r.Uncovered, []string{"REQ-002"}) {
+		t.Fatalf("report = %+v", r)
 	}
 }

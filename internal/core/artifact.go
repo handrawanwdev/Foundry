@@ -17,8 +17,13 @@ type Artifact struct {
 	Category string `json:"category"`
 	Summary  string `json:"summary,omitempty"`
 	Body     string `json:"body"` // Markdown
-	// Refs are the ids of related artifacts.
-	Refs      []string  `json:"refs,omitempty"`
+	// Refs are the ids of related artifacts; Seen their hashes when this
+	// artifact was written or last reviewed, so a change of a referenced
+	// artifact marks this one for review.
+	Refs []string          `json:"refs,omitempty"`
+	Seen map[string]string `json:"seen,omitempty"`
+	// Area is the blueprint area the artifact covers (security, data, ...).
+	Area      string    `json:"area,omitempty"`
 	Version   int       `json:"version"`
 	UpdatedAt time.Time `json:"updated_at"`
 	// Builtin marks an artifact rendered from structured data; it is never
@@ -45,12 +50,16 @@ var ArtifactCategories = []string{ArtifactRequirements, ArtifactDomain, Artifact
 // data; AI and user artifacts may not take them.
 var BuiltinArtifacts = map[string]bool{
 	"requirements": true, "architecture": true, "technology": true, ArtifactDesignRules: true, ArtifactLayoutSpec: true,
+	ArtifactUseCases: true, ArtifactAcceptance: true, ArtifactDecisions: true,
 }
 
-// The built-in artifacts of the UI design.
+// Built-in artifacts besides requirements, architecture and technology.
 const (
 	ArtifactDesignRules = "design-rules"
 	ArtifactLayoutSpec  = "layout-spec"
+	ArtifactUseCases    = "use-cases"
+	ArtifactAcceptance  = "acceptance"
+	ArtifactDecisions   = "decisions"
 )
 
 // Hash identifies the artifact's content; a command records it to notice

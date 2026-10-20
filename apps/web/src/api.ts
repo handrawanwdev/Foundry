@@ -1,4 +1,4 @@
-import type { AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DesignRules, DesignView, ExportView, LayoutSpec, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Template, WorkflowView } from "./types";
+import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DesignRules, DesignView, ExportView, LayoutSpec, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
 
 // details lists what an invalid request broke (field = where).
 export interface ErrorDetail { field?: string; message: string }
@@ -78,6 +78,19 @@ export const api = {
   editArtifact: (id: string, a: Pick<Artifact, "title" | "summary" | "body" | "category" | "refs">) =>
     call<Project>("PUT", `/project/blueprint/artifacts/${encodeURIComponent(id)}`, a),
   removeArtifact: (id: string) => call<Project>("DELETE", `/project/blueprint/artifacts/${encodeURIComponent(id)}`),
+  // Accepts the current state of the artifacts it refers to.
+  reviewArtifact: (id: string) => call<Project>("POST", `/project/blueprint/artifacts/${encodeURIComponent(id)}/review`, {}),
+  // AI writes or fixes the areas that are missing or invalid.
+  completeScope: () => call("POST", "/project/blueprint/complete", {}),
+  // Saved whole; changed items are refused with ApiError.details when invalid.
+  editUseCases: (use_cases: Flow[]) => call<Project>("PUT", "/project/blueprint/use-cases", { use_cases }),
+  editAcceptance: (acceptance: AcceptanceEdit[], definition_of_done: string[]) =>
+    call<Project>("PUT", "/project/blueprint/acceptance", { acceptance, definition_of_done }),
+  // resolution "" opens the decision again.
+  resolveDecision: (id: string, resolution: string) =>
+    call<Project>("PUT", `/project/blueprint/decisions/${encodeURIComponent(id)}`, { resolution }),
+  skipArea: (id: string, reason: string) => call<Project>("PUT", `/project/blueprint/areas/${encodeURIComponent(id)}/skip`, { reason }),
+  unskipArea: (id: string) => call<Project>("DELETE", `/project/blueprint/areas/${encodeURIComponent(id)}/skip`),
 
   // Command workflow: instructions for external coding agents, never run by Foundry.
   workflow: () => call<WorkflowView>("GET", "/project/workflow"),

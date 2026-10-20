@@ -97,6 +97,11 @@ export function WorkflowPage() {
             <ul>{r.issues.slice(0, 6).map((is, i) => <li key={i}>{is.command && <button className="link" onClick={() => select(is.command!)}>{is.command}</button>} {is.message}</li>)}</ul>
           </div>
         )}
+        {r && r.uncovered.length > 0 && !locked && (
+          <div className="notice warn">
+            <span><strong>Requirement MUST belum dicakup command:</strong> {r.uncovered.join(", ")}. Isi “Mencakup requirement” di command terkait.</span>
+          </div>
+        )}
         {reviewIds.length > 0 && !locked && (
           <div className="notice warn">
             <span><strong>{reviewIds.length} command perlu ditinjau</strong>{staleIds.length > 0 && " — artefak blueprint yang dirujuk sudah berubah"}.</span>
@@ -196,6 +201,14 @@ function CommandDoc({ project, cmd, report, locked, onOpen }: {
               </div>
             </section>
           )}
+          {(cmd.covers?.length ?? 0) > 0 && (
+            <section className="doc-sec">
+              <h2>Mencakup requirement</h2>
+              <div className="ref-list">
+                {cmd.covers!.map((id) => <Link key={id} className="ref-chip" to="/blueprint?doc=acceptance" title="Kriteria penerimaan">{id}</Link>)}
+              </div>
+            </section>
+          )}
           {list("Input", cmd.inputs)}
           <section className="doc-sec"><h2>Instruksi</h2><Markdown text={cmd.instructions} /></section>
           {list("Output yang diharapkan", cmd.expected_outputs)}
@@ -215,14 +228,14 @@ function CommandEditor({ project, cmd, report, onDone }: { project: Project; cmd
     name: cmd.name, objective: cmd.objective, context: cmd.context ?? "", instructions: cmd.instructions,
     inputs: (cmd.inputs ?? []).join("\n"), outputs: (cmd.expected_outputs ?? []).join("\n"),
     acceptance: (cmd.acceptance_criteria ?? []).join("\n"), constraints: (cmd.constraints ?? []).join("\n"),
-    deps: cmd.depends_on ?? [], artifacts: (cmd.artifacts ?? []).map((a) => a.id),
+    deps: cmd.depends_on ?? [], artifacts: (cmd.artifacts ?? []).map((a) => a.id), covers: cmd.covers ?? [],
   });
   const set = (k: keyof typeof e) => (ev: { target: { value: string } }) => setE({ ...e, [k]: ev.target.value });
-  const toggle = (k: "deps" | "artifacts", v: string) => setE({ ...e, [k]: e[k].includes(v) ? e[k].filter((x) => x !== v) : [...e[k], v] });
+  const toggle = (k: "deps" | "artifacts" | "covers", v: string) => setE({ ...e, [k]: e[k].includes(v) ? e[k].filter((x) => x !== v) : [...e[k], v] });
   const save = async () => {
     const edit: CommandEdit = {
       name: e.name, objective: e.objective, context: e.context, instructions: e.instructions, inputs: lines(e.inputs),
-      depends_on: e.deps, artifacts: e.artifacts, expected_outputs: lines(e.outputs), acceptance_criteria: lines(e.acceptance), constraints: lines(e.constraints),
+      depends_on: e.deps, artifacts: e.artifacts, covers: e.covers, expected_outputs: lines(e.outputs), acceptance_criteria: lines(e.acceptance), constraints: lines(e.constraints),
     };
     if (await run("editCommand", () => api.editCommand(cmd.id, edit))) onDone();
   };
@@ -246,6 +259,14 @@ function CommandEditor({ project, cmd, report, onDone }: { project: Project; cmd
         <div className="check-grid">
           {docs.map(([id, d]) => (
             <label key={id} className="check"><input type="checkbox" checked={e.artifacts.includes(id)} onChange={() => toggle("artifacts", id)} /> {d.title}</label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="field">
+        <legend>Mencakup requirement</legend>
+        <div className="check-grid">
+          {(project.requirements ?? []).map((q) => (
+            <label key={q.id} className="check" title={q.text}><input type="checkbox" checked={e.covers.includes(q.id)} onChange={() => toggle("covers", q.id)} /> {q.id} <span className="muted">{q.priority}</span></label>
           ))}
         </div>
       </fieldset>

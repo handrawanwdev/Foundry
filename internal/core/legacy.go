@@ -168,3 +168,50 @@ func cmpOr(a, b string) string {
 	}
 	return b
 }
+
+// migrateArtifactIDs renames written artifacts whose id became a built-in
+// one (use-cases, acceptance, decisions) to "<id>-doc"; refs of artifacts
+// and commands follow. The content and its hash stay the same, so no
+// command is reported stale by the rename.
+func migrateArtifactIDs(p *Project) {
+	rename := map[string]string{}
+	for i, a := range p.Artifacts {
+		if !BuiltinArtifacts[a.ID] {
+			continue
+		}
+		id := a.ID + "-doc"
+		for n := 2; slices.ContainsFunc(p.Artifacts, func(x Artifact) bool { return x.ID == id }); n++ {
+			id = fmt.Sprintf("%s-doc-%d", a.ID, n)
+		}
+		rename[a.ID] = id
+		p.Artifacts[i].ID = id
+	}
+	if len(rename) == 0 {
+		return
+	}
+	for i := range p.Artifacts {
+		for j, r := range p.Artifacts[i].Refs {
+			if to, ok := rename[r]; ok {
+				p.Artifacts[i].Refs[j] = to
+			}
+		}
+	}
+	if w := p.Workflow; w != nil {
+		for i := range w.Commands {
+			for j, r := range w.Commands[i].Artifacts {
+				if to, ok := rename[r.ID]; ok {
+					w.Commands[i].Artifacts[j].ID = to
+				}
+			}
+		}
+	}
+	froms := make([]string, 0, len(rename))
+	for from := range rename {
+		froms = append(froms, from)
+	}
+	slices.Sort(froms)
+	for _, from := range froms {
+		to := rename[from]
+		p.Log("system", fmt.Sprintf("Artefak %s diganti nama menjadi %s (id %s kini artefak bawaan)", from, to, from))
+	}
+}

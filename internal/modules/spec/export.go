@@ -45,6 +45,12 @@ func Artifacts(p *core.Project) []core.Artifact {
 		"Prinsip, panduan UX, design tokens, komponen, aksesibilitas, responsif, interaksi, dan aturan platform.", designRulesMarkdown(p))
 	add(core.ArtifactLayoutSpec, "Spesifikasi Layout", core.ArtifactUI,
 		"Shell, halaman, section, hierarki, grid, responsif, navigasi, dan state UI per halaman.", layoutMarkdown(p))
+	add(core.ArtifactUseCases, "Alur Bisnis & Use Case", core.ArtifactDomain,
+		"Aktor, tujuan, kondisi, alur utama, alternatif, kegagalan, aturan bisnis, otorisasi, efek data dan integrasi.", useCasesMarkdown(p))
+	add(core.ArtifactAcceptance, "Acceptance Criteria & Definition of Done", core.ArtifactQuality,
+		"Kriteria penerimaan per requirement, bukti yang diharapkan, dan Definition of Done.", acceptanceMarkdown(p))
+	add(core.ArtifactDecisions, "Keputusan, Asumsi & Risiko", core.ArtifactOther,
+		"Area yang tidak dicakup, asumsi, pertanyaan terbuka, konflik, dan risiko.", decisionsMarkdown(p))
 	return append(out, p.Artifacts...)
 }
 
@@ -134,6 +140,9 @@ func CommandMarkdown(c core.Command, waves [][]string) string {
 		}
 		b.WriteString("\n")
 	}
+	if len(c.Covers) > 0 {
+		fmt.Fprintf(&b, "## Mencakup requirement\n\n%s — kriteria penerimaannya di [acceptance](../%s).\n\n", strings.Join(c.Covers, ", "), artifactFile(core.ArtifactAcceptance))
+	}
 	list("Input", "", c.Inputs)
 	section("Instruksi", c.Instructions)
 	list("Output yang diharapkan", "", c.Outputs)
@@ -152,8 +161,10 @@ type Manifest struct {
 	WorkflowVersion int                `json:"workflow_version"`
 	Entry           string             `json:"entry"`
 	Artifacts       []ManifestArtifact `json:"artifacts"`
-	Commands        []ManifestCommand  `json:"commands"`
-	Waves           [][]string         `json:"waves"`
+	// Areas is how far the blueprint covers each area.
+	Areas    []core.AreaStatus `json:"areas"`
+	Commands []ManifestCommand `json:"commands"`
+	Waves    [][]string        `json:"waves"`
 }
 
 type ManifestArtifact struct {
@@ -170,6 +181,7 @@ type ManifestCommand struct {
 	File      string   `json:"file"`
 	DependsOn []string `json:"depends_on"`
 	Artifacts []string `json:"artifacts"`
+	Covers    []string `json:"covers"`
 	Wave      int      `json:"wave"`
 }
 
@@ -177,7 +189,7 @@ type ManifestCommand struct {
 func BuildManifest(p *core.Project) Manifest {
 	docs := Artifacts(p)
 	m := Manifest{Format: Format, Project: p.Name, Status: "draft", BlueprintHash: BlueprintHash(docs), Entry: "README.md",
-		Artifacts: []ManifestArtifact{}, Commands: []ManifestCommand{}, Waves: [][]string{}}
+		Artifacts: []ManifestArtifact{}, Areas: core.Coverage(p, docs), Commands: []ManifestCommand{}, Waves: [][]string{}}
 	if p.Finalized() {
 		m.Status = "finalized"
 	}
@@ -196,7 +208,10 @@ func BuildManifest(p *core.Project) Manifest {
 		m.Waves = waves
 	}
 	for _, c := range w.Commands {
-		mc := ManifestCommand{ID: c.ID, Name: c.Name, File: commandFile(c.ID), DependsOn: c.DependsOn, Artifacts: []string{}}
+		mc := ManifestCommand{ID: c.ID, Name: c.Name, File: commandFile(c.ID), DependsOn: c.DependsOn, Artifacts: []string{}, Covers: c.Covers}
+		if mc.Covers == nil {
+			mc.Covers = []string{}
+		}
 		if mc.DependsOn == nil {
 			mc.DependsOn = []string{}
 		}
@@ -248,6 +263,9 @@ func Files(p *core.Project) map[string]string {
 	if p.Stack != nil && len(p.Stack.Decisions) > 0 {
 		out["adr/0001-stack.md"] = adrStack(p)
 	}
+	if len(p.Requirements) > 0 {
+		out["traceability.md"] = traceabilityMarkdown(p)
+	}
 	if d := p.UI; d != nil {
 		if d.Rules != nil {
 			out[designFile(core.ArtifactDesignRules)] = jsonFile(d.Rules)
@@ -296,6 +314,11 @@ func packageReadme(p *core.Project, m Manifest, docs []core.Artifact) string {
 	for _, d := range docs {
 		fmt.Fprintf(&b, "| %s | %s | [%s](%s) |\n", cell(d.Title), d.Category, artifactFile(d.ID), artifactFile(d.ID))
 	}
+	b.WriteString("\n## Cakupan blueprint\n\n| Area | Status | Keterangan |\n|---|---|---|\n")
+	for _, a := range m.Areas {
+		fmt.Fprintf(&b, "| %s | %s | %s |\n", a.Title, areaLabel[a.Status], cell(areaNote(a)))
+	}
+	b.WriteString("\nKeterlacakan requirement ke command: [traceability.md](traceability.md).\n")
 	b.WriteString("\n## Urutan pengerjaan\n\n")
 	if len(m.Commands) == 0 {
 		b.WriteString("Belum ada command.\n")
@@ -319,6 +342,23 @@ func packageReadme(p *core.Project, m Manifest, docs []core.Artifact) string {
 	return b.String()
 }
 
+var areaLabel = map[string]string{
+	core.AreaCovered: "dicakup", core.AreaInvalid: "belum valid", core.AreaMissing: "belum ditulis",
+	core.AreaSkipped: "dilewati", core.AreaNotApplicable: "tidak relevan",
+}
+
+func areaNote(a core.AreaStatus) string {
+	switch {
+	case a.Reason != "":
+		return a.Reason
+	case a.Errors > 0:
+		return fmt.Sprintf("%d hal wajib diperbaiki", a.Errors)
+	case len(a.Artifacts) > 0:
+		return strings.Join(a.Artifacts, ", ")
+	}
+	return "-"
+}
+
 // WriteDocs writes the export package into ExportDir, replacing the
 // package files of an earlier finalize. Only files Foundry wrote there
 // (.md and .json) are removed; AGENTS.md is added at the project root when
@@ -333,6 +373,11 @@ func WriteDocs(dir string, p *core.Project) error {
 	// replace it.
 	if err := os.Remove(filepath.Join(root, "design-brief.md")); err != nil && !os.IsNotExist(err) {
 		return err
+	}
+	if files["traceability.md"] == "" {
+		if err := os.Remove(filepath.Join(root, "traceability.md")); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
 	for _, sub := range []string{"blueprint", "workflow", "adr", "design"} {
 		entries, _ := os.ReadDir(filepath.Join(root, sub))

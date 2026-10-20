@@ -212,24 +212,29 @@ var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,47}$`)
 // ValidID holds for design ids: lowercase letters, digits and dashes.
 func ValidID(id string) bool { return idPattern.MatchString(id) }
 
-// Design issue levels: an error blocks saving and finalizing, a warning
-// is shown only.
+// Issue levels: an error blocks saving and finalizing, a warning is
+// shown only.
 const (
 	IssueError   = "error"
 	IssueWarning = "warning"
 )
 
-// DesignIssue is one problem of the design rules or layout spec.
-type DesignIssue struct {
+// Issue is one problem of structured blueprint data (design, use cases,
+// acceptance criteria, decisions).
+type Issue struct {
 	Level   string `json:"level"`
-	Where   string `json:"where,omitempty"` // rules | layout | page:<id> | shell:<id>
+	Where   string `json:"where,omitempty"` // rules | layout | page:<id> | shell:<id> | FLOW-001 | REQ-001 | DEC-001
 	Message string `json:"message"`
 }
 
-// DesignInvalid refuses a design with errors.
-type DesignInvalid struct{ Issues []DesignIssue }
+// Invalid refuses structured data with errors. Subject names what was
+// refused; empty means the UI design.
+type Invalid struct {
+	Subject string
+	Issues  []Issue
+}
 
-func (e *DesignInvalid) Error() string {
+func (e *Invalid) Error() string {
 	var msgs []string
 	for _, is := range e.Issues {
 		if is.Level != IssueError {
@@ -241,12 +246,16 @@ func (e *DesignInvalid) Error() string {
 		}
 		msgs = append(msgs, strings.TrimSpace(is.Where+": "+is.Message))
 	}
-	return "rancangan UI tidak valid: " + strings.Join(msgs, "; ")
+	subject := e.Subject
+	if subject == "" {
+		subject = "rancangan UI"
+	}
+	return subject + " tidak valid: " + strings.Join(msgs, "; ")
 }
 
 // Errors keeps the errors of issues.
-func Errors(issues []DesignIssue) []DesignIssue {
-	var out []DesignIssue
+func Errors(issues []Issue) []Issue {
+	var out []Issue
 	for _, is := range issues {
 		if is.Level == IssueError {
 			out = append(out, is)
@@ -271,13 +280,13 @@ func (p *Project) UIPlatforms() []string {
 // DesignIssues checks the design rules and layout spec of d against the
 // project: references resolve, vocabulary is known, every page specifies
 // the states its pattern needs. Nil d checks p.UI.
-func (p *Project) DesignIssues(d *UIDesign) []DesignIssue {
+func (p *Project) DesignIssues(d *UIDesign) []Issue {
 	if d == nil {
 		d = p.UI
 	}
-	var out []DesignIssue
+	var out []Issue
 	add := func(level, where, format string, a ...any) {
-		out = append(out, DesignIssue{Level: level, Where: where, Message: fmt.Sprintf(format, a...)})
+		out = append(out, Issue{Level: level, Where: where, Message: fmt.Sprintf(format, a...)})
 	}
 	if d == nil || d.Rules == nil {
 		add(IssueError, "rules", "aturan desain belum ada")
@@ -298,10 +307,10 @@ func (p *Project) DesignIssues(d *UIDesign) []DesignIssue {
 	return append(out, layoutIssues(p, d.Layout, comps)...)
 }
 
-func rulesIssues(r *DesignRules, platforms []string) []DesignIssue {
-	var out []DesignIssue
+func rulesIssues(r *DesignRules, platforms []string) []Issue {
+	var out []Issue
 	add := func(level, format string, a ...any) {
-		out = append(out, DesignIssue{Level: level, Where: "rules", Message: fmt.Sprintf(format, a...)})
+		out = append(out, Issue{Level: level, Where: "rules", Message: fmt.Sprintf(format, a...)})
 	}
 	if r.Source != RulesNew && r.Source != RulesExisting {
 		add(IssueError, "source harus %q atau %q", RulesNew, RulesExisting)
@@ -358,10 +367,10 @@ func rulesIssues(r *DesignRules, platforms []string) []DesignIssue {
 	return out
 }
 
-func layoutIssues(p *Project, l *LayoutSpec, comps map[string]bool) []DesignIssue {
-	var out []DesignIssue
+func layoutIssues(p *Project, l *LayoutSpec, comps map[string]bool) []Issue {
+	var out []Issue
 	add := func(level, where, format string, a ...any) {
-		out = append(out, DesignIssue{Level: level, Where: where, Message: fmt.Sprintf(format, a...)})
+		out = append(out, Issue{Level: level, Where: where, Message: fmt.Sprintf(format, a...)})
 	}
 	platforms := p.UIPlatforms()
 	checkPlatform := func(where, pl string, required bool) {

@@ -405,6 +405,11 @@ type Spec struct {
 	// Artifacts are the blueprint documents written for this project
 	// (the built-in ones are the structured fields above).
 	Artifacts []core.Artifact `json:"artifacts"`
+	// Decisions, Skips and Done are the decision register, the areas
+	// left out and the Definition of Done.
+	Decisions []core.Decision `json:"decisions,omitempty"`
+	Skips     []core.AreaSkip `json:"area_skips,omitempty"`
+	Done      []string        `json:"definition_of_done,omitempty"`
 	Workflow  *core.Workflow  `json:"workflow,omitempty"`
 }
 
@@ -412,7 +417,7 @@ type Spec struct {
 func Export(p *core.Project) Spec {
 	s := Spec{Name: p.Name, Story: p.Story, Requirements: p.Requirements, Features: p.Features, Flows: p.Flows,
 		Platform: p.Platform, Stack: p.Stack, Structure: p.Structure, Blueprint: p.Blueprint,
-		Artifacts: p.Artifacts, Workflow: p.Workflow}
+		Artifacts: p.Artifacts, Decisions: p.Decisions, Skips: p.Skips, Done: p.Done, Workflow: p.Workflow}
 	if s.Artifacts == nil {
 		s.Artifacts = []core.Artifact{}
 	}

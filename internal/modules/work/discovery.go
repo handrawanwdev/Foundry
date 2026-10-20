@@ -7,6 +7,7 @@ package work
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
@@ -29,6 +30,9 @@ type discoveryOut struct {
 	Flows        []core.Flow        `json:"flows"`
 	Platform     core.PlatformPlan  `json:"platform"`
 	Artifacts    []core.Artifact    `json:"artifacts"`
+	Done         []string           `json:"definition_of_done"`
+	Decisions    []core.Decision    `json:"decisions"`
+	Skip         []core.AreaSkip    `json:"skip"`
 }
 
 func DiscoveryPrompt(p *core.Project) string {
@@ -90,16 +94,21 @@ Blueprint rules:
 - do not put large files in the database; describe object storage when the product has uploads, attachments, exports, or media.
 - processes that are slow (email, reports, export, image, scan, sync, cron) are workers, not API request work.
 - dashboards and reports read summary/read-model, not heavy queries on the transaction tables.
-- authn + RBAC with permission names resource:action.
+- authentication and authorization sized to the product: who the users are, how they sign in, what each may do (roles, ownership or none). Name permissions resource:action. Do not assume JWT or RBAC when the story does not need them.
 - keep the blueprint specific to THIS product; omit unused areas (empty realtime if none, storage.strategy "none" if no files).
 - the blueprint object below has web/backend-oriented fields; leave the fields that do not apply empty (no database, auth or
   REST API for firmware, a library or a pipeline) and describe the real design in artifacts instead.
 
-Artifacts: 0-6 extra blueprint documents for what THIS project needs beyond requirements, architecture and screens
-(e.g. domain model and business rules, API or event contracts, protocol spec, data pipeline design, evaluation plan,
-threat model, test strategy, deployment and recovery, hardware interfaces). Skip what is not needed.
-Do not use the ids requirements, architecture, technology, design-rules, layout-spec (Foundry writes those).
+Artifacts: 0-10 extra blueprint documents for what THIS project needs beyond requirements, architecture and screens:
+the area artifacts below that apply, plus other documents the project needs (domain model, API or event contracts,
+protocol spec, data pipeline design, evaluation plan, test strategy, hardware interfaces). Skip what is not needed.
+Do not use the ids requirements, architecture, technology, design-rules, layout-spec, use-cases, acceptance, decisions
+(Foundry writes those from the structured data).
 ` + artifactRules + `
+`)
+	areaGuide(&b, p)
+	b.WriteString(scopeRules)
+	b.WriteString(`
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
@@ -124,12 +133,15 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
     "performance": {"budget": "< 500 ms p95", "health": "GET /health and GET /ready", "pagination": "", "caching": "", "avoid": [""], "indexing": ""},
     "coding": {"backend": [""], "frontend": [""], "api": {"style": "REST", "versioning": "/api/v1", "errors": "", "pagination": ""}}
   },
-  "requirements": [{"id": "REQ-001", "text": "", "priority": "MUST|SHOULD|COULD"}],
+  "requirements": [{"id": "REQ-001", "text": "", "priority": "MUST|SHOULD|COULD", "acceptance": [` + criterionShape + `], "untestable": ""}],
   "features": [{"id": "FEAT-001", "name": "", "description": "", "requirement_ids": ["REQ-001"], "platforms": ["web","backend"],
                 "sub_features": [{"id": "FEAT-001.1", "name": ""}]}],
-  "flows": [{"id": "FLOW-001", "name": "", "feature_id": "FEAT-001", "role": "", "steps": [""]}],
+  "flows": [` + useCaseShape + `],
   "platform": {"targets": [{"kind": "web", "audience": ["Admin"], "rationale": ""}], "reason": "one short sentence for a non-technical user"},
-  "artifacts": [{"id": "domain-model", "title": "", "category": "domain", "summary": "", "body": "Markdown", "refs": []}]
+  "artifacts": [{"id": "threat-model", "title": "", "category": "quality", "area": "security", "summary": "", "body": "Markdown", "refs": []}],
+  "definition_of_done": [""],
+  "decisions": [` + decisionShape + `],
+  "skip": [{"area": "migration", "reason": ""}]
 }`)
 	return b.String()
 }
@@ -164,7 +176,8 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 		if pr != "MUST" && pr != "SHOULD" && pr != "COULD" {
 			pr = "MUST"
 		}
-		reqs = append(reqs, core.Requirement{ID: id, Text: r.Text, Priority: pr})
+		reqs = append(reqs, core.Requirement{ID: id, Text: r.Text, Priority: pr, Acceptance: normCriteria(id, r.Acceptance),
+			Untestable: strings.TrimSpace(r.Untestable)})
 	}
 	featMap := map[string]string{}
 	var feats []core.Feature
@@ -208,7 +221,9 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 		if !ok || len(fl.Steps) == 0 {
 			continue
 		}
-		flows = append(flows, core.Flow{ID: fmt.Sprintf("FLOW-%03d", len(flows)+1), Name: fl.Name, FeatureID: fid, Role: fl.Role, Steps: fl.Steps})
+		fl = normFlow(fl)
+		fl.ID, fl.FeatureID, fl.PageIDs = fmt.Sprintf("FLOW-%03d", len(flows)+1), fid, nil
+		flows = append(flows, fl)
 	}
 	var targets []core.PlatformTarget
 	for _, t := range out.Platform.Targets {
@@ -231,7 +246,33 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	p.Platform = &core.PlatformPlan{Targets: targets, Reason: out.Platform.Reason}
 	SetArtifacts(p, out.Artifacts)
 	p.UI = nil
+	p.Done = nonEmpty(out.Done)
+	p.Decisions = mergeDecisions(nil, cleanDecisions(out.Decisions))
+	p.Skips = nil
+	for _, sk := range out.Skip {
+		skipArea(p, sk.Area, sk.Reason) // an invalid skip is dropped: the area stays expected
+	}
 	return nil
+}
+
+// cleanDecisions drops decisions without text and fixes unknown kinds and
+// areas, so a discovery is not refused for its decision register.
+func cleanDecisions(in []core.Decision) []core.Decision {
+	var out []core.Decision
+	for _, d := range in {
+		if strings.TrimSpace(d.Text) == "" {
+			continue
+		}
+		d.ID = ""
+		if !slices.Contains(core.DecisionKinds, strings.ToLower(strings.TrimSpace(d.Kind))) {
+			d.Kind = core.DecisionAssumption
+		}
+		if core.AreaByID(strings.TrimSpace(d.Area)) == nil {
+			d.Area = ""
+		}
+		out = append(out, d)
+	}
+	return out
 }
 
 func applySurveyKinds(s *core.Survey, targets []core.PlatformTarget) []core.PlatformTarget {

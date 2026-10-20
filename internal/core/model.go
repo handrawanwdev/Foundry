@@ -44,6 +44,14 @@ type Project struct {
 	// besides the built-in ones; ArtifactRequest a change waiting for the AI.
 	Artifacts       []Artifact     `json:"artifacts,omitempty"`
 	ArtifactRequest *ChangeRequest `json:"artifact_request,omitempty"`
+	// Decisions are the assumptions, open questions, conflicts and risks
+	// of the blueprint; a critical one without resolution blocks finalize.
+	Decisions []Decision `json:"decisions,omitempty"`
+	// Skips are the blueprint areas left out on purpose, with the reason.
+	Skips []AreaSkip `json:"area_skips,omitempty"`
+	// Done is the project's Definition of Done: checkable conditions every
+	// finished piece of work meets.
+	Done []string `json:"definition_of_done,omitempty"`
 	// Workflow is the command workflow for external coding agents.
 	Workflow  *Workflow `json:"workflow,omitempty"`
 	Job       *Job      `json:"job,omitempty"`
@@ -140,6 +148,20 @@ type Requirement struct {
 	ID       string `json:"id"`
 	Text     string `json:"text"`
 	Priority string `json:"priority"` // MUST | SHOULD | COULD
+	// Acceptance are the conditions that show the requirement is met;
+	// Untestable is why a requirement has none.
+	Acceptance []Criterion `json:"acceptance,omitempty"`
+	Untestable string      `json:"untestable,omitempty"`
+}
+
+// Criterion is one acceptance criterion. Evidence is the proof the coding
+// agent is expected to hand back (a test, a command and its output, a
+// screenshot); it is a requirement, never a claim that it was verified.
+type Criterion struct {
+	ID       string `json:"id"` // REQ-001-AC1
+	Kind     string `json:"kind"`
+	Text     string `json:"text"`
+	Evidence string `json:"evidence,omitempty"`
 }
 
 type Feature struct {
@@ -156,6 +178,8 @@ type SubFeature struct {
 	Name string `json:"name"`
 }
 
+// Flow is a use case: an actor reaching a goal end to end. Role is the
+// actor and Steps the main flow; its requirements come from its feature.
 type Flow struct {
 	ID        string   `json:"id"`
 	Name      string   `json:"name"`
@@ -163,6 +187,18 @@ type Flow struct {
 	Role      string   `json:"role"`
 	Steps     []string `json:"steps"`
 	PageIDs   []string `json:"page_ids"`
+	Goal      string   `json:"goal,omitempty"`
+	Pre       []string `json:"preconditions,omitempty"`
+	// Post are the conditions that hold when the use case succeeds.
+	Post         []string `json:"postconditions,omitempty"`
+	Alternatives []string `json:"alternatives,omitempty"`
+	Failures     []string `json:"failures,omitempty"`
+	Rules        []string `json:"business_rules,omitempty"`
+	Permissions  []string `json:"permissions,omitempty"`
+	// Data are the effects on data ("Appointment: dibuat, status pending");
+	// Integrations the external systems the use case calls or notifies.
+	Data         []string `json:"data_effects,omitempty"`
+	Integrations []string `json:"integrations,omitempty"`
 }
 
 // Platform kinds.

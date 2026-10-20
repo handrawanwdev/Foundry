@@ -379,6 +379,12 @@ button.ref-chip:not(:disabled):hover, a.ref-chip:hover { border-color: var(--acc
 /* Design rules / layout spec: validation issues above the document. */
 .design-issues { margin: 0 0 1rem; padding: .6rem .8rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 .design-issues.has-errors { border-color: var(--bad); }
+.scope-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .6rem; max-width: 760px; }
+.scope-item { display: flex; flex-direction: column; gap: .35rem; padding: .7rem .9rem; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.scope-item p { margin: 0; }
+.scope-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
+.scope-item .row { flex-wrap: wrap; gap: .4rem; }
+.scope-item input { flex: 1; min-width: 12rem; }
 .design-issues summary { cursor: pointer; }
 .design-issues ul { margin: .5rem 0 0; padding-left: 1.1rem; }
 

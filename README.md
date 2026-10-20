@@ -14,20 +14,43 @@ Cakupannya tidak terbatas pada web/backend. Platform yang dikenal: `web`, `andro
 
 Blueprint adalah sumber kebenaran. Isinya kumpulan artefak (`GET /api/v1/project/blueprint`):
 
-- **Bawaan** (dirender dari data terstruktur, hanya bila ada isinya): `requirements`, `architecture`, `technology`, `design-rules` dan `layout-spec` (hanya bila produk punya layar; lihat Desain UI).
+- **Bawaan** (dirender dari data terstruktur, hanya bila ada isinya): `requirements`, `architecture`, `technology`, `design-rules` dan `layout-spec` (hanya bila produk punya layar; lihat Desain UI), `use-cases`, `acceptance`, `decisions` (lihat Cakupan Blueprint).
 - **Khusus proyek** (`project.artifacts`): dokumen Markdown yang ditulis AI saat discovery atau lewat revisi, mis. model domain, kontrak API/event, spesifikasi protokol, desain pipeline, threat model, strategi test. Bisa diedit manual (`PUT /api/v1/project/blueprint/artifacts/{id}`), dihapus, atau direvisi lewat prompt (`POST /api/v1/project/blueprint/revise` `{text, focus}`). Revisi hanya mengubah artefak yang dikembalikan AI.
 
-Setiap artefak punya hash isi. Hash ini dipakai untuk mendeteksi command yang terdampak perubahan.
+Setiap artefak punya hash isi. Hash ini dipakai untuk mendeteksi command yang terdampak perubahan. Artefak khusus proyek juga mencatat hash artefak yang dirujuknya (`refs` → `seen`); bila artefak acuan berubah, artefak itu berstatus `needs_review` sampai ditinjau (`POST /api/v1/project/blueprint/artifacts/{id}/review`) atau diedit. Status per artefak (`draft | valid | needs_review | finalized`) ada di `states` pada `GET /api/v1/project/blueprint`.
+
+## Cakupan Blueprint
+
+Blueprint dinilai per area, adaptif terhadap proyek (`core.Areas`, `core.Coverage`):
+
+| Area | Artefak | Berlaku bila |
+|---|---|---|
+| Aturan desain & layout | `design-rules`, `layout-spec` (terstruktur) | produk punya layar |
+| Alur bisnis & use case | `use-cases` (dari `project.flows`) | ada fitur |
+| Data & siklus hidup | `data-lifecycle` (Markdown, `area: data`) | ada entitas/data |
+| Keamanan & threat model | `threat-model` (`area: security`) | selalu |
+| Integrasi eksternal | `integrations` (`area: integration`) | ada integrasi atau webhook |
+| Observability & reliability | `operations` (`area: operations`) | selalu |
+| Migrasi & kompatibilitas | `migration` (`area: migration`) | project existing |
+| Acceptance criteria & DoD | `acceptance` (terstruktur) | ada requirement |
+
+Status area: `covered`, `invalid`, `missing`, `skipped` (dilewati dengan alasan), `not_applicable`. Area yang berlaku harus dicakup atau dilewati dengan alasan; UI dan acceptance tidak bisa dilewati. Artefak Markdown dengan id lain bisa mencakup area lewat field `area`.
+
+- **Use case** (`project.flows[]`): aktor (`role`), `goal`, `preconditions`, `steps`, `postconditions`, `alternatives`/`failures` (minimal satu), `business_rules`, `permissions`, `data_effects`, `integrations`. Requirement berasal dari fitur. Edit: `PUT /api/v1/project/blueprint/use-cases`.
+- **Acceptance** (`requirements[].acceptance[]`: `id` REQ-001-AC1, `kind` behavior|negative|edge|security|performance|compatibility|accessibility, `text`, `evidence`; atau `untestable` dengan alasan) dan `definition_of_done`. `evidence` adalah bukti yang wajib diserahkan agent, bukan klaim sudah diuji. Edit: `PUT /api/v1/project/blueprint/acceptance`.
+- **Keputusan** (`project.decisions[]`: DEC-001, `kind` assumption|question|conflict|risk, `area`, `critical`, `resolution`). Keputusan kritis tanpa `resolution` memblokir finalisasi. Putuskan/buka lagi: `PUT /api/v1/project/blueprint/decisions/{id}` `{resolution}`.
+- **Lewati area**: `PUT|DELETE /api/v1/project/blueprint/areas/{id}/skip` `{reason}`.
+- **AI**: discovery menulis semuanya; `POST /api/v1/project/blueprint/complete` meminta AI menulis/memperbaiki area yang `missing`/`invalid` (job `blueprint`). Revisi blueprint juga bisa mengubah use case, acceptance, keputusan, dan skip; item yang diubah AI harus valid (ditolak utuh lalu dicoba ulang sekali), masalah lama yang tidak disentuh tetap jadi blocker.
 
 ## Command Workflow
 
-`project.workflow.commands[]`: `id` (CMD-001…), `name`, `objective`, `context`, `inputs`, `instructions` (Markdown), `depends_on`, `artifacts` (id + hash saat ditulis/ditinjau), `expected_outputs`, `acceptance_criteria`, `constraints`, `status` (`draft | needs_review | finalized`, status rancangan, bukan eksekusi).
+`project.workflow.commands[]`: `id` (CMD-001…), `name`, `objective`, `context`, `inputs`, `instructions` (Markdown), `depends_on`, `artifacts` (id + hash saat ditulis/ditinjau), `covers` (requirement yang diimplementasikan), `expected_outputs`, `acceptance_criteria`, `constraints`, `status` (`draft | needs_review | finalized`, status rancangan, bukan eksekusi).
 
 - **Susun**: `POST /api/v1/project/workflow/generate` (hanya bila belum ada command).
 - **Revisi lewat prompt**: `POST /api/v1/project/workflow/revise` `{text, focus}`. AI mengembalikan command yang diubah atau ditambah saja; yang lain tidak disentuh.
 - **Edit manual**: `PUT /api/v1/project/workflow/commands/{id}`.
 - **Tandai perlu ditinjau / sudah ditinjau**: `POST /api/v1/project/workflow/commands/{id}/review` `{needs_review, reason}`. "Sudah ditinjau" mencatat ulang hash artefak.
-- **Validasi** (`internal/modules/workflow`): ID unik, dependency ada, tanpa self-dependency, tanpa siklus (DAG), setiap command merujuk minimal satu artefak dan artefak itu ada, field wajib terisi; bila blueprint punya `design-rules`/`layout-spec`, minimal satu command merujuk masing-masing. Jawaban AI atau edit yang tidak valid ditolak utuh. Jawaban AI yang ditolak dicoba ulang sekali dengan alasan penolakan di prompt.
+- **Validasi** (`internal/modules/workflow`): ID unik, dependency ada, tanpa self-dependency, tanpa siklus (DAG), setiap command merujuk minimal satu artefak dan artefak itu ada, field wajib terisi; bila blueprint punya `design-rules`/`layout-spec`, minimal satu command merujuk masing-masing; `covers` hanya berisi requirement yang ada. Workflow baru dari AI wajib mencakup semua requirement MUST; untuk workflow lama, requirement MUST yang belum dicakup hanya dilaporkan (`report.uncovered`). Jawaban AI atau edit yang tidak valid ditolak utuh. Jawaban AI yang ditolak dicoba ulang sekali dengan alasan penolakan di prompt.
 - **Urutan**: command dikelompokkan per **gelombang**. Satu gelombang hanya bergantung pada gelombang sebelumnya, jadi command di dalamnya boleh paralel.
 - **Dampak perubahan**: command yang merujuk artefak dengan hash berbeda, atau artefak yang sudah dihapus, dilaporkan "perlu ditinjau" (`GET /api/v1/project/workflow` → `report.stale`/`report.review`). Deteksi hanya berdasarkan relasi command→artefak yang tersimpan.
 
@@ -36,6 +59,7 @@ Setiap artefak punya hash isi. Hash ini dipakai untuk mendeteksi command yang te
 `POST /api/v1/project/finalize` menyetujui blueprint dan workflow sebagai satu versi. Syaratnya:
 
 - aturan desain dan spesifikasi layout ada dan tanpa error bila produk punya layar
+- setiap area yang berlaku dicakup tanpa error atau dilewati dengan alasan, tidak ada keputusan kritis yang terbuka, dan tidak ada artefak `needs_review`
 - teknologi dan struktur disetujui untuk produk app/server
 - workflow ada, valid, dan tidak ada command yang perlu ditinjau
 
@@ -44,17 +68,18 @@ Setelah itu paket ekspor ditulis ke `docs/foundry/` di folder project. `AGENTS.m
 Paket (`GET /api/v1/project/export` untuk daftar, `GET /api/v1/project/export.zip` untuk unduhan bila sudah final; ZIP berisi folder `docs/foundry/`, ekstrak di root repository):
 
 ```
-README.md            cara memakai paket + daftar artefak + urutan gelombang
-manifest.json        format, status, blueprint_hash, workflow_version, artefak, command (dependency, gelombang)
+README.md            cara memakai paket + daftar artefak + cakupan area + urutan gelombang
+manifest.json        format, status, blueprint_hash, workflow_version, artefak, areas, command (dependency, covers, gelombang)
+traceability.md      requirement → fitur → use case → kriteria → command
 blueprint/<id>.md    setiap artefak
 workflow/<CMD>.md    instruksi lengkap per command
 workflow/workflow.json
-spec.json            spesifikasi terstruktur (termasuk aturan desain, layout, artefak, workflow)
+spec.json            spesifikasi terstruktur (termasuk aturan desain, layout, use case, acceptance, keputusan, skip, DoD, artefak, workflow)
 adr/0001-stack.md    bila ada keputusan teknologi
 design/design-rules.json, design/layout-spec.json   bila produk punya layar (versi JSON artefak desain)
 ```
 
-File lama di `docs/foundry/blueprint|workflow|adr|design` (dan `design-brief.md` versi lama) yang tidak lagi ada di paket dihapus saat finalisasi berikutnya. File lain di project tidak disentuh.
+File lama di `docs/foundry/blueprint|workflow|adr|design` (dan `design-brief.md` versi lama, `traceability.md` bila tidak ada requirement) yang tidak lagi ada di paket dihapus saat finalisasi berikutnya. File lain di project tidak disentuh.
 
 ## Struktur (monorepo modular)
 
@@ -124,13 +149,14 @@ Hanya teks dan data terstruktur: tidak ada gambar, kanvas, editor visual, protot
 ./bin/foundry mcp --print-config     # snippet config untuk AI Host
 ```
 
-Loop host: `next_work` → kerjakan prompt → `submit_work` (jenis: discovery, design, stack, structure, blueprint, workflow). Tool baca: `get_project`, `get_requirements`, `get_blueprint` (semua artefak), `get_workflow` (command, gelombang, masalah, yang perlu ditinjau), `get_design` (aturan desain, layout, issues), `get_spec`. Izin: `--allow READ|WRITE|MODIFY|ALL` (default READ; `EXECUTE` masih diterima untuk config lama, tidak dipakai tool mana pun).
+Loop host: `next_work` → kerjakan prompt → `submit_work` (jenis: discovery, design, stack, structure, blueprint, workflow). Tool baca: `get_project`, `get_requirements` (termasuk acceptance, use case, DoD), `get_blueprint` (semua artefak, cakupan area, status artefak, keputusan), `get_workflow` (command, gelombang, masalah, yang perlu ditinjau), `get_design` (aturan desain, layout, issues), `get_spec`. Izin: `--allow READ|WRITE|MODIFY|ALL` (default READ; `EXECUTE` masih diterima untuk config lama, tidak dipakai tool mana pun).
 
 ## Aturan penting
 
 - Foundry tidak menulis kode aplikasi, tidak menjalankan build/test/deploy, tidak menjalankan coding agent untuk implementasi, dan tidak membuat folder scaffold. Selain state `.foundry/`, file yang ditulis ke project hanya paket ekspor saat finalisasi (`docs/foundry/`, plus `AGENTS.md` bila belum ada).
 - Aturan desain (`internal/modules/standard`) menyesuaikan proyek; tidak ada stack atau tool yang diwajibkan. Arsitektur default web/SaaS (REST, ORM, worker) hanya dilengkapi untuk produk app/server.
 - Project existing tidak pernah diganti template; aturan desain dan layout mengikuti design system dan UI yang sudah ada.
+- Project lama tetap dimuat: requirement/flow tanpa acceptance atau detail use case muncul sebagai area yang perlu dilengkapi (tidak diisi karangan). Artefak tersimpan yang memakai id yang kini bawaan (`use-cases`, `acceptance`, `decisions`) diganti nama menjadi `<id>-doc`; rujukan command ikut, hash tidak berubah.
 - Project lama (tahap `PLAN`/`BUILD`/`VERIFY`) dibuka sebagai `READY`; data task/build lama diabaikan dan hilang saat state disimpan berikutnya. Project yang difinalisasi sebelum ada workflow: buka kembali (reopen), susun workflow, lalu finalisasi ulang.
 - API hanya menerima request dari host/origin loopback.
 
@@ -140,7 +166,7 @@ Loop host: `next_work` → kerjakan prompt → `submit_work` (jenis: discovery, 
 make test
 ```
 
-E2E Go memakai test binary sebagai fake agent: prompt → blueprint → desain → workflow → revisi → dampak perubahan → finalisasi (paket di `docs/foundry/`) → buka ulang; workflow melingkar ditolak lalu dicoba ulang; proyek embedded tanpa UI; alur MCP host; tanpa AI; output AI rusak; rancangan UI invalid ditolak lalu dicoba ulang; revisi/edit rancangan menandai command terdampak; migrasi desain lama; project existing.
+E2E Go memakai test binary sebagai fake agent: prompt → blueprint → desain → workflow → revisi → dampak perubahan → finalisasi (paket di `docs/foundry/`) → buka ulang; workflow melingkar ditolak lalu dicoba ulang; proyek embedded tanpa UI; alur MCP host; tanpa AI; output AI rusak; rancangan UI invalid ditolak lalu dicoba ulang; revisi/edit rancangan menandai command terdampak; migrasi desain lama; project existing; cakupan area (skip, lengkapi dengan AI), keputusan kritis memblokir finalisasi lalu dibuka ulang, artefak `needs_review` saat acuannya berubah, ekspor use case/acceptance/keputusan/traceability, rename artefak lama yang bentrok id bawaan.
 
 ## Kontrak Response API
 

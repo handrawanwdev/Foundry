@@ -398,3 +398,61 @@ func TestSpecDownloadName(t *testing.T) {
 		t.Fatalf("name = %s", got)
 	}
 }
+
+func TestScopeRoutes(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	dir := t.TempDir()
+	s := New(nil, "/bin/foundry")
+	if _, err := s.Open(dir, "demo", false); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:50000"
+		r.Host = "127.0.0.1:8080"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	st, _ := core.NewStore(dir)
+	if _, err := st.Update(func(p *core.Project) error {
+		p.Discovery, p.Stage = &core.Discovery{Summary: "Klinik"}, core.StageDesign
+		p.Platform = &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformBackend}}}
+		p.Requirements = []core.Requirement{{ID: "REQ-001", Text: "Buat janji", Priority: "MUST"}}
+		p.Features = []core.Feature{{ID: "FEAT-001", Name: "Janji", RequirementIDs: []string{"REQ-001"}}}
+		p.Decisions = []core.Decision{{ID: "DEC-001", Kind: core.DecisionQuestion, Text: "Gateway?", Critical: true}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w := do("GET", "/api/v1/project/blueprint", "")
+	for _, want := range []string{`"areas":[`, `Threat Model","status":"missing"`, `"states":{`, `"decisions":[{"id":"DEC-001"`} {
+		if w.Code != 200 || !strings.Contains(w.Body.String(), want) {
+			t.Fatalf("blueprint lacks %s: %d %s", want, w.Code, w.Body)
+		}
+	}
+	for _, c := range []struct {
+		method, path, body string
+		code               int
+		want               string
+	}{
+		{"PUT", "/api/v1/project/blueprint/areas/security/skip", `{"reason": ""}`, 400, "alasan"},
+		{"PUT", "/api/v1/project/blueprint/areas/acceptance/skip", `{"reason": "x"}`, 400, "tidak bisa dilewati"},
+		{"PUT", "/api/v1/project/blueprint/areas/security/skip", `{"reason": "Demo tanpa data nyata"}`, 200, "Demo tanpa data nyata"},
+		{"DELETE", "/api/v1/project/blueprint/areas/security/skip", ``, 200, "Area security dicakup lagi"},
+		{"PUT", "/api/v1/project/blueprint/use-cases", `{"use_cases": [{"name": "Buat", "feature_id": "FEAT-001", "role": "Pasien"}]}`, 400, `"field":"FLOW-001"`},
+		{"PUT", "/api/v1/project/blueprint/use-cases", `{"use_cases": [{"name": "Buat", "feature_id": "FEAT-001", "role": "Pasien", "goal": "Jadwal",
+			"steps": ["a"], "postconditions": ["b"], "failures": ["c"]}]}`, 200, `"goal":"Jadwal"`},
+		{"PUT", "/api/v1/project/blueprint/acceptance", `{"acceptance": [{"requirement": "REQ-001", "criteria": [{"kind": "edge", "text": "Bentrok ditolak"}]}], "definition_of_done": []}`, 400, "Definition of Done"},
+		{"PUT", "/api/v1/project/blueprint/acceptance", `{"acceptance": [{"requirement": "REQ-001", "criteria": [{"kind": "edge", "text": "Bentrok ditolak"}]}], "definition_of_done": ["Test lulus"]}`, 200, `"REQ-001-AC1"`},
+		{"PUT", "/api/v1/project/blueprint/decisions/DEC-404", `{"resolution": "x"}`, 400, "tidak ada"},
+		{"PUT", "/api/v1/project/blueprint/decisions/DEC-001", `{"resolution": "Midtrans"}`, 200, `"resolution":"Midtrans"`},
+		{"POST", "/api/v1/project/blueprint/artifacts/ghost/review", `{}`, 400, "tidak ada"},
+		{"POST", "/api/v1/project/blueprint/complete", `{}`, 412, ""},
+	} {
+		if w := do(c.method, c.path, c.body); w.Code != c.code || !strings.Contains(w.Body.String(), c.want) {
+			t.Errorf("%s %s: %d %s", c.method, c.path, w.Code, w.Body)
+		}
+	}
+}
