@@ -63,7 +63,9 @@ export interface Flow {
   goal?: string; preconditions?: string[]; postconditions?: string[]; alternatives?: string[]; failures?: string[];
   business_rules?: string[]; permissions?: string[]; data_effects?: string[]; integrations?: string[];
 }
-export interface PlatformTarget { kind: PlatformKind; audience: string[]; rationale: string }
+// A target platform names where the product runs, not who uses it: roles
+// live in the requirements (discovery.roles) and security.
+export interface PlatformTarget { kind: PlatformKind; rationale: string }
 export interface PlatformPlan { targets: PlatformTarget[]; reason: string; approved: boolean }
 export interface Component { kind: string; path: string; tech: string; evidence: string }
 export type StructureType = "simple" | "modular" | "monorepo" | "microservices";
@@ -100,19 +102,25 @@ export interface ExistingUI {
 }
 // Technology decision: one choice per area with its reason; the user's
 // override wins over the recommendation.
-export type TechArea = "frontend" | "mobile" | "desktop" | "backend" | "database" | "cache" | "messaging" | "workers" | "storage" | "search"
-  | "architecture" | "repository" | "deployment" | "observability";
-export interface TechOverride { value: string; language?: string; reason?: string }
+export type TechArea = "frontend" | "ui" | "mobile" | "desktop" | "cli" | "backend" | "api" | "database" | "cache" | "messaging"
+  | "workers" | "storage" | "search" | "architecture" | "repository" | "deployment" | "observability" | "testing" | "quality";
+export interface TechOverride { value: string; language?: string; runtime?: string; reason?: string }
+// Where a recommendation came from (core.Source*); "" in older stacks.
+export type TechSource = "existing" | "preference" | "need" | "profile" | "default" | "dependency";
 export interface TechDecision {
-  area: TechArea; recommended: string; language?: string; reason: string; alternatives?: string[]; override?: TechOverride;
+  area: TechArea; recommended: string; language?: string; runtime?: string; reason: string; source?: TechSource;
+  evidence?: string[]; alternatives?: string[]; override?: TechOverride; review?: string;
 }
+// State of one decision as the user reads it (core.TechStack.DecisionState).
+export type DecisionState = "recommended" | "existing" | "selected" | "approved" | "needs_review" | "conflict";
 // Lifecycle of the technology decision (internal/core/techstack.go).
 export type TechStatus = "recommended" | "review" | "impact_checked" | "approved" | "changed";
-export interface TechChange { area: TechArea; from: string; to: string; language?: string; reason?: string }
+export interface TechChange { area: TechArea; from: string; to: string; language?: string; reason?: string; follow?: boolean }
 export interface TechIssue { level: "error" | "warning"; area?: TechArea; message: string }
 export interface TechImpact { area: TechArea; affects: string[]; design?: boolean }
 export interface TechProposal {
   source: "user" | "ai"; request?: string; note?: string; changes: TechChange[]; issues?: TechIssue[]; impact?: TechImpact[];
+  review?: TechIssue[]; affected?: { artifacts?: string[]; commands?: string[] }; decisions?: TechDecision[];
   previous: TechStatus; at: string;
 }
 export interface TechVersion {
@@ -121,13 +129,17 @@ export interface TechVersion {
 }
 export interface TechStack {
   mode: "existing" | "new"; profile?: string; needs?: string[];
-  platform: { web: boolean; mobile: boolean; desktop: boolean; backend: boolean };
+  platform: { web: boolean; mobile: boolean; android?: boolean; ios?: boolean; desktop: boolean; backend: boolean; cli?: boolean };
   decisions: TechDecision[]; approved: boolean; status?: TechStatus; issues?: TechIssue[]; proposal?: TechProposal;
   request?: string; history?: TechVersion[];
 }
-export interface TechOption { value: string; language?: string; fit: string }
+export interface TechOption {
+  value: string; language?: string; runtime?: string; fit: string; tradeoff?: string; ops?: string; needs?: string[];
+  framework?: string; platform?: string;
+}
 export interface TechProfile { id: string; name: string; description: string }
-export interface StackCatalog { catalog: Record<string, TechOption[]>; profiles: TechProfile[]; areas: TechArea[] }
+export interface TechGroup { id: string; title: string; description: string; areas: TechArea[] }
+export interface StackCatalog { catalog: Record<string, TechOption[]>; profiles: TechProfile[]; areas: TechArea[]; groups: TechGroup[] }
 export interface Token { name: string; value: string; use?: string }
 export interface DesignTokens {
   colors: Token[] | null; typography: Token[] | null; spacing: Token[] | null;

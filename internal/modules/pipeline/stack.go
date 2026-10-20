@@ -1,14 +1,19 @@
 package pipeline
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/modules/spec"
 	"github.com/handrawanw/foundry/internal/modules/stack"
 	"github.com/handrawanw/foundry/internal/modules/work"
+	"github.com/handrawanw/foundry/internal/modules/workflow"
 )
 
 // Technology decision workspace: AI recommendation → user change (by hand
@@ -48,6 +53,7 @@ func (s *Service) ProposeStack(changes []stack.Change) (*core.Project, error) {
 		if err := stack.Propose(p.Stack, changes, "user", "", ""); err != nil {
 			return err
 		}
+		p.Stack.Proposal.Affected = affected(p)
 		p.Log("ui", "Usulan perubahan teknologi: "+changeText(p.Stack.Proposal.Changes))
 		return nil
 	})
@@ -63,9 +69,6 @@ func (s *Service) RequestStackChange(text string) error {
 	_, err = s.Store.Update(func(p *core.Project) error {
 		if err := stackEditable(p); err != nil {
 			return err
-		}
-		if p.Stack.Mode == core.StructureExisting {
-			return stack.ErrExisting
 		}
 		if p.Job != nil && p.Job.Status == core.JobWaiting {
 			return ErrBusy // the AI host still owes another answer
@@ -109,12 +112,60 @@ func (s *Service) ApplyStackProposal() (*core.Project, error) {
 		if err != nil {
 			return err
 		}
-		work.ResetBlueprintTech(p, v.Changes)
-		work.CompleteBlueprint(p)
-		syncStructure(p, "Teknologi diubah: "+changeText(v.Changes))
+		followStack(p, v)
 		p.Log("ui", fmt.Sprintf("Teknologi v%d diterapkan: %s", v.Version, changeText(v.Changes)))
 		return nil
 	})
+}
+
+// followStack brings the blueprint and the structure to the applied
+// version v. Commands that refer to an artifact whose content changed
+// become needs_review through their recorded hashes.
+func followStack(p *core.Project, v *core.TechVersion) {
+	work.ResetBlueprintTech(p, v.Changes)
+	work.CompleteBlueprint(p)
+	syncStructure(p, "Teknologi diubah: "+changeText(v.Changes))
+}
+
+// affected previews the waiting proposal on a copy of p: the artifacts
+// whose content would change and the commands that refer to them. nil
+// when it cannot be computed.
+func affected(p *core.Project) *core.TechAffected {
+	b, err := json.Marshal(p)
+	if err != nil {
+		return nil
+	}
+	var c core.Project
+	if json.Unmarshal(b, &c) != nil {
+		return nil
+	}
+	before := workflow.Hashes(spec.Artifacts(&c))
+	v, err := stack.Apply(c.Stack)
+	if err != nil {
+		return nil
+	}
+	followStack(&c, v)
+	after := workflow.Hashes(spec.Artifacts(&c))
+	out := &core.TechAffected{}
+	for id, h := range before {
+		if after[id] != h {
+			out.Artifacts = append(out.Artifacts, id)
+		}
+	}
+	for id := range after {
+		if _, ok := before[id]; !ok {
+			out.Artifacts = append(out.Artifacts, id)
+		}
+	}
+	sort.Strings(out.Artifacts)
+	if p.Workflow != nil {
+		for _, cmd := range p.Workflow.Commands {
+			if slices.ContainsFunc(cmd.Artifacts, func(r core.ArtifactRef) bool { return slices.Contains(out.Artifacts, r.ID) }) {
+				out.Commands = append(out.Commands, cmd.ID)
+			}
+		}
+	}
+	return out
 }
 
 // DiscardStackProposal cancels the waiting proposal.
@@ -127,6 +178,24 @@ func (s *Service) DiscardStackProposal() (*core.Project, error) {
 			return err
 		}
 		p.Log("ui", "Usulan perubahan teknologi dibatalkan")
+		return nil
+	})
+}
+
+// ConfirmStackReview keeps a choice that was marked for review after a
+// decision it depends on changed.
+func (s *Service) ConfirmStackReview(area string) (*core.Project, error) {
+	return s.Store.Update(func(p *core.Project) error {
+		if err := stackEditable(p); err != nil {
+			return err
+		}
+		if p.Stack.Proposal != nil {
+			return stack.ErrPending
+		}
+		if err := stack.ConfirmReview(p.Stack, area); err != nil {
+			return err
+		}
+		p.Log("ui", "Pilihan teknologi "+area+" tetap dipakai: "+p.Stack.Choice(area))
 		return nil
 	})
 }
@@ -178,10 +247,12 @@ func (s *Service) AckTechReview() (*core.Project, error) {
 
 // stackReady is what finalizing needs from the technology: an
 // approved decision and no unreviewed change that affects the UI design. An
-// existing project's stack is read from its code and approved with it.
+// existing project's stack that is only what its code uses is approved
+// with it; anything Foundry recommended or the user changed there is
+// approved explicitly.
 func stackReady(p *core.Project) error {
 	st := p.Stack
-	if st.Mode == core.StructureExisting {
+	if !stack.NeedsApproval(st) {
 		if st.State() != core.TechApproved {
 			if err := stack.Approve(st); err != nil {
 				return err

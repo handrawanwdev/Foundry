@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanw/foundry/internal/modules/stack"
 	"github.com/handrawanw/foundry/internal/modules/structure"
 	"github.com/handrawanw/foundry/internal/modules/workflow"
 )
@@ -79,8 +80,8 @@ func requirementsMarkdown(p *core.Project) string {
 		b.WriteString("## Platform\n\n")
 		for _, t := range p.Platform.Targets {
 			fmt.Fprintf(&b, "- %s", t.Kind)
-			if len(t.Audience) > 0 {
-				fmt.Fprintf(&b, ": %s", strings.Join(t.Audience, ", "))
+			if t.Rationale != "" {
+				fmt.Fprintf(&b, ": %s", t.Rationale)
 			}
 			b.WriteString("\n")
 		}
@@ -370,21 +371,84 @@ func databaseMarkdown(bp *core.Blueprint) string {
 	return b.String()
 }
 
+// adrStack records the technology decision per group. It is accepted
+// only when the user approved it; until then every choice is proposed.
 func adrStack(p *core.Project) string {
 	var b strings.Builder
-	b.WriteString("# ADR 0001 — Technology stack\n\nStatus: accepted\n\n")
-	if p.Stack == nil {
+	st := p.Stack
+	status := "proposed"
+	if st != nil && st.State() == core.TechApproved && len(st.Reviews()) == 0 && len(st.Errors()) == 0 {
+		status = "accepted"
+	}
+	fmt.Fprintf(&b, "# ADR 0001 — Technology stack\n\nStatus: %s\n\n", status)
+	if st == nil {
 		return b.String() + "Stack belum diputuskan.\n"
 	}
-	fmt.Fprintf(&b, "Profile: %s\n\nNeeds: %s\n\n", p.Stack.Profile, strings.Join(p.Stack.Needs, ", "))
-	for _, d := range p.Stack.Decisions {
-		fmt.Fprintf(&b, "## %s\n\nPilih **%s**. %s\n\n", d.Area, d.Choice(), d.Reason)
+	if st.Version() > 0 {
+		fmt.Fprintf(&b, "Versi: v%d\n\n", st.Version())
+	}
+	fmt.Fprintf(&b, "Profil rekomendasi (kebijakan, bukan aturan): %s\n\nKebutuhan teknis: %s\n\n", st.Profile, orDash(strings.Join(st.Needs, ", ")))
+	for _, g := range core.TechGroups {
+		var ds []core.TechDecision
+		for _, a := range g.Areas {
+			if d := st.Decision(a); d != nil {
+				ds = append(ds, *d)
+			}
+		}
+		if len(ds) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "## %s\n\n", g.Title)
+		for _, d := range ds {
+			fmt.Fprintf(&b, "### %s\n\nPilih **%s**", stack.AreaName(d.Area), d.Choice())
+			var attrs []string
+			if l := d.Lang(); l != "" {
+				attrs = append(attrs, "bahasa "+l)
+			}
+			if r := d.Run(); r != "" {
+				attrs = append(attrs, "runtime "+r)
+			}
+			if len(attrs) > 0 {
+				fmt.Fprintf(&b, " (%s)", strings.Join(attrs, ", "))
+			}
+			fmt.Fprintf(&b, " — %s.\n\n%s\n", stateLabel[st.DecisionState(d)], d.Reason)
+			if o := d.Override; o != nil {
+				fmt.Fprintf(&b, "\nDiganti user dari %s", d.Recommended)
+				if o.Reason != "" {
+					fmt.Fprintf(&b, ": %s", o.Reason)
+				}
+				b.WriteString(".\n")
+			}
+			if len(d.Evidence) > 0 {
+				fmt.Fprintf(&b, "\nBukti di kode: %s\n", strings.Join(d.Evidence, ", "))
+			}
+			if d.Review != "" {
+				fmt.Fprintf(&b, "\nPerlu ditinjau: %s\n", d.Review)
+			}
+			if len(d.Alternatives) > 0 {
+				fmt.Fprintf(&b, "\nAlternatif: %s\n", strings.Join(d.Alternatives, ", "))
+			}
+			b.WriteString("\n")
+		}
+	}
+	if len(st.Issues) > 0 {
+		b.WriteString("## Temuan validasi\n\n")
+		for _, i := range st.Issues {
+			fmt.Fprintf(&b, "- %s (%s): %s\n", i.Level, i.Area, i.Message)
+		}
+		b.WriteString("\n")
 	}
 	if p.Blueprint != nil && p.Blueprint.Architecture.Pattern != "" {
-		fmt.Fprintf(&b, "## architecture pattern\n\nPilih **%s**. %s\n\n%s\n",
+		fmt.Fprintf(&b, "## Architecture pattern\n\nPilih **%s**. %s\n\n%s\n",
 			p.Blueprint.Architecture.Pattern, p.Blueprint.Architecture.Reason, p.Blueprint.Architecture.Tradeoff)
 	}
 	return b.String()
+}
+
+var stateLabel = map[string]string{
+	core.StateRecommended: "rekomendasi Foundry, belum disetujui", core.StateExisting: "sudah dipakai di kode",
+	core.StateSelected: "dipilih user, belum disetujui", core.StateApproved: "disetujui",
+	core.StateNeedsReview: "perlu ditinjau", core.StateConflict: "konflik yang belum diselesaikan",
 }
 
 // Spec is the machine-readable spec an external coding agent consumes:

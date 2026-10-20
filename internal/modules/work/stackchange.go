@@ -43,8 +43,11 @@ CURRENT DECISION (area: choice — reason):
 `)
 	for _, d := range s.Decisions {
 		fmt.Fprintf(&b, "- %s: %s", d.Area, d.Choice())
-		if d.Override != nil {
+		switch {
+		case d.Override != nil:
 			b.WriteString(" (chosen by the user)")
+		case d.Source == core.SourceExisting || d.Source == "" && s.Mode == core.StructureExisting:
+			b.WriteString(" (already used in the code)")
 		}
 		fmt.Fprintf(&b, " — %s\n", d.Reason)
 	}
@@ -66,6 +69,9 @@ Answer with one JSON object only:
 {"changes":[{"area":"backend","value":"Rust + Axum","reason":"<why, in the user's words, Indonesian>"}],
  "note":"<one Indonesian sentence on what you changed, or why nothing>"}
 Use only areas from CURRENT DECISION. value is "Tidak perlu" to remove an optional component.
+Replacing a technology "already used in the code" is a migration: change it only when the request
+asks for it explicitly, and give the user's reason. Areas that depend on a change (UI library on
+the frontend, testing tools on the language, ...) are re-evaluated by Foundry; do not list them.
 Return "changes": [] when the request asks for nothing that can be changed.
 `)
 	return b.String()

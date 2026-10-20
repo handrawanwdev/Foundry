@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { techGate, techReview, techState } from "./tech";
+import { decisionState, needsApproval, techGate, techReview, techState } from "./tech";
 import type { Project, TechStack, TechVersion } from "./types";
 
 const version = (n: number, design: boolean, area: "backend" | "deployment" = "backend"): TechVersion => ({
@@ -31,5 +31,27 @@ describe("tech", () => {
   it("blocks the design approval until the technology is approved", () => {
     expect(techGate(project(stack({ status: "impact_checked" })))).toBe("Setujui keputusan teknologi dulu");
     expect(techGate(project(stack({ mode: "existing" })))).toBeNull();
+  });
+
+  it("asks an existing project to approve only what its code does not already use", () => {
+    const code = { area: "backend" as const, recommended: "Go + Gin", reason: "Sudah dipakai di kode", source: "existing" as const };
+    expect(needsApproval(stack({ mode: "existing", decisions: [code] }))).toBe(false);
+    const added = stack({ mode: "existing", decisions: [code, { area: "mobile", recommended: "Flutter", reason: "x", source: "profile" }] });
+    expect(needsApproval(added)).toBe(true);
+    expect(techGate(project(added))).toBe("Setujui keputusan teknologi dulu");
+  });
+
+  it("tells a recommendation, a choice, an approval, a review and a conflict apart", () => {
+    const d = { area: "ui" as const, recommended: "Tailwind CSS + shadcn/ui", reason: "x", source: "dependency" as const };
+    const chosen = { ...d, override: { value: "MUI (Material UI)" } };
+    expect(decisionState(stack({ decisions: [d] }), d)).toBe("recommended");
+    expect(decisionState(stack({ decisions: [chosen] }), chosen)).toBe("selected");
+    const approved = stack({ status: "approved", approved: true, decisions: [chosen],
+      history: [{ ...version(1, false), status: "approved", decisions: [chosen] }] });
+    expect(decisionState(approved, chosen)).toBe("approved");
+    expect(decisionState(approved, { ...chosen, review: "Frontend berubah" })).toBe("needs_review");
+    const conflict = stack({ decisions: [chosen], issues: [{ level: "error", area: "ui", message: "x" }] });
+    expect(decisionState(conflict, chosen)).toBe("conflict");
+    expect(decisionState(stack({ mode: "existing", decisions: [{ ...d, source: undefined }] }), { ...d, source: undefined })).toBe("existing");
   });
 });

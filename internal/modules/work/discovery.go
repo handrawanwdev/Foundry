@@ -66,7 +66,7 @@ STORY:
 		fmt.Fprintf(&b, "- Users: %s. Stage: %s. Latency budget p95: <%s ms. Webhook: %s. Services: %s.\n",
 			s.Users, s.Stage, s.Latency, s.Webhook, s.Services)
 		if s.Stack != "" {
-			fmt.Fprintf(&b, "- Stack preference: %s (Foundry still decides the catalog pick; record this as a constraint).\n", s.Stack)
+			fmt.Fprintf(&b, "- Stack preference: %s (Foundry's technology recommendation starts from it; record it as a constraint).\n", s.Stack)
 		}
 		b.WriteString("\n")
 	}
@@ -78,10 +78,12 @@ STORY:
 		b.WriteString("\n")
 	}
 	b.WriteString(`Platform kinds allowed: web, android, ios, desktop, backend, cli, embedded (firmware, IoT, robotics), other (library, SDK,
-data pipeline, ML system, infrastructure, tooling). Choose them from who or what uses the software and where it runs.
+data pipeline, ML system, infrastructure, tooling). Choose them from where the software runs. A platform target names no
+users: who uses which platform is discovery.roles[].platform, permissions belong to authz and security.
 tech_needs lists only the technical needs the product really has, from: realtime, offline, seo, ai, high_concurrency,
-flexible_schema, transactions, independent_scaling, enterprise, files, webhook. For web, mobile, desktop and backend parts Foundry
-picks the technology stack from them; do not choose those frameworks or databases in the blueprint. For other software
+flexible_schema, transactions, independent_scaling, enterprise, files, search, webhook. For web, mobile, desktop, cli and backend
+parts Foundry picks the technology stack from them; do not choose those frameworks, databases, caches, brokers or API protocols
+in the blueprint. For other software
 (embedded, cli, other) write the technology constraints (language, toolchain, runtime, hardware) the request names or needs
 into an artifact, marked as recommendation when the user did not name them.
 When modules exchange domain events, list them (name domain.happened, producer module, consumers) in blueprint.events.events.
@@ -137,7 +139,7 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
   "features": [{"id": "FEAT-001", "name": "", "description": "", "requirement_ids": ["REQ-001"], "platforms": ["web","backend"],
                 "sub_features": [{"id": "FEAT-001.1", "name": ""}]}],
   "flows": [` + useCaseShape + `],
-  "platform": {"targets": [{"kind": "web", "audience": ["Admin"], "rationale": ""}], "reason": "one short sentence for a non-technical user"},
+  "platform": {"targets": [{"kind": "web", "rationale": ""}], "reason": "one short sentence for a non-technical user"},
   "artifacts": [{"id": "threat-model", "title": "", "category": "quality", "area": "security", "summary": "", "body": "Markdown", "refs": []}],
   "definition_of_done": [""],
   "decisions": [` + decisionShape + `],

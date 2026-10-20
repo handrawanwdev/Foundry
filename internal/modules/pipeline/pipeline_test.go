@@ -473,6 +473,21 @@ func TestExistingProjectKeepsStructure(t *testing.T) {
 	if !kinds["backend"] || !kinds["web"] {
 		t.Fatalf("components = %+v", p.Structure.Components)
 	}
+	// The stack keeps what the code uses; replacing it is a migration the
+	// user must explain, and it is reviewed like any other change.
+	if d := p.Stack.Decision(core.TechBackend); d == nil || d.Choice() != "Go" || p.Stack.DecisionState(*d) != core.StateExisting {
+		t.Fatalf("backend = %+v", d)
+	}
+	if _, err := s.ProposeStack([]stack.Change{{Area: core.TechBackend, Value: "Python + FastAPI"}}); !errors.Is(err, stack.ErrExistingReason) {
+		t.Fatalf("replace existing without reason err = %v", err)
+	}
+	if p, err := s.ProposeStack([]stack.Change{{Area: core.TechBackend, Value: "Python + FastAPI", Reason: "tim data"}}); err != nil ||
+		p.Stack.Proposal == nil || p.Stack.Choice(core.TechBackend) != "Go" {
+		t.Fatalf("propose: %v", err)
+	}
+	if _, err := s.DiscardStackProposal(); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.ProposeStructure([]core.StructureOp{{Op: "type", Name: "simple"}}); err == nil {
 		t.Fatal("template must not replace existing structure")
 	}
@@ -766,10 +781,18 @@ func TestTechStack(t *testing.T) {
 		t.Fatal(err)
 	}
 	if pr := p.Stack.Proposal; pr == nil || p.Stack.State() != core.TechReview || p.Stack.Choice(core.TechFrontend) != "React + TypeScript + Vite" ||
-		len(pr.Changes) != 1 || pr.Changes[0].To != "Vue + TypeScript + Vite" || len(pr.Impact) != 1 || !pr.Impact[0].Design {
-		t.Fatalf("proposal = %+v", p.Stack)
+		len(pr.Changes) != 2 || pr.Changes[0].To != "Vue + TypeScript + Vite" || len(pr.Impact) != 2 || !pr.Impact[0].Design {
+		t.Fatalf("proposal = %+v", p.Stack.Proposal)
 	}
-	for _, bad := range [][2]string{{core.TechArchitecture, "Serverless"}, {core.TechDesktop, "Tauri + React + TypeScript"}, {"ui", "x"}} {
+	// The UI library follows the frontend; the change reaches the technology artifact.
+	pr := p.Stack.Proposal
+	if c := pr.Changes[1]; c.Area != core.TechUI || !c.Follow || c.To != "PrimeVue" {
+		t.Fatalf("follow = %+v", c)
+	}
+	if pr.Affected == nil || !slices.Contains(pr.Affected.Artifacts, "technology") {
+		t.Fatalf("affected = %+v", pr.Affected)
+	}
+	for _, bad := range [][2]string{{core.TechArchitecture, "Serverless"}, {core.TechDesktop, "Tauri + React + TypeScript"}, {core.TechCache, "Memcached"}} {
 		if _, err := propose(bad[0], bad[1], ""); err == nil {
 			t.Fatalf("%v must fail", bad)
 		}
@@ -791,7 +814,7 @@ func TestTechStack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Stack.State() != core.TechImpactChecked || p.Stack.Version() != 2 || len(p.Stack.History[1].Changes) != 2 {
+	if p.Stack.State() != core.TechImpactChecked || p.Stack.Version() != 2 || len(p.Stack.History[1].Changes) != 3 {
 		t.Fatalf("applied = %+v", p.Stack)
 	}
 	if p.Structure.Template != "simple" || !slices.Equal(p.Structure.Layout, []string{"apps/web/", "apps/mobile/", "apps/api/", "docs/"}) {

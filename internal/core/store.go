@@ -89,6 +89,7 @@ func (s *Store) Load() (*Project, error) {
 	}
 	migrateLegacyDesign(&p, b)
 	migrateArtifactIDs(&p)
+	migratePlatformAudience(&p, b)
 	return &p, nil
 }
 

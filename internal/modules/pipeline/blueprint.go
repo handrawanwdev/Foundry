@@ -7,6 +7,7 @@ import (
 
 	"github.com/handrawanw/foundry/internal/core"
 	"github.com/handrawanw/foundry/internal/modules/spec"
+	"github.com/handrawanw/foundry/internal/modules/stack"
 	"github.com/handrawanw/foundry/internal/modules/work"
 	"github.com/handrawanw/foundry/internal/modules/workflow"
 )
@@ -160,7 +161,7 @@ func Blockers(p *core.Project) []string {
 		switch {
 		case p.Stack == nil:
 			out = append(out, "keputusan teknologi belum ada")
-		case p.Stack.Mode != core.StructureExisting && p.Stack.State() != core.TechApproved:
+		case stack.NeedsApproval(p.Stack) && p.Stack.State() != core.TechApproved:
 			out = append(out, "teknologi belum disetujui")
 		case len(p.TechReview()) > 0:
 			out = append(out, "rancangan UI belum ditinjau terhadap perubahan teknologi")

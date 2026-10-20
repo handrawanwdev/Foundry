@@ -9,7 +9,6 @@
     "desktop": {"value": "Tauri + React + TypeScript", "reason": "Memakai ulang UI web dengan aplikasi desktop yang ringan."},
     "backend": {"value": "NestJS + TypeScript", "reason": "Struktur modul, guard, dan dependency injection cocok untuk RBAC dan audit."},
     "database": {"value": "PostgreSQL", "reason": "Data relasional, transaksi, dan jejak audit."},
-    "cache": {"value": "Redis", "reason": "Cache, antrean, rate limit, dan event; database tetap sumber kebenaran."},
     "architecture": {"value": "Modular Monolith", "reason": "Banyak domain bisnis dengan batas modul yang jelas."}
   }
 }

@@ -222,10 +222,12 @@ type PlatformPlan struct {
 	Approved bool             `json:"approved"`
 }
 
+// PlatformTarget is one platform the product runs on. Who uses it is not
+// part of the target: users, roles and their platform are in
+// Discovery.Roles (requirements and security).
 type PlatformTarget struct {
-	Kind      string   `json:"kind"`
-	Audience  []string `json:"audience"`
-	Rationale string   `json:"rationale"`
+	Kind      string `json:"kind"`
+	Rationale string `json:"rationale"`
 }
 
 type StructureMode string
@@ -281,9 +283,13 @@ type ExistingUI struct {
 }
 
 type Component struct {
-	Kind     string `json:"kind"` // backend | web | mobile | desktop | shared | database | infra | testing
+	// backend | web | mobile | desktop | cli | shared | database | infra | testing, or a technology area
+	// (ui, cache, messaging, deployment, observability, testing, quality, repository) for what the scan
+	// read from dependencies and config files.
+	Kind     string `json:"kind"`
 	Path     string `json:"path"`
 	Tech     string `json:"tech"`
+	Language string `json:"language,omitempty"`
 	Evidence string `json:"evidence"`
 }
 

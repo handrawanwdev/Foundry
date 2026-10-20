@@ -333,6 +333,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			if err := work.ApplyStackChange(p, raw); err != nil {
 				return err
 			}
+			p.Stack.Proposal.Affected = affected(p)
 		case work.KindStructure:
 			if err := work.ApplyStructureChange(p, raw); err != nil {
 				return err

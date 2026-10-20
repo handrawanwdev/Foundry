@@ -267,10 +267,17 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/v1/project/stack/apply", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.ApplyStackProposal() }))
 	api("POST /api/v1/project/stack/discard", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.DiscardStackProposal() }))
 	api("POST /api/v1/project/stack/approve", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.ApproveStack() }))
+	api("POST /api/v1/project/stack/review", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Area string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.ConfirmStackReview(in.Area)
+	}))
 	api("POST /api/v1/project/stack/review-design", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.AckTechReview() }))
 	api("POST /api/v1/project/stack/recommend", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.RecommendStack() }))
 	api("GET /api/v1/stack/catalog", func(r *http.Request) (any, error) {
-		return map[string]any{"catalog": stack.Catalog, "profiles": stack.Profiles, "areas": core.TechAreas}, nil
+		return map[string]any{"catalog": stack.Catalog, "profiles": stack.Profiles, "areas": core.TechAreas, "groups": core.TechGroups}, nil
 	})
 	// UI design: design rules and layout spec (blueprint artifacts).
 	api("GET /api/v1/project/design", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {

@@ -60,6 +60,8 @@ export const api = {
   applyStack: () => call<Project>("POST", "/project/stack/apply", {}),
   discardStack: () => call<Project>("POST", "/project/stack/discard", {}),
   approveStack: () => call<Project>("POST", "/project/stack/approve", {}),
+  // Keep a choice marked for review after a decision it depends on changed.
+  confirmStackReview: (area: TechArea) => call<Project>("POST", "/project/stack/review", { area }),
   reviewedDesignTech: () => call<Project>("POST", "/project/stack/review-design", {}),
   recommendStack: () => call<Project>("POST", "/project/stack/recommend", {}),
   stackCatalog: () => call<StackCatalog>("GET", "/stack/catalog"),

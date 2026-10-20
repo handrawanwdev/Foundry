@@ -9,7 +9,6 @@
     "desktop": {"value": "Tauri + React + TypeScript", "reason": "Memakai ulang UI web dengan aplikasi desktop yang ringan."},
     "backend": {"value": "Python + FastAPI", "reason": "Ekosistem AI dan data processing paling lengkap ada di Python."},
     "database": {"value": "PostgreSQL", "reason": "Data aplikasi relasional; bisa ditambah pgvector untuk embedding."},
-    "cache": {"value": "Redis", "reason": "Cache, antrean, rate limit, dan event; database tetap sumber kebenaran."},
     "architecture": {"value": "Modular Monolith", "reason": "Layanan AI sebagai modul tersendiri tanpa memecah deployment."}
   }
 }

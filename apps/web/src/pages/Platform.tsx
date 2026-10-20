@@ -19,7 +19,7 @@ export function PlatformStructure({ project }: { project: Project }) {
   const toggle = (k: PlatformKind) => {
     const next: PlatformTarget[] = has(k)
       ? targets.filter((t) => t.kind !== k)
-      : [...targets, { kind: k, audience: [], rationale: "Ditambahkan oleh user" }];
+      : [...targets, { kind: k, rationale: "Ditambahkan oleh user" }];
     void run("platform", () => api.setPlatform(next));
   };
   const s = project.structure;
@@ -28,14 +28,15 @@ export function PlatformStructure({ project }: { project: Project }) {
     <div className="info">
       <h1>Platform & Teknologi</h1>
       <section className="info-sec">
-        <h3>Platform</h3>
+        <h3>Target Platform</h3>
+        <p className="small muted">Di mana produk berjalan. Pengguna, peran, dan izin diatur di Requirements dan Security, bukan di sini.</p>
         {KINDS.map((k) => {
           const t = targets.find((x) => x.kind === k);
           return (
             <label key={k} className="check">
               <input type="checkbox" checked={!!t} disabled={locked} onChange={() => toggle(k)} />
               <strong>{PLATFORM_LABEL[k]}</strong>
-              {t && t.audience.length > 0 && <span className="muted small"> — {t.audience.join(", ")}</span>}
+              {t?.rationale && <span className="muted small"> — {t.rationale}</span>}
             </label>
           );
         })}

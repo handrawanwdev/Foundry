@@ -2,16 +2,24 @@ package core
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
 
 // Technology decision areas, in the order they are decided and shown.
+// Each area is one domain: a framework (with its language and runtime as
+// attributes), the API protocol, the UI library, a data or communication
+// component, the application architecture, the repository layout, the
+// deployment strategy, observability and the engineering tools.
 const (
 	TechFrontend      = "frontend"
+	TechUI            = "ui" // UI library of the web/desktop frontend
 	TechMobile        = "mobile"
 	TechDesktop       = "desktop"
+	TechCLI           = "cli"
 	TechBackend       = "backend"
+	TechAPI           = "api" // API protocol between clients and backend
 	TechDatabase      = "database"
 	TechCache         = "cache"
 	TechMessaging     = "messaging"
@@ -22,10 +30,46 @@ const (
 	TechRepository    = "repository"
 	TechDeployment    = "deployment"
 	TechObservability = "observability"
+	TechTesting       = "testing"
+	TechQuality       = "quality" // lint and format
 )
 
-var TechAreas = []string{TechFrontend, TechMobile, TechDesktop, TechBackend, TechDatabase, TechCache, TechMessaging,
-	TechWorkers, TechStorage, TechSearch, TechArchitecture, TechRepository, TechDeployment, TechObservability}
+var TechAreas = []string{TechFrontend, TechUI, TechMobile, TechDesktop, TechCLI, TechBackend, TechAPI, TechDatabase, TechCache,
+	TechMessaging, TechWorkers, TechStorage, TechSearch, TechArchitecture, TechRepository, TechDeployment, TechObservability,
+	TechTesting, TechQuality}
+
+// TechGroup is one section of the technology decision. The target
+// platform (Project.Platform) comes before them; user roles and
+// permissions belong to the requirements and security, not here.
+type TechGroup struct {
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Areas       []string `json:"areas"`
+}
+
+var TechGroups = []TechGroup{
+	{ID: "stack", Title: "Application Stack", Description: "Framework per bagian aplikasi beserta bahasa dan runtime-nya, UI library, dan protokol API.",
+		Areas: []string{TechFrontend, TechUI, TechMobile, TechDesktop, TechCLI, TechBackend, TechAPI}},
+	{ID: "data", Title: "Data & Communication", Description: "Database, cache, messaging, worker, file storage, dan search; komponen tambahan hanya bila ada kebutuhannya.",
+		Areas: []string{TechDatabase, TechCache, TechMessaging, TechWorkers, TechStorage, TechSearch}},
+	{ID: "architecture", Title: "Architecture & Repository", Description: "Arsitektur aplikasi dan struktur repository adalah dua keputusan terpisah; struktur folder diturunkan dari keduanya.",
+		Areas: []string{TechArchitecture, TechRepository}},
+	{ID: "operations", Title: "Infrastructure & Operations", Description: "Strategi deployment dan observability.",
+		Areas: []string{TechDeployment, TechObservability}},
+	{ID: "standards", Title: "Engineering Standards", Description: "Tool testing dan kualitas kode per bahasa. Aturan kode ada di artefak Arsitektur, tidak diulang di sini.",
+		Areas: []string{TechTesting, TechQuality}},
+}
+
+// GroupOf is the group id of area, "" when unknown.
+func GroupOf(area string) string {
+	for _, g := range TechGroups {
+		if slices.Contains(g.Areas, area) {
+			return g.ID
+		}
+	}
+	return ""
+}
 
 // Architecture and repository values; the project structure is derived
 // from them.
@@ -86,6 +130,9 @@ type TechChange struct {
 	To       string `json:"to"`
 	Language string `json:"language,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+	// Follow marks a recommendation that changed because a decision it
+	// depends on changed; it is not the user's choice.
+	Follow bool `json:"follow,omitempty"`
 }
 
 // TechIssue is a concrete validation finding; an error blocks approval.
@@ -110,9 +157,25 @@ type TechProposal struct {
 	Changes []TechChange `json:"changes"`
 	Issues  []TechIssue  `json:"issues,omitempty"`
 	Impact  []TechImpact `json:"impact,omitempty"`
+	// Review are the user's (or the code's) choices that depend on a
+	// changed area; they are marked for review when the proposal applies.
+	Review []TechIssue `json:"review,omitempty"`
+	// Affected are the blueprint artifacts whose content changes and the
+	// commands that refer to them; the commands become needs_review.
+	Affected *TechAffected `json:"affected,omitempty"`
+	// Decisions is the decision as it will be after the proposal; nil in
+	// proposals saved before it existed.
+	Decisions []TechDecision `json:"decisions,omitempty"`
 	// Previous is the status to return to when the proposal is cancelled.
 	Previous TechStatus `json:"previous"`
 	At       time.Time  `json:"at"`
+}
+
+// TechAffected is what a technology change reaches in the blueprint and
+// the workflow, computed from the artifacts' content, not guessed.
+type TechAffected struct {
+	Artifacts []string `json:"artifacts,omitempty"`
+	Commands  []string `json:"commands,omitempty"`
 }
 
 // TechVersion is one saved state of the decision.
@@ -183,33 +246,125 @@ func CloneDecisions(ds []TechDecision) []TechDecision {
 			d.Override = &o
 		}
 		d.Alternatives = append([]string(nil), d.Alternatives...)
+		d.Evidence = append([]string(nil), d.Evidence...)
 		out[i] = d
 	}
 	return out
 }
 
+// TechPlatform is which parts the product has, from the target platform.
+// Android and IOS are false in stacks saved before they existed (Mobile
+// alone then).
 type TechPlatform struct {
 	Web     bool `json:"web"`
 	Mobile  bool `json:"mobile"`
+	Android bool `json:"android,omitempty"`
+	IOS     bool `json:"ios,omitempty"`
 	Desktop bool `json:"desktop"`
 	Backend bool `json:"backend"`
+	CLI     bool `json:"cli,omitempty"`
 }
+
+// Sources of a recommendation, from the strongest.
+const (
+	SourceExisting   = "existing"   // read from the project's code
+	SourcePreference = "preference" // the stack the user stated in the survey
+	SourceNeed       = "need"       // a technical need of the project
+	SourceProfile    = "profile"    // the profile's policy for this kind of product
+	SourceDefault    = "default"
+	SourceDependency = "dependency" // follows another decision (UI library of the frontend, ...)
+)
 
 type TechDecision struct {
 	Area        string `json:"area"`
 	Recommended string `json:"recommended"`
 	Language    string `json:"language,omitempty"`
+	Runtime     string `json:"runtime,omitempty"`
 	Reason      string `json:"reason"`
-	// Alternatives are other known options worth considering.
+	// Source is where the recommendation came from; "" in stacks saved
+	// before it existed.
+	Source string `json:"source,omitempty"`
+	// Evidence are the files an existing technology was read from.
+	Evidence []string `json:"evidence,omitempty"`
+	// Alternatives are other known options that fit the other choices.
 	Alternatives []string `json:"alternatives,omitempty"`
 	// Override is the user's choice; it wins over the recommendation.
 	Override *TechOverride `json:"override,omitempty"`
+	// Review is why the choice must be checked again: a decision it
+	// depends on changed after it was made. The user keeps or changes it.
+	Review string `json:"review,omitempty"`
 }
 
 type TechOverride struct {
 	Value    string `json:"value"`
 	Language string `json:"language,omitempty"`
+	Runtime  string `json:"runtime,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+}
+
+// Decision states: what a decision is, as the user reads it. A
+// recommendation is never an approval.
+const (
+	StateRecommended = "recommended" // Foundry's recommendation, not chosen or approved yet
+	StateExisting    = "existing"    // already used in the code
+	StateSelected    = "selected"    // chosen by the user, not approved yet
+	StateApproved    = "approved"    // part of the last approved version
+	StateConflict    = "conflict"    // an unresolved incompatibility (error issue)
+)
+
+// DecisionState is the state of d in s.
+func (s *TechStack) DecisionState(d TechDecision) string {
+	for _, i := range s.Issues {
+		if i.Level == "error" && i.Area == d.Area {
+			return StateConflict
+		}
+	}
+	if d.Review != "" {
+		return StateNeedsReview
+	}
+	if v, ok := s.approvedChoices()[d.Area]; ok && v == d.Choice() {
+		return StateApproved
+	}
+	if d.Override != nil {
+		return StateSelected
+	}
+	if d.Source == SourceExisting || d.Source == "" && s.Mode == StructureExisting {
+		return StateExisting
+	}
+	return StateRecommended
+}
+
+// approvedChoices are the choices of the last approved version.
+func (s *TechStack) approvedChoices() map[string]string {
+	out := map[string]string{}
+	if s.State() == TechApproved && len(s.History) == 0 {
+		for _, d := range s.Decisions {
+			out[d.Area] = d.Choice()
+		}
+		return out
+	}
+	for i := len(s.History) - 1; i >= 0; i-- {
+		if s.History[i].Status == TechApproved {
+			for _, d := range s.History[i].Decisions {
+				out[d.Area] = d.Choice()
+			}
+			break
+		}
+	}
+	return out
+}
+
+// Reviews are the decisions waiting to be kept or changed.
+func (s *TechStack) Reviews() []TechDecision {
+	var out []TechDecision
+	if s != nil {
+		for _, d := range s.Decisions {
+			if d.Review != "" {
+				out = append(out, d)
+			}
+		}
+	}
+	return out
 }
 
 // Choice is the technology the project uses for this area.
@@ -225,6 +380,14 @@ func (d TechDecision) Lang() string {
 		return d.Override.Language
 	}
 	return d.Language
+}
+
+// Run is the runtime of the chosen technology, "" when unknown.
+func (d TechDecision) Run() string {
+	if d.Override != nil {
+		return d.Override.Runtime
+	}
+	return d.Runtime
 }
 
 // Decision returns the decision for area, nil when the area is not part of
@@ -256,7 +419,7 @@ func (s *TechStack) Brief() string {
 	}
 	var b strings.Builder
 	if s.Mode == StructureExisting {
-		b.WriteString("TECHNOLOGY STACK (existing; keep it, no extra framework/language):\n")
+		b.WriteString("TECHNOLOGY STACK (existing code; keep the [existing] technology and its conventions, no extra framework/language):\n")
 	} else {
 		b.WriteString("TECHNOLOGY STACK (use exactly these; no substitute framework/language/database):\n")
 	}
@@ -265,9 +428,13 @@ func (s *TechStack) Brief() string {
 		if l := d.Lang(); l != "" {
 			fmt.Fprintf(&b, " (language %s)", l)
 		}
+		if r := d.Run(); r != "" {
+			fmt.Fprintf(&b, " (runtime %s)", r)
+		}
 		if d.Override != nil && d.Override.Reason != "" {
 			fmt.Fprintf(&b, " — chosen by the user: %s", d.Override.Reason)
 		}
+		fmt.Fprintf(&b, " [%s]", s.DecisionState(d))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -297,7 +464,7 @@ func (p *Project) TechReview() []TechChange {
 
 // designArea: a change of these areas is reviewed against the design (UI
 // implementation, API and data the pages show).
-var designArea = map[string]bool{TechFrontend: true, TechMobile: true, TechDesktop: true, TechBackend: true, TechDatabase: true}
+var designArea = map[string]bool{TechFrontend: true, TechUI: true, TechMobile: true, TechDesktop: true, TechBackend: true, TechDatabase: true}
 
 // AffectsDesign reports whether a change of area asks for a design review.
 func AffectsDesign(area string) bool { return designArea[area] }

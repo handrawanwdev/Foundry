@@ -215,3 +215,36 @@ func migrateArtifactIDs(p *Project) {
 		p.Log("system", fmt.Sprintf("Artefak %s diganti nama menjadi %s (id %s kini artefak bawaan)", from, to, from))
 	}
 }
+
+// migratePlatformAudience moves the users that older project files kept on
+// each platform target (targets[].audience) to the roles: a role named
+// there without a platform gets it. Targets no longer carry users; roles
+// and permissions are part of the requirements and security.
+func migratePlatformAudience(p *Project, raw []byte) {
+	var old struct {
+		Platform *struct {
+			Targets []struct {
+				Kind     string   `json:"kind"`
+				Audience []string `json:"audience"`
+			} `json:"targets"`
+		} `json:"platform"`
+	}
+	if json.Unmarshal(raw, &old) != nil || old.Platform == nil || p.Discovery == nil {
+		return
+	}
+	n := 0
+	for _, t := range old.Platform.Targets {
+		for _, a := range t.Audience {
+			for i := range p.Discovery.Roles {
+				r := &p.Discovery.Roles[i]
+				if r.Platform == "" && strings.EqualFold(strings.TrimSpace(r.Name), strings.TrimSpace(a)) {
+					r.Platform = t.Kind
+					n++
+				}
+			}
+		}
+	}
+	if n > 0 {
+		p.Log("system", fmt.Sprintf("Pengguna per platform dipindah ke %d peran (roles); platform target tidak lagi menyimpan pengguna", n))
+	}
+}

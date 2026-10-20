@@ -245,10 +245,10 @@ func CompleteBlueprint(p *core.Project) {
 	completeStorage(b, needs)
 	completeRealtime(b, needs, p)
 	if len(b.Workers) == 0 {
-		b.Workers = defaultWorkers(needs, b.Storage.Strategy)
+		b.Workers = defaultWorkers(needs, b.Storage.Strategy, stackChoice(p, core.TechWorkers))
 	}
 	completeAggregation(b, needs)
-	completeEvents(b)
+	completeEvents(b, stackChoice(p, core.TechMessaging))
 	completePerformance(b, p, needs)
 	completeCoding(b, p)
 	fillSlice(&b.Docs, defaultDocs)
@@ -317,7 +317,7 @@ func completeStack(b *core.Blueprint, p *core.Project, needs map[string]bool) {
 	if b.Cache.Use != "" && b.Cache.Use != core.CacheNone && b.Cache.Use != "none" {
 		fillSlice(&b.Cache.Store, []string{"session", "permission snapshot", "read-model / summary", "rate limit", "idempotency key"})
 		fillSlice(&b.Cache.Never, []string{"password hash", "refresh token mentah", "isi file", "data keuangan yang belum ter-commit", "PII mentah jangka panjang"})
-		fill(&b.Cache.Invalidation, "Cache-aside di Redis dengan TTL. Invalidasi lewat event. Cache bukan sumber kebenaran.")
+		fill(&b.Cache.Invalidation, "Cache-aside di "+b.Cache.Use+" dengan TTL. Invalidasi lewat event. Cache bukan sumber kebenaran.")
 	} else {
 		fill(&b.Cache.Use, "none")
 	}
@@ -340,7 +340,15 @@ func completeStack(b *core.Blueprint, p *core.Project, needs map[string]bool) {
 		}
 	}
 	completeFrontend(b, fe)
-	completeBackend(b, backend, needs)
+	completeBackend(b, backend, stackChoice(p, core.TechWorkers), needs)
+}
+
+// stackChoice is the chosen technology for area, "" without a decision.
+func stackChoice(p *core.Project, area string) string {
+	if p.Stack == nil {
+		return ""
+	}
+	return p.Stack.Choice(area)
 }
 
 // ResetBlueprintTech clears the blueprint details derived from the changed
@@ -363,15 +371,22 @@ func ResetBlueprintTech(p *core.Project, changes []core.TechChange) {
 		case core.TechCache:
 			b.Cache = core.CacheArch{}
 			b.Auth.Session = ""
+			b.Performance.Health, b.Performance.Caching = "", ""
+			b.Realtime.Broker = ""
+			b.Events.Ephemeral = ""
 		case core.TechArchitecture:
 			b.Architecture.Reason, b.Architecture.Tradeoff = "", ""
 		case core.TechMessaging:
 			b.Realtime.Broker = ""
+			b.Events.Durable, b.Events.Ephemeral, b.Events.Outbox = "", "", ""
 		case core.TechStorage:
 			b.Storage = core.StorageArch{}
 			b.Workers = nil
 		case core.TechWorkers:
 			b.Workers = nil
+			b.Backend.Background = ""
+		case core.TechAPI:
+			b.Coding.API.Style = ""
 		}
 	}
 }
@@ -399,8 +414,14 @@ func completeFrontend(b *core.Blueprint, fe string) {
 	fill(&b.Frontend.Components, "Feature folder + komponen UI generik di packages/ui atau src/components")
 }
 
-func completeBackend(b *core.Blueprint, backend string, needs map[string]bool) {
+func completeBackend(b *core.Blueprint, backend, workers string, needs map[string]bool) {
 	fill(&b.Backend.Pattern, "controller → service → repository → database. Controller tanpa business rule.")
+	switch workers {
+	case core.TechNone:
+		fill(&b.Backend.Background, "tidak ada job latar belakang; semua proses selesai di request")
+	case "Job in-process":
+		fill(&b.Backend.Background, "job ringan in-process di proses backend; dicatat di database bila tidak boleh hilang")
+	}
 	switch {
 	case strings.Contains(backend, "Nest"):
 		fill(&b.Backend.DI, "NestJS module providers")
@@ -478,21 +499,40 @@ func completeRealtime(b *core.Blueprint, needs map[string]bool, p *core.Project)
 		return
 	}
 	b.Realtime.Needed = true
-	broker := "Redis Streams"
-	if p.Stack != nil {
-		if v := p.Stack.Choice(core.TechMessaging); v != "" && v != core.TechNone {
-			broker = v
-		}
+	broker := stackChoice(p, core.TechMessaging)
+	switch {
+	case broker != "" && broker != core.TechNone:
+	case stackChoice(p, core.TechCache) == "Redis":
+		broker = "Redis Pub/Sub"
+	default:
+		broker = "in-process (satu instance backend; butuh pub/sub bila lebih dari satu instance)"
 	}
 	fill(&b.Realtime.Broker, broker)
 	fillSlice(&b.Realtime.Events, []string{"<domain>.<entity>.<action> (contoh appointment.created)"})
 	fill(&b.Realtime.Retry, "At-least-once, consumer idempotent by eventId, dead-letter setelah 5 percobaan")
 }
 
-func completeEvents(b *core.Blueprint) {
-	fill(&b.Events.Durable, "Redis Streams + consumer group + ack + retry + dead-letter stream")
-	fill(&b.Events.Ephemeral, "Redis Pub/Sub untuk update UI dan cache invalidation")
-	fill(&b.Events.Outbox, "Event ditulis ke tabel outbox dalam transaksi yang sama, lalu relay ke Redis")
+// completeEvents follows the messaging choice; without a broker events
+// stay in the process.
+func completeEvents(b *core.Blueprint, broker string) {
+	switch broker {
+	case "", core.TechNone:
+		fill(&b.Events.Durable, "Event in-process antar modul; yang tidak boleh hilang dicatat di tabel outbox lalu diproses ulang")
+		ephemeral := "Event in-process untuk update UI dan cache invalidation"
+		if b.Cache.Use == "Redis" {
+			ephemeral = "Redis Pub/Sub untuk update UI dan cache invalidation"
+		}
+		fill(&b.Events.Ephemeral, ephemeral)
+		fill(&b.Events.Outbox, "Event ditulis ke tabel outbox dalam transaksi yang sama, lalu diproses relay in-process")
+	case "Redis Streams":
+		fill(&b.Events.Durable, "Redis Streams + consumer group + ack + retry + dead-letter stream")
+		fill(&b.Events.Ephemeral, "Redis Pub/Sub untuk update UI dan cache invalidation")
+		fill(&b.Events.Outbox, "Event ditulis ke tabel outbox dalam transaksi yang sama, lalu relay ke Redis")
+	default:
+		fill(&b.Events.Durable, broker+": consumer idempotent by eventId, retry, dead-letter")
+		fill(&b.Events.Ephemeral, broker+" untuk update UI dan cache invalidation")
+		fill(&b.Events.Outbox, "Event ditulis ke tabel outbox dalam transaksi yang sama, lalu relay ke "+broker)
+	}
 	fill(&b.Events.Envelope, `{"eventId":"uuid","type":"domain.event","version":1,"occurredAt":"RFC3339","correlationId":"uuid","payload":{}}`)
 	if len(b.Events.Events) == 0 {
 		for _, e := range b.Realtime.Events {
@@ -526,9 +566,17 @@ func completePerformance(b *core.Blueprint, p *core.Project, _ map[string]bool) 
 		}
 	}
 	fill(&b.Performance.Budget, budget)
-	fill(&b.Performance.Health, "GET /health (proses hidup); GET /ready (DB dan Redis siap)")
+	if b.Cache.Use == "Redis" {
+		fill(&b.Performance.Health, "GET /health (proses hidup); GET /ready (DB dan Redis siap)")
+	} else {
+		fill(&b.Performance.Health, "GET /health (proses hidup); GET /ready (DB siap)")
+	}
 	fill(&b.Performance.Pagination, "Cursor pada list besar (id+created_at); limit default 20, max 100")
-	fill(&b.Performance.Caching, "Cache-aside di Redis dengan TTL; invalidasi lewat event; cache bukan sumber kebenaran")
+	if b.Cache.Use != "" && b.Cache.Use != "none" && b.Cache.Use != core.CacheNone {
+		fill(&b.Performance.Caching, "Cache-aside di "+b.Cache.Use+" dengan TTL; invalidasi lewat event; cache bukan sumber kebenaran")
+	} else {
+		fill(&b.Performance.Caching, "Tanpa cache terpisah; index dan query yang efisien dulu, cache ditambah bila terukur perlu")
+	}
 	fill(&b.Performance.Indexing, "Index mengikuti filter list API; EXPLAIN pada query > 50ms")
 	fillSlice(&b.Performance.Avoid, []string{
 		"N+1 query",
@@ -563,8 +611,12 @@ func completeCoding(b *core.Blueprint, p *core.Project) {
 		"kontras WCAG AA, navigasi keyboard, label aksesibilitas",
 	})
 	if b.Coding.API.Style == "" {
+		style := stackChoice(p, core.TechAPI)
+		if style == "" {
+			style = "REST"
+		}
 		b.Coding.API = core.APIStd{
-			Style:      "REST",
+			Style:      style,
 			Versioning: "/api/v1",
 			Errors:     `{"error":{"code":"appointment_conflict","message":"..."}}`,
 			Pagination: `{"data":[],"meta":{"limit":20,"next_cursor":""}}`,
@@ -675,7 +727,11 @@ func splitEntity(row string) (string, []string) {
 	return name, fields
 }
 
-func defaultWorkers(needs map[string]bool, storage string) []core.Worker {
+// defaultWorkers follows the workers choice: none means no background job.
+func defaultWorkers(needs map[string]bool, storage, choice string) []core.Worker {
+	if choice == core.TechNone {
+		return nil
+	}
 	var out []core.Worker
 	out = append(out, core.Worker{Name: "email", Trigger: "queue", Job: "Kirim email transaksional (verifikasi, reset, notifikasi)"})
 	if needs["files"] || (storage != "" && storage != "none") {
@@ -714,13 +770,10 @@ func ormOf(backend, db string) string {
 }
 
 func cacheOf(choice string, _ map[string]bool) string {
-	if choice == core.CacheNone {
+	if choice == "" || choice == core.CacheNone {
 		return "none"
 	}
-	if choice != "" {
-		return choice
-	}
-	return "Redis"
+	return choice
 }
 
 func offlineOf(needs map[string]bool) string {

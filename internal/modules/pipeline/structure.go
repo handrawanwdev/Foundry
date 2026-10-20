@@ -133,7 +133,9 @@ func (s *Service) ApplyStructureProposal() (*core.Project, error) {
 		}
 		if len(pr.Tech) > 0 {
 			old := core.CloneDecisions(p.Stack.Decisions)
+			var areas []string
 			for _, c := range pr.Tech {
+				areas = append(areas, c.Area)
 				value := c.To
 				if d := p.Stack.Decision(c.Area); d != nil && value == d.Recommended {
 					value = ""
@@ -142,6 +144,7 @@ func (s *Service) ApplyStructureProposal() (*core.Project, error) {
 					return err
 				}
 			}
+			stack.Follow(p.Stack, areas...)
 			stackChanged(p, old, "structure", "Struktur project: "+pr.IR.Type)
 			work.ResetBlueprintTech(p, stack.Diff(old, p.Stack.Decisions))
 			work.CompleteBlueprint(p)

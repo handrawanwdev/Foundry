@@ -497,3 +497,13 @@ button.layer.on { background: var(--accent-soft); color: var(--text); }
 .tech-history ul { padding-left: 1.1rem; display: flex; flex-direction: column; gap: .3rem; }
 .tech-foot { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-top: .6rem; }
 .tech-foot .primary { margin-left: auto; }
+.tech-group { margin-top: .8rem; }
+.tech-group h4 { margin: 0 0 .1rem; font-size: 13px; }
+.tech-group > p { margin: 0 0 .3rem; }
+.tech-state { font-size: 11px; padding: 0 .4rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.tech-state.existing, .tech-state.approved { background: var(--ok-soft); color: var(--ok); }
+.tech-state.needs_review { background: var(--warn-soft); color: var(--warn); }
+.tech-state.conflict { background: var(--bad-soft); color: var(--bad); }
+.tech-src { font-style: italic; }
+.tech-alts ul { margin: .2rem 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .25rem; }
+.tech-alts summary { cursor: pointer; color: var(--muted); }

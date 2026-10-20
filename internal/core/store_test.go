@@ -387,3 +387,42 @@ func TestLoadLegacyDesignMigrates(t *testing.T) {
 		t.Error("migrated design must ask for the missing rules")
 	}
 }
+
+// Platform targets saved with users (audience) open without them; a role
+// named there gets the platform, a role with its own platform keeps it.
+func TestLoadLegacyPlatformAudience(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, StateDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"name":"klinik","stage":"DESIGN","story":"x",
+		"discovery":{"roles":[{"name":"Pasien","description":"d"},{"name":"Dokter","description":"d","platform":"web"}]},
+		"platform":{"targets":[{"kind":"android","audience":["Pasien","Dokter"],"rationale":"r"},{"kind":"backend","audience":[],"rationale":"r"}]},
+		"stack":{"mode":"new","platform":{"web":false,"mobile":true,"backend":true},"approved":true,
+		  "decisions":[{"area":"mobile","recommended":"Flutter","language":"Dart","reason":"x"},{"area":"cache","recommended":"Redis","reason":"x"}]}}`
+	if err := os.WriteFile(filepath.Join(dir, StateDir, "project.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{Dir: dir}
+	p, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := p.Discovery.Roles; r[0].Platform != PlatformAndroid || r[1].Platform != "web" {
+		t.Fatalf("roles = %+v", r)
+	}
+	if len(p.Platform.Targets) != 2 || p.Platform.Targets[0].Rationale != "r" {
+		t.Fatalf("targets = %+v", p.Platform.Targets)
+	}
+	// The old stack loads as it was: approved, Redis kept, nothing added.
+	if st := p.Stack; st.State() != TechApproved || st.Choice(TechCache) != "Redis" || len(st.Decisions) != 2 ||
+		st.DecisionState(st.Decisions[0]) != StateApproved {
+		t.Fatalf("stack = %+v", st)
+	}
+	if _, err := s.Update(func(*Project) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, StateDir, "project.json")); strings.Contains(string(b), `"audience"`) {
+		t.Fatalf("audience kept: %s", b)
+	}
+}

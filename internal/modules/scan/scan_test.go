@@ -29,3 +29,33 @@ func TestDetectsComponents(t *testing.T) {
 		t.Fatalf("scan = %+v", r)
 	}
 }
+
+func TestDetectsStack(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "package.json"), `{"workspaces":["apps/*"],"devDependencies":{"eslint":"9","prettier":"3"}}`)
+	write(t, filepath.Join(dir, "apps", "api", "go.mod"), "module x\nrequire (\n\tgithub.com/gin-gonic/gin v1\n\tgithub.com/jackc/pgx/v5 v5\n)\n")
+	write(t, filepath.Join(dir, "apps", "api", "main_test.go"), "package main\n")
+	write(t, filepath.Join(dir, "apps", "web", "package.json"), `{"dependencies":{"react":"18","@mui/material":"5"},"devDependencies":{"typescript":"5","vitest":"2"}}`)
+	write(t, filepath.Join(dir, "docker-compose.yml"), "services:\n  db:\n    image: postgres:16\n  cache:\n    image: \"redis:7\"\n")
+	write(t, filepath.Join(dir, "requirements.txt"), "flask==3\nflask-cors\n")
+	r := Scan(dir)
+	got := map[string]bool{}
+	for _, c := range r.Components {
+		got[c.Kind+"|"+c.Path+"|"+c.Tech+"|"+c.Language] = true
+	}
+	for _, want := range []string{
+		"backend|apps/api|Go + Gin|Go", "database|apps/api|PostgreSQL|", "testing|.|go test|Go",
+		"web|apps/web|React|TypeScript", "ui|apps/web|MUI (Material UI)|", "testing|apps/web|Vitest|",
+		"repository|.|Monorepo|", "quality|.|ESLint + Prettier|JavaScript",
+		"deployment|.|Docker Compose (satu server)|", "database|.|PostgreSQL|", "cache|.|Redis|",
+		"backend|.|Flask + Python|Python",
+	} {
+		if !got[want] {
+			t.Errorf("missing %s in %v", want, got)
+		}
+	}
+	// "flask-cors" alone is not Flask; a dependency is a whole token.
+	if !mentions("flask==3", "flask") || mentions("flask-cors", "flask") {
+		t.Error("mentions")
+	}
+}

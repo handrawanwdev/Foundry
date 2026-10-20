@@ -34,12 +34,16 @@ export function StructurePanel({ project }: { project: Project }) {
   return (
     <section className="info-sec">
       <div className="tech-title">
-        <h3>Struktur project</h3>
+        <h3>Struktur folder</h3>
         <span className={`tech-status ${state}`}>{TECH_STATUS[state]}{structureVersion(s) ? ` · v${structureVersion(s)}` : ""}</span>
       </div>
       <p className="small muted">
         Rekomendasi Foundry: <strong className="fg">{STRUCTURE_TYPE[s.recommended ?? ""] ?? "—"}</strong>
         {s.reason && <> — {s.reason}</>}. Kamu yang memutuskan; yang disetujui masuk spesifikasi final.
+      </p>
+      <p className="small muted">
+        Layout folder diturunkan dari dua keputusan terpisah di Teknologi: arsitektur aplikasi dan struktur repository.
+        Deployment diputuskan sendiri dan tidak mengubah layout ini.
       </p>
 
       {!finalized && (
@@ -98,7 +102,7 @@ function TypeRow({ s, type, types, editable, open, onToggle, onDone }: {
   return (
     <div className="tech-row">
       <div className="tech-head">
-        <span className="tech-area">Tipe</span>
+        <span className="tech-area">Layout</span>
         <strong>{label(type)}</strong>
         {recommended && type !== recommended && <span className="tech-tag">pilihan kamu</span>}
         {editable && <button className="ghost small" onClick={onToggle}>Ubah</button>}
