@@ -224,6 +224,19 @@ export interface AreaStatus {
 export type ArtifactStateKind = "draft" | "valid" | "needs_review" | "finalized";
 export interface ArtifactState { status: ArtifactStateKind; reason?: string }
 export interface ChangeRequest { text: string; focus?: string[]; rejected?: string }
+// What deleting one blueprint document reaches.
+export interface DeleteImpact {
+  doc: string;
+  title: string;
+  erases: string;
+  docs: string[];
+  commands: { id: string; name: string; fate: "removed" | "review"; why: string }[];
+  artifacts: { id: string; title: string }[];
+  areas: string[];
+  uncovered: string[];
+  ai: boolean;
+}
+
 export interface BlueprintView {
   artifacts: Artifact[]; has_ui: boolean; request: ChangeRequest | null; blueprint_hash: string;
   areas: AreaStatus[]; states: Record<string, ArtifactState>; issues: DesignIssue[]; decisions: Decision[]; criterion_kinds: string[];

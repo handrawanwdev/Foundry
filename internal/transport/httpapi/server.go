@@ -417,6 +417,14 @@ func (s *Server) Handler() http.Handler {
 	api("DELETE /api/v1/project/blueprint/artifacts/{id}", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		return svc.RemoveArtifact(r.PathValue("id"))
 	}))
+	// Deleting a document: the impact first, then the deletion with what
+	// depends on it.
+	api("GET /api/v1/project/blueprint/documents/{id}/impact", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		return svc.DeleteImpact(r.PathValue("id"))
+	}))
+	api("DELETE /api/v1/project/blueprint/documents/{id}", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		return ok(svc.DeleteDocument(r.PathValue("id")))
+	}))
 	// Command workflow: instructions for external coding agents; never run here.
 	api("GET /api/v1/project/workflow", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		p, err := svc.Store.Load()

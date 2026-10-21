@@ -1,4 +1,4 @@
-import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DesignRules, DesignView, ExportView, LayoutSpec, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
+import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DeleteImpact, DesignRules, DesignView, ExportView, LayoutSpec, PlatformTarget, Project, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
 
 // details lists what an invalid request broke (field = where).
 export interface ErrorDetail { field?: string; message: string }
@@ -79,7 +79,8 @@ export const api = {
   reviseBlueprint: (text: string, focus: string[] = []) => call("POST", "/project/blueprint/revise", { text, focus }),
   editArtifact: (id: string, a: Pick<Artifact, "title" | "summary" | "body" | "category" | "refs">) =>
     call<Project>("PUT", `/project/blueprint/artifacts/${encodeURIComponent(id)}`, a),
-  removeArtifact: (id: string) => call<Project>("DELETE", `/project/blueprint/artifacts/${encodeURIComponent(id)}`),
+  deleteImpact: (id: string) => call<DeleteImpact>("GET", `/project/blueprint/documents/${encodeURIComponent(id)}/impact`),
+  deleteDocument: (id: string) => call("DELETE", `/project/blueprint/documents/${encodeURIComponent(id)}`),
   // Accepts the current state of the artifacts it refers to.
   reviewArtifact: (id: string) => call<Project>("POST", `/project/blueprint/artifacts/${encodeURIComponent(id)}/review`, {}),
   // AI writes or fixes the areas that are missing or invalid.

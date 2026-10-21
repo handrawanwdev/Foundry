@@ -174,7 +174,7 @@ func attachStructure(p *core.Project) {
 // SetPlatform lets the user override the suggested platforms.
 func (s *Service) SetPlatform(targets []core.PlatformTarget) (*core.Project, error) {
 	return s.Store.Update(func(p *core.Project) error {
-		if p.Platform == nil || p.Busy() {
+		if p.Platform == nil || p.Busy() || p.Finalized() {
 			return ErrWrongStage
 		}
 		var ok []core.PlatformTarget
@@ -189,9 +189,7 @@ func (s *Service) SetPlatform(targets []core.PlatformTarget) (*core.Project, err
 			return errors.New("pilih minimal satu platform")
 		}
 		p.Platform.Targets = ok
-		if !p.Finalized() {
-			decideStack(p, "Platform diubah")
-		}
+		decideStack(p, "Platform diubah")
 		p.Log("ui", "Platform diubah")
 		return nil
 	})
@@ -343,6 +341,9 @@ func (s *Service) applyAI(kind, raw, source string) error {
 				return err
 			}
 			stampRefs(p)
+			if w := p.Workflow; w != nil && w.Request != nil && w.Request.Cascade {
+				next = work.KindWorkflow // the cleanup of a deleted document continues with its commands
+			}
 		case work.KindWorkflow:
 			if err := work.ApplyWorkflow(p, raw, spec.Artifacts(p)); err != nil {
 				return err
@@ -415,6 +416,9 @@ func (s *Service) DismissJob() error {
 		switch p.Job.Kind {
 		case work.KindArtifacts:
 			p.ArtifactRequest = nil
+			if p.Workflow != nil && p.Workflow.Request != nil && p.Workflow.Request.Cascade {
+				p.Workflow.Request = nil
+			}
 		case work.KindDesign:
 			if p.UI != nil {
 				p.UI.Request = nil

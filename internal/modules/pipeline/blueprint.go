@@ -277,6 +277,9 @@ func (s *Service) Reopen() error {
 
 // unfinalize returns the workflow to draft.
 func unfinalize(p *core.Project) {
+	if p.Platform != nil {
+		p.Platform.Approved = false
+	}
 	if w := p.Workflow; w != nil {
 		w.Status, w.FinalizedAt = core.CommandDraft, nil
 		for i := range w.Commands {

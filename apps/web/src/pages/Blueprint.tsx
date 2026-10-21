@@ -5,6 +5,7 @@ import {
   AREA_CLASS, AREA_LABEL, ARTIFACT_STATE_CLASS, ARTIFACT_STATE_LABEL, CATEGORY_LABEL, DESIGN_DOCS, designIssuesOf, groupArtifacts,
   isDesignDoc, SCOPE_DOCS, scopeIssuesOf, usedBy,
 } from "../blueprint";
+import { DeleteDialog } from "../components/DeleteDialog";
 import { Markdown } from "../components/Markdown";
 import { PromptBar } from "../components/PromptBar";
 import { isWorking } from "../flow";
@@ -175,7 +176,7 @@ function ArtifactDoc({ project, doc, locked, design, view, onOpen }: {
         {doc.summary && <p className="doc-summary">{doc.summary}</p>}
         <div className="doc-actions">
           {(designDoc || scopeDoc || !doc.builtin) && !locked && !editing && <button onClick={() => setEditing(true)}>{designDoc || scopeDoc ? "Edit data" : "Edit"}</button>}
-          {!doc.builtin && !locked && !editing && <RemoveButton id={doc.id} />}
+          {(designDoc || scopeDoc || !doc.builtin) && !locked && !editing && <DeleteButton doc={doc} onGone={() => onOpen("scope")} />}
           {used.length > 0 && (
             <span className="small muted">Dipakai oleh {used.map((c) => <Link key={c} className="ref-chip" to={`/workflow?cmd=${c}`}>{c}</Link>)}</span>
           )}
@@ -365,15 +366,13 @@ function ArtifactEditor({ doc, onDone }: { doc: Artifact; onDone: () => void }) 
   );
 }
 
-// Two clicks: the second one confirms.
-function RemoveButton({ id }: { id: string }) {
-  const { run, pending } = useProject();
-  const [sure, setSure] = useState(false);
-  if (!sure) return <button className="ghost" onClick={() => setSure(true)}>Hapus</button>;
+// Deleting opens a dialog with the impact; nothing is deleted before it is confirmed.
+function DeleteButton({ doc, onGone }: { doc: Artifact; onGone: () => void }) {
+  const [open, setOpen] = useState(false);
   return (
     <>
-      <button className="danger" disabled={pending === "removeArtifact"} onClick={() => void run("removeArtifact", () => api.removeArtifact(id))}>Ya, hapus artefak</button>
-      <button className="ghost" onClick={() => setSure(false)}>Batal</button>
+      <button className="ghost danger" onClick={() => setOpen(true)}>{doc.builtin ? "Hapus data" : "Hapus"}</button>
+      {open && <DeleteDialog id={doc.id} title={doc.title} onClose={() => setOpen(false)} onDeleted={() => { setOpen(false); onGone(); }} />}
     </>
   );
 }

@@ -12,7 +12,7 @@ const KINDS: PlatformKind[] = ["web", "android", "ios", "desktop", "backend", "c
 
 export function PlatformStructure({ project }: { project: Project }) {
   const { run } = useProject();
-  const locked = project.stage === "READY" || !!project.platform?.approved;
+  const locked = project.stage === "READY";
   const targets = project.platform?.targets ?? [];
   const has = (k: PlatformKind) => targets.some((t) => t.kind === k);
 
