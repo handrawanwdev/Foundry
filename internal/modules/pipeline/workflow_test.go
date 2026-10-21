@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -144,11 +145,28 @@ func TestWorkflowLifecycle(t *testing.T) {
 	if _, err := s.ReviewCommand("CMD-001", true, ""); !errors.Is(err, pipeline.ErrFinalized) {
 		t.Fatalf("edit after finalize err = %v", err)
 	}
+	if err := s.DeleteDocument("threat-model"); !errors.Is(err, pipeline.ErrFinalized) {
+		t.Fatalf("delete after finalize err = %v", err)
+	}
+	if !p.Platform.Approved {
+		t.Fatal("finalize did not approve the platform")
+	}
+	targets := p.Platform.Targets
+	if _, err := s.SetPlatform([]core.PlatformTarget{{Kind: core.PlatformWeb}}); !errors.Is(err, pipeline.ErrWrongStage) {
+		t.Fatalf("platform change after finalize err = %v", err)
+	}
+	if !reflect.DeepEqual(load(t, s).Platform.Targets, targets) {
+		t.Fatal("refused platform change was saved")
+	}
 	if err := s.Reopen(); err != nil {
 		t.Fatal(err)
 	}
 	if p = load(t, s); p.Stage != core.StageDesign || p.Workflow.Status != core.CommandDraft || p.Workflow.Commands[0].Status != core.CommandDraft {
 		t.Fatalf("reopened = %s %+v", p.Stage, p.Workflow)
+	}
+	// Reopening unlocks the platform for another revision.
+	if p.Platform.Approved {
+		t.Fatal("platform still approved after reopen")
 	}
 	// Removing an artifact a command never used leaves the workflow valid;
 	// the next finalize drops its exported file.

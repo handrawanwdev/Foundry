@@ -142,6 +142,8 @@ func fakeAgent() {
 	case strings.Contains(prompt, "workflow planner"):
 		countRun("workflow")
 		switch {
+		case strings.Contains(prompt, "dihapus dari blueprint"):
+			fmt.Println(cleanupWorkflowJSON(prompt))
 		case strings.Contains(prompt, "CURRENT COMMANDS"):
 			fmt.Println(workflowRevisionJSON)
 		case mode == "embedded":
@@ -152,6 +154,15 @@ func fakeAgent() {
 			fmt.Println(workflowJSON)
 		}
 	case strings.Contains(prompt, "blueprint editor"):
+		countRun("blueprint")
+		if strings.Contains(prompt, "dihapus dari blueprint") {
+			if mode == "cleanup_fail" {
+				fmt.Println("maaf, saya tidak bisa")
+				return
+			}
+			fmt.Println(cleanupArtifactsJSON)
+			return
+		}
 		if strings.Contains(prompt, "Lengkapi blueprint: tulis area data") {
 			fmt.Println(`{"artifacts": [{"id": "data-lifecycle", "title": "Siklus Data", "category": "data", "body": "## Retensi\n\nAsumsi: 5 tahun."}]}`)
 			return
@@ -171,7 +182,32 @@ const workflowJSON = `{"commands": [
  {"id": "C3", "name": "Layar janji", "objective": "Layar janji temu", "instructions": "Bangun layar sesuai desain.",
   "depends_on": ["C1"], "artifacts": ["design-rules", "layout-spec", "requirements"], "covers": ["REQ-001"]}]}`
 
-const cyclicWorkflowJSON = `{"commands": [
+// cleanupArtifactsJSON is the AI's rewrite of the threat model after a
+// document it referred to was deleted.
+const cleanupArtifactsJSON = `{"artifacts": [{"id": "threat-model", "title": "Threat Model", "category": "quality", "area": "security",
+  "summary": "Ancaman utama tanpa siklus data", "body": "## Aset\n\n- Data pasien", "refs": ["requirements"]}]}`
+
+// cleanupWorkflowJSON rewrites exactly the commands the cleanup request is
+// about, like an AI that follows "do not change other commands".
+func cleanupWorkflowJSON(prompt string) string {
+	rewrites := map[string]string{
+		"CMD-002": `{"id": "CMD-002", "name": "Backend janji temu", "objective": "Endpoint janji", "instructions": "Implementasikan endpoint sesuai kontrak CMD-001.",
+  "depends_on": ["CMD-001"], "artifacts": ["architecture"]}`,
+		"CMD-003": `{"id": "CMD-003", "name": "Layar janji", "objective": "Layar janji temu", "instructions": "Bangun layar dari requirement; desain menyusul.",
+  "depends_on": ["CMD-001"], "artifacts": ["requirements"], "covers": ["REQ-001"]}`,
+	}
+	_, about, _ := strings.Cut(prompt, "Commands the request is about: ")
+	about, _, _ = strings.Cut(about, ".\n")
+	var out []string
+	for _, id := range strings.Split(about, ", ") {
+		if r, ok := rewrites[id]; ok {
+			out = append(out, r)
+		}
+	}
+	return `{"commands": [` + strings.Join(out, ",") + `]}`
+}
+
+const cyclicWorkflowJSON =`{"commands": [
  {"id": "C1", "name": "A", "objective": "a", "instructions": "a", "depends_on": ["C2"], "artifacts": ["requirements"]},
  {"id": "C2", "name": "B", "objective": "b", "instructions": "b", "depends_on": ["C1"], "artifacts": ["requirements"]}]}`
 

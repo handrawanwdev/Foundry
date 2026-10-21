@@ -60,6 +60,37 @@ func TestGuardAndFlow(t *testing.T) {
 	}
 }
 
+// The delete routes exist and map the pipeline's refusal to 409; the
+// document id comes from the path.
+func TestDeleteDocumentRoutes(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	s := New(nil, "/bin/foundry")
+	if _, err := s.Open(t.TempDir(), "demo", false); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	do := func(method, path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, nil)
+		r.RemoteAddr, r.Host = "127.0.0.1:50000", "127.0.0.1:8080"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	// No blueprint yet: both are refused as the wrong stage, not as an unknown route.
+	for _, c := range []struct{ method, path string }{
+		{"GET", "/api/v1/project/blueprint/documents/threat-model/impact"},
+		{"DELETE", "/api/v1/project/blueprint/documents/threat-model"},
+	} {
+		if w := do(c.method, c.path); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "blueprint belum dibuat") {
+			t.Fatalf("%s %s: %d %s", c.method, c.path, w.Code, w.Body)
+		}
+	}
+	// Only DELETE deletes; any other method falls through to the API's 404.
+	if w := do("POST", "/api/v1/project/blueprint/documents/threat-model"); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "not found") {
+		t.Fatalf("POST delete route: %d %s", w.Code, w.Body)
+	}
+}
+
 func TestSPAAssets(t *testing.T) {
 	ui := fstest.MapFS{
 		"index.html":    {Data: []byte("<!doctype html><title>Foundry</title>")},

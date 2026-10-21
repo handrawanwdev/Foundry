@@ -258,6 +258,9 @@ func (s *Service) DeleteDocument(id string) error {
 		if err := blueprintEditable(p); err != nil {
 			return err
 		}
+		if p.Job != nil && p.Job.Status == core.JobWaiting {
+			return ErrBusy // the AI host still owes another answer; the cleanup would replace it
+		}
 		im, err := deleteDoc(p, id)
 		if err != nil {
 			return err
