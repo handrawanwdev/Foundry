@@ -8,6 +8,8 @@
 
 **Turn ideas into structured blueprints and command workflows ready for your coding agent.**
 
+[![CI](https://github.com/handrawanwdev/Foundry/actions/workflows/ci.yml/badge.svg)](https://github.com/handrawanwdev/Foundry/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/handrawanwdev/Foundry?include_prereleases)](https://github.com/handrawanwdev/Foundry/releases)
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -167,14 +169,24 @@ A single project can span multiple platforms. Foundry **doesn't impose a specifi
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Download a release
+
+Grab the archive for your OS from [Releases](https://github.com/handrawanwdev/Foundry/releases) (Linux, macOS, Windows — amd64 & arm64), extract it, and run:
+
+```bash
+foundry serve
+```
+
+The UI is embedded in the binary; you only need an AI CLI installed (`claude`, `codex`, `opencode`, `qwen`, or `gemini`).
+
+### Build from source
+
+Prerequisites:
 
 - **Go** 1.22+
 - **Node.js** 20.19+ or 22.12+ (to build the UI)
 - **make**
 - At least one AI CLI installed: `claude`, `codex`, `opencode`, `qwen`, or `gemini`
-
-### Build & run
 
 ```bash
 git clone https://github.com/handrawanwdev/Foundry.git
@@ -221,7 +233,7 @@ foundry mcp --print-config --project ~/work/clinic
   "mcpServers": {
     "foundry": {
       "command": "/path/to/foundry",
-      "args": ["mcp", "--allow", "ALL", "--project", "/home/me/work/clinic"]
+      "args": ["mcp", "--allow", "READ,WRITE,MODIFY", "--project", "/home/me/work/clinic"]
     }
   }
 }
@@ -240,7 +252,7 @@ foundry mcp --print-config --project ~/work/clinic
 | `next_work`        | `MODIFY`   | Fetch the next piece of design work Foundry needs                           |
 | `submit_work`      | `WRITE`    | Hand back a result; Foundry validates it                                    |
 
-Restrict permissions with `--allow READ,WRITE,MODIFY` or `--allow ALL` (default: `READ`).
+Permissions are set with `--allow` (default: `READ`). The printed config grants `READ,WRITE,MODIFY`, which is what `next_work` and `submit_work` need; use `--allow READ` for read-only hosts.
 
 ## 🚫 What Foundry Does Not Do
 

@@ -961,6 +961,11 @@ func guard(next http.Handler) http.Handler {
 				respond.Fail(w, respond.CodeForbidden, "origin tidak diizinkan", http.StatusForbidden)
 				return
 			}
+		} else if r.Header.Get("Sec-Fetch-Site") == "cross-site" && strings.HasPrefix(r.URL.Path, "/api/") {
+			// Browsers send no Origin on cross-site GETs (<img>, links); the
+			// fetch metadata still names them. Pages stay reachable by link.
+			respond.Fail(w, respond.CodeForbidden, "origin tidak diizinkan", http.StatusForbidden)
+			return
 		}
 		next.ServeHTTP(w, r)
 	})

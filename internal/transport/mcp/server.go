@@ -265,6 +265,6 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 func ClientConfig(binary, dir string) map[string]any {
 	return map[string]any{"mcpServers": map[string]any{"foundry": map[string]any{
 		"command": binary,
-		"args":    []string{"mcp", "--allow", "ALL", "--project", dir},
+		"args":    []string{"mcp", "--allow", "READ,WRITE,MODIFY", "--project", dir},
 	}}}
 }

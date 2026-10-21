@@ -1,0 +1,40 @@
+version: 2
+
+project_name: foundry
+
+before:
+  hooks:
+    # The UI is embedded into the binary, so it must be built first.
+    - sh -c "cd apps/web && npm ci && npm run build"
+
+builds:
+  - main: ./cmd/foundry
+    binary: foundry
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - README.id.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"

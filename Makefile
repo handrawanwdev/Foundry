@@ -2,6 +2,9 @@ WEB := apps/web
 # Binary suffix follows target OS (".exe" on Windows, empty elsewhere; respects GOOS).
 EXE := $(shell go env GOEXE)
 BIN := bin/foundry$(EXE)
+# Version stamped into `foundry version`: the git tag, else the commit, else "dev".
+VERSION ?= $(or $(shell git describe --tags --always --dirty),dev)
+LDFLAGS := -X main.version=$(VERSION)
 
 ifeq ($(OS),Windows_NT)
 # Force cmd.exe so recipes behave the same whether or not sh.exe is on PATH.
@@ -21,11 +24,11 @@ else
 endif
 
 build: web
-	go build -o $(BIN) ./cmd/foundry
+	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/foundry
 
 # Installs foundry to $GOBIN (default $GOPATH/bin) so it runs from any folder.
 install: web
-	go install ./cmd/foundry
+	go install -ldflags "$(LDFLAGS)" ./cmd/foundry
 
 test:
 	go vet ./...

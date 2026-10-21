@@ -8,6 +8,8 @@
 
 **Ubah ide menjadi blueprint terstruktur dan command workflow yang siap dikerjakan coding agent.**
 
+[![CI](https://github.com/handrawanwdev/Foundry/actions/workflows/ci.yml/badge.svg)](https://github.com/handrawanwdev/Foundry/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/handrawanwdev/Foundry?include_prereleases)](https://github.com/handrawanwdev/Foundry/releases)
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -167,14 +169,24 @@ Satu proyek dapat mencakup beberapa platform sekaligus. Foundry **tidak memaksak
 
 ## 🚀 Quick Start
 
-### Prasyarat
+### Unduh rilis
+
+Ambil arsip sesuai OS dari [Releases](https://github.com/handrawanwdev/Foundry/releases) (Linux, macOS, Windows — amd64 & arm64), ekstrak, lalu jalankan:
+
+```bash
+foundry serve
+```
+
+UI sudah ter-embed di binary; cukup pasang satu AI CLI (`claude`, `codex`, `opencode`, `qwen`, atau `gemini`).
+
+### Build dari source
+
+Prasyarat:
 
 - **Go** 1.22+
 - **Node.js** 20.19+ atau 22.12+ (untuk build UI)
 - **make**
 - Minimal satu AI CLI terpasang: `claude`, `codex`, `opencode`, `qwen`, atau `gemini`
-
-### Build & jalankan
 
 ```bash
 git clone https://github.com/handrawanwdev/Foundry.git
@@ -219,7 +231,7 @@ foundry mcp --print-config --project ~/kerja/klinik
   "mcpServers": {
     "foundry": {
       "command": "/path/to/foundry",
-      "args": ["mcp", "--allow", "ALL", "--project", "/home/me/kerja/klinik"]
+      "args": ["mcp", "--allow", "READ,WRITE,MODIFY", "--project", "/home/me/kerja/klinik"]
     }
   }
 }
@@ -238,7 +250,7 @@ foundry mcp --print-config --project ~/kerja/klinik
 | `next_work`        | `MODIFY` | Ambil pekerjaan rancangan berikutnya yang dibutuhkan Foundry           |
 | `submit_work`      | `WRITE`  | Serahkan hasil kerja; Foundry yang memvalidasi                         |
 
-Batasi izin dengan `--allow READ,WRITE,MODIFY` atau `--allow ALL` (default: `READ`).
+Izin diatur dengan `--allow` (default: `READ`). Config hasil cetak memberi `READ,WRITE,MODIFY`, yang dibutuhkan `next_work` dan `submit_work`; pakai `--allow READ` untuk host yang hanya membaca.
 
 ## 🚫 Yang Tidak Dilakukan Foundry
 

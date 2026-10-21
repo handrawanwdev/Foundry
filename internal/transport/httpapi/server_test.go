@@ -45,6 +45,18 @@ func TestGuardAndFlow(t *testing.T) {
 	if w := do("GET", "/api/v1/project", "", "", "evil.example"); w.Code != 403 {
 		t.Fatalf("rebinding host allowed: %d", w.Code)
 	}
+	// A cross-site GET carries no Origin; fetch metadata still blocks the API
+	// but not a link to a page.
+	for path, want := range map[string]int{"/api/v1/ai/models": 403, "/simple/tell": 200} {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Host, r.RemoteAddr = "127.0.0.1:8080", "127.0.0.1:50000"
+		r.Header.Set("Sec-Fetch-Site", "cross-site")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Fatalf("cross-site GET %s: %d, want %d", path, w.Code, want)
+		}
+	}
 	// A LAN peer that claims Host: localhost is still refused.
 	r := httptest.NewRequest("GET", "/api/v1/project", nil)
 	r.Host, r.RemoteAddr = "localhost:8080", "192.168.1.9:40000"
