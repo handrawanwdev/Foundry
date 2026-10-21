@@ -2,8 +2,11 @@ import { useState } from "react";
 import { api } from "../api";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
-import type { Survey, SurveyKind } from "../types";
-import { defaultSurvey, existingComponents, isExistingProject, SURVEY_KINDS, surveySummary, TELL_ANALYSIS, tellIntro, tellPlaceholder, tellTitle, tellWaiting } from "../tell";
+import type { Survey } from "../types";
+import {
+  archOptions, defaultSurvey, existingComponents, isExistingProject, kindsFromCode, SURVEY_KINDS, SURVEY_PRIORITIES, SURVEY_STAGES, SURVEY_USERS,
+  surveySummary, TELL_ANALYSIS, tellIntro, tellPlaceholder, tellTitle, tellWaiting, toggle,
+} from "../tell";
 
 const EXAMPLES = [
   "Aplikasi klinik: pasien membuat janji temu dari HP, admin mengatur jadwal dokter dan tagihan dari web.",
@@ -15,12 +18,14 @@ const EXAMPLES = [
 export function TellPage() {
   const { project, run, pending } = useProject();
   const [story, setStory] = useState(project?.story ?? "");
-  const [survey, setSurvey] = useState<Survey>(() => defaultSurvey(project?.survey));
+  const [survey, setSurvey] = useState<Survey>(() => defaultSurvey(project?.survey, project));
   const [confirmReset, setConfirmReset] = useState(false);
   if (!project) return null;
 
   const existing = isExistingProject(project);
   const components = existingComponents(project);
+  const fromCode = project.survey?.kinds?.length ? [] : kindsFromCode(project);
+  const set = (patch: Partial<Survey>) => setSurvey({ ...survey, ...patch });
   const discovering = project.stage === "DISCOVERY" && isWorking(project);
   const hasDownstream = (project.features?.length ?? 0) > 0;
 
@@ -67,57 +72,49 @@ export function TellPage() {
       <div className="tell-options">
         <details className="theme-pick" open={!hasDownstream}>
           <summary className="muted small">Survey FOUNDRY: {surveySummary(survey)}</summary>
-          <p className="muted small">Jawaban mengikat stack, latency, event, dan struktur. Kosong = default MVP.</p>
-          <div className="survey-kinds">
-            {SURVEY_KINDS.map((k) => {
-              const on = (survey.kinds ?? []).includes(k.id);
-              return (
-                <button key={k.id} type="button" className={on ? "chip on" : "chip"} onClick={() => {
-                  const cur = survey.kinds ?? [];
-                  const next = on ? cur.filter((x) => x !== k.id) : [...cur, k.id];
-                  setSurvey({ ...survey, kinds: next as SurveyKind[] });
-                }}>{k.label}</button>
-              );
-            })}
-          </div>
+          <p className="muted small">Semua boleh dibiarkan. Yang kosong ditentukan Foundry dari cerita dan kebutuhan, dengan alasan — bukan dikarang jadi batasan.</p>
           <div className="survey">
+            <div className="survey-field survey-wide">
+              <span>Platform {fromCode.length > 0 ? "(terbaca dari kode; ubah bila perlu)" : "(boleh lebih dari satu; kosong = dari cerita)"}</span>
+              <div className="survey-kinds">
+                {SURVEY_KINDS.map((k) => (
+                  <button key={k.id} type="button" aria-pressed={survey.kinds?.includes(k.id) ?? false}
+                    className={survey.kinds?.includes(k.id) ? "chip on" : "chip"}
+                    onClick={() => set({ kinds: toggle(survey.kinds, k.id) })}>{k.label}</button>
+                ))}
+              </div>
+            </div>
             <label>Pengguna
-              <select value={survey.users} onChange={(e) => setSurvey({ ...survey, users: e.target.value as Survey["users"] })}>
-                <option value="self">hanya saya</option>
-                <option value="team">tim kecil</option>
-                <option value="public">publik</option>
+              <select value={survey.users ?? ""} onChange={(e) => set({ users: e.target.value as Survey["users"] })}>
+                <option value="">Foundry baca dari cerita</option>
+                {SURVEY_USERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </label>
-            <label>Tahap
-              <select value={survey.stage} onChange={(e) => setSurvey({ ...survey, stage: e.target.value as Survey["stage"] })}>
-                <option value="prototype">prototipe</option>
-                <option value="mvp">MVP</option>
-                <option value="production">produksi</option>
+            <label>Target delivery
+              <select value={survey.stage || "mvp"} onChange={(e) => set({ stage: e.target.value as Survey["stage"] })}>
+                {SURVEY_STAGES.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
+              <span className="small">{SURVEY_STAGES.find((o) => o.id === (survey.stage || "mvp"))?.hint}</span>
+            </label>
+            <label className="survey-wide">Preferensi arsitektur
+              <select value={survey.architecture ?? ""} onChange={(e) => set({ architecture: e.target.value as Survey["architecture"] })}>
+                <option value="">Foundry memilih berdasarkan kebutuhan</option>
+                {archOptions(existing, survey.architecture).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </label>
-            <label>Latency p95
-              <select value={survey.latency} onChange={(e) => setSurvey({ ...survey, latency: e.target.value as Survey["latency"] })}>
-                <option value="500">&lt; 500 ms</option>
-                <option value="200">&lt; 200 ms</option>
-                <option value="100">&lt; 100 ms</option>
-              </select>
-            </label>
-            <label>Webhook
-              <select value={survey.webhook} onChange={(e) => setSurvey({ ...survey, webhook: e.target.value as Survey["webhook"] })}>
-                <option value="none">tidak</option>
-                <option value="in">terima</option>
-                <option value="out">kirim</option>
-                <option value="both">keduanya</option>
-              </select>
-            </label>
-            <label>Service
-              <select value={survey.services} onChange={(e) => setSurvey({ ...survey, services: e.target.value as Survey["services"] })}>
-                <option value="one">satu aplikasi modular</option>
-                <option value="many">beberapa service terpisah</option>
-              </select>
-            </label>
-            <label>Stack (kosong = Foundry pilih)
-              <input value={survey.stack ?? ""} onChange={(e) => setSurvey({ ...survey, stack: e.target.value })} placeholder="opsional" />
+            <div className="survey-field survey-wide">
+              <span>Prioritas kualitas (opsional) — kualitas dasar tetap dipertimbangkan walau tidak dipilih</span>
+              <div className="survey-kinds">
+                {SURVEY_PRIORITIES.map((o) => (
+                  <button key={o.id} type="button" aria-pressed={survey.priorities?.includes(o.id) ?? false}
+                    className={survey.priorities?.includes(o.id) ? "chip on" : "chip"}
+                    onClick={() => set({ priorities: toggle(survey.priorities, o.id) })}>{o.label}</button>
+                ))}
+              </div>
+            </div>
+            <label className="survey-wide">Batasan wajib (opsional)
+              <textarea rows={3} maxLength={4000} value={survey.constraints ?? ""} onChange={(e) => set({ constraints: e.target.value })}
+                placeholder="Mis. wajib PostgreSQL; integrasi dengan sistem kasir yang ada; harus jalan di server sendiri; tidak boleh pakai layanan berbayar." />
             </label>
           </div>
         </details>

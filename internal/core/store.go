@@ -90,6 +90,7 @@ func (s *Store) Load() (*Project, error) {
 	migrateLegacyDesign(&p, b)
 	migrateArtifactIDs(&p)
 	migratePlatformAudience(&p, b)
+	p.Survey.FillDefaults() // answers of the first survey move to the current questions
 	return &p, nil
 }
 

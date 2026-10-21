@@ -223,7 +223,7 @@ func TestPlatformCombinations(t *testing.T) {
 
 func TestPreferences(t *testing.T) {
 	p := project("Aplikasi tiket", "web", "android", "backend")
-	p.Survey = &core.Survey{Stack: "Vue, Laravel, MySQL, React Native"}
+	p.Survey = &core.Survey{Constraints: "Vue, Laravel, MySQL, React Native"}
 	s := Recommend(p)
 	for area, want := range map[string]string{core.TechFrontend: "Vue + TypeScript + Vite", core.TechBackend: "Laravel + PHP",
 		core.TechDatabase: "MySQL", core.TechMobile: "React Native + TypeScript + Expo"} {
@@ -239,9 +239,39 @@ func TestPreferences(t *testing.T) {
 		t.Errorf("testing = %q", got)
 	}
 	// "react native" is mobile, not a React web frontend.
-	p.Survey.Stack = "react native"
+	p.Survey.Constraints = "react native"
 	if d := Recommend(p).Decision(core.TechFrontend); d.Source == core.SourcePreference {
-		t.Errorf("frontend from %q: %+v", p.Survey.Stack, d)
+		t.Errorf("frontend from %q: %+v", p.Survey.Constraints, d)
+	}
+	// A prohibition is no preference; the required part still binds.
+	p.Survey.Constraints = "Backend wajib Laravel.\nJangan pakai MySQL, tidak boleh Vue"
+	s = Recommend(p)
+	if d := s.Decision(core.TechBackend); d.Choice() != "Laravel + PHP" || d.Source != core.SourcePreference {
+		t.Errorf("backend = %+v", d)
+	}
+	for _, area := range []string{core.TechDatabase, core.TechFrontend} {
+		if d := s.Decision(area); d.Source == core.SourcePreference {
+			t.Errorf("%s from a prohibition: %+v", area, d)
+		}
+	}
+}
+
+// The architecture the user picks wins over the one the needs suggest.
+func TestSurveyArchitecture(t *testing.T) {
+	p := project("Sistem pemesanan dengan microservices dan deploy terpisah", "web", "backend")
+	p.Survey = &core.Survey{Architecture: core.SurveyArchModular}
+	if d := Recommend(p).Decision(core.TechArchitecture); d.Choice() != core.ArchModular || d.Source != core.SourcePreference {
+		t.Errorf("modular = %+v", d)
+	}
+	p = project("Aplikasi tiket", "web", "backend")
+	p.Survey = &core.Survey{Architecture: core.SurveyArchServices, Stage: core.SurveyStagePrototype}
+	if d := Recommend(p).Decision(core.TechArchitecture); d.Choice() != core.ArchMicroservices || d.Source != core.SourcePreference {
+		t.Errorf("services = %+v", d)
+	}
+	// Left to Foundry: a prototype stays simple.
+	p.Survey = &core.Survey{Stage: core.SurveyStagePrototype}
+	if d := Recommend(p).Decision(core.TechArchitecture); d.Choice() != core.ArchSimple || d.Source == core.SourcePreference {
+		t.Errorf("auto = %+v", d)
 	}
 }
 

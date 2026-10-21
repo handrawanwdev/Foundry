@@ -57,19 +57,7 @@ STORY:
 	b.WriteString("\n\n")
 	b.WriteString(standard.Rules)
 	b.WriteString("\n")
-	if s := p.Survey; s != nil {
-		s.FillDefaults()
-		b.WriteString("SURVEY (user answers; honor them):\n")
-		if len(s.Kinds) > 0 {
-			fmt.Fprintf(&b, "- Software kinds: %s. Do not drop a chosen kind.\n", strings.Join(s.Kinds, ", "))
-		}
-		fmt.Fprintf(&b, "- Users: %s. Stage: %s. Latency budget p95: <%s ms. Webhook: %s. Services: %s.\n",
-			s.Users, s.Stage, s.Latency, s.Webhook, s.Services)
-		if s.Stack != "" {
-			fmt.Fprintf(&b, "- Stack preference: %s (Foundry's technology recommendation starts from it; record it as a constraint).\n", s.Stack)
-		}
-		b.WriteString("\n")
-	}
+	b.WriteString(surveyPrompt(p))
 	if p.Structure != nil && p.Structure.Mode == core.StructureExisting {
 		b.WriteString("EXISTING PROJECT COMPONENTS (respect this architecture):\n")
 		for _, c := range p.Structure.Components {
@@ -87,7 +75,7 @@ in the blueprint. For other software
 (embedded, cli, other) write the technology constraints (language, toolchain, runtime, hardware) the request names or needs
 into an artifact, marked as recommendation when the user did not name them.
 When modules exchange domain events, list them (name domain.happened, producer module, consumers) in blueprint.events.events.
-Set performance.budget from the survey latency when the product has a request/response path.
+Set performance.budget only when the story or the survey gives a reason; otherwise leave it empty.
 Every requirement must be covered by at least one feature. Every feature needs 2-6 concrete sub-features.
 
 Blueprint rules:
@@ -132,7 +120,7 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
     "workers": [{"name": "email", "trigger": "queue|cron|event", "job": ""}],
     "aggregation": {"needed": false, "approach": "", "reads": [""]},
     "events": {"events": [{"type": "appointment.created", "producer": "janji-temu", "consumers": ["identity"], "durable": true}]},
-    "performance": {"budget": "< 500 ms p95", "health": "GET /health and GET /ready", "pagination": "", "caching": "", "avoid": [""], "indexing": ""},
+    "performance": {"budget": "", "health": "GET /health and GET /ready", "pagination": "", "caching": "", "avoid": [""], "indexing": ""},
     "coding": {"backend": [""], "frontend": [""], "api": {"style": "REST", "versioning": "/api/v1", "errors": "", "pagination": ""}}
   },
   "requirements": [{"id": "REQ-001", "text": "", "priority": "MUST|SHOULD|COULD", "acceptance": [` + criterionShape + `], "untestable": ""}],
@@ -249,7 +237,7 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	SetArtifacts(p, out.Artifacts)
 	p.UI = nil
 	p.Done = nonEmpty(out.Done)
-	p.Decisions = mergeDecisions(nil, cleanDecisions(out.Decisions))
+	p.Decisions = mergeDecisions(nil, append(cleanDecisions(out.Decisions), SurveyConflicts(p)...))
 	p.Skips = nil
 	for _, sk := range out.Skip {
 		skipArea(p, sk.Area, sk.Reason) // an invalid skip is dropped: the area stays expected
@@ -305,7 +293,9 @@ func applySurveyKinds(s *core.Survey, targets []core.PlatformTarget) []core.Plat
 			add(core.PlatformCLI)
 		case core.SurveyKindAPI, core.SurveyKindBot:
 			add(core.PlatformBackend)
-		}
+		case core.SurveyKindEmbedded:
+			add(core.PlatformEmbedded)
+		} // "other" names no kind: the discovery picks it from the story
 	}
 	return targets
 }

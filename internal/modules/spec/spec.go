@@ -90,6 +90,7 @@ func requirementsMarkdown(p *core.Project) string {
 		}
 		b.WriteString("\n")
 	}
+	b.WriteString(surveyMarkdown(p))
 	if len(p.Requirements) > 0 {
 		b.WriteString("## Requirements\n\n| ID | Prioritas | Kebutuhan |\n|---|---|---|\n")
 		for _, r := range p.Requirements {
@@ -133,6 +134,82 @@ func requirementsMarkdown(p *core.Project) string {
 		list("Keamanan", d.Security)
 		list("Kebutuhan teknis", d.TechNeeds)
 	}
+	return b.String()
+}
+
+// Sources of a survey decision.
+const (
+	fromUser    = "Pilihan pengguna"
+	fromFoundry = "Rekomendasi Foundry"
+	fromDefault = "Default Foundry"
+	unknown     = "Belum diketahui"
+)
+
+// surveyMarkdown is the survey as decisions, each with where it came from:
+// the user's answer, Foundry's recommendation, a default, or still unknown.
+func surveyMarkdown(p *core.Project) string {
+	s := p.Survey
+	if s == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Keputusan teknis dari survey\n\n| Bagian | Keputusan | Sumber |\n|---|---|---|\n")
+	row := func(part, decision, source string) {
+		fmt.Fprintf(&b, "| %s | %s | %s |\n", part, cell(decision), source)
+	}
+	pick := func(cs []core.Choice, ids []string) string {
+		var out []string
+		for _, id := range ids {
+			out = append(out, core.ChoiceLabel(cs, id))
+		}
+		return strings.Join(out, ", ")
+	}
+	switch {
+	case len(s.Kinds) > 0:
+		row("Platform", pick(core.SurveyKinds, s.Kinds), fromUser)
+	case p.Platform != nil && len(p.Platform.Targets) > 0:
+		var kinds []string
+		for _, t := range p.Platform.Targets {
+			kinds = append(kinds, t.Kind)
+		}
+		row("Platform", strings.Join(kinds, ", ")+" (dari cerita)", fromFoundry)
+	default:
+		row("Platform", "Dibaca dari cerita saat discovery", unknown)
+	}
+	switch {
+	case s.Users != "":
+		row("Pengguna", core.ChoiceLabel(core.SurveyUsers, s.Users), fromUser)
+	case p.Discovery != nil && len(p.Discovery.Roles) > 0:
+		var roles []string
+		for _, r := range p.Discovery.Roles {
+			roles = append(roles, r.Name)
+		}
+		row("Pengguna", strings.Join(roles, ", ")+" (dari cerita)", fromFoundry)
+	default:
+		row("Pengguna", "Dibaca dari cerita saat discovery", unknown)
+	}
+	source := fromUser
+	if s.Stage == "" {
+		source = fromDefault
+	}
+	row("Target delivery", core.ChoiceLabel(core.SurveyStages, s.Delivery())+": "+core.DeliveryCriteria[s.Delivery()], source)
+	if s.Architecture != "" {
+		row("Arsitektur", core.ChoiceLabel(core.SurveyArchs, s.Architecture), fromUser)
+	} else {
+		row("Arsitektur", "Dipilih dari kebutuhan; lihat Teknologi & Struktur", fromFoundry)
+	}
+	if len(s.Priorities) > 0 {
+		row("Prioritas kualitas", pick(core.SurveyPriorities, s.Priorities), fromUser)
+	} else {
+		row("Prioritas kualitas", "Tidak ada prioritas khusus", fromDefault)
+	}
+	if s.Constraints != "" {
+		row("Batasan wajib", s.Constraints, fromUser)
+	} else {
+		row("Batasan wajib", "Tidak ada yang disebutkan", fromDefault)
+	}
+	b.WriteString("\nKualitas dasar (validasi input, kontrol akses sesuai pengguna, test alur utama) tetap berlaku walau tidak dipilih sebagai prioritas. " +
+		"Konflik antarjawaban tercatat di Keputusan, Asumsi & Risiko.\n\n")
 	return b.String()
 }
 

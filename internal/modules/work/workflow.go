@@ -75,7 +75,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	} else {
 		b.WriteString("EXISTING CODEBASE: no (new project).\n")
 	}
-	b.WriteString("\n")
+	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeDocs(&b, docs)
 	w := p.Workflow
 	if w == nil || len(w.Commands) == 0 {

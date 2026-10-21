@@ -379,7 +379,7 @@ func Analyze(p *core.Project) []string {
 		if p.Survey.HasWebhook() {
 			found["webhook"] = true
 		}
-		if p.Survey.Services == core.SurveyServicesMany {
+		if p.Survey.Architecture == core.SurveyArchServices {
 			found["independent_scaling"] = true
 		}
 		if p.Survey.Latency == core.SurveyLatency100 {
@@ -428,14 +428,18 @@ func platformOf(p *core.Project) core.TechPlatform {
 	return t
 }
 
-// preferences reads the stack the user stated in the survey: per area the
-// known option it names best. A longer phrase of another area wins over a
-// word inside it ("react native" is mobile, not the React frontend).
+// preferences reads the stack the user requires in the survey constraints:
+// per area the known option it names best. A longer phrase of another area
+// wins over a word inside it ("react native" is mobile, not the React
+// frontend). A prohibition ("jangan MongoDB") names no preference.
 func preferences(p *core.Project) map[string]string {
-	if p.Survey == nil || strings.TrimSpace(p.Survey.Stack) == "" {
+	if p.Survey == nil {
 		return nil
 	}
-	text := normalize(p.Survey.Stack)
+	text := normalize(required(p.Survey.Constraints))
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
 	out := map[string]string{}
 	for area, opts := range Catalog {
 		own := text
@@ -472,6 +476,30 @@ func preferences(p *core.Project) map[string]string {
 		}
 	}
 	return out
+}
+
+// negations mark a clause that forbids rather than requires.
+var negations = []string{"tidak", "jangan", "bukan", "tanpa", "hindari", "larang", "dilarang", "kecuali", "no", "not", "avoid", "without", "never"}
+
+// required is the constraint text without its prohibitions: clauses split
+// at punctuation and line ends, those with a negation dropped.
+func required(s string) string {
+	var keep []string
+	for _, c := range strings.FieldsFunc(s, func(r rune) bool { return strings.ContainsRune(".,;:\n", r) }) {
+		words := strings.Fields(normalize(c))
+		if !slices.ContainsFunc(words, func(w string) bool { return slices.Contains(negations, w) }) {
+			keep = append(keep, strings.TrimSpace(c))
+		}
+	}
+	return strings.Join(keep, ", ")
+}
+
+// quote shortens a long user text for a reason line.
+func quote(s string) string {
+	if r := []rune(s); len(r) > 80 {
+		return string(r[:77]) + "…"
+	}
+	return s
 }
 
 // ---------- recommendation ----------
@@ -601,8 +629,16 @@ func (r recommender) base(s *core.TechStack, area string) (value, reason, source
 	if !on[area] {
 		return "", "", "", false
 	}
+	if area == core.TechArchitecture && r.p.Survey != nil {
+		switch r.p.Survey.Architecture {
+		case core.SurveyArchModular:
+			return core.ArchModular, "Pilihanmu di survey: satu aplikasi modular.", core.SourcePreference, true
+		case core.SurveyArchServices:
+			return core.ArchMicroservices, "Pilihanmu di survey: beberapa service terpisah.", core.SourcePreference, true
+		}
+	}
 	if v := r.pref[area]; v != "" && fits(s, area, v) {
-		return v, "Sesuai preferensi stack kamu: “" + strings.TrimSpace(r.p.Survey.Stack) + "”.", core.SourcePreference, true
+		return v, "Sesuai batasan wajib di survey: “" + quote(required(r.p.Survey.Constraints)) + "”.", core.SourcePreference, true
 	}
 	profile := func() (string, string, string, bool) {
 		x := r.prof.Decisions[area]

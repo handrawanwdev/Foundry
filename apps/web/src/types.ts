@@ -3,16 +3,23 @@
 // DESIGN: blueprint and workflow in progress; READY: both finalized, export written.
 export type Stage = "TELL" | "DISCOVERY" | "DESIGN" | "READY";
 export type PlatformKind = "web" | "android" | "ios" | "desktop" | "backend" | "cli" | "embedded" | "other";
-export type SurveyKind = "web" | "mobile" | "desktop" | "cli" | "api" | "bot";
+export type SurveyKind = "web" | "mobile" | "desktop" | "cli" | "api" | "embedded" | "other";
+export type SurveyUsers = "public" | "registered" | "internal" | "mixed" | "system";
+export type SurveyStage = "prototype" | "mvp" | "production";
+export type SurveyArch = "modular" | "services" | "existing";
+export type SurveyPriority = "security" | "performance" | "reliability" | "scalability" | "testing" | "operations";
+// An empty answer is left to Foundry: read from the story or recommended.
 export interface Survey {
   what?: string;
   kinds?: SurveyKind[];
-  users?: "self" | "team" | "public";
-  stage?: "prototype" | "mvp" | "production";
-  latency?: "500" | "200" | "100";
-  webhook?: "none" | "in" | "out" | "both";
-  services?: "one" | "many";
-  stack?: string;
+  users?: SurveyUsers | "";
+  stage?: SurveyStage | "";
+  architecture?: SurveyArch | "";
+  priorities?: SurveyPriority[];
+  constraints?: string;
+  // First survey; still honored when an older project has them.
+  latency?: string;
+  webhook?: string;
 }
 
 export interface Role { name: string; description: string; platform: string }

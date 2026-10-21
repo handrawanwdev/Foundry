@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultSurvey, existingComponents, isExistingProject, surveySummary, tellIntro, tellPlaceholder, tellTitle, tellWaiting } from "./tell";
+import { archOptions, defaultSurvey, existingComponents, isExistingProject, surveySummary, tellIntro, tellPlaceholder, tellTitle, tellWaiting, toggle } from "./tell";
 import type { Project } from "./types";
 
 const project = (mode?: "existing" | "new") =>
@@ -34,12 +34,27 @@ describe("tell copy", () => {
     expect(existingComponents(project("new"))).toBe("");
   });
 
-  it("fills survey defaults", () => {
+  it("leaves unanswered survey questions to Foundry", () => {
     const s = defaultSurvey();
-    expect(s.users).toBe("self");
-    expect(s.stage).toBe("mvp");
-    expect(s.latency).toBe("500");
-    expect(s.webhook).toBe("none");
-    expect(surveySummary(s)).toMatch(/otomatis/);
+    expect(s).toEqual({ kinds: [], users: "", stage: "", architecture: "", priorities: [], constraints: "" });
+    expect(surveySummary(s)).toBe("platform otomatis · MVP · arsitektur otomatis");
+    expect(archOptions(false).map((o) => o.id)).toEqual(["modular", "services"]);
+    expect(archOptions(false, "existing").map((o) => o.id)).toContain("existing");
+  });
+
+  it("does not ask an existing project again what its code shows", () => {
+    const p = { structure: { mode: "existing", components: [{ kind: "web" }, { kind: "backend" }, { kind: "database" }, { kind: "web" }] } } as unknown as Project;
+    const s = defaultSurvey(null, p);
+    expect(s.kinds).toEqual(["web", "api"]);
+    expect(s.architecture).toBe("existing");
+    expect(archOptions(true).map((o) => o.id)).toContain("existing");
+    // Saved answers win over what the code shows.
+    expect(defaultSurvey({ kinds: ["mobile"], architecture: "modular", stage: "production" }, p)).toMatchObject({ kinds: ["mobile"], architecture: "modular", stage: "production" });
+    expect(surveySummary({ kinds: ["web", "embedded"], stage: "production", architecture: "services" })).toBe("Web, Embedded · Production-ready · Beberapa service terpisah");
+  });
+
+  it("toggles multi-select answers", () => {
+    expect(toggle(undefined, "web")).toEqual(["web"]);
+    expect(toggle(["web", "api"], "web")).toEqual(["api"]);
   });
 });

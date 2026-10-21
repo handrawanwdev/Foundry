@@ -125,13 +125,16 @@ func (s *Service) SubmitStoryWith(story string, survey *core.Survey) (*core.Proj
 	if len(story) < 10 {
 		return nil, errors.New("ceritakan idenya sedikit lebih lengkap")
 	}
+	survey.FillDefaults()
+	if err := survey.Check(); err != nil {
+		return nil, err
+	}
 	p, err := s.Store.Update(func(p *core.Project) error {
 		if p.Busy() {
 			return ErrBusy
 		}
 		p.Story = story
 		if survey != nil {
-			survey.FillDefaults()
 			if survey.What == "" {
 				survey.What = story
 			}

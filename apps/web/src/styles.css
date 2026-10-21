@@ -212,7 +212,9 @@ body { overflow: hidden; }
 .chip.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .survey-kinds { display: flex; gap: .4rem; flex-wrap: wrap; margin: .4rem 0 .75rem; }
 .survey { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem .75rem; margin: 0 0 .5rem; }
-.survey label { display: flex; flex-direction: column; gap: .25rem; font-size: .8rem; color: var(--muted); }
+.survey label, .survey-field { display: flex; flex-direction: column; gap: .25rem; font-size: .8rem; color: var(--muted); }
+.survey-wide { grid-column: 1 / -1; }
+.survey .survey-kinds { margin: 0; }
 @media (max-width: 560px) { .survey { grid-template-columns: 1fr; } }
 .checklist li { margin: .2rem 0; }
 blockquote { border-left: 3px solid var(--line-strong); margin: 1rem 0; padding-left: 1rem; color: var(--muted); }

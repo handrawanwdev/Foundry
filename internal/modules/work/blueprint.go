@@ -556,13 +556,17 @@ func completeAggregation(b *core.Blueprint, needs map[string]bool) {
 }
 
 func completePerformance(b *core.Blueprint, p *core.Project, _ map[string]bool) {
-	budget := "< 500 ms p95"
+	// No latency number without a reason: the story, the AI or an earlier
+	// survey answer gives it.
+	budget := "Tanpa target angka khusus; ukur waktu respons alur utama dan optimasi bila terukur lambat"
 	if p != nil && p.Survey != nil {
-		switch p.Survey.Latency {
-		case core.SurveyLatency200:
+		switch {
+		case p.Survey.Latency == core.SurveyLatency200:
 			budget = "< 200 ms p95"
-		case core.SurveyLatency100:
+		case p.Survey.Latency == core.SurveyLatency100:
 			budget = "< 100 ms p95"
+		case p.Survey.HasPriority(core.SurveyPriorityPerformance):
+			budget = "Prioritas performa: tetapkan target p95 alur utama bersama user sebelum implementasi"
 		}
 	}
 	fill(&b.Performance.Budget, budget)

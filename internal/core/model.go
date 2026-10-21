@@ -3,7 +3,13 @@
 // own copy of project data.
 package core
 
-import "time"
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+)
 
 // Stage is the pipeline position: Prompt (TELL, DISCOVERY) → Blueprint and
 // Workflow (DESIGN, with the design rules and layout specification when the
@@ -59,66 +65,195 @@ type Project struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Survey answers. Empty fields use the defaults.
+// Survey answers. An empty answer means the user left it to Foundry: it is
+// read from the story or recommended, never invented as a constraint.
 const (
-	SurveyUsersSelf      = "self"
-	SurveyUsersTeam      = "team"
-	SurveyUsersPublic    = "public"
+	SurveyUsersPublic     = "public"     // public, no account
+	SurveyUsersRegistered = "registered" // registered users
+	SurveyUsersInternal   = "internal"   // inside one company
+	SurveyUsersMixed      = "mixed"      // users and admins
+	SurveyUsersSystem     = "system"     // other systems or services
+
 	SurveyStagePrototype = "prototype"
 	SurveyStageMVP       = "mvp"
 	SurveyStageProd      = "production"
-	SurveyLatency500     = "500"
-	SurveyLatency200     = "200"
-	SurveyLatency100     = "100"
-	SurveyWebhookNone    = "none"
-	SurveyWebhookIn      = "in"
-	SurveyWebhookOut     = "out"
-	SurveyWebhookBoth    = "both"
-	SurveyServicesOne    = "one"
-	SurveyServicesMany   = "many"
+
+	SurveyArchModular  = "modular"  // one modular application
+	SurveyArchServices = "services" // several separate services
+	SurveyArchExisting = "existing" // follows the existing project
+
+	SurveyPrioritySecurity    = "security"
+	SurveyPriorityPerformance = "performance"
+	SurveyPriorityReliability = "reliability"
+	SurveyPriorityScalability = "scalability"
+	SurveyPriorityTesting     = "testing"
+	SurveyPriorityOperations  = "operations"
+
+	// Answers of the first survey, still read from older project files.
+	SurveyLatency200  = "200"
+	SurveyLatency100  = "100"
+	SurveyWebhookNone = "none"
 )
 
 // SurveyKind values: what kind of software is built.
 const (
-	SurveyKindWeb     = "web"
-	SurveyKindMobile  = "mobile"
-	SurveyKindDesktop = "desktop"
-	SurveyKindCLI     = "cli"
-	SurveyKindAPI     = "api"
-	SurveyKindBot     = "bot"
+	SurveyKindWeb      = "web"
+	SurveyKindMobile   = "mobile"
+	SurveyKindDesktop  = "desktop"
+	SurveyKindCLI      = "cli"
+	SurveyKindAPI      = "api"
+	SurveyKindEmbedded = "embedded"
+	SurveyKindOther    = "other"
+	SurveyKindBot      = "bot" // first survey; read as api
 )
 
-type Survey struct {
-	What     string   `json:"what,omitempty"`     // Q1; usually the story
-	Kinds    []string `json:"kinds,omitempty"`    // Q2: web, mobile, desktop, cli, api, bot
-	Users    string   `json:"users,omitempty"`    // self | team | public
-	Stage    string   `json:"stage,omitempty"`    // prototype | mvp | production
-	Latency  string   `json:"latency,omitempty"`  // 500 | 200 | 100 (p95 ms)
-	Webhook  string   `json:"webhook,omitempty"`  // none | in | out | both
-	Services string   `json:"services,omitempty"` // one | many
-	Stack    string   `json:"stack,omitempty"`    // empty = Foundry picks
+// Survey choices in display order, with the words the blueprint uses.
+var (
+	SurveyKinds = []Choice{{SurveyKindWeb, "Web"}, {SurveyKindMobile, "Mobile"}, {SurveyKindDesktop, "Desktop"},
+		{SurveyKindCLI, "CLI"}, {SurveyKindAPI, "API"}, {SurveyKindEmbedded, "Embedded"}, {SurveyKindOther, "Lainnya"}}
+	SurveyUsers = []Choice{{SurveyUsersPublic, "Publik, tanpa akun"}, {SurveyUsersRegistered, "Pengguna terdaftar"},
+		{SurveyUsersInternal, "Internal perusahaan"}, {SurveyUsersMixed, "Campuran pengguna dan admin"},
+		{SurveyUsersSystem, "Sistem atau layanan lain"}}
+	SurveyStages = []Choice{{SurveyStagePrototype, "Prototype"}, {SurveyStageMVP, "MVP"}, {SurveyStageProd, "Production-ready"}}
+	SurveyArchs  = []Choice{{SurveyArchModular, "Satu aplikasi modular"}, {SurveyArchServices, "Beberapa service terpisah"},
+		{SurveyArchExisting, "Mengikuti arsitektur project yang sudah ada"}}
+	SurveyPriorities = []Choice{{SurveyPrioritySecurity, "Keamanan dan kontrol akses"},
+		{SurveyPriorityPerformance, "Performa dan latency"}, {SurveyPriorityReliability, "Reliabilitas dan konsistensi data"},
+		{SurveyPriorityScalability, "Skalabilitas"}, {SurveyPriorityTesting, "Testing dan verifikasi"},
+		{SurveyPriorityOperations, "Deployment dan operasional"}}
+)
+
+// DeliveryCriteria is what each delivery target counts as done.
+var DeliveryCriteria = map[string]string{
+	SurveyStagePrototype: "Alur utama bisa dicoba dari awal sampai akhir untuk memvalidasi ide; data contoh boleh; tanpa hardening produksi.",
+	SurveyStageMVP:       "Fitur inti siap dipakai pengguna nyata: validasi input, akses sesuai peran, dan test untuk alur utama.",
+	SurveyStageProd:      "Siap produksi: keamanan, testing otomatis, deployment, observability (log, metrik, health check), dan operasional (konfigurasi, backup).",
 }
 
+// Choice is one answer of a survey question.
+type Choice struct{ ID, Label string }
+
+// ChoiceLabel is the label of id among cs, "" when unknown.
+func ChoiceLabel(cs []Choice, id string) string {
+	for _, c := range cs {
+		if c.ID == id {
+			return c.Label
+		}
+	}
+	return ""
+}
+
+type Survey struct {
+	What  string   `json:"what,omitempty"`  // usually the story
+	Kinds []string `json:"kinds,omitempty"` // SurveyKinds; empty = from the story
+	Users string   `json:"users,omitempty"` // SurveyUsers; empty = from the story
+	Stage string   `json:"stage,omitempty"` // SurveyStages; empty = mvp
+	// Architecture is SurveyArchs; empty = Foundry picks from the needs.
+	Architecture string `json:"architecture,omitempty"`
+	// Priorities are SurveyPriorities; the basic qualities hold anyway.
+	Priorities []string `json:"priorities,omitempty"`
+	// Constraints are the user's mandatory constraints in their words:
+	// required stack, integrations, compatibility, limits, prohibitions.
+	Constraints string `json:"constraints,omitempty"`
+
+	// First survey: Latency and Webhook are still honored, Services and
+	// Stack move to Architecture and Constraints when the project loads.
+	Latency  string `json:"latency,omitempty"`
+	Webhook  string `json:"webhook,omitempty"`
+	Services string `json:"services,omitempty"`
+	Stack    string `json:"stack,omitempty"`
+}
+
+// FillDefaults normalizes the answers and moves answers of the first
+// survey. Unanswered questions stay empty: Foundry decides them.
 func (s *Survey) FillDefaults() {
 	if s == nil {
 		return
 	}
-	if s.Users == "" {
-		s.Users = SurveyUsersSelf
+	trim := func(v string) string { return strings.ToLower(strings.TrimSpace(v)) }
+	s.Users, s.Stage, s.Architecture = trim(s.Users), trim(s.Stage), trim(s.Architecture)
+	s.Constraints = strings.TrimSpace(s.Constraints)
+	switch s.Users { // first survey
+	case "team":
+		s.Users = SurveyUsersInternal
+	case "self":
+		s.Users = ""
 	}
-	if s.Stage == "" {
-		s.Stage = SurveyStageMVP
+	if s.Services == "many" && s.Architecture == "" {
+		s.Architecture = SurveyArchServices
 	}
-	if s.Latency == "" {
-		s.Latency = SurveyLatency500
+	if st := strings.TrimSpace(s.Stack); st != "" && !strings.Contains(s.Constraints, st) {
+		s.Constraints = strings.TrimSpace(st + "\n" + s.Constraints)
 	}
-	if s.Webhook == "" {
-		s.Webhook = SurveyWebhookNone
+	s.Services, s.Stack = "", ""
+	if s.Latency == "500" {
+		s.Latency = "" // the old default, not an answer
 	}
-	if s.Services == "" {
-		s.Services = SurveyServicesOne
+	if s.Webhook == SurveyWebhookNone {
+		s.Webhook = ""
 	}
+	s.Kinds = normChoices(s.Kinds, func(k string) string {
+		if k == SurveyKindBot {
+			return SurveyKindAPI
+		}
+		return k
+	})
+	s.Priorities = normChoices(s.Priorities, nil)
 }
+
+// Delivery is the delivery target; MVP when the user gave none.
+func (s *Survey) Delivery() string {
+	if s == nil || s.Stage == "" {
+		return SurveyStageMVP
+	}
+	return s.Stage
+}
+
+func normChoices(in []string, mapID func(string) string) []string {
+	var out []string
+	for _, v := range in {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if mapID != nil {
+			v = mapID(v)
+		}
+		if v != "" && !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// Check refuses answers that are not survey choices.
+func (s *Survey) Check() error {
+	if s == nil {
+		return nil
+	}
+	bad := func(q string, v string) error { return fmt.Errorf("jawaban survey %s tidak dikenal: %q", q, v) }
+	for _, k := range s.Kinds {
+		if ChoiceLabel(SurveyKinds, k) == "" {
+			return bad("platform", k)
+		}
+	}
+	for _, x := range s.Priorities {
+		if ChoiceLabel(SurveyPriorities, x) == "" {
+			return bad("prioritas", x)
+		}
+	}
+	for _, q := range []struct {
+		name, v string
+		cs      []Choice
+	}{{"pengguna", s.Users, SurveyUsers}, {"target delivery", s.Stage, SurveyStages}, {"arsitektur", s.Architecture, SurveyArchs}} {
+		if q.v != "" && ChoiceLabel(q.cs, q.v) == "" {
+			return bad(q.name, q.v)
+		}
+	}
+	if len(s.Constraints) > 4000 {
+		return errors.New("batasan wajib terlalu panjang (maks 4000 karakter)")
+	}
+	return nil
+}
+
+func (s *Survey) HasPriority(id string) bool { return s != nil && slices.Contains(s.Priorities, id) }
 
 func (s *Survey) HasWebhook() bool {
 	return s != nil && s.Webhook != "" && s.Webhook != SurveyWebhookNone
