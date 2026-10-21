@@ -36,6 +36,8 @@ func Artifacts(p *core.Project) []core.Artifact {
 	}
 	add("requirements", "Requirements", core.ArtifactRequirements,
 		"Masalah, pengguna, kebutuhan, fitur, dan alur.", requirementsMarkdown(p))
+	add(core.ArtifactSurvey, "Keputusan Teknis Survey", core.ArtifactRequirements,
+		"Platform, pengguna, target delivery, arsitektur, prioritas kualitas, dan batasan wajib beserta sumbernya.", surveyMarkdown(p))
 	arch := strings.TrimPrefix(architectureMarkdown(p), "## Architecture\n\n")
 	add("architecture", "Arsitektur", core.ArtifactArchitecture,
 		"Pola arsitektur, modul, data, keamanan, dan aturan teknis.", strings.ReplaceAll("\n"+arch, "\n### ", "\n## ")[1:])

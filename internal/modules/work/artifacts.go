@@ -79,7 +79,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	b.WriteString(scopeRules)
 	b.WriteString(`Revision rules:
 - change only what the request needs. Return only the artifacts, use cases, acceptance entries and decisions you add or change, each in full; the others stay as they are. Omit definition_of_done to keep it.
-- use-cases, acceptance and decisions are built-in artifacts: change them through use_cases, acceptance, definition_of_done and decisions. requirements, architecture, technology, design-rules and layout-spec cannot be changed here; when the request is about them, write the decision in a non-builtin artifact and say so in its summary.
+- use-cases, acceptance and decisions are built-in artifacts: change them through use_cases, acceptance, definition_of_done and decisions. requirements, survey-decisions, architecture, technology, design-rules and layout-spec cannot be changed here; when the request is about them, write the decision in a non-builtin artifact and say so in its summary.
 - a new use case or decision gets an empty id; keep the id of a changed one.
 - do not drop content that still applies.
 

@@ -91,6 +91,36 @@ func TestDeleteDocumentRoutes(t *testing.T) {
 	}
 }
 
+// An unknown survey answer is the request's fault (400) and changes nothing.
+func TestStoryRefusesUnknownSurveyAnswer(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	s := New(nil, "/bin/foundry")
+	if _, err := s.Open(t.TempDir(), "demo", false); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr, r.Host = "127.0.0.1:50000", "127.0.0.1:8080"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	for _, sv := range []string{`{"users":"everyone"}`, `{"stage":"beta"}`, `{"kinds":["tv"]}`, `{"architecture":"serverless"}`, `{"priorities":["murah"]}`} {
+		w := do("POST", "/api/v1/project/story", `{"story":"aplikasi klinik untuk pasien","survey":`+sv+`}`)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "jawaban survey") {
+			t.Fatalf("survey %s: %d %s", sv, w.Code, w.Body)
+		}
+	}
+	if w := do("GET", "/api/v1/project", ""); !strings.Contains(w.Body.String(), `"stage":"TELL"`) || strings.Contains(w.Body.String(), `"survey"`) {
+		t.Fatalf("refused survey changed the project: %s", w.Body)
+	}
+	// A first-survey answer is still accepted (moved, not refused): it reaches the AI check.
+	if w := do("POST", "/api/v1/project/story", `{"story":"aplikasi klinik untuk pasien","survey":{"users":"self","services":"many"}}`); w.Code != http.StatusPreconditionFailed {
+		t.Fatalf("first-survey answer: %d %s", w.Code, w.Body)
+	}
+}
+
 func TestSPAAssets(t *testing.T) {
 	ui := fstest.MapFS{
 		"index.html":    {Data: []byte("<!doctype html><title>Foundry</title>")},

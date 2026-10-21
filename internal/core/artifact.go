@@ -50,7 +50,7 @@ var ArtifactCategories = []string{ArtifactRequirements, ArtifactDomain, Artifact
 // data; AI and user artifacts may not take them.
 var BuiltinArtifacts = map[string]bool{
 	"requirements": true, "architecture": true, "technology": true, ArtifactDesignRules: true, ArtifactLayoutSpec: true,
-	ArtifactUseCases: true, ArtifactAcceptance: true, ArtifactDecisions: true,
+	ArtifactUseCases: true, ArtifactAcceptance: true, ArtifactDecisions: true, ArtifactSurvey: true,
 }
 
 // Built-in artifacts besides requirements, architecture and technology.
@@ -60,6 +60,9 @@ const (
 	ArtifactUseCases    = "use-cases"
 	ArtifactAcceptance  = "acceptance"
 	ArtifactDecisions   = "decisions"
+	// ArtifactSurvey is the survey as technical decisions. It is its own
+	// document so the requirements of older projects keep their hash.
+	ArtifactSurvey = "survey-decisions"
 )
 
 // Hash identifies the artifact's content; a command records it to notice

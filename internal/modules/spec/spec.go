@@ -90,7 +90,6 @@ func requirementsMarkdown(p *core.Project) string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString(surveyMarkdown(p))
 	if len(p.Requirements) > 0 {
 		b.WriteString("## Requirements\n\n| ID | Prioritas | Kebutuhan |\n|---|---|---|\n")
 		for _, r := range p.Requirements {
@@ -149,11 +148,11 @@ const (
 // the user's answer, Foundry's recommendation, a default, or still unknown.
 func surveyMarkdown(p *core.Project) string {
 	s := p.Survey
-	if s == nil {
+	if s == nil || p.Discovery == nil {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("## Keputusan teknis dari survey\n\n| Bagian | Keputusan | Sumber |\n|---|---|---|\n")
+	b.WriteString("| Bagian | Keputusan | Sumber |\n|---|---|---|\n")
 	row := func(part, decision, source string) {
 		fmt.Fprintf(&b, "| %s | %s | %s |\n", part, cell(decision), source)
 	}
@@ -209,7 +208,7 @@ func surveyMarkdown(p *core.Project) string {
 		row("Batasan wajib", "Tidak ada yang disebutkan", fromDefault)
 	}
 	b.WriteString("\nKualitas dasar (validasi input, kontrol akses sesuai pengguna, test alur utama) tetap berlaku walau tidak dipilih sebagai prioritas. " +
-		"Konflik antarjawaban tercatat di Keputusan, Asumsi & Risiko.\n\n")
+		"Konflik antarjawaban tercatat di Keputusan, Asumsi & Risiko.\n")
 	return b.String()
 }
 
