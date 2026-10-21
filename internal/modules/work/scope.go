@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // The structured parts of the blueprint besides the UI design: use cases

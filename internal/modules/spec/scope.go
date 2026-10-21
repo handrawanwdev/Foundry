@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // useCasesMarkdown is the use-cases artifact: every flow with what a use

@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/handrawanw/foundry/internal/config"
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/config"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // The test binary is foundry itself (FOUNDRY_TEST_MAIN=1) and, with the

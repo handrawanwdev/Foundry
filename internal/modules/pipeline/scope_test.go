@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/pipeline"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
 )
 
 // A critical question blocks finalize until the user decides it; a

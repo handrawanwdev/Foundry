@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/handrawanw/foundry/internal/proc"
+	"github.com/handrawanwdev/foundry/internal/proc"
 )
 
 type Preset struct {

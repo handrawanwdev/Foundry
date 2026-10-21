@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 func cmd(id string, deps ...string) core.Command {

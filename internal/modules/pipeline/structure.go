@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/stack"
-	"github.com/handrawanw/foundry/internal/modules/structure"
-	"github.com/handrawanw/foundry/internal/modules/work"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/stack"
+	"github.com/handrawanwdev/foundry/internal/modules/structure"
+	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
 // Project structure workspace: recommendation → user edit (by hand or in

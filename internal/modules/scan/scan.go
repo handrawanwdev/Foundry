@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 var skipDirs = map[string]bool{
@@ -75,11 +75,13 @@ func Scan(dir string) Result {
 			return nil
 		}
 		rel, _ := filepath.Rel(dir, path)
+		// Component paths are slash-separated on every OS: they end up in the spec.
+		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
 			if path != dir && (skipDirs[d.Name()] || strings.HasPrefix(d.Name(), ".")) {
 				return filepath.SkipDir
 			}
-			if strings.Count(rel, string(filepath.Separator)) >= 4 {
+			if strings.Count(rel, "/") >= 4 {
 				return filepath.SkipDir
 			}
 			switch d.Name() {
@@ -99,7 +101,7 @@ func Scan(dir string) Result {
 			}
 			return nil
 		}
-		relDir := filepath.Dir(rel)
+		relDir := filepath.ToSlash(filepath.Dir(rel))
 		switch name := d.Name(); {
 		case name == "go.mod":
 			r.Existing = true

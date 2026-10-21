@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // existingUIBrief is the frontend an existing project already has, for the

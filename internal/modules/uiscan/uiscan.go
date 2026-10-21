@@ -14,7 +14,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 var skipDirs = map[string]bool{

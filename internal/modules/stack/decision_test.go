@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // Infrastructure is only recommended for a need; otherwise "Tidak perlu".

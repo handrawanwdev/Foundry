@@ -6,14 +6,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
-	"github.com/handrawanw/foundry/internal/config"
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/config"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 func TestGuardAndFlow(t *testing.T) {
@@ -164,20 +166,23 @@ func TestOpenCloseBrowse(t *testing.T) {
 		t.Fatalf("no project: %d", w.Code)
 	}
 	root := t.TempDir()
-	missing := root + "/baru"
-	if w := do("POST", "/api/v1/projects/open", `{"dir":"`+missing+`"}`); w.Code != http.StatusBadRequest {
-		t.Fatalf("open missing folder: %d", w.Code)
+	missing := filepath.Join(root, "baru")
+	// JSON-quote the path: Windows paths carry backslashes.
+	b, _ := json.Marshal(missing)
+	quoted := string(b)
+	if w := do("POST", "/api/v1/projects/open", `{"dir":`+quoted+`}`); w.Code != http.StatusBadRequest || strings.Contains(w.Body.String(), "body JSON") {
+		t.Fatalf("open missing folder: %d %s", w.Code, w.Body)
 	}
-	if w := do("POST", "/api/v1/projects/open", `{"dir":"`+missing+`","create":true,"name":"Baru"}`); w.Code != 200 {
+	if w := do("POST", "/api/v1/projects/open", `{"dir":`+quoted+`,"create":true,"name":"Baru"}`); w.Code != 200 {
 		t.Fatalf("new project: %d %s", w.Code, w.Body)
 	}
-	if w := do("GET", "/api/v1/fs?path="+root, ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"is_project":true`) {
+	if w := do("GET", "/api/v1/fs?path="+url.QueryEscape(root), ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"is_project":true`) {
 		t.Fatalf("browse: %d %s", w.Code, w.Body)
 	}
 	if w := do("POST", "/api/v1/projects/close", `{}`); w.Code != 200 {
 		t.Fatalf("close: %d", w.Code)
 	}
-	if w := do("GET", "/api/v1/projects", ""); !strings.Contains(w.Body.String(), `"current":""`) || !strings.Contains(w.Body.String(), missing) {
+	if w := do("GET", "/api/v1/projects", ""); !strings.Contains(w.Body.String(), `"current":""`) || !strings.Contains(w.Body.String(), quoted) {
 		t.Fatalf("after close: %s", w.Body)
 	}
 }

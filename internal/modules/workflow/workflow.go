@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // Issue is one problem that blocks finalizing the workflow.

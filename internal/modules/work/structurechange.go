@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/structure"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/structure"
 )
 
 // KindStructure turns a natural-language structure change into edits of

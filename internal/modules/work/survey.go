@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // The survey binds the technical decisions: an answer is the user's

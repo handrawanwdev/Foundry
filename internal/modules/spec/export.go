@@ -10,9 +10,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/standard"
-	"github.com/handrawanw/foundry/internal/modules/workflow"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/standard"
+	"github.com/handrawanwdev/foundry/internal/modules/workflow"
 )
 
 // ExportDir is where finalize writes the export package, inside the

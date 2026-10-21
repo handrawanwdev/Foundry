@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/stack"
-	"github.com/handrawanw/foundry/internal/modules/structure"
-	"github.com/handrawanw/foundry/internal/modules/workflow"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/stack"
+	"github.com/handrawanwdev/foundry/internal/modules/structure"
+	"github.com/handrawanwdev/foundry/internal/modules/workflow"
 )
 
 // Markdown renders the whole spec as one document: story, blueprint

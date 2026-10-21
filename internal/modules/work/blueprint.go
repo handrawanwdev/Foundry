@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // NormalizeBlueprint cleans AI output: slug module ids, drop empty rows,

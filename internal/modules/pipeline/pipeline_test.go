@@ -12,13 +12,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/agent"
-	"github.com/handrawanw/foundry/internal/modules/pipeline"
-	"github.com/handrawanw/foundry/internal/modules/spec"
-	"github.com/handrawanw/foundry/internal/modules/stack"
-	"github.com/handrawanw/foundry/internal/modules/structure"
-	"github.com/handrawanw/foundry/internal/modules/work"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/agent"
+	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
+	"github.com/handrawanwdev/foundry/internal/modules/spec"
+	"github.com/handrawanwdev/foundry/internal/modules/stack"
+	"github.com/handrawanwdev/foundry/internal/modules/structure"
+	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
 // The test binary doubles as a fake agent CLI: when FOUNDRY_FAKE_AGENT=1 it

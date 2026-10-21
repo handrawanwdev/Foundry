@@ -78,10 +78,41 @@ func WriteFile(path string, data []byte, perm os.FileMode) error {
 		err = cerr
 	}
 	if err == nil {
-		err = os.Rename(tmp, path)
+		err = retry(func() error { return os.Rename(tmp, path) })
 	}
 	if err != nil {
 		os.Remove(tmp)
 	}
 	return err
+}
+
+// ReadFile reads path like os.ReadFile, riding out a concurrent WriteFile.
+func ReadFile(path string) ([]byte, error) {
+	var b []byte
+	err := retry(func() (err error) {
+		b, err = os.ReadFile(path)
+		return err
+	})
+	return b, err
+}
+
+// retryWindow bounds how long a transient sharing error is retried.
+const retryWindow = 2 * time.Second
+
+// retry runs op until it succeeds, fails for good, or retryWindow passes.
+// On Windows a file another process has open cannot be replaced, and a file
+// being replaced cannot be opened, for a moment; elsewhere op runs once.
+func retry(op func() error) error {
+	deadline := time.Now().Add(retryWindow)
+	delay := time.Millisecond
+	for {
+		err := op()
+		if err == nil || !transient(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(delay)
+		if delay < 64*time.Millisecond {
+			delay *= 2
+		}
+	}
 }

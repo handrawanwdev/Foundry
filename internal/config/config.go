@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/handrawanw/foundry/internal/safefile"
+	"github.com/handrawanwdev/foundry/internal/safefile"
 )
 
 type ConnectionMode string
@@ -61,7 +61,7 @@ func Home() string {
 func path() string { return filepath.Join(Home(), "foundry.json") }
 
 func Load() (*Config, error) {
-	b, err := os.ReadFile(path())
+	b, err := safefile.ReadFile(path())
 	if errors.Is(err, os.ErrNotExist) {
 		return &Config{}, nil
 	}

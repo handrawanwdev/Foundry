@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 func deleteFixture() *core.Project {

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 const existingDesign = `{"rules": {"source": "new", "principles": ["Ikuti UI yang ada"], "ux_guidelines": ["Menu tetap di kiri"],

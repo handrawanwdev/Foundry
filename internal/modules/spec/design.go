@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // designRulesMarkdown is the design-rules artifact: every field of the

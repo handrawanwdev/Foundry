@@ -1,3 +1,3 @@
-module github.com/handrawanw/foundry
+module github.com/handrawanwdev/foundry
 
 go 1.22

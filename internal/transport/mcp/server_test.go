@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/handrawanw/foundry/internal/config"
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/agent"
-	"github.com/handrawanw/foundry/internal/modules/pipeline"
+	"github.com/handrawanwdev/foundry/internal/config"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/agent"
+	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
 )
 
 type hostAI struct{}

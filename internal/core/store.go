@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/handrawanw/foundry/internal/safefile"
+	"github.com/handrawanwdev/foundry/internal/safefile"
 )
 
 // StateDir is the per-project folder holding the single source of truth.
@@ -70,7 +70,7 @@ func (s *Store) Init(name string) (*Project, error) {
 }
 
 func (s *Store) Load() (*Project, error) {
-	b, err := os.ReadFile(s.path())
+	b, err := safefile.ReadFile(s.path())
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNotFound
 	}

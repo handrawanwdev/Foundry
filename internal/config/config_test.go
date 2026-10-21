@@ -1,8 +1,6 @@
 package config
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -53,15 +51,7 @@ func TestUpdateAcrossProcesses(t *testing.T) {
 				return
 			default:
 			}
-			b, err := os.ReadFile(path())
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			var c Config
-			if err == nil {
-				err = json.Unmarshal(b, &c)
-			}
-			if err != nil {
+			if _, err := Load(); err != nil {
 				readErr <- err
 				return
 			}

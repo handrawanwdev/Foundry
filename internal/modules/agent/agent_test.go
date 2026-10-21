@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -93,6 +94,9 @@ func TestLimitHitFunds(t *testing.T) {
 
 // First listed model is dead; only "good" replies. SuggestModel must find it.
 func TestSuggestModelFindsWorking(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script")
+	}
 	dir := t.TempDir()
 	script := `#!/bin/sh
 if [ "$1" = models ]; then printf 'p/dead\np/good-free\n'; exit 0; fi

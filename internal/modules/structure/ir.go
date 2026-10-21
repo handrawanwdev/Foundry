@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // Building and editing the Structure IR. Boundaries follow the domains

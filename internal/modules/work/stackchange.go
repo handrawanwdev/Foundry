@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/stack"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/stack"
 )
 
 // KindStack turns a natural-language technology change into structured

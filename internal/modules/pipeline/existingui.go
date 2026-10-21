@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/uiscan"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/uiscan"
 )
 
 // readExistingUI reads the frontend of an existing project: routes, layout

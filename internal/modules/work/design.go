@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // The UI design is text and structured data only: design rules and a

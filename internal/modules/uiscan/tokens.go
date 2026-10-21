@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // def is a token value as the code declares it.

@@ -3,8 +3,8 @@ package pipeline
 import (
 	"fmt"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/work"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
 // WorkItem is what an MCP host must do next.

@@ -60,6 +60,9 @@ func TestClaudeCLIModelsReadsVersionedIDs(t *testing.T) {
 }
 
 func TestOpenCodeModelsParsesList(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script")
+	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "opencode")
 	os.WriteFile(bin, []byte("#!/bin/sh\nprintf 'opencode/a-free\\n\\nopencode/b\\n'\n"), 0o755)

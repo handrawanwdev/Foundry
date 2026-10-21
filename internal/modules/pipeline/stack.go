@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/spec"
-	"github.com/handrawanw/foundry/internal/modules/stack"
-	"github.com/handrawanw/foundry/internal/modules/work"
-	"github.com/handrawanw/foundry/internal/modules/workflow"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/spec"
+	"github.com/handrawanwdev/foundry/internal/modules/stack"
+	"github.com/handrawanwdev/foundry/internal/modules/work"
+	"github.com/handrawanwdev/foundry/internal/modules/workflow"
 )
 
 // Technology decision workspace: AI recommendation → user change (by hand

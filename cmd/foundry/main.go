@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	web "github.com/handrawanw/foundry/apps/web"
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/pipeline"
-	"github.com/handrawanw/foundry/internal/transport/httpapi"
-	"github.com/handrawanw/foundry/internal/transport/mcp"
+	web "github.com/handrawanwdev/foundry/apps/web"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
+	"github.com/handrawanwdev/foundry/internal/transport/httpapi"
+	"github.com/handrawanwdev/foundry/internal/transport/mcp"
 )
 
 var version = "dev"

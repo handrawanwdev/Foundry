@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/work"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
 // UI design: design rules and layout spec, written and revised by the AI

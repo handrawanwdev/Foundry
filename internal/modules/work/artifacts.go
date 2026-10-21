@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // KindArtifacts revises the blueprint artifacts for a change request.

@@ -4,8 +4,8 @@
 package structure
 
 import (
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/scan"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/scan"
 )
 
 type Template struct {

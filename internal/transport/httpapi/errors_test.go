@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/handrawanw/foundry/internal/config"
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/pipeline"
-	"github.com/handrawanw/foundry/internal/safefile"
+	"github.com/handrawanwdev/foundry/internal/config"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
+	"github.com/handrawanwdev/foundry/internal/safefile"
 )
 
 type envelope struct {

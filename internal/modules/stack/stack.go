@@ -22,7 +22,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 //go:embed profiles/*.json

@@ -3,10 +3,10 @@ package pipeline
 import (
 	"fmt"
 
-	"github.com/handrawanw/foundry/internal/core"
-	"github.com/handrawanw/foundry/internal/modules/spec"
-	"github.com/handrawanw/foundry/internal/modules/work"
-	"github.com/handrawanw/foundry/internal/modules/workflow"
+	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/spec"
+	"github.com/handrawanwdev/foundry/internal/modules/work"
+	"github.com/handrawanwdev/foundry/internal/modules/workflow"
 )
 
 // Blueprint scope: the areas the blueprint covers or leaves out, use

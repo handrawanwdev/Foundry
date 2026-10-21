@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/handrawanw/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/core"
 )
 
 // The structure decision is reviewed like the technology: an edit becomes
