@@ -100,7 +100,9 @@ export function BlueprintPage() {
           : <p className="muted">{view ? "Pilih artefak di kiri." : "Memuat blueprint…"}</p>}
       </main>
 
-      {!locked && (designDoc ? (
+      {!locked && (id === "platform" ? (
+        <PlatformPrompt project={project} working={working} />
+      ) : designDoc ? (
         <PromptBar
           label={`Minta perubahan rancangan UI (sedang melihat: ${doc!.title})…`}
           placeholder="Contoh: halaman Antrean pakai tabel padat dengan filter di atas; tambahkan state kosong untuk pencarian."
@@ -120,6 +122,34 @@ export function BlueprintPage() {
         />
       ))}
     </div>
+  );
+}
+
+// The one prompt of the platform page: the request goes to the technology
+// decision or, when the project has an editable structure, to the structure.
+function PlatformPrompt({ project, working }: { project: Project; working: boolean }) {
+  const { run, pending } = useProject();
+  const [target, setTarget] = useState<"stack" | "structure">("stack");
+  const st = project.structure;
+  const hasStructure = !!st?.ir && st.mode !== "existing";
+  const kind = hasStructure ? target : "stack";
+  const cur = kind === "stack" ? project.stack : st;
+  if (!cur) return null;
+  const radio = (k: typeof kind, text: string) => (
+    <label className="check small"><input type="radio" checked={kind === k} onChange={() => setTarget(k)} /> {text}</label>
+  );
+  return (
+    <PromptBar
+      label={kind === "stack" ? "Minta perubahan teknologi…" : "Minta perubahan struktur folder…"}
+      placeholder={kind === "stack"
+        ? "Contoh: ganti backend ke Rust, tetap gunakan PostgreSQL, arsitektur modular monolith."
+        : "Contoh: reporting jangan jadi service sendiri, jadikan modul di operations; atau tiap modul pakai layer domain, application, infrastructure, presentation."}
+      hint="Perubahan tampil sebagai usulan dulu; terapkan setelah melihat dampaknya."
+      extra={hasStructure && <span className="row">{radio("stack", "Teknologi")}{radio("structure", "Struktur")}</span>}
+      disabled={working || !!cur.request || !!cur.proposal}
+      busy={pending === kind}
+      onSend={(text) => run(kind, () => (kind === "stack" ? api.requestStack(text) : api.requestStructure(text)))}
+    />
   );
 }
 

@@ -17,7 +17,6 @@ const SOURCE: Record<string, string> = { recommend: "rekomendasi", user: "diubah
 export function StructurePanel({ project }: { project: Project }) {
   const { run, pending } = useProject();
   const [types, setTypes] = useState<Template[]>([]);
-  const [ask, setAsk] = useState("");
   const [editing, setEditing] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   useEffect(() => { void api.templates().then(setTypes, () => {}); }, []);
@@ -29,7 +28,6 @@ export function StructurePanel({ project }: { project: Project }) {
   const state = structureState(s);
   const shown = s.proposal?.ir ?? ir;
   const errors = (s.issues ?? []).filter((i) => i.level === "error");
-  const send = async () => { if (await run("structure", () => api.requestStructure(ask))) setAsk(""); };
 
   return (
     <section className="info-sec">
@@ -46,15 +44,7 @@ export function StructurePanel({ project }: { project: Project }) {
         Deployment diputuskan sendiri dan tidak mengubah layout ini.
       </p>
 
-      {!finalized && (
-        <div className="tech-ask">
-          <textarea rows={3} maxLength={6000} value={ask} disabled={!editable}
-            placeholder="mis. Reporting jangan jadi service sendiri, jadikan modul di operations. Atau standar: tiap modul pakai layer domain, application, infrastructure, presentation."
-            onChange={(e) => setAsk(e.target.value)} />
-          <button disabled={!editable || !ask.trim()} onClick={() => void send()}>✦ Minta Perubahan dengan AI</button>
-          {s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}”</p>}
-        </div>
-      )}
+      {!finalized && s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}”</p>}
 
       {s.proposal && <Proposal p={s.proposal} disabled={busy || finalized} />}
 
@@ -175,7 +165,7 @@ function Rules({ rules, editable }: { rules: string[]; editable: boolean }) {
             <> <button className="ghost small" disabled={pending === "structure"} onClick={() => void propose({ op: "remove", kind: "rule", name: r })}>Hapus</button></>
           )}</li>
         ))}</ol>
-        : <p className="muted">Belum ada. Tulis standar di kotak AI di atas, atau tambah satu per satu.</p>}
+        : <p className="muted">Belum ada. Tulis standar di kotak prompt di bawah, atau tambah satu per satu.</p>}
       {editable && (
         <div className="tech-actions">
           <input value={text} maxLength={400} placeholder="mis. Dependensi antar-modul lewat public API atau event" onChange={(e) => setText(e.target.value)} />

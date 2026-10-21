@@ -27,7 +27,6 @@ export function TechStackPanel({ project }: { project: Project }) {
   const { run, pending } = useProject();
   const [cat, setCat] = useState<StackCatalog | null>(null);
   const [edit, setEdit] = useState<TechArea | null>(null);
-  const [ask, setAsk] = useState("");
   useEffect(() => { api.stackCatalog().then(setCat, () => {}); }, []);
   const s = project.stack;
   const busy = isWorking(project) || pending === "stack";
@@ -49,7 +48,6 @@ export function TechStackPanel({ project }: { project: Project }) {
   const errors = (s.issues ?? []).filter((i) => i.level === "error");
   const reviews = s.decisions.filter((d) => d.review);
   const review = techReview(project);
-  const send = async () => { if (await run("stack", () => api.requestStack(ask))) setAsk(""); };
   const row = (d: TechDecision) => (
     <TechRow key={d.area} s={s} d={d} editable={editable && !s.proposal} open={edit === d.area} options={cat?.catalog[d.area] ?? []}
       onToggle={() => setEdit(edit === d.area ? null : d.area)} onDone={() => setEdit(null)} />
@@ -68,15 +66,7 @@ export function TechStackPanel({ project }: { project: Project }) {
       </p>
       {s.needs?.length ? <p className="small">Kebutuhan teknis: <span className="theme-tags">{s.needs.map((n) => <i key={n}>{NEED[n] ?? n}</i>)}</span></p> : null}
 
-      {!finalized && (
-        <div className="tech-ask">
-          <textarea rows={2} maxLength={1000} value={ask} disabled={!editable || !!s.proposal}
-            placeholder="mis. Ganti backend ke Rust. Tetap gunakan PostgreSQL. Arsitektur modular monolith."
-            onChange={(e) => setAsk(e.target.value)} />
-          <button disabled={!editable || !!s.proposal || !ask.trim()} onClick={() => void send()}>✦ Minta Perubahan dengan AI</button>
-          {s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}”</p>}
-        </div>
-      )}
+      {!finalized && s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}”</p>}
 
       {s.proposal && <Proposal p={s.proposal} disabled={busy || finalized} />}
 

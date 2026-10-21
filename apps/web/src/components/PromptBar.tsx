@@ -1,11 +1,12 @@
-import { useState, type KeyboardEvent } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 
 // Floating prompt for a change request. Collapsed it is one line; it opens
 // into a text box. Ctrl/⌘+Enter sends.
-export function PromptBar({ label, placeholder, hint, disabled, busy, onSend }: {
+export function PromptBar({ label, placeholder, hint, extra, disabled, busy, onSend }: {
   label: string;
   placeholder: string;
   hint?: string;
+  extra?: ReactNode;
   disabled?: boolean;
   busy?: boolean;
   onSend: (text: string) => Promise<boolean>;
@@ -29,6 +30,7 @@ export function PromptBar({ label, placeholder, hint, disabled, busy, onSend }: 
         <div className="prompt-box">
           <textarea autoFocus value={text} placeholder={placeholder} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} rows={3} />
           <div className="prompt-foot">
+            {extra}
             <span className="muted small">{hint ?? "Ctrl+Enter untuk kirim"}</span>
             <button className="ghost" onClick={() => setOpen(false)}>Batal</button>
             <button className="primary" disabled={!text.trim() || busy || disabled} onClick={() => void send()}>{busy ? "Mengirim…" : "Kirim"}</button>
