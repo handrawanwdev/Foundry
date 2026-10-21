@@ -10,7 +10,7 @@
 
 [![CI](https://github.com/handrawanwdev/Foundry/actions/workflows/ci.yml/badge.svg)](https://github.com/handrawanwdev/Foundry/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/handrawanwdev/Foundry?include_prereleases)](https://github.com/handrawanwdev/Foundry/releases)
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![MCP](https://img.shields.io/badge/MCP-stdio-8A2BE2)](https://modelcontextprotocol.io)
@@ -183,7 +183,7 @@ The UI is embedded in the binary; you only need an AI CLI installed (`claude`, `
 
 Prerequisites:
 
-- **Go** 1.22+
+- **Go** 1.24+
 - **Node.js** 20.19+ or 22.12+ (to build the UI)
 - **make**
 - At least one AI CLI installed: `claude`, `codex`, `opencode`, `qwen`, or `gemini`
