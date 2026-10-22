@@ -3,6 +3,7 @@ package work
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/handrawanwdev/foundry/internal/core"
 )
@@ -48,5 +49,22 @@ func TestApplyWorkflowRefs(t *testing.T) {
 	c := p.Workflow.Commands[1]
 	if c.ID != "CMD-002" || c.DependsOn[0] != "CMD-001" || c.Artifacts[0].Hash != docs[0].Hash() || c.Status != core.CommandDraft {
 		t.Fatalf("command = %+v", c)
+	}
+}
+
+// A decision the user made late in a long decisions artifact still
+// reaches the planner whole, while other long artifacts are cut.
+func TestWorkflowPromptKeepsDecisions(t *testing.T) {
+	long := strings.Repeat("- **DEC-002** (Pertanyaan): terbuka ééé\n", 200)
+	docs := []core.Artifact{
+		{ID: core.ArtifactDecisions, Title: "Keputusan", Body: "## Terbuka\n\n" + long + "## Diputuskan\n\n- **DEC-001**\n  - Keputusan: Akses DB: Squirrel + pgx\n"},
+		{ID: "open-decisions", Title: "OD", Body: "Rekomendasi: sqlc\n" + long + "EKOR"},
+	}
+	got := WorkflowPrompt(&core.Project{Name: "RBAC", Story: "s"}, docs)
+	if !strings.Contains(got, "Keputusan: Akses DB: Squirrel + pgx") || !strings.Contains(got, "1. decided decisions") {
+		t.Error("decided decision or precedence missing from workflow prompt")
+	}
+	if strings.Contains(got, "EKOR") || !utf8.ValidString(got) {
+		t.Error("non-binding artifact not cut on a rune boundary")
 	}
 }

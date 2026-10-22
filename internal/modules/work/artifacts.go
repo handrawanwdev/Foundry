@@ -20,6 +20,13 @@ const MaxArtifacts = 30
 // promptBody is how much of an artifact body a prompt carries.
 const promptBody = 4000
 
+// bindingDocs are carried whole: they hold the user's choices (decided
+// decisions, approved technology, survey, requirement ids), and a cut
+// one lets an assumption elsewhere win over a decision.
+var bindingDocs = map[string]bool{
+	"requirements": true, "technology": true, core.ArtifactSurvey: true, core.ArtifactDecisions: true,
+}
+
 type artifactsOut struct {
 	Artifacts []core.Artifact `json:"artifacts"`
 	Remove    []string        `json:"remove"`
@@ -79,7 +86,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	b.WriteString(scopeRules)
 	b.WriteString(`Revision rules:
 - change only what the request needs. Return only the artifacts, use cases, acceptance entries and decisions you add or change, each in full; the others stay as they are. Omit definition_of_done to keep it.
-- use-cases, acceptance and decisions are built-in artifacts: change them through use_cases, acceptance, definition_of_done and decisions. requirements, survey-decisions, architecture, technology, design-rules and layout-spec cannot be changed here; when the request is about them, write the decision in a non-builtin artifact and say so in its summary.
+- use-cases, acceptance and decisions are built-in artifacts: change them through use_cases, acceptance, definition_of_done and decisions. requirements, survey-decisions, architecture, technology, design-rules and layout-spec cannot be changed here; when the request is about them, write the decision in a non-builtin artifact and say so in its summary. Such an artifact never replaces the approved technology: for a technology change also add an open decision asking the user to change it in Foundry's technology step.
 - a new use case or decision gets an empty id; keep the id of a changed one.
 - do not drop content that still applies.
 
@@ -108,13 +115,22 @@ func writeDocs(b *strings.Builder, docs []core.Artifact) {
 	b.WriteString("BLUEPRINT ARTIFACTS:\n")
 	for _, d := range docs {
 		body := d.Body
-		if len(body) > promptBody {
-			body = body[:promptBody] + "\n…(dipotong)"
+		if len(body) > promptBody && !bindingDocs[d.ID] {
+			body = strings.ToValidUTF8(body[:promptBody], "") + "\n…(dipotong)"
 		}
 		fmt.Fprintf(b, "=== %s (%s, %s%s) %s\n%s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary, body)
 	}
 	b.WriteString("\n")
+	b.WriteString(precedenceRules)
 }
+
+// precedenceRules settles which blueprint source wins when they disagree.
+const precedenceRules = `Precedence when blueprint sources disagree (highest first):
+1. decided decisions: the "Keputusan" of each DEC under "Diputuskan" in the decisions artifact. Binding; use the choice as written, never present it as open or pick an alternative to it.
+2. the user's mandatory constraints and the approved technology artifact.
+3. every other artifact. Its recommendations, "Asumsi" and temporary choices apply only where 1 and 2 are silent; an artifact that contradicts 1 or 2 does not override them, so name the contradiction instead of following it.
+
+`
 
 // ApplyArtifacts lands a revision: artifacts are added or replaced by id
 // and removed ones dropped. Built-in artifacts cannot be touched.
