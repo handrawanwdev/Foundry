@@ -53,6 +53,10 @@ type Project struct {
 	// Decisions are the assumptions, open questions, conflicts and risks
 	// of the blueprint; a critical one without resolution blocks finalize.
 	Decisions []Decision `json:"decisions,omitempty"`
+	// DecisionSync lists the decisions the user decided, changed or
+	// reopened since the written artifacts were last brought in line with
+	// them; the next blueprint revision rewrites what contradicts them.
+	DecisionSync []string `json:"decision_sync,omitempty"`
 	// Skips are the blueprint areas left out on purpose, with the reason.
 	Skips []AreaSkip `json:"area_skips,omitempty"`
 	// Done is the project's Definition of Done: checkable conditions every

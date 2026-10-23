@@ -76,6 +76,7 @@ func DesignPrompt(p *core.Project) string {
 Write every human-readable text in the same language as the story.
 
 PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
+	writeBinding(&b, p)
 	b.WriteString("PLATFORMS WITH SCREENS: " + strings.Join(p.UIPlatforms(), ", ") + "\n")
 	if d := p.Discovery; d != nil && len(d.Roles) > 0 {
 		b.WriteString("ROLES:\n")
@@ -127,6 +128,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + rejected + "\n\n")
 	}
 	b.WriteString(`Revision rules:
+- decided decisions override the current design: do not keep a page, role, permission, copy or access rule that contradicts them.
 - change only what the request affects. Return rules only when they change, then in full. Return only the shells and pages you add or change, each in full; keep their ids.
 - remove_pages and remove_shells list the ids to delete; links and flows to removed pages are dropped.
 - return flows only for flows whose pages change.

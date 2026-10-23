@@ -15,6 +15,12 @@ import (
 func Markdown(p *core.Project) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n%s\n\n", p.Name, p.Story)
+	if bind := core.BindingText(p.Decisions); bind != "" {
+		b.WriteString("## Keputusan mengikat\n\n")
+		b.WriteString("Keputusan ini menimpa artefak dan command lain bila isinya bertentangan.\n\n")
+		b.WriteString(bind)
+		b.WriteString("\n")
+	}
 	b.WriteString(overviewMarkdown(p))
 	for _, a := range Artifacts(p) {
 		fmt.Fprintf(&b, "## %s\n\n", a.Title)
@@ -546,18 +552,21 @@ type Spec struct {
 	// (the built-in ones are the structured fields above).
 	Artifacts []core.Artifact `json:"artifacts"`
 	// Decisions, Skips and Done are the decision register, the areas
-	// left out and the Definition of Done.
-	Decisions []core.Decision `json:"decisions,omitempty"`
-	Skips     []core.AreaSkip `json:"area_skips,omitempty"`
-	Done      []string        `json:"definition_of_done,omitempty"`
-	Workflow  *core.Workflow  `json:"workflow,omitempty"`
+	// left out and the Definition of Done. BindingDecisions are the
+	// decided entries; they override every other field.
+	Decisions        []core.Decision `json:"decisions,omitempty"`
+	BindingDecisions []core.Decision `json:"binding_decisions,omitempty"`
+	Skips            []core.AreaSkip `json:"area_skips,omitempty"`
+	Done             []string        `json:"definition_of_done,omitempty"`
+	Workflow         *core.Workflow  `json:"workflow,omitempty"`
 }
 
 // Export builds the Spec from the project.
 func Export(p *core.Project) Spec {
 	s := Spec{Name: p.Name, Story: p.Story, Requirements: p.Requirements, Features: p.Features, Flows: p.Flows,
 		Platform: p.Platform, Stack: p.Stack, Structure: p.Structure, Blueprint: p.Blueprint,
-		Artifacts: p.Artifacts, Decisions: p.Decisions, Skips: p.Skips, Done: p.Done, Workflow: p.Workflow}
+		Artifacts: p.Artifacts, Decisions: p.Decisions, BindingDecisions: p.BindingDecisions(),
+		Skips: p.Skips, Done: p.Done, Workflow: p.Workflow}
 	if s.Artifacts == nil {
 		s.Artifacts = []core.Artifact{}
 	}

@@ -39,6 +39,7 @@ Memberi prompt lalu meminta AI langsung menulis kode jarang cukup. Tanpa perenca
 | Masalah                                         | Solusi Foundry                                                  |
 | ----------------------------------------------- | --------------------------------------------------------------- |
 | Kebutuhan ambigu atau saling bertentangan       | Discovery, survey teknis, dan **decision register** eksplisit   |
+| Keputusan berubah tapi artefak lain masih lama  | Keputusan *Diputuskan* **mengikat** semua artefak dan command; perubahan mengantri sinkronisasi agar tidak menggantung sendiri |
 | Arsitektur & stack tidak sesuai kebutuhan       | Rekomendasi stack berbasis profil proyek, wajib disetujui       |
 | Instruksi implementasi kehilangan konteks       | Setiap command merujuk artefak blueprint secara langsung        |
 | Dampak perubahan spesifikasi tidak terdeteksi   | **Hash artefak** menandai command & artefak terkait `needs_review` |
@@ -243,7 +244,7 @@ foundry mcp --print-config --project ~/kerja/klinik
 | ------------------ | -------- | ---------------------------------------------------------------------- |
 | `get_project`      | `READ`   | Ringkasan proyek: stage, discovery, arsitektur, platform, stack, job   |
 | `get_requirements` | `READ`   | Requirement, acceptance criteria, feature, use case, Definition of Done |
-| `get_blueprint`    | `READ`   | Semua artefak blueprint (Markdown), state artefak, decision register   |
+| `get_blueprint`    | `READ`   | Semua artefak blueprint (Markdown), state artefak, decision register, keputusan mengikat |
 | `get_workflow`     | `READ`   | Command, dependency, gelombang eksekusi, isu validasi, command `needs_review` |
 | `get_design`       | `READ`   | Design rules & layout spec terstruktur beserta isu validasi            |
 | `get_spec`         | `READ`   | Spesifikasi lengkap (JSON + Markdown) untuk implementasi di luar Foundry |

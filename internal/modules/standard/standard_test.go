@@ -17,6 +17,9 @@ func TestRulesForceNoStack(t *testing.T) {
 	if !strings.Contains(AgentsMD, "docs/foundry/") || !strings.Contains(PackageGuide, "gelombang") {
 		t.Fatal("agent guide does not point to the export package")
 	}
+	if !strings.Contains(AgentsMD, "Diputuskan") || !strings.Contains(PackageGuide, "mengalahkan") {
+		t.Fatal("agent guide does not say decided decisions override other artifacts")
+	}
 }
 
 // Rules is pinned: the text lands in discovery prompts. Update this hash on

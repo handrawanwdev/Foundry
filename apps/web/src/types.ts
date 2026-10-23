@@ -197,6 +197,8 @@ export interface Project {
   platform?: PlatformPlan; structure?: Structure; stack?: TechStack; ui?: UIDesign;
   artifacts?: Artifact[]; artifact_request?: ChangeRequest; workflow?: Workflow;
   decisions?: Decision[]; area_skips?: AreaSkip[]; definition_of_done?: string[];
+  // Decisions changed since the artifacts and commands were brought in line.
+  decision_sync?: string[];
   job?: Job; events: Event[] | null; updated_at: string;
 }
 
@@ -230,7 +232,7 @@ export interface AreaStatus {
 }
 export type ArtifactStateKind = "draft" | "valid" | "needs_review" | "finalized";
 export interface ArtifactState { status: ArtifactStateKind; reason?: string }
-export interface ChangeRequest { text: string; focus?: string[]; rejected?: string }
+export interface ChangeRequest { text: string; focus?: string[]; rejected?: string; cascade?: boolean; sync?: boolean }
 // What deleting one blueprint document reaches.
 export interface DeleteImpact {
   doc: string;

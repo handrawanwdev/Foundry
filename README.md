@@ -39,6 +39,7 @@ Prompting an AI and asking it to write code straight away is rarely enough. With
 | Problem                                          | Foundry's answer                                                    |
 | ------------------------------------------------ | ------------------------------------------------------------------- |
 | Ambiguous or conflicting requirements            | Discovery, a technical survey, and an explicit **decision register** |
+| A decided change that other artifacts still contradict | Decided entries **bind** every artifact and command; a change queues a sync so nothing hangs on its own |
 | Architecture & stack that don't fit the need     | Profile-based stack recommendations that require your approval      |
 | Implementation instructions that lose context    | Every command references blueprint artifacts directly               |
 | Spec changes with undetected impact              | **Artifact hashes** flag affected commands & artifacts `needs_review` |
@@ -245,7 +246,7 @@ foundry mcp --print-config --project ~/work/clinic
 | ------------------ | ---------- | --------------------------------------------------------------------------- |
 | `get_project`      | `READ`     | Project summary: stage, discovery, architecture, platform, stack, job       |
 | `get_requirements` | `READ`     | Requirements, acceptance criteria, features, use cases, Definition of Done  |
-| `get_blueprint`    | `READ`     | All blueprint artifacts (Markdown), artifact states, decision register      |
+| `get_blueprint`    | `READ`     | All blueprint artifacts (Markdown), artifact states, decision register, binding decisions |
 | `get_workflow`     | `READ`     | Commands, dependencies, execution waves, validation issues, `needs_review` commands |
 | `get_design`       | `READ`     | Structured design rules & layout spec with validation issues                |
 | `get_spec`         | `READ`     | Full specification (JSON + Markdown) for implementation outside Foundry     |

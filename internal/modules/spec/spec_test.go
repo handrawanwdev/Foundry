@@ -207,12 +207,12 @@ func TestWriteDocsScope(t *testing.T) {
 		return string(b)
 	}
 	for f, wants := range map[string][]string{
-		"blueprint/use-cases.md":  {"## FLOW-001 Buat janji", "Requirement: REQ-001", "**Kegagalan**", "appointment:create"},
+		"blueprint/use-cases.md":  {"## FLOW-001 Buat janji", "Requirement: REQ-001", "**Kegagalan**", "appointment:create", "Keputusan mengikat", "Keputusan: Midtrans"},
 		"blueprint/acceptance.md": {"| REQ-001-AC1 | negative | Bentrok ditolak | test integrasi |", "Tidak dapat diuji langsung: format ditentukan klinik", "- [ ] Bukti test dilampirkan", "tidak menjalankan pengujian"},
-		"blueprint/decisions.md":  {"prototipe lokal", "**DEC-001** (Pertanyaan, kritis)", "Keputusan: Midtrans"},
+		"blueprint/decisions.md":  {"prototipe lokal", "**DEC-001** (Pertanyaan, kritis)", "Keputusan: Midtrans", "Keputusan di bawah mengikat"},
 		"traceability.md":         {"| REQ-001 | MUST | FEAT-001 | FLOW-001 | REQ-001-AC1 | [CMD-001](workflow/CMD-001.md) |", "Requirement MUST tanpa command: REQ-002."},
-		"workflow/CMD-001.md":     {"## Mencakup requirement", "REQ-001"},
-		"README.md":               {"## Cakupan blueprint", "| Observability & Reliability | dilewati | prototipe lokal |"},
+		"workflow/CMD-001.md":     {"## Mencakup requirement", "REQ-001", "Keputusan mengikat", "../blueprint/decisions.md"},
+		"README.md":               {"## Cakupan blueprint", "| Observability & Reliability | dilewati | prototipe lokal |", "## Keputusan mengikat", "Keputusan: Midtrans"},
 	} {
 		got := read(f)
 		for _, w := range wants {

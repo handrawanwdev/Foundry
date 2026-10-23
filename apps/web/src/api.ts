@@ -89,6 +89,8 @@ export const api = {
   editUseCases: (use_cases: Flow[]) => call<Project>("PUT", "/project/blueprint/use-cases", { use_cases }),
   editAcceptance: (acceptance: AcceptanceEdit[], definition_of_done: string[]) =>
     call<Project>("PUT", "/project/blueprint/acceptance", { acceptance, definition_of_done }),
+  // AI rewrites the artifacts, then the commands, that contradict changed decisions.
+  syncDecisions: () => call("POST", "/project/blueprint/decisions/sync", {}),
   // resolution "" opens the decision again.
   resolveDecision: (id: string, resolution: string) =>
     call<Project>("PUT", `/project/blueprint/decisions/${encodeURIComponent(id)}`, { resolution }),

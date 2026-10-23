@@ -142,6 +142,11 @@ func fakeAgent() {
 	case strings.Contains(prompt, "workflow planner"):
 		countRun("workflow")
 		switch {
+		case strings.Contains(prompt, "Keputusan berikut berubah setelah command ditulis"):
+			if strings.Contains(prompt, "→ Keputusan: WhatsApp lewat penyedia resmi") {
+				countRun("workflow-sync")
+			}
+			fmt.Println(`{"commands": []}`)
 		case strings.Contains(prompt, "dihapus dari blueprint"):
 			fmt.Println(cleanupWorkflowJSON(prompt))
 		case strings.Contains(prompt, "CURRENT COMMANDS"):
@@ -155,6 +160,13 @@ func fakeAgent() {
 		}
 	case strings.Contains(prompt, "blueprint editor"):
 		countRun("blueprint")
+		if strings.Contains(prompt, "Sesuaikan blueprint dengan keputusan") {
+			if strings.Contains(prompt, "DECISIONS CHANGED") && strings.Contains(prompt, "→ Keputusan: WhatsApp lewat penyedia resmi") {
+				countRun("blueprint-sync")
+			}
+			fmt.Println("```json\n{}\n```") // nothing contradicts the decision
+			return
+		}
 		if strings.Contains(prompt, "dihapus dari blueprint") {
 			if mode == "cleanup_fail" {
 				fmt.Println("maaf, saya tidak bisa")
@@ -207,7 +219,7 @@ func cleanupWorkflowJSON(prompt string) string {
 	return `{"commands": [` + strings.Join(out, ",") + `]}`
 }
 
-const cyclicWorkflowJSON =`{"commands": [
+const cyclicWorkflowJSON = `{"commands": [
  {"id": "C1", "name": "A", "objective": "a", "instructions": "a", "depends_on": ["C2"], "artifacts": ["requirements"]},
  {"id": "C2", "name": "B", "objective": "b", "instructions": "b", "depends_on": ["C1"], "artifacts": ["requirements"]}]}`
 

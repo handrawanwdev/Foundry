@@ -47,7 +47,8 @@ export function BlueprintPage() {
   const designDoc = !!doc && isDesignDoc(doc.id);
   // Areas still to write or fix, and critical decisions still open.
   const todo = (view?.areas ?? []).filter((a) => a.status === "missing" || a.status === "invalid").length
-    + (view?.decisions ?? []).filter((d) => d.critical && !d.resolution).length;
+    + (view?.decisions ?? []).filter((d) => d.critical && !d.resolution).length
+    + (project.decision_sync?.length ? 1 : 0);
 
   return (
     <div className="ws">
@@ -91,6 +92,7 @@ export function BlueprintPage() {
       </nav>
 
       <main className="ws-main">
+        <DecisionSyncNotice project={project} locked={locked} />
         {id === "platform" ? <PlatformStructure project={project} />
           : id === "scope" ? view && <ScopePanel project={project} view={view} locked={locked} onOpen={select} />
           : id === "design" && designing ? <DesignEmpty project={project} locked={locked} />
@@ -456,6 +458,23 @@ function ScopePanel({ project, view, locked, onOpen }: { project: Project; view:
         ))}
       </ul>
     </article>
+  );
+}
+
+// Decisions changed after the artifacts were written: until the AI brings
+// the artifacts and commands in line, they still carry the old state.
+function DecisionSyncNotice({ project, locked }: { project: Project; locked: boolean }) {
+  const { run, pending } = useProject();
+  const ids = project.decision_sync ?? [];
+  if (!ids.length || locked) return null;
+  const busy = project.job?.kind === "blueprint" && isWorking(project);
+  return (
+    <div className="notice warn">
+      <span>Keputusan {ids.join(", ")} berubah. Artefak, use case, dan command yang masih memakai keputusan lama belum disesuaikan — jangan anggap dokumen lain berdiri sendiri.</span>
+      {busy ? <span><span className="spinner" /> {project.job?.message}…</span> : (
+        <button disabled={isWorking(project) || pending === "syncDecisions"} onClick={() => void run("syncDecisions", api.syncDecisions)}>Sesuaikan dengan AI</button>
+      )}
+    </div>
   );
 }
 

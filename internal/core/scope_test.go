@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -113,6 +114,14 @@ func TestDecisions(t *testing.T) {
 	p.Decisions[0].Resolution = "Midtrans"
 	if len(p.OpenCritical()) != 0 {
 		t.Fatal("decided question still open")
+	}
+	got := p.BindingDecisions()
+	if len(got) != 1 || got[0].ID != "DEC-001" {
+		t.Fatalf("binding = %+v", got)
+	}
+	text := BindingText(p.Decisions)
+	if !strings.Contains(text, "DEC-001") || !strings.Contains(text, "Keputusan: Midtrans") || strings.Contains(text, "DEC-002") {
+		t.Fatalf("binding text = %s", text)
 	}
 }
 

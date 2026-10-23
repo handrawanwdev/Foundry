@@ -524,6 +524,7 @@ func TestScopeRoutes(t *testing.T) {
 			"steps": ["a"], "postconditions": ["b"], "failures": ["c"]}]}`, 200, `"goal":"Jadwal"`},
 		{"PUT", "/api/v1/project/blueprint/acceptance", `{"acceptance": [{"requirement": "REQ-001", "criteria": [{"kind": "edge", "text": "Bentrok ditolak"}]}], "definition_of_done": []}`, 400, "Definition of Done"},
 		{"PUT", "/api/v1/project/blueprint/acceptance", `{"acceptance": [{"requirement": "REQ-001", "criteria": [{"kind": "edge", "text": "Bentrok ditolak"}]}], "definition_of_done": ["Test lulus"]}`, 200, `"REQ-001-AC1"`},
+		{"POST", "/api/v1/project/blueprint/decisions/sync", `{}`, 412, ""},
 		{"PUT", "/api/v1/project/blueprint/decisions/DEC-404", `{"resolution": "x"}`, 400, "tidak ada"},
 		{"PUT", "/api/v1/project/blueprint/decisions/DEC-001", `{"resolution": "Midtrans"}`, 200, `"resolution":"Midtrans"`},
 		{"POST", "/api/v1/project/blueprint/artifacts/ghost/review", `{}`, 400, "tidak ada"},

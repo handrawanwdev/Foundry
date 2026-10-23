@@ -134,6 +134,8 @@ func decisionsMarkdown(p *core.Project) string {
 		fmt.Fprintf(&b, "## %s\n\n", group.title)
 		if group.open {
 			b.WriteString("Jangan mengimplementasikan bagian yang bergantung pada keputusan kritis yang masih terbuka; tanyakan ke user.\n\n")
+		} else {
+			b.WriteString("Keputusan di bawah mengikat. Bila artefak, use case, aturan desain, layout, atau command bertentangan, ikuti keputusan ini — jangan mengikuti dokumen yang masih memakai keputusan lama.\n\n")
 		}
 		for _, d := range rows {
 			tags := []string{decisionLabel[d.Kind]}

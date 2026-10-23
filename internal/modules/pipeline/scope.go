@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
@@ -43,6 +44,9 @@ func scopeBlockers(p *core.Project) []string {
 	for _, d := range p.OpenCritical() {
 		out = append(out, fmt.Sprintf("keputusan kritis %s belum diputuskan: %s", d.ID, d.Text))
 	}
+	if len(p.DecisionSync) > 0 {
+		out = append(out, fmt.Sprintf("keputusan %s berubah; artefak dan command belum disesuaikan", strings.Join(p.DecisionSync, ", ")))
+	}
 	review := 0
 	for _, st := range core.ArtifactStates(p, docs) {
 		if st.Status == core.StateNeedsReview {
@@ -68,6 +72,24 @@ func (s *Service) CompleteScope() error {
 		}
 		p.ArtifactRequest = &core.ChangeRequest{Text: text}
 		p.Log("ui", "Minta AI melengkapi cakupan blueprint")
+		return nil
+	})
+}
+
+// SyncDecisions asks the AI to bring the artifacts, use cases, acceptance
+// criteria and then the commands in line with the decisions the user
+// changed.
+func (s *Service) SyncDecisions() error {
+	return s.startAIIf(work.KindArtifacts, func(p *core.Project) error {
+		if err := blueprintEditable(p); err != nil {
+			return err
+		}
+		text := work.DecisionSyncRequest(p)
+		if text == "" {
+			return fmt.Errorf("%w: blueprint sudah sesuai dengan keputusan", ErrNothingToDo)
+		}
+		p.ArtifactRequest = &core.ChangeRequest{Text: text, Sync: true}
+		p.Log("ui", "Minta AI menyesuaikan blueprint dengan keputusan")
 		return nil
 	})
 }

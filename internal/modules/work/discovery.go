@@ -238,6 +238,7 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	p.UI = nil
 	p.Done = nonEmpty(out.Done)
 	p.Decisions = mergeDecisions(nil, append(cleanDecisions(out.Decisions), SurveyConflicts(p)...))
+	p.DecisionSync = nil // the artifacts were written with these decisions
 	p.Skips = nil
 	for _, sk := range out.Skip {
 		skipArea(p, sk.Area, sk.Reason) // an invalid skip is dropped: the area stays expected

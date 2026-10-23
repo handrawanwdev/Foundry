@@ -348,10 +348,11 @@ func (s *Server) Handler() http.Handler {
 		}
 		return map[string]any{"artifacts": docs, "has_ui": p.HasUI(), "request": p.ArtifactRequest,
 			"blueprint_hash": spec.BlueprintHash(docs), "areas": core.Coverage(p, docs), "states": core.ArtifactStates(p, docs),
-			"issues": issues, "decisions": decisions, "criterion_kinds": core.CriterionKinds}, nil
+			"issues": issues, "decisions": decisions, "binding_decisions": p.BindingDecisions(), "criterion_kinds": core.CriterionKinds}, nil
 	}))
 	// Blueprint scope: areas, use cases, acceptance criteria, decisions.
 	api("POST /api/v1/project/blueprint/complete", s.action(func(svc *pipeline.Service) error { return svc.CompleteScope() }))
+	api("POST /api/v1/project/blueprint/decisions/sync", s.action(func(svc *pipeline.Service) error { return svc.SyncDecisions() }))
 	api("PUT /api/v1/project/blueprint/use-cases", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {
 			UseCases []core.Flow `json:"use_cases"`

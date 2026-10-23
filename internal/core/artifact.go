@@ -80,9 +80,13 @@ type ChangeRequest struct {
 	// Rejected is why the AI's last answer was refused; the retry prompt
 	// shows it.
 	Rejected string `json:"rejected,omitempty"`
-	// Cascade marks a request made by deleting a document: the artifact
-	// request is followed by the workflow request.
+	// Cascade marks a request made by deleting a document or by changed
+	// decisions: the artifact request is followed by the workflow request.
 	Cascade bool `json:"cascade,omitempty"`
+	// Sync marks a request that brings the blueprint or the commands in
+	// line with changed decisions; an answer without changes is valid,
+	// nothing contradicted them.
+	Sync bool `json:"sync,omitempty"`
 }
 
 // HasUI reports whether the product has screens to design.

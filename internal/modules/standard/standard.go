@@ -30,7 +30,7 @@ const PackageGuide = `Paket ini dibuat oleh Foundry. Foundry merancang dan menyu
 6. Bila blueprint bertentangan dengan kondisi repository atau dengan command lain, berhenti dan laporkan; jangan memutuskan sendiri.
 7. Untuk layar: ` + "`blueprint/design-rules.md`" + ` (aturan desain dan token) dan ` + "`blueprint/layout-spec.md`" + ` (layout per halaman) adalah acuannya; versi JSON ada di ` + "`design/`" + `. Semua nilai visual dari token; jangan nilai hardcode. Halaman bertanda *sudah ada* diubah seperlunya, tidak dibuat ulang.
 8. ` + "`blueprint/acceptance.md`" + ` berisi kriteria penerimaan per requirement dan Definition of Done; command menyebut requirement yang dicakupnya. Bukti yang diharapkan adalah syarat, bukan hasil: belum ada yang terverifikasi sampai agent menjalankannya. ` + "`traceability.md`" + ` memetakan requirement ke use case, kriteria, dan command.
-9. ` + "`blueprint/decisions.md`" + ` berisi asumsi, keputusan, risiko, dan area yang sengaja tidak dicakup. Jangan mengimplementasikan bagian yang bergantung pada keputusan yang masih terbuka; tanyakan ke user.
+9. ` + "`blueprint/decisions.md`" + ` berisi asumsi, keputusan, risiko, dan area yang sengaja tidak dicakup. Keputusan di bagian *Diputuskan* mengikat dan mengalahkan asumsi, rekomendasi, atau aturan di artefak lain dan di command; bila ada yang bertentangan, ikuti keputusan dan laporkan pertentangannya. Jangan mengimplementasikan bagian yang bergantung pada keputusan yang masih terbuka; tanyakan ke user.
 `
 
 // AgentsMD is written at the project root when it has no AGENTS.md.
@@ -44,5 +44,6 @@ Rancangan project ini ada di docs/foundry/ (dibuat oleh Foundry).
 - Untuk UI: ikuti docs/foundry/blueprint/design-rules.md dan layout-spec.md.
 - Periksa repository sebelum mengubah kode; jangan mengarang path atau API.
 - Penuhi acceptance criteria tiap command (docs/foundry/blueprint/acceptance.md) dan laporkan buktinya.
+- Keputusan di docs/foundry/blueprint/decisions.md bagian *Diputuskan* mengikat dan menimpa artefak, use case, aturan desain, layout, dan command lain. Bila ada yang bertentangan, ikuti keputusan dan laporkan pertentangannya.
 - Jangan memutuskan sendiri hal yang tercatat terbuka di docs/foundry/blueprint/decisions.md.
 `

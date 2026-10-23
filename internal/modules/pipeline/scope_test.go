@@ -2,12 +2,14 @@ package pipeline_test
 
 import (
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
+	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
 // A critical question blocks finalize until the user decides it; a
@@ -31,6 +33,7 @@ func TestCriticalDecisionBlocksFinalize(t *testing.T) {
 	if _, err := s.ResolveDecision(id, "WhatsApp lewat penyedia resmi"); err != nil {
 		t.Fatal(err)
 	}
+	syncDecisions(t, s)
 	if err := s.Finalize(); err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +51,60 @@ func TestCriticalDecisionBlocksFinalize(t *testing.T) {
 	}
 	if err := s.Finalize(); !errors.Is(err, pipeline.ErrIncomplete) {
 		t.Fatalf("finalize after reopening the decision err = %v", err)
+	}
+}
+
+func syncDecisions(t *testing.T, s *pipeline.Service) {
+	t.Helper()
+	if err := s.SyncDecisions(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+}
+
+// A decision the user changes waits until the AI brought the artifacts,
+// then the commands, in line with it; until then finalize is blocked. The
+// AI may find nothing contradicting it.
+func TestDecisionChangeSyncsBlueprintAndCommands(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runs")
+	t.Setenv("FAKE_RUNS", path)
+	s := newService(t, fakeAI{}, "critical")
+	p := designReady(t, s)
+	if err := workflowReady(s); err != nil {
+		t.Fatal(err)
+	}
+	id := p.OpenCritical()[0].ID
+	if err := s.SyncDecisions(); !errors.Is(err, pipeline.ErrNothingToDo) {
+		t.Fatalf("sync without a changed decision err = %v", err)
+	}
+	if _, err := s.ResolveDecision(id, "WhatsApp lewat penyedia resmi"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ResolveDecision(id, " WhatsApp lewat penyedia resmi "); err != nil { // same decision: queued once
+		t.Fatal(err)
+	}
+	p = load(t, s)
+	if !slices.Equal(p.DecisionSync, []string{id}) ||
+		!slices.ContainsFunc(pipeline.Blockers(p), func(b string) bool { return strings.Contains(b, "keputusan "+id+" berubah") }) {
+		t.Fatalf("sync %v blockers %v", p.DecisionSync, pipeline.Blockers(p))
+	}
+	syncDecisions(t, s)
+	p = load(t, s)
+	mustJob(t, p, work.KindWorkflow, core.JobDone)
+	if p.DecisionSync != nil || p.ArtifactRequest != nil || p.Workflow.Request != nil {
+		t.Fatalf("after sync: %v %+v %+v", p.DecisionSync, p.ArtifactRequest, p.Workflow.Request)
+	}
+	if n := runs(t, path); n["blueprint-sync"] != 1 || n["workflow-sync"] != 1 {
+		t.Fatalf("runs = %v", n)
+	}
+	if _, err := s.ApproveStack(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ApproveStructure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Finalize(); err != nil {
+		t.Fatal(err)
 	}
 }
 

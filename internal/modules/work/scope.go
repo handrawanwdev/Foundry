@@ -303,14 +303,86 @@ func nonNil(s []string) []string {
 }
 
 // ResolveDecision records the user's decision; an empty resolution opens
-// it again.
+// it again. A change waits in DecisionSync: the written artifacts and
+// commands still carry the old state until the AI brings them in line.
 func ResolveDecision(p *core.Project, id, resolution string) error {
 	i := slices.IndexFunc(p.Decisions, func(d core.Decision) bool { return d.ID == id })
 	if i < 0 {
 		return fmt.Errorf("keputusan %s tidak ada", id)
 	}
-	p.Decisions[i].Resolution = strings.TrimSpace(resolution)
+	resolution = strings.TrimSpace(resolution)
+	if p.Decisions[i].Resolution == resolution {
+		return nil
+	}
+	p.Decisions[i].Resolution = resolution
+	if !slices.Contains(p.DecisionSync, id) {
+		p.DecisionSync = append(p.DecisionSync, id)
+	}
 	return nil
+}
+
+// ---------- decision sync ----------
+
+// DecisionSyncRequest is the request that brings the blueprint in line
+// with the decisions in DecisionSync; "" when none waits. The prompt lists
+// the decisions themselves.
+func DecisionSyncRequest(p *core.Project) string {
+	if len(p.DecisionSync) == 0 {
+		return ""
+	}
+	return "Sesuaikan blueprint dengan keputusan yang berubah: " + strings.Join(p.DecisionSync, ", ") + "."
+}
+
+// decisionChanges lists the decisions in ids as they stand now.
+func decisionChanges(p *core.Project, ids []string) string {
+	var b strings.Builder
+	for _, id := range ids {
+		i := slices.IndexFunc(p.Decisions, func(d core.Decision) bool { return d.ID == id })
+		if i < 0 {
+			continue
+		}
+		if d := p.Decisions[i]; d.Open() {
+			fmt.Fprintf(&b, "- %s (%s): dibuka lagi, belum diputuskan.\n", d.ID, d.Text)
+		} else {
+			fmt.Fprintf(&b, "- %s (%s) → Keputusan: %s\n", d.ID, d.Text, d.Resolution)
+		}
+	}
+	return b.String()
+}
+
+// changedDecisions are the ids whose resolution differs between before
+// and after; a new open decision is no change.
+func changedDecisions(before, after []core.Decision) []string {
+	var out []string
+	for _, d := range after {
+		i := slices.IndexFunc(before, func(x core.Decision) bool { return x.ID == d.ID })
+		if i >= 0 && before[i].Resolution != d.Resolution || i < 0 && !d.Open() {
+			out = append(out, d.ID)
+		}
+	}
+	return out
+}
+
+// requestCommandSync asks the workflow job that follows a blueprint
+// revision to rewrite the commands that contradict the changed decisions.
+func requestCommandSync(p *core.Project, ids []string) {
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	w := p.Workflow
+	changes := decisionChanges(p, ids)
+	if w == nil || len(w.Commands) == 0 || changes == "" {
+		return
+	}
+	text := "Keputusan berikut berubah setelah command ditulis:\n" + changes +
+		"Tulis ulang command yang instruksi, constraint, atau acceptance criteria-nya masih bertentangan dengan keputusan ini agar mengikutinya. " +
+		"Jangan ubah command lain; bila tidak ada yang bertentangan, kembalikan daftar commands kosong."
+	if w.Request == nil {
+		w.Request = &core.ChangeRequest{Text: text, Cascade: true, Sync: true}
+		return
+	}
+	w.Request.Text += "\n\n" + text
+	w.Request.Cascade = true
+	w.Request.Sync = true
 }
 
 // SkipArea leaves an area out on purpose; UnskipArea brings it back.

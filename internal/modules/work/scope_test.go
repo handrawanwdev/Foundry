@@ -78,6 +78,24 @@ func TestApplyArtifactsScope(t *testing.T) {
 	}
 }
 
+// Changing a decision queues a command rewrite; appending to an existing
+// request still marks it as a sync so an empty answer is valid.
+func TestRequestCommandSync(t *testing.T) {
+	p := &core.Project{
+		Decisions: []core.Decision{{ID: "DEC-001", Kind: core.DecisionQuestion, Text: "Gateway?", Resolution: "Midtrans"}},
+		Workflow:  &core.Workflow{Commands: []core.Command{{ID: "CMD-001", Name: "x", Objective: "o", Instructions: "i"}}},
+	}
+	requestCommandSync(p, []string{"DEC-001"})
+	r := p.Workflow.Request
+	if r == nil || !r.Sync || !r.Cascade || !strings.Contains(r.Text, "Keputusan: Midtrans") {
+		t.Fatalf("request = %+v", r)
+	}
+	requestCommandSync(p, []string{"DEC-001"})
+	if !p.Workflow.Request.Sync || strings.Count(p.Workflow.Request.Text, "Keputusan: Midtrans") != 2 {
+		t.Fatalf("append = %+v", p.Workflow.Request)
+	}
+}
+
 func TestEditUseCasesAndAcceptance(t *testing.T) {
 	p := scoped()
 	// Unchanged older flows are kept as they are; a changed one must be valid.

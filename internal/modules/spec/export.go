@@ -84,11 +84,16 @@ func safeName(id string) bool {
 func commandFile(id string) string { return "workflow/" + id + ".md" }
 
 // ArtifactMarkdown is one artifact as a standalone document.
-func ArtifactMarkdown(a core.Artifact) string {
+func ArtifactMarkdown(a core.Artifact) string { return artifactMarkdown(a, "") }
+
+func artifactMarkdown(a core.Artifact, binding string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", a.Title)
 	if a.Summary != "" {
 		fmt.Fprintf(&b, "> %s\n\n", a.Summary)
+	}
+	if binding != "" && a.ID != core.ArtifactDecisions {
+		b.WriteString(bindBanner(binding, "decisions.md"))
 	}
 	b.WriteString(strings.TrimSpace(a.Body))
 	b.WriteString("\n")
@@ -101,9 +106,25 @@ func ArtifactMarkdown(a core.Artifact) string {
 	return b.String()
 }
 
+// bindBanner inlines decided decisions into a document so an agent that
+// reads only this file still follows them.
+func bindBanner(binding, href string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "> **Keputusan mengikat** menimpa isi di bawah bila bertentangan. Sumber: [decisions](%s).\n>\n", href)
+	for _, line := range strings.Split(strings.TrimSuffix(binding, "\n"), "\n") {
+		b.WriteString("> " + line + "\n")
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
 // CommandMarkdown is one command as a standalone instruction. waves places
 // it in the order; nil leaves the order out.
 func CommandMarkdown(c core.Command, waves [][]string) string {
+	return commandMarkdown(c, waves, "")
+}
+
+func commandMarkdown(c core.Command, waves [][]string, binding string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s — %s\n\n", c.ID, c.Name)
 	meta := []string{"Status: " + c.Status}
@@ -118,6 +139,9 @@ func CommandMarkdown(c core.Command, waves [][]string) string {
 		meta = append(meta, "Tanpa dependency")
 	}
 	b.WriteString(strings.Join(meta, " · ") + "\n\n")
+	if binding != "" {
+		b.WriteString(bindBanner(binding, "../blueprint/decisions.md"))
+	}
 	section := func(title, text string) {
 		if text = strings.TrimSpace(text); text != "" {
 			fmt.Fprintf(&b, "## %s\n\n%s\n\n", title, text)
@@ -235,19 +259,20 @@ func BuildManifest(p *core.Project) Manifest {
 func Files(p *core.Project) map[string]string {
 	m := BuildManifest(p)
 	docs := Artifacts(p)
+	binding := core.BindingText(p.Decisions)
 	out := map[string]string{"README.md": packageReadme(p, m, docs)}
 	if b, err := json.MarshalIndent(m, "", "  "); err == nil {
 		out["manifest.json"] = string(b) + "\n"
 	}
 	for _, d := range docs {
 		if safeName(d.ID) {
-			out[artifactFile(d.ID)] = ArtifactMarkdown(d)
+			out[artifactFile(d.ID)] = artifactMarkdown(d, binding)
 		}
 	}
 	if w := p.Workflow; w != nil {
 		for _, c := range w.Commands {
 			if safeName(c.ID) {
-				out[commandFile(c.ID)] = CommandMarkdown(c, m.Waves)
+				out[commandFile(c.ID)] = commandMarkdown(c, m.Waves, binding)
 			}
 		}
 		if b, err := json.MarshalIndent(struct {
@@ -310,6 +335,12 @@ func packageReadme(p *core.Project, m Manifest, docs []core.Artifact) string {
 	fmt.Fprintf(&b, "Status: **%s** · Blueprint `%s` · Workflow v%d\n\n", m.Status, m.BlueprintHash, m.WorkflowVersion)
 	if p.Story != "" {
 		fmt.Fprintf(&b, "%s\n\n", strings.TrimSpace(p.Story))
+	}
+	if bind := core.BindingText(p.Decisions); bind != "" {
+		b.WriteString("## Keputusan mengikat\n\n")
+		b.WriteString("Keputusan di bawah menimpa artefak dan command lain bila isinya bertentangan. Baca ini sebelum artefak mana pun.\n\n")
+		b.WriteString(bind)
+		b.WriteString("\n")
 	}
 	b.WriteString(standard.PackageGuide)
 	b.WriteString("\n## Blueprint\n\n| Artefak | Kategori | File |\n|---|---|---|\n")

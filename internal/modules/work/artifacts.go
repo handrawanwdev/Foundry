@@ -51,7 +51,12 @@ func ArtifactsPrompt(p *core.Project, docs []core.Artifact) string {
 Write every human-readable text in the same language as the story.
 
 PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
-	writeDocs(&b, docs)
+	writeBinding(&b, p)
+	cut := promptBody
+	if len(p.DecisionSync) > 0 {
+		cut = 0 // the AI must see the full text to find what still contradicts the decisions
+	}
+	writeDocs(&b, docs, cut)
 	b.WriteString("AREA STATUS:\n")
 	for _, a := range core.Coverage(p, docs) {
 		fmt.Fprintf(&b, "- %s: %s", a.ID, a.Status)
@@ -71,6 +76,10 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		}
 		b.WriteString("\n")
 	}
+	if changes := decisionChanges(p, p.DecisionSync); changes != "" {
+		b.WriteString("DECISIONS CHANGED by the user after the artifacts were written (as they stand now):\n" + changes +
+			"Bring the blueprint in line in this answer: return every artifact, use case and acceptance entry whose content (assumptions, recommendations, business rules, permissions, flows) still contradicts these decisions, rewritten to follow them; a reopened decision is written as still open, not as decided. Leave unaffected ones out; when nothing contradicts them, an empty JSON object is a valid answer.\n\n")
+	}
 	r := p.ArtifactRequest
 	if r != nil {
 		b.WriteString("USER REQUEST:\n" + r.Text + "\n\n")
@@ -86,8 +95,9 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	b.WriteString(scopeRules)
 	b.WriteString(`Revision rules:
 - change only what the request needs. Return only the artifacts, use cases, acceptance entries and decisions you add or change, each in full; the others stay as they are. Omit definition_of_done to keep it.
-- use-cases, acceptance and decisions are built-in artifacts: change them through use_cases, acceptance, definition_of_done and decisions. requirements, survey-decisions, architecture, technology, design-rules and layout-spec cannot be changed here; when the request is about them, write the decision in a non-builtin artifact and say so in its summary. Such an artifact never replaces the approved technology: for a technology change also add an open decision asking the user to change it in Foundry's technology step.
+- use-cases, acceptance and decisions are built-in artifacts: change them through use_cases, acceptance, definition_of_done and decisions. requirements, survey-decisions, architecture, technology, design-rules and layout-spec cannot be rewritten here. A passage there that contradicts a decided decision does not win: name the contradiction and follow the decision. Do not create a new artifact whose only job is to restate a decided decision (that document would hang on its own and other agents would miss it). For a technology change also add an open decision asking the user to change it in Foundry's technology step.
 - a new use case or decision gets an empty id; keep the id of a changed one.
+- when you decide, change or reopen a decision, also return in this answer every artifact, use case and acceptance entry that contradicts its new state, rewritten to follow it. The commands are brought in line after this answer.
 - do not drop content that still applies.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block:
@@ -110,13 +120,27 @@ func scopeIssues(p *core.Project) []core.Issue {
 	return append(p.AreaIssues(core.AreaUseCases), p.AreaIssues(core.AreaAcceptance)...)
 }
 
-// writeDocs lists the blueprint for a prompt; long bodies are cut.
-func writeDocs(b *strings.Builder, docs []core.Artifact) {
+// writeBinding puts the decided decisions at the top of every agent prompt
+// so no document is read as if it stood alone.
+func writeBinding(b *strings.Builder, p *core.Project) {
+	text := core.BindingText(p.Decisions)
+	if text == "" {
+		return
+	}
+	b.WriteString("BINDING DECISIONS — these override every other artifact, use case, acceptance criterion, design rule, layout and command. Never present an alternative to them as still open, and never follow a contradicting passage in another document.\n")
+	b.WriteString(text)
+	b.WriteString("\n")
+}
+
+// writeDocs lists the blueprint for a prompt; long bodies are cut unless
+// cut is 0. Binding documents (decisions, requirements, technology, survey)
+// are never cut.
+func writeDocs(b *strings.Builder, docs []core.Artifact, cut int) {
 	b.WriteString("BLUEPRINT ARTIFACTS:\n")
 	for _, d := range docs {
 		body := d.Body
-		if len(body) > promptBody && !bindingDocs[d.ID] {
-			body = strings.ToValidUTF8(body[:promptBody], "") + "\n…(dipotong)"
+		if cut > 0 && len(body) > cut && !bindingDocs[d.ID] {
+			body = strings.ToValidUTF8(body[:cut], "") + "\n…(dipotong)"
 		}
 		fmt.Fprintf(b, "=== %s (%s, %s%s) %s\n%s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary, body)
 	}
@@ -139,9 +163,11 @@ func ApplyArtifacts(p *core.Project, raw string) error {
 	if err := ExtractJSON(raw, &out); err != nil {
 		return err
 	}
-	if len(out.Artifacts) == 0 && len(out.Remove) == 0 && out.scopeOut.empty() {
+	sync := p.ArtifactRequest != nil && p.ArtifactRequest.Sync
+	if len(out.Artifacts) == 0 && len(out.Remove) == 0 && out.scopeOut.empty() && !sync {
 		return errors.New("AI tidak menemukan perubahan untuk permintaan ini; tulis lebih spesifik")
 	}
+	before := p.Decisions
 	list := slices.Clone(p.Artifacts)
 	for _, id := range out.Remove {
 		i := slices.IndexFunc(list, func(a core.Artifact) bool { return a.ID == id })
@@ -179,6 +205,10 @@ func ApplyArtifacts(p *core.Project, raw string) error {
 	}
 	p.Artifacts = dropDanglingRefs(list)
 	p.ArtifactRequest = nil
+	// The answer brought the artifacts in line with every changed decision;
+	// the commands follow in the workflow job.
+	requestCommandSync(p, slices.Concat(p.DecisionSync, changedDecisions(before, p.Decisions)))
+	p.DecisionSync = nil
 	return nil
 }
 

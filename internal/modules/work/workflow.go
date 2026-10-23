@@ -50,6 +50,7 @@ const commandRules = `Command rules:
 - tests and verification are part of the instructions and acceptance criteria (or own commands when they span several commands). Foundry never runs them; the agent does.
 - expected_outputs: what the agent hands back (code, migration, test, document, report). acceptance_criteria: checkable conditions.
 - constraints: limits that apply (technology given by the user, compatibility, performance, security).
+- decided decisions override every artifact and command. An instruction, constraint or acceptance criterion that contradicts a decided decision is wrong; follow the decision and rewrite the command.
 `
 
 const commandShape = `{"id": "C1", "name": "", "objective": "", "context": "", "inputs": [""], "instructions": "",
@@ -76,7 +77,12 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		b.WriteString("EXISTING CODEBASE: no (new project).\n")
 	}
 	b.WriteString("\n" + surveyWorkflowRules(p))
-	writeDocs(&b, docs)
+	writeBinding(&b, p)
+	cut := promptBody
+	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Sync {
+		cut = 0
+	}
+	writeDocs(&b, docs, cut)
 	w := p.Workflow
 	if w == nil || len(w.Commands) == 0 {
 		b.WriteString("Turn the blueprint into a command workflow of 3-25 commands. Use ids C1, C2, ...\n\n")
@@ -131,6 +137,10 @@ func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 		return errors.New("workflow kosong: tidak ada command")
 	}
 	if !fresh && len(out.Commands) == 0 && len(out.Remove) == 0 {
+		if w.Request != nil && w.Request.Sync {
+			w.Request = nil // no command contradicts the changed decisions
+			return nil
+		}
 		return errors.New("AI tidak menemukan perubahan untuk permintaan ini; tulis lebih spesifik")
 	}
 	var cmds []core.Command

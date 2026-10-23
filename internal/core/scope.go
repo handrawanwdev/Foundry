@@ -306,6 +306,32 @@ type Decision struct {
 
 func (d Decision) Open() bool { return strings.TrimSpace(d.Resolution) == "" }
 
+// BindingDecisions are the decided register entries. They override every
+// other artifact and every command; an agent reading one document still
+// follows these.
+func (p *Project) BindingDecisions() []Decision {
+	var out []Decision
+	for _, d := range p.Decisions {
+		if !d.Open() {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// BindingText is the compact digest of decided decisions for prompts and
+// exports. Empty when none is decided.
+func BindingText(ds []Decision) string {
+	var b strings.Builder
+	for _, d := range ds {
+		if d.Open() {
+			continue
+		}
+		fmt.Fprintf(&b, "- %s: %s\n  Keputusan: %s\n", d.ID, d.Text, d.Resolution)
+	}
+	return b.String()
+}
+
 // DecisionIssues validates the decision register.
 func DecisionIssues(ds []Decision) []Issue {
 	var out []Issue
