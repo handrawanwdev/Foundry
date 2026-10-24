@@ -232,7 +232,7 @@ func TestDeleteDocumentRefused(t *testing.T) {
 	if !hasDoc(before, core.ArtifactSurvey) {
 		t.Fatal("survey document missing")
 	}
-	for _, id := range []string{"requirements", "architecture", "technology", core.ArtifactDecisions, core.ArtifactSurvey, "tidak-ada", ""} {
+	for _, id := range []string{"requirements", "architecture", "technology", core.ArtifactDecisions, core.ArtifactSurvey, core.ArtifactSystemOverview, "tidak-ada", ""} {
 		if err := s.DeleteDocument(id); err == nil {
 			t.Fatalf("%q deleted", id)
 		}

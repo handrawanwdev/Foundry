@@ -51,6 +51,7 @@ var ArtifactCategories = []string{ArtifactRequirements, ArtifactDomain, Artifact
 var BuiltinArtifacts = map[string]bool{
 	"requirements": true, "architecture": true, "technology": true, ArtifactDesignRules: true, ArtifactLayoutSpec: true,
 	ArtifactUseCases: true, ArtifactAcceptance: true, ArtifactDecisions: true, ArtifactSurvey: true,
+	ArtifactSystemOverview: true,
 }
 
 // Built-in artifacts besides requirements, architecture and technology.
@@ -63,6 +64,9 @@ const (
 	// ArtifactSurvey is the survey as technical decisions. It is its own
 	// document so the requirements of older projects keep their hash.
 	ArtifactSurvey = "survey-decisions"
+	// ArtifactSystemOverview is the plain-language explanation of the
+	// product, rendered from the current blueprint.
+	ArtifactSystemOverview = "system-overview"
 )
 
 // Hash identifies the artifact's content; a command records it to notice

@@ -21,7 +21,6 @@ func Markdown(p *core.Project) string {
 		b.WriteString(bind)
 		b.WriteString("\n")
 	}
-	b.WriteString(overviewMarkdown(p))
 	for _, a := range Artifacts(p) {
 		fmt.Fprintf(&b, "## %s\n\n", a.Title)
 		if a.Summary != "" {
@@ -262,27 +261,6 @@ func techMarkdown(p *core.Project) string {
 
 // cell makes text safe inside a Markdown table cell.
 func cell(s string) string { return strings.NewReplacer("|", "\\|", "\n", " ").Replace(s) }
-
-func overviewMarkdown(p *core.Project) string {
-	b := p.Blueprint
-	if b == nil || b.Overview.Goal == "" {
-		return ""
-	}
-	var s strings.Builder
-	s.WriteString("## Project Overview\n\n")
-	fmt.Fprintf(&s, "- **Business Goal:** %s\n", b.Overview.Goal)
-	if b.Overview.CoreDomain != "" {
-		fmt.Fprintf(&s, "- **Core Domain:** %s\n", b.Overview.CoreDomain)
-	}
-	if len(b.Overview.Users) > 0 {
-		fmt.Fprintf(&s, "- **Target User:** %s\n", strings.Join(b.Overview.Users, ", "))
-	}
-	if len(b.Overview.Capabilities) > 0 {
-		fmt.Fprintf(&s, "- **Main Capability:** %s\n", strings.Join(b.Overview.Capabilities, ", "))
-	}
-	s.WriteString("\n")
-	return s.String()
-}
 
 func architectureMarkdown(p *core.Project) string {
 	bp := p.Blueprint

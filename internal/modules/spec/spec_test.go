@@ -23,7 +23,7 @@ func TestMarkdownIncludesBlueprint(t *testing.T) {
 		},
 	}
 	md := Markdown(p)
-	for _, want := range []string{"Project Overview", "Tanpa antrian kertas", "Modular Monolith", "`identity`", "Argon2id"} {
+	for _, want := range []string{"Penjelasan Sistem", "Tanpa antrian kertas", "Modular Monolith", "`identity`", "Argon2id"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown missing %q", want)
 		}
@@ -53,9 +53,9 @@ func TestWriteDocs(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := filepath.Join(dir, "docs", "foundry")
-	for _, f := range []string{"README.md", "manifest.json", "spec.json", "adr/0001-stack.md", "blueprint/requirements.md",
-		"blueprint/architecture.md", "blueprint/technology.md", "blueprint/threat-model.md", "workflow/workflow.json",
-		"workflow/CMD-001.md", "workflow/CMD-002.md"} {
+	for _, f := range []string{"README.md", "manifest.json", "spec.json", "adr/0001-stack.md", "blueprint/system-overview.md",
+		"blueprint/requirements.md", "blueprint/architecture.md", "blueprint/technology.md", "blueprint/threat-model.md",
+		"workflow/workflow.json", "workflow/CMD-001.md", "workflow/CMD-002.md"} {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(f))); err != nil {
 			t.Errorf("%s: %v", f, err)
 		}
@@ -157,7 +157,7 @@ func TestArtifactsStable(t *testing.T) {
 		Requirements: []core.Requirement{{ID: "REQ-001", Text: "Buat janji", Priority: "MUST"}}, UI: sampleUI()}
 	work.CompleteBlueprint(p)
 	a, b := Artifacts(p), Artifacts(p)
-	if len(a) != 4 || BlueprintHash(a) != BlueprintHash(b) {
+	if len(a) != 5 || BlueprintHash(a) != BlueprintHash(b) {
 		t.Fatalf("artifacts = %d, hashes %s %s", len(a), BlueprintHash(a), BlueprintHash(b))
 	}
 	hashes := map[string]string{}

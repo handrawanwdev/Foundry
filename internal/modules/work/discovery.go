@@ -92,7 +92,7 @@ Blueprint rules:
 Artifacts: 0-10 extra blueprint documents for what THIS project needs beyond requirements, architecture and screens:
 the area artifacts below that apply, plus other documents the project needs (domain model, API or event contracts,
 protocol spec, data pipeline design, evaluation plan, test strategy, hardware interfaces). Skip what is not needed.
-Do not use the ids requirements, survey-decisions, architecture, technology, design-rules, layout-spec, use-cases, acceptance, decisions
+Do not use the ids requirements, survey-decisions, architecture, technology, design-rules, layout-spec, use-cases, acceptance, decisions, system-overview
 (Foundry writes those from the structured data).
 ` + artifactRules + `
 `)

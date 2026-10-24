@@ -34,6 +34,8 @@ func Artifacts(p *core.Project) []core.Artifact {
 		}
 		out = append(out, core.Artifact{ID: id, Title: title, Category: category, Summary: summary, Body: body, Builtin: true})
 	}
+	add(core.ArtifactSystemOverview, "Penjelasan Sistem", core.ArtifactRequirements,
+		"Apa yang akan dibangun, bagaimana sistem bekerja, dan manfaatnya bagi pengguna.", systemOverviewMarkdown(p))
 	add("requirements", "Requirements", core.ArtifactRequirements,
 		"Masalah, pengguna, kebutuhan, fitur, dan alur.", requirementsMarkdown(p))
 	add(core.ArtifactSurvey, "Keputusan Teknis Survey", core.ArtifactRequirements,

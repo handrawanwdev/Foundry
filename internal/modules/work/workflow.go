@@ -41,7 +41,7 @@ const commandRules = `Command rules:
 - one command is one coherent unit of work an agent can finish and verify on its own.
 - derive the commands and their order from THIS blueprint and the real dependencies, not from a fixed list of phases.
 - depends_on lists only the commands whose result this one needs (a contract, schema, module, interface). Commands without such a need do not depend on each other, so they can be done in parallel. No cycles, no self dependency.
-- artifacts lists the ids of the blueprint artifacts the command implements or must follow (from the list above); at least one.
+- artifacts lists the ids of the blueprint artifacts the command implements or must follow (from the list above); at least one. system-overview is a plain-language explanation for humans; do not add a command whose only job is to write or implement it.
 - when the blueprint has design-rules and layout-spec, every command that builds or changes screens lists both, and its instructions name the page and shell ids of layout-spec it implements; the design reaches the code only through these commands.
 - covers lists the requirement ids (REQ-...) the command implements; every MUST requirement is covered by at least one command. The command's acceptance_criteria include the criterion ids (REQ-001-AC1) of the acceptance artifact it must prove, and add only command-specific checks.
 - when the blueprint has threat-model, data-lifecycle, integrations, operations or migration artifacts, the commands that build the affected parts list them too, so their rules reach the code.
