@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
-import { commandState, commandText, dependents, lines, STATE_LABEL, waveOf } from "../blueprint";
+import { commandState, commandText, dependents, lines, RUN_CLASS, RUN_LABEL, runOf, STATE_LABEL, waveOf } from "../blueprint";
 import { Icon } from "../components/Icon";
 import { Markdown } from "../components/Markdown";
 import { PromptBar } from "../components/PromptBar";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
-import type { Command, CommandEdit, Project, WorkflowReport, WorkflowView } from "../types";
+import type { Command, CommandEdit, CommandProgress, ProgressSnapshot, Project, RunStatus, WorkflowReport, WorkflowView } from "../types";
 
 // Workflow workspace: commands by wave on the left, one command in full.
 // Foundry writes and checks the instructions; an external coding agent
@@ -19,7 +19,11 @@ export function WorkflowPage() {
 
   useEffect(() => {
     if (!project?.discovery) return;
-    api.workflow().then(setView).catch(() => setView(null));
+    let ignore = false;
+    const load = () => api.workflow().then((v) => { if (!ignore) setView(v); }).catch(() => { if (!ignore) setView(null); });
+    load();
+    const t = setInterval(load, 15_000);
+    return () => { ignore = true; clearInterval(t); };
   }, [project?.version, project?.dir]);
 
   if (!project) return null;
@@ -27,6 +31,7 @@ export function WorkflowPage() {
   const locked = project.stage === "READY";
   const w = view?.workflow;
   const r = view?.report ?? null;
+  const prog = view?.progress ?? null;
   const cmds = w?.commands ?? [];
 
   if (!project.discovery) {
@@ -71,18 +76,30 @@ export function WorkflowPage() {
           <strong>Workflow</strong>
           <span className="muted small">v{w!.version} · {cmds.length} command</span>
         </div>
+        {prog && (locked || isTracked(prog)) && prog.counts.total > 0 && (
+          <div className="prog-mini" title={`${prog.counts.verified}/${prog.counts.total} terverifikasi`}>
+            <div className="prog-bar"><i style={{ width: `${Math.round((prog.counts.verified / Math.max(prog.counts.total, 1)) * 100)}%` }} /></div>
+            <span className="muted small">{prog.counts.verified}/{prog.counts.total} terverifikasi</span>
+          </div>
+        )}
         {waves.map((wave, i) => (
           <div key={i} className="ws-group">
-            <div className="ws-group-label">{r?.waves.length ? `Gelombang ${i + 1}${wave.length > 1 ? " · paralel" : ""}` : "Urutan belum valid"}</div>
+            <div className="ws-group-label">
+              {r?.waves.length ? `Gelombang ${i + 1}${wave.length > 1 ? " · paralel" : ""}` : "Urutan belum valid"}
+              {prog?.waves[i] && (locked || isTracked(prog)) && <span> · {prog.waves[i].verified}/{prog.waves[i].total}</span>}
+            </div>
             {wave.map((cid) => {
               const c = byId.get(cid);
               if (!c) return null;
               const st = commandState(c, r);
+              const run = runOf(prog, cid);
+              const runClass = run ? RUN_CLASS[run.status] : "";
               return (
                 <button key={cid} className={`ws-item cmd ${cid === cmd.id ? "on" : ""}`} aria-current={cid === cmd.id ? "page" : undefined} onClick={() => select(cid)}>
                   <span className="cmd-id">{cid}</span>
                   <span className="ws-item-text">{c.name}</span>
-                  {st !== "draft" && <span className={`cmd-dot st-${st}`} title={STATE_LABEL[st]} />}
+                  {run && run.status !== "unconfirmed" && <span className={`cmd-dot ${runClass || "st-muted"}`} title={RUN_LABEL[run.status]} />}
+                  {st !== "draft" && !(run && run.status !== "unconfirmed") && <span className={`cmd-dot st-${st}`} title={STATE_LABEL[st]} />}
                 </button>
               );
             })}
@@ -91,6 +108,7 @@ export function WorkflowPage() {
       </nav>
 
       <main className="ws-main">
+        {prog && (locked || isTracked(prog)) && <ProgressPanel progress={prog} onOpen={select} onReconcile={() => void run("reconcileProgress", () => api.reconcileProgress())} busy={pending === "reconcileProgress"} />}
         {r && r.issues.length > 0 && (
           <div className="notice bad">
             <strong>{r.issues.length} masalah workflow</strong>
@@ -113,7 +131,7 @@ export function WorkflowPage() {
             )}
           </div>
         )}
-        <CommandDoc key={cmd.id + w!.version} project={project} cmd={cmd} report={r} locked={locked} onOpen={select} />
+        <CommandDoc key={cmd.id + w!.version} project={project} cmd={cmd} report={r} run={runOf(prog, cmd.id)} locked={locked} onOpen={select} />
       </main>
 
       {!locked && (
@@ -130,10 +148,62 @@ export function WorkflowPage() {
   );
 }
 
-function CommandDoc({ project, cmd, report, locked, onOpen }: {
-  project: Project; cmd: Command; report: WorkflowReport | null; locked: boolean; onOpen: (id: string) => void;
+function isTracked(p: ProgressSnapshot) {
+  const c = p.counts;
+  return c.started + c.blocked + c.skipped + c.failed + c.review + c.done + c.verified + c.stale + c.unknown > 0;
+}
+
+function ProgressPanel({ progress, onOpen, onReconcile, busy }: {
+  progress: ProgressSnapshot; onOpen: (id: string) => void; onReconcile: () => void; busy: boolean;
 }) {
-  const { run, pending } = useProject();
+  const c = progress.counts;
+  const bits = [
+    c.started && `${c.started} dikerjakan`,
+    c.review && `${c.review} ditinjau`,
+    c.failed && `${c.failed} gagal`,
+    c.blocked && `${c.blocked} terhambat`,
+    c.stale && `${c.stale} kedaluwarsa`,
+    c.unknown && `${c.unknown} tidak diketahui`,
+    c.waiting && `${c.waiting} menunggu`,
+    c.unconfirmed && `${c.unconfirmed} belum terkonfirmasi`,
+  ].filter(Boolean);
+  const warnings = progress.warnings.filter((w) => w.kind !== "incomplete");
+  const incomplete = progress.warnings.find((w) => w.kind === "incomplete");
+  return (
+    <div className="prog-panel">
+      <div className="prog-line">
+        <strong>{progress.complete ? "Workflow terverifikasi" : incomplete?.message ?? "Progres pengerjaan"}</strong>
+        <span className="muted small">{bits.join(" · ")}</span>
+      </div>
+      {progress.last_report_at && (
+        <p className="muted small">Laporan terakhir {new Date(progress.last_report_at).toLocaleString()}{progress.last_source ? ` · ${progress.last_source}` : ""}</p>
+      )}
+      {progress.next.length > 0 && !progress.complete && (
+        <p className="small">Siap dikerjakan: {progress.next.map((id) => <button key={id} className="ref-chip" onClick={() => onOpen(id)}>{id}</button>)}</p>
+      )}
+      {progress.issues.length > 0 && (
+        <div className="notice warn">
+          <strong>Status tidak sinkron</strong>
+          <ul>{progress.issues.map((m, i) => <li key={i}>{m}</li>)}</ul>
+          <button disabled={busy} onClick={onReconcile}>Samakan dengan workflow</button>
+        </div>
+      )}
+      {warnings.length > 0 && (
+        <div className="notice warn">
+          <strong>{warnings.length} peringatan pelacakan</strong>
+          <ul>{warnings.slice(0, 6).map((w, i) => (
+            <li key={i}>{w.command && <button className="link" onClick={() => onOpen(w.command!)}>{w.command}</button>} {w.message} {w.action && <span className="muted">{w.action}</span>}</li>
+          ))}</ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CommandDoc({ project, cmd, report, run, locked, onOpen }: {
+  project: Project; cmd: Command; report: WorkflowReport | null; run?: CommandProgress; locked: boolean; onOpen: (id: string) => void;
+}) {
+  const { run: act, pending } = useProject();
   const [editing, setEditing] = useState(false);
   const [copied, setCopied] = useState(false);
   const st = commandState(cmd, report);
@@ -160,6 +230,7 @@ function CommandDoc({ project, cmd, report, locked, onOpen }: {
         <div className="doc-kicker">
           <span className="cmd-id big">{cmd.id}</span>
           <span className={`state st-${st}`}>{STATE_LABEL[st]}</span>
+          {run && <span className={`state ${RUN_CLASS[run.status as RunStatus]}`}>{RUN_LABEL[run.status]}</span>}
           {wave > 0 && <span className="muted small">Gelombang {wave}</span>}
         </div>
         <h1>{cmd.name}</h1>
@@ -173,7 +244,7 @@ function CommandDoc({ project, cmd, report, locked, onOpen }: {
           <button onClick={() => void copy()}><Icon name="copy" size={14} /> {copied ? "Tersalin" : "Salin instruksi"}</button>
           {!locked && !editing && <button onClick={() => setEditing(true)}>Edit</button>}
           {!locked && st !== "review" && st !== "issue" && (
-            <button className="ghost" disabled={pending === "review"} onClick={() => void run("review", () => api.reviewCommand(cmd.id, true))}>Tandai perlu ditinjau</button>
+            <button className="ghost" disabled={pending === "review"} onClick={() => void act("review", () => api.reviewCommand(cmd.id, true))}>Tandai perlu ditinjau</button>
           )}
         </div>
       </header>
@@ -181,10 +252,28 @@ function CommandDoc({ project, cmd, report, locked, onOpen }: {
       {st === "review" && !locked && (
         <div className="notice warn">
           <span>{report?.review[cmd.id] || "Perlu ditinjau"}</span>
-          <button disabled={pending === "review"} onClick={() => void run("review", () => api.reviewCommand(cmd.id, false))}>Tandai sudah ditinjau</button>
+          <button disabled={pending === "review"} onClick={() => void act("review", () => api.reviewCommand(cmd.id, false))}>Tandai sudah ditinjau</button>
         </div>
       )}
 
+      {run && run.status !== "unconfirmed" && (
+        <section className="doc-sec">
+          <h2>Progres pengerjaan</h2>
+          <p className="small">{run.summary || RUN_LABEL[run.status]}{run.reason ? ` — ${run.reason}` : ""}</p>
+          <p className="muted small">
+            {run.source && `Sumber: ${run.source}`}
+            {run.updated_at && ` · Diperbarui ${new Date(run.updated_at).toLocaleString()}`}
+            {run.started_at && ` · Mulai ${new Date(run.started_at).toLocaleString()}`}
+          </p>
+          {run.waiting && run.waiting.length > 0 && <p className="small">Menunggu: {run.waiting.join(", ")}</p>}
+          {run.evidence && run.evidence.length > 0 && (
+            <ul>{run.evidence.map((e, i) => <li key={i}><code>{e.ref}</code>{e.kind ? ` · ${e.kind}` : ""}</li>)}</ul>
+          )}
+          {run.tests && run.tests.length > 0 && (
+            <ul>{run.tests.map((t, i) => <li key={i}>{t.name}: {t.result}{t.detail ? ` — ${t.detail}` : ""}</li>)}</ul>
+          )}
+        </section>
+      )}
       {editing ? <CommandEditor project={project} cmd={cmd} report={report} onDone={() => setEditing(false)} /> : (
         <>
           {cmd.context && <section className="doc-sec"><h2>Konteks</h2><Markdown text={cmd.context} /></section>}

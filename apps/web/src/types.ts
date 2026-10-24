@@ -268,7 +268,28 @@ export interface WorkflowReport {
   // MUST requirements no command covers; shown, not blocking.
   uncovered: string[];
 }
-export interface WorkflowView { workflow: Workflow | null; report: WorkflowReport }
+export interface WorkflowView { workflow: Workflow | null; report: WorkflowReport; progress?: ProgressSnapshot }
+
+export type RunStatus = "unconfirmed" | "waiting" | "started" | "blocked" | "skipped" | "failed" | "review" | "done" | "verified" | "stale" | "unknown";
+export interface ProgressEvidence { kind?: string; ref: string }
+export interface ProgressTest { name: string; result: string; detail?: string }
+export interface ProgressWarning { command?: string; kind: string; message: string; action?: string }
+export interface ProgressCounts {
+  total: number; unconfirmed: number; waiting: number; started: number; blocked: number; skipped: number;
+  failed: number; review: number; done: number; verified: number; stale: number; unknown: number;
+}
+export interface CommandProgress {
+  id: string; name: string; status: RunStatus; stored: RunStatus; wave: number; waiting?: string[];
+  started_at?: string; updated_at?: string; source?: string; summary?: string; reason?: string;
+  evidence?: ProgressEvidence[]; tests?: ProgressTest[]; early_start?: boolean; report_id?: string; seq?: number;
+}
+export interface WaveProgress { index: number; commands: string[]; verified: number; total: number }
+export interface StatusChange { at: string; command: string; from: string; to: string; reason?: string; report_id?: string; source?: string }
+export interface ProgressSnapshot {
+  workflow_version: number; stale_after_sec: number; updated_at?: string; last_report_at?: string; last_source?: string;
+  complete: boolean; counts: ProgressCounts; waves: WaveProgress[]; commands: CommandProgress[];
+  next: string[]; warnings: ProgressWarning[]; issues: string[]; history: StatusChange[];
+}
 export interface CommandEdit {
   name: string; objective: string; context: string; inputs: string[]; instructions: string; depends_on: string[];
   artifacts: string[]; covers: string[]; expected_outputs: string[]; acceptance_criteria: string[]; constraints: string[];

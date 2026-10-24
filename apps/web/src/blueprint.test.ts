@@ -17,6 +17,7 @@ describe("agentPrompt", () => {
     expect(p).toContain("docs/foundry/README.md");
     expect(p).toContain("(2 gelombang, 3 command)");
     expect(p).toContain("tunggu konfirmasi");
+    expect(p).toContain("report_progress");
     expect(p).not.toContain("CMD-002");
   });
 

@@ -368,10 +368,20 @@ button.ref-chip:not(:disabled):hover, a.ref-chip:hover { border-color: var(--acc
 .cmd-dot.st-review { background: var(--warn); }
 .cmd-dot.st-issue { background: var(--bad); }
 .cmd-dot.st-final { background: var(--ok); }
+.cmd-dot.st-started { background: var(--accent); }
+.cmd-dot.st-stale, .cmd-dot.st-muted { background: var(--muted); }
 .state { font-size: 12px; border-radius: 6px; padding: .05rem .45rem; background: var(--surface-2); color: var(--muted); }
 .state.st-review { background: var(--warn-soft); color: var(--warn); }
 .state.st-issue { background: var(--bad-soft); color: var(--bad); }
 .state.st-final { background: var(--ok-soft); color: var(--ok); }
+.state.st-started { background: var(--accent-soft); color: var(--accent); }
+.state.st-stale { background: var(--surface-2); color: var(--muted); }
+.prog-mini { display: flex; flex-direction: column; gap: .25rem; padding: 0 .5rem .2rem; }
+.prog-bar { height: 4px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.prog-bar > i { display: block; height: 100%; background: var(--ok); }
+.prog-panel { max-width: 760px; margin: 0 auto 1.25rem; display: flex; flex-direction: column; gap: .45rem; }
+.prog-line { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .4rem 1rem; }
+.prog-panel .notice { margin: 0; }
 .notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; max-width: 760px; margin: 0 auto 1.25rem; padding: .7rem .9rem; border-radius: 12px; font-size: 13px; }
 .notice ul { margin: .3rem 0 0; padding-left: 1.1rem; flex-basis: 100%; }
 .notice.warn { background: var(--warn-soft); color: var(--warn); }

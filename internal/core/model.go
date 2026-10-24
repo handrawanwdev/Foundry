@@ -63,7 +63,10 @@ type Project struct {
 	// finished piece of work meets.
 	Done []string `json:"definition_of_done,omitempty"`
 	// Workflow is the command workflow for external coding agents.
-	Workflow  *Workflow `json:"workflow,omitempty"`
+	Workflow *Workflow `json:"workflow,omitempty"`
+	// Progress is how far an external coding agent has taken the workflow.
+	// Nil until the first report or reconciliation.
+	Progress  *Progress `json:"progress,omitempty"`
 	Job       *Job      `json:"job,omitempty"`
 	Events    []Event   `json:"events"`
 	UpdatedAt time.Time `json:"updated_at"`

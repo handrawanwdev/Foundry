@@ -1,4 +1,4 @@
-import type { AreaStatusKind, Artifact, ArtifactCategory, ArtifactStateKind, Command, DesignIssue, ExportManifest, Workflow, WorkflowReport } from "./types";
+import type { AreaStatusKind, Artifact, ArtifactCategory, ArtifactStateKind, Command, CommandProgress, DesignIssue, ExportManifest, ProgressSnapshot, RunStatus, Workflow, WorkflowReport } from "./types";
 
 // The built-in artifacts of the UI design (core.ArtifactDesignRules / ArtifactLayoutSpec).
 export const DESIGN_DOCS = { rules: "design-rules", layout: "layout-spec" } as const;
@@ -73,6 +73,20 @@ export function commandState(c: Command, r: WorkflowReport | null): CommandState
 
 export const STATE_LABEL: Record<CommandState, string> = { issue: "Masalah", review: "Perlu ditinjau", final: "Final", draft: "Draft" };
 
+export const RUN_LABEL: Record<RunStatus, string> = {
+  unconfirmed: "Belum terkonfirmasi", waiting: "Menunggu prasyarat", started: "Sedang dikerjakan",
+  blocked: "Terhambat", skipped: "Dilewati", failed: "Gagal", review: "Perlu ditinjau",
+  done: "Selesai (laporan agen)", verified: "Terverifikasi", stale: "Kedaluwarsa", unknown: "Tidak diketahui",
+};
+export const RUN_CLASS: Record<RunStatus, string> = {
+  unconfirmed: "", waiting: "", started: "st-started", blocked: "st-review", skipped: "",
+  failed: "st-issue", review: "st-review", done: "st-final", verified: "st-final", stale: "st-stale", unknown: "st-stale",
+};
+
+export function runOf(progress: ProgressSnapshot | null | undefined, id: string): CommandProgress | undefined {
+  return progress?.commands.find((c) => c.id === id);
+}
+
 // The command as a standalone instruction for a coding agent; matches the
 // exported workflow/<id>.md.
 export function commandText(c: Command, r: WorkflowReport | null): string {
@@ -119,11 +133,13 @@ export function agentPrompt(m: ExportManifest, dir: string, wave = 0): string {
     "Untuk tiap command:",
     "1. Baca file command dan artefak blueprint yang dirujuknya.",
     "2. Periksa repository dulu; pakai struktur dan konvensi yang ada, jangan mengarang path atau API.",
-    "3. Implementasikan, lalu buktikan setiap acceptance criteria (test atau perintah beserta hasilnya).",
-    "4. Laporkan: command ID, file yang diubah, bukti, dan criteria yang belum terpenuhi.",
+    "3. Panggil report_progress (status started) sebelum mengubah kode. Jangan mulai sebelum get_progress menandai command ini siap.",
+    "4. Implementasikan, lalu buktikan setiap acceptance criteria (test atau perintah beserta hasilnya).",
+    "5. Panggil report_progress lagi: done (dengan evidence.ref ke file/commit/test), failed, blocked, skipped (wajib reason), atau review. Sertakan id laporan yang stabil agar pengiriman ulang aman.",
+    "Foundry tidak menganggap command selesai hanya karena instruksi sudah dikirim atau laporan done tanpa bukti.",
     "",
-    "Jika blueprint bertentangan dengan repository atau dengan command lain, berhenti dan tanya saya.",
-    w ? "Setelah gelombang ini selesai, berhenti dan laporkan." : "Setelah satu gelombang selesai, berhenti dan tunggu konfirmasi saya sebelum lanjut.",
+    "Jika blueprint bertentangan dengan repository atau dengan command lain, berhenti, report_progress blocked, dan tanya saya.",
+    w ? "Setelah gelombang ini selesai, berhenti dan laporkan lewat report_progress." : "Setelah satu gelombang selesai, berhenti dan tunggu konfirmasi saya sebelum lanjut.",
   );
   return out.join("\n");
 }

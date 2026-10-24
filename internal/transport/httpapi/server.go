@@ -27,6 +27,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/agent"
 	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
+	"github.com/handrawanwdev/foundry/internal/modules/progress"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/stack"
 	"github.com/handrawanwdev/foundry/internal/modules/structure"
@@ -432,7 +433,8 @@ func (s *Server) Handler() http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"workflow": p.Workflow, "report": pipeline.CheckWorkflow(p)}, nil
+		return map[string]any{"workflow": p.Workflow, "report": pipeline.CheckWorkflow(p),
+			"progress": svc.ProgressOf(p)}, nil
 	}))
 	api("POST /api/v1/project/workflow/generate", s.action(func(svc *pipeline.Service) error { return svc.GenerateWorkflow() }))
 	api("POST /api/v1/project/workflow/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
@@ -463,6 +465,29 @@ func (s *Server) Handler() http.Handler {
 			return nil, err
 		}
 		return svc.ReviewCommand(r.PathValue("id"), in.NeedsReview, in.Reason)
+	}))
+	// Execution progress reported by an external coding agent. Foundry
+	// records and validates; it never runs the commands.
+	api("GET /api/v1/project/progress", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		return svc.ProgressView()
+	}))
+	api("POST /api/v1/project/progress/reports", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in progress.ReportIn
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.ReportProgress(in, "agent")
+	}))
+	api("POST /api/v1/project/progress/reconcile", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			StaleAfterSec int `json:"stale_after_sec"`
+		}
+		if r.ContentLength != 0 {
+			if err := decode(r, &in); err != nil {
+				return nil, err
+			}
+		}
+		return svc.ReconcileProgress(in.StaleAfterSec)
 	}))
 	// Finalize approves blueprint + workflow and writes the export package.
 	api("POST /api/v1/project/finalize", s.action(func(svc *pipeline.Service) error { return svc.Finalize() }))

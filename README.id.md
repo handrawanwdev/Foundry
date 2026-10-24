@@ -245,13 +245,25 @@ foundry mcp --print-config --project ~/kerja/klinik
 | `get_project`      | `READ`   | Ringkasan proyek: stage, discovery, arsitektur, platform, stack, job   |
 | `get_requirements` | `READ`   | Requirement, acceptance criteria, feature, use case, Definition of Done |
 | `get_blueprint`    | `READ`   | Semua artefak blueprint (Markdown), state artefak, decision register, keputusan mengikat |
-| `get_workflow`     | `READ`   | Command, dependency, gelombang eksekusi, isu validasi, command `needs_review` |
+| `get_workflow`     | `READ`   | Command, dependency, gelombang eksekusi, isu validasi, command `needs_review`, progres pengerjaan |
 | `get_design`       | `READ`   | Design rules & layout spec terstruktur beserta isu validasi            |
 | `get_spec`         | `READ`   | Spesifikasi lengkap (JSON + Markdown) untuk implementasi di luar Foundry |
+| `get_progress`     | `READ`   | Progres pengerjaan workflow (hitungan, command siap, peringatan)       |
+| `report_progress`  | `WRITE`  | Laporan agen untuk satu command: started / done / failed / blocked / skipped / review |
 | `next_work`        | `MODIFY` | Ambil pekerjaan rancangan berikutnya yang dibutuhkan Foundry           |
 | `submit_work`      | `WRITE`  | Serahkan hasil kerja; Foundry yang memvalidasi                         |
 
-Izin diatur dengan `--allow` (default: `READ`). Config hasil cetak memberi `READ,WRITE,MODIFY`, yang dibutuhkan `next_work` dan `submit_work`; pakai `--allow READ` untuk host yang hanya membaca.
+Izin diatur dengan `--allow` (default: `READ`). Config hasil cetak memberi `READ,WRITE,MODIFY`, yang dibutuhkan `next_work`, `submit_work`, dan `report_progress`; pakai `--allow READ` untuk host yang hanya membaca.
+
+### Pemantauan progres workflow
+
+Foundry mencatat progres implementasi dari coding agent eksternal. Foundry tidak menjalankan workflow.
+
+**Sudah berjalan:** `report_progress` / `get_progress` (MCP) dan `POST /api/v1/project/progress/reports` menyimpan laporan di `.foundry/project.json`. Id duplikat idempotent; seq/waktu lama tidak menimpa status. Laporan `done` tanpa bukti wajib menjadi `review`, bukan `verified`. Command dilewati tetap tercatat dengan alasan dan tidak dianggap selesai. Tanpa laporan, status tetap `unconfirmed`. Command yang sudah `started` tanpa laporan dalam jendela kedaluwarsa (baku 30 menit) ditampilkan `stale`, atau `unknown` jika host MCP terputus — tidak otomatis selesai atau gagal. Halaman Workflow mengikuti SSE perubahan plus penyegaran 15 dtk; polling sukses bukan bukti pekerjaan masih berjalan. Status tetap ada setelah Foundry di-restart.
+
+**Wajib di sisi agen:** coding agent harus memanggil `report_progress` (atau HTTP yang sama) saat mulai/selesai/gagal/terhambat/dilewati/ditinjau. Foundry tidak menyimpulkan progres dari git, tes, atau prompt yang disalin. Host yang tidak memanggil tool akan menampilkan semua command sebagai belum terkonfirmasi.
+
+**Bukan pekerjaan Foundry:** mengeksekusi command, menulis kode proyek, menjalankan tes proyek, atau mengambil alih kerja agen.
 
 ## 🚫 Yang Tidak Dilakukan Foundry
 

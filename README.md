@@ -247,13 +247,25 @@ foundry mcp --print-config --project ~/work/clinic
 | `get_project`      | `READ`     | Project summary: stage, discovery, architecture, platform, stack, job       |
 | `get_requirements` | `READ`     | Requirements, acceptance criteria, features, use cases, Definition of Done  |
 | `get_blueprint`    | `READ`     | All blueprint artifacts (Markdown), artifact states, decision register, binding decisions |
-| `get_workflow`     | `READ`     | Commands, dependencies, execution waves, validation issues, `needs_review` commands |
+| `get_workflow`     | `READ`     | Commands, dependencies, execution waves, validation issues, `needs_review` commands, execution progress |
 | `get_design`       | `READ`     | Structured design rules & layout spec with validation issues                |
 | `get_spec`         | `READ`     | Full specification (JSON + Markdown) for implementation outside Foundry     |
+| `get_progress`     | `READ`     | Execution progress of the command workflow (counts, next eligible commands, warnings) |
+| `report_progress`  | `WRITE`    | Agent report for one command: started / done / failed / blocked / skipped / review |
 | `next_work`        | `MODIFY`   | Fetch the next piece of design work Foundry needs                           |
 | `submit_work`      | `WRITE`    | Hand back a result; Foundry validates it                                    |
 
-Permissions are set with `--allow` (default: `READ`). The printed config grants `READ,WRITE,MODIFY`, which is what `next_work` and `submit_work` need; use `--allow READ` for read-only hosts.
+Permissions are set with `--allow` (default: `READ`). The printed config grants `READ,WRITE,MODIFY`, which is what `next_work`, `submit_work`, and `report_progress` need; use `--allow READ` for read-only hosts.
+
+### Workflow progress monitoring
+
+Foundry records implementation progress from the external coding agent. It does not run the workflow.
+
+**Working today:** `report_progress` / `get_progress` (MCP) and `POST /api/v1/project/progress/reports` persist reports in `.foundry/project.json`. Duplicate ids are idempotent; older seq/timestamps do not overwrite. Done without required evidence becomes `review`, not `verified`. Skipped commands keep their reason and are not treated as done. Missing reports stay `unconfirmed`. A started command with no report inside the stale window (default 30 minutes) is shown as `stale` or `unknown` if the MCP host is disconnected — never auto-completed or auto-failed. The Workflow page updates from the existing SSE change stream plus a 15s refresh; it does not treat a successful poll as proof that work is still running. Status survives Foundry restart.
+
+**Agent-side requirement:** the coding agent must actually call `report_progress` (or the HTTP equivalent) at start/finish/fail/blocked/skip/review. Foundry cannot infer progress from git, tests, or a pasted prompt. Hosts that never invoke the tool will show every command as unconfirmed.
+
+**Not done by Foundry:** executing commands, writing project code, running the project's tests, or taking over the agent's work.
 
 ## 🚫 What Foundry Does Not Do
 

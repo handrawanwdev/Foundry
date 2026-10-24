@@ -14,6 +14,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/config"
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
+	"github.com/handrawanwdev/foundry/internal/modules/progress"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 )
 
@@ -120,7 +121,9 @@ func (s *Server) handle(req request) (any, *rpcError) {
 			"serverInfo":      map[string]any{"name": "foundry", "version": s.Version},
 			"instructions": "Foundry is the orchestrator and source of truth. Loop: call next_work, do exactly what its prompt says, " +
 				"then hand the result back with the tool named in `submit`. Never mark work done yourself; Foundry validates what you submit. " +
-				"To implement a finalized blueprint, read get_blueprint and get_workflow and follow the commands wave by wave; screens follow the design-rules and layout-spec artifacts.",
+				"To implement a finalized blueprint, read get_blueprint and get_workflow and follow the commands wave by wave; screens follow the design-rules and layout-spec artifacts. " +
+				"Report every command with report_progress when you start, finish, fail, get blocked, skip (with a reason), or hand work for review. " +
+				"A command is not done until Foundry verifies evidence against its acceptance criteria. Call get_progress for the next eligible commands; do not start a command before its dependencies are verified. Do not assume Foundry ran the work.",
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
@@ -181,12 +184,29 @@ var tools = []tool{
 	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, discovery, architecture blueprint, platform, structure, technology stack, job, counts.", InputSchema: obj(nil)},
 	{Name: "get_requirements", perm: PermRead, Description: "Requirements with acceptance criteria, features, sub-features, use cases (flows) and the Definition of Done.", InputSchema: obj(nil)},
 	{Name: "get_blueprint", perm: PermRead, Description: "Blueprint: every artifact (requirements, architecture, technology, design rules, layout spec, use cases, acceptance criteria, decisions and the project's own documents) as Markdown, the structured architecture, area coverage, artifact states, the decision register and binding_decisions (decided entries that override every other artifact).", InputSchema: obj(nil)},
-	{Name: "get_workflow", perm: PermRead, Description: "Command workflow for the coding agent: commands with objective, instructions, dependencies, blueprint references, expected outputs and acceptance criteria; the execution waves; validation issues and commands that need review.", InputSchema: obj(nil)},
+	{Name: "get_workflow", perm: PermRead, Description: "Command workflow for the coding agent: commands with objective, instructions, dependencies, blueprint references, expected outputs and acceptance criteria; the execution waves; validation issues, commands that need review, and current execution progress.", InputSchema: obj(nil)},
 	{Name: "get_design", perm: PermRead, Description: "UI design as structured data: design rules (principles, UX guidelines, tokens, components, accessibility, responsive, interaction, platform rules) and layout spec (shells, pages, sections, hierarchy, grid, states, links), plus validation issues.", InputSchema: obj(nil)},
 	{Name: "get_spec", perm: PermRead, Description: "Whole spec for implementation outside Foundry (JSON: requirements, flows, stack, structure, blueprint, artifacts, design rules, layout spec, workflow) plus the same as Markdown.", InputSchema: obj(nil)},
 	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, stack, structure, blueprint or workflow).", InputSchema: obj(nil)},
 	{Name: "submit_work", perm: PermWrite, Description: "Hand back a result (the JSON object requested by next_work).",
 		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "stack", "structure", "blueprint", "workflow"}}, "result": str}, "kind", "result")},
+	{Name: "get_progress", perm: PermRead, Description: "Execution progress of the command workflow: overall and per-wave counts, per-command status, next eligible commands, warnings (stale, disconnected, skipped, missing evidence), and status history. Foundry does not run the commands.", InputSchema: obj(nil)},
+	{Name: "report_progress", perm: PermWrite, Description: "Report execution progress for one command. Send when you start, finish, fail, get blocked, skip (reason required), or hand work for review. Include a stable id for retries. Done without required evidence is stored as review, not verified. Duplicate ids are idempotent.",
+		InputSchema: obj(map[string]any{
+			"id":               str,
+			"seq":              map[string]any{"type": "integer"},
+			"project":          str,
+			"workflow_version": map[string]any{"type": "integer"},
+			"command":          str,
+			"status":           map[string]any{"type": "string", "enum": []string{"started", "done", "failed", "blocked", "review", "skipped"}},
+			"started_at":       str,
+			"updated_at":       str,
+			"summary":          str,
+			"reason":           str,
+			"source":           str,
+			"evidence":         map[string]any{"type": "array", "items": obj(map[string]any{"kind": str, "ref": str})},
+			"tests":            map[string]any{"type": "array", "items": obj(map[string]any{"name": str, "result": str, "detail": str})},
+		}, "command", "status")},
 }
 
 func toolList() []tool { return tools }
@@ -236,7 +256,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 			"states": core.ArtifactStates(p, docs), "decisions": p.Decisions, "binding_decisions": p.BindingDecisions()}, nil
 	case "get_workflow":
 		return map[string]any{"workflow": p.Workflow, "report": pipeline.CheckWorkflow(p), "finalized": p.Finalized(),
-			"binding_decisions": p.BindingDecisions()}, nil
+			"binding_decisions": p.BindingDecisions(), "progress": s.Svc.ProgressOf(p)}, nil
 	case "get_design":
 		var issues []core.Issue
 		if p.UI.Written() {
@@ -247,6 +267,22 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		return map[string]any{"spec": spec.Export(p), "markdown": spec.Markdown(p)}, nil
 	case "next_work":
 		return s.Svc.NextWork()
+	case "get_progress":
+		return s.Svc.ProgressOf(p), nil
+	case "report_progress":
+		var in progress.ReportIn
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &in); err != nil {
+				return nil, fmt.Errorf("argumen tidak valid: %v", err)
+			}
+		}
+		if in.Source == "" {
+			in.Source = s.client
+			if in.Source == "" {
+				in.Source = "mcp"
+			}
+		}
+		return s.Svc.ReportProgress(in, "mcp")
 	case "submit_work":
 		// Accept the result as a JSON object or as a string containing JSON.
 		result := string(args.Result)

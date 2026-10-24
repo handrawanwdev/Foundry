@@ -535,3 +535,50 @@ func TestScopeRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestProgressRoutes(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	s := New(nil, "/bin/foundry")
+	if _, err := s.Open(t.TempDir(), "Klinik", false); err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Store.Update(func(p *core.Project) error {
+		p.Workflow = &core.Workflow{Version: 1, Commands: []core.Command{
+			{ID: "CMD-001", Name: "Skema", Objective: "o", Instructions: "i", Acceptance: []string{"ok"}},
+			{ID: "CMD-002", Name: "API", Objective: "o", Instructions: "i", DependsOn: []string{"CMD-001"}},
+		}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr, r.Host = "127.0.0.1:50000", "127.0.0.1:8080"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if w := do("POST", "/api/v1/project/progress/reports", `{"command":"CMD-001","status":"done"}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"applied_status":"review"`) {
+		t.Fatalf("done without evidence: %d %s", w.Code, w.Body)
+	}
+	if w := do("POST", "/api/v1/project/progress/reports", `{"id":"r1","command":"CMD-001","status":"done","evidence":[{"ref":"db/schema.sql"}]}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"applied_status":"verified"`) {
+		t.Fatalf("done with evidence: %d %s", w.Code, w.Body)
+	}
+	if w := do("POST", "/api/v1/project/progress/reports", `{"id":"r1","command":"CMD-001","status":"done","evidence":[{"ref":"db/schema.sql"}]}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"duplicate":true`) {
+		t.Fatalf("duplicate: %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/api/v1/project/progress", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"verified":1`) || strings.Contains(w.Body.String(), `"complete":true`) {
+		t.Fatalf("progress: %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/api/v1/project/workflow", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"progress"`) || !strings.Contains(w.Body.String(), `"next":["CMD-002"]`) {
+		t.Fatalf("workflow progress: %d %s", w.Code, w.Body)
+	}
+	if w := do("POST", "/api/v1/project/progress/reports", `{"command":"CMD-009","status":"started"}`); w.Code != 400 {
+		t.Fatalf("unknown command: %d %s", w.Code, w.Body)
+	}
+}

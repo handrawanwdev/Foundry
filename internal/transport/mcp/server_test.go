@@ -88,6 +88,50 @@ func TestNextWorkWithPermission(t *testing.T) {
 	}
 }
 
+func TestReportProgress(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	st, _ := core.NewStore(t.TempDir())
+	st.Init("Klinik")
+	st.Update(func(p *core.Project) error {
+		p.Name = "Klinik"
+		p.Workflow = &core.Workflow{Version: 1, Commands: []core.Command{
+			{ID: "CMD-001", Name: "Skema", Objective: "o", Instructions: "i", Acceptance: []string{"ok"}},
+		}}
+		return nil
+	})
+	perms, _ := ParseAllow("READ,WRITE")
+	s := &Server{Svc: pipeline.New(st, hostAI{}), Allow: perms, Version: "test"}
+	lines := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"report_progress","arguments":{"id":"r1","command":"CMD-001","status":"started","source":"claude-code"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"report_progress","arguments":{"id":"r1","command":"CMD-001","status":"started"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"report_progress","arguments":{"id":"r2","command":"CMD-001","status":"done","summary":"siap","evidence":[{"kind":"files","ref":"db/schema.sql"}]}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_progress","arguments":{}}}`,
+	}
+	var out strings.Builder
+	if err := s.Serve(strings.NewReader(strings.Join(lines, "\n")), &out); err != nil {
+		t.Fatal(err)
+	}
+	var res []map[string]any
+	sc := bufio.NewScanner(strings.NewReader(out.String()))
+	for sc.Scan() {
+		var m map[string]any
+		json.Unmarshal(sc.Bytes(), &m)
+		res = append(res, m)
+	}
+	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"status": "started"`) {
+		t.Fatalf("started = %s err=%v", txt, isErr)
+	}
+	if txt, isErr := text(res[1]); isErr || !strings.Contains(txt, `"duplicate": true`) {
+		t.Fatalf("dup = %s", txt)
+	}
+	if txt, isErr := text(res[2]); isErr || !strings.Contains(txt, `"applied_status": "verified"`) {
+		t.Fatalf("done = %s", txt)
+	}
+	if txt, isErr := text(res[3]); isErr || !strings.Contains(txt, `"verified": 1`) || !strings.Contains(txt, `"complete": true`) {
+		t.Fatalf("progress = %s", txt)
+	}
+}
+
 func TestParseAllow(t *testing.T) {
 	if _, err := ParseAllow("READ,DELETE"); err == nil {
 		t.Fatal("unknown permission accepted")
