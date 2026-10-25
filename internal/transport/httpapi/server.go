@@ -169,7 +169,11 @@ func (s *Server) Handler() http.Handler {
 		if svc, err := s.service(); err == nil {
 			cur = svc.Store.Dir
 		}
-		return map[string]any{"current": cur, "recent": c.Recent}, nil
+		recent := make([]map[string]string, 0, len(c.Recent))
+		for _, dir := range c.Recent {
+			recent = append(recent, map[string]string{"dir": dir, "name": core.PeekName(dir)})
+		}
+		return map[string]any{"current": cur, "recent": recent}, nil
 	})
 	api("POST /api/v1/projects/open", func(r *http.Request) (any, error) {
 		var in struct {

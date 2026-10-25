@@ -30,20 +30,29 @@ export function StartPage() {
             </button>
           </div>
           <div className="recent-grid">
-            {recent.map((d) => (
-              <div key={d} className="recent-row">
-                <button className="recent" onClick={() => void open(d)} title={d}>
-                  <strong>{d.split("/").filter(Boolean).pop()}</strong>
-                  <span className="muted small">{d}</span>
-                </button>
-                <button className="recent-remove" onClick={() => removeRecent(d)} title="Hapus dari daftar (folder tidak dihapus)" aria-label={`Hapus ${d} dari daftar`}>
-                  ×
-                </button>
-              </div>
-            ))}
+            {recent.map((r) => {
+              const folder = recentFolder(r.dir);
+              return (
+                <div key={r.dir} className="recent-row">
+                  <button className="recent" onClick={() => void open(r.dir)} title={r.dir}>
+                    <strong>{r.name}</strong>
+                    {folder && <span className="muted small">{folder}</span>}
+                  </button>
+                  <button className="recent-remove" onClick={() => removeRecent(r.dir)} title="Hapus dari daftar (folder tidak dihapus)" aria-label={`Hapus ${r.name} dari daftar`}>
+                    ×
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
     </div>
   );
+}
+
+// Parent folder of a project dir (full path stays in the card title).
+export function recentFolder(dir: string) {
+  const parts = dir.split(/[\\/]/).filter(Boolean);
+  return parts.at(-2) ?? "";
 }

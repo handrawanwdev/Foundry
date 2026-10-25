@@ -194,7 +194,7 @@ func TestOpenCloseBrowse(t *testing.T) {
 	if w := do("POST", "/api/v1/projects/close", `{}`); w.Code != 200 {
 		t.Fatalf("close: %d", w.Code)
 	}
-	if w := do("GET", "/api/v1/projects", ""); !strings.Contains(w.Body.String(), `"current":""`) || !strings.Contains(w.Body.String(), quoted) {
+	if w := do("GET", "/api/v1/projects", ""); !strings.Contains(w.Body.String(), `"current":""`) || !strings.Contains(w.Body.String(), quoted) || !strings.Contains(w.Body.String(), `"name":"Baru"`) {
 		t.Fatalf("after close: %s", w.Body)
 	}
 }

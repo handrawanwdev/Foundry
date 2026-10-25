@@ -191,6 +191,8 @@ export interface Job {
 }
 export interface Event { at: string; source: string; message: string }
 
+export interface RecentProject { dir: string; name: string }
+
 export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string; survey?: Survey;
   discovery?: Discovery; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;

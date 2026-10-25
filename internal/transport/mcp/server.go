@@ -175,6 +175,9 @@ func obj(props map[string]any, required ...string) map[string]any {
 	if props == nil {
 		props = map[string]any{}
 	}
+	if required == nil {
+		required = []string{}
+	}
 	return map[string]any{"type": "object", "properties": props, "required": required}
 }
 

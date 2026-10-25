@@ -1,4 +1,4 @@
-import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DeleteImpact, DesignRules, DesignView, ExportView, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
+import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DeleteImpact, DesignRules, DesignView, ExportView, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
 
 // details lists what an invalid request broke (field = where).
 export interface ErrorDetail { field?: string; message: string }
@@ -34,7 +34,7 @@ export const api = {
   connectMCP: () => call("POST", "/ai/connect-mcp", {}),
   disconnect: (all = false) => call("POST", "/ai/disconnect", { all }),
 
-  projects: () => call<{ current: string; recent: string[] | null }>("GET", "/projects"),
+  projects: () => call<{ current: string; recent: RecentProject[] | null }>("GET", "/projects"),
   openProject: (dir: string, create = false, name = "") => call<Project>("POST", "/projects/open", { dir, create, name }),
   removeRecent: (dir = "") => call("POST", "/projects/recent/remove", { dir }),
   closeProject: () => call("POST", "/projects/close", {}),

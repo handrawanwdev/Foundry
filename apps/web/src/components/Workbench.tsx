@@ -74,9 +74,9 @@ function ProjectMenu() {
           <button className="menu-item" onClick={() => { done(); setDialog("open"); }}>Buka project…</button>
           {recent.length > 0 && <div className="menu-sep" />}
           {recent.length > 0 && <div className="menu-label">Terakhir</div>}
-          {recent.slice(0, 6).map((d) => (
-            <button key={d} className="menu-item" disabled={d === project?.dir} title={d} onClick={() => { done(); void open(d); }}>
-              <span className="menu-text">{d.split("/").filter(Boolean).pop()}</span>
+          {recent.slice(0, 6).map((r) => (
+            <button key={r.dir} className="menu-item" disabled={r.dir === project?.dir} title={r.dir} onClick={() => { done(); void open(r.dir); }}>
+              <span className="menu-text">{r.name}</span>
             </button>
           ))}
           {project && <div className="menu-sep" />}

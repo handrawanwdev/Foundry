@@ -1,11 +1,11 @@
 import { create } from "zustand";
 import { api } from "../api";
-import type { Project } from "../types";
+import type { Project, RecentProject } from "../types";
 
 interface ProjectStore {
   loaded: boolean;
   project: Project | null; // null = no project open (Start page)
-  recent: string[];
+  recent: RecentProject[];
   error: string | null;
   pending: string | null; // action in flight
   load: () => Promise<void>;

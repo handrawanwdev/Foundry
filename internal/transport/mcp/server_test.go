@@ -63,8 +63,15 @@ func TestProtocol(t *testing.T) {
 	if v := res[0]["result"].(map[string]any)["protocolVersion"]; v != "2025-03-26" {
 		t.Fatalf("protocol = %v", v)
 	}
-	if n := len(res[1]["result"].(map[string]any)["tools"].([]any)); n != len(tools) {
+	listed := res[1]["result"].(map[string]any)["tools"].([]any)
+	if n := len(listed); n != len(tools) {
 		t.Fatalf("tools = %d", n)
+	}
+	for _, raw := range listed {
+		schema := raw.(map[string]any)["inputSchema"].(map[string]any)
+		if schema["required"] == nil {
+			t.Fatalf("tool %v has null required; MCP clients require an array", raw.(map[string]any)["name"])
+		}
 	}
 	if txt, isErr := text(res[2]); isErr || !strings.Contains(txt, `"stage": "TELL"`) {
 		t.Fatalf("get_project = %s", txt)

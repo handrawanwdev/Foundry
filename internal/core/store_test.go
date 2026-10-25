@@ -426,3 +426,20 @@ func TestLoadLegacyPlatformAudience(t *testing.T) {
 		t.Fatalf("audience kept: %s", b)
 	}
 }
+
+func TestPeekName(t *testing.T) {
+	dir := t.TempDir()
+	if got := PeekName(dir); got != filepath.Base(dir) {
+		t.Fatalf("missing project: %q", got)
+	}
+	s, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Init("RBAC Management System"); err != nil {
+		t.Fatal(err)
+	}
+	if got := PeekName(dir); got != "RBAC Management System" {
+		t.Fatalf("saved name: %q", got)
+	}
+}
