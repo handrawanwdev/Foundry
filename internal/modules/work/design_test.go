@@ -12,10 +12,15 @@ const existingDesign = `{"rules": {"source": "new", "principles": ["Ikuti UI yan
   "tokens": {"colors": [{"name": "action.primary", "value": "#000000"}, {"name": "status.info", "value": "#0ea5e9"}],
              "typography": [{"name": "type.body", "value": "Inter 14px"}], "spacing": [{"name": "space.md", "value": "16px"}]},
   "components": [{"name": "sidebar", "use": "navigasi"}]},
+ "users": [{"role": "Operator", "platform": "web", "context": "harian", "tasks": ["ubah filter"]}],
+ "goals": [{"id": "GOAL-1", "role": "Operator", "text": "Ubah filter pesanan"}],
+ "navigation": [{"name": "Utama", "items": [{"label": "Pesanan", "page": "orders"}, {"label": "Anggaran", "page": "budget"}]}],
+ "decisions": [{"subject": "orders", "choice": "detail", "why": ["filter cepat"], "basis": ["GOAL-1"], "source": "fact"},
+               {"subject": "budget", "choice": "detail", "why": ["limit bulanan"], "basis": ["GOAL-1"], "source": "fact"}],
  "pages": [
-  {"id": "orders", "name": "Pesanan", "platform": "web", "route": "/orders", "purpose": "Ubah filter pesanan", "pattern": "detail",
+  {"id": "orders", "name": "Pesanan", "platform": "web", "route": "/orders", "purpose": "Ubah filter pesanan", "goal": "GOAL-1", "pattern": "detail",
    "sections": [{"id": "filter", "name": "Filter", "content": ["Status"]}], "states": {"loading": "Memuat", "error": "Gagal"}},
-  {"id": "budget", "name": "Anggaran", "platform": "web", "route": "/budget", "purpose": "Atur anggaran", "pattern": "detail",
+  {"id": "budget", "name": "Anggaran", "platform": "web", "route": "/budget", "purpose": "Atur anggaran", "goal": "GOAL-1", "pattern": "detail",
    "sections": [{"id": "isi", "name": "Isi", "content": ["Limit bulanan"]}], "states": {"loading": "Memuat", "error": "Gagal"}}]}`
 
 // An existing project's design follows its code: the code's tokens win,

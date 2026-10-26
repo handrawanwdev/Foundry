@@ -116,12 +116,43 @@ Bekerja dengan Claude Code, Codex, OpenCode, Qwen Code, Gemini, dan host MCP lai
 | **Requirements**              | Kebutuhan dan batasan sistem                                                |
 | **Architecture**              | Arsitektur dan pembagian tanggung jawab                                     |
 | **Technology**                | Pilihan teknologi beserta alasannya                                         |
-| **Design Rules**              | Prinsip UI, token desain, komponen, aksesibilitas, aturan UX *(bila ada UI)* |
-| **Layout Specification**      | Shell, halaman, route, section, navigasi, state UI *(bila ada UI)*          |
+| **Design Rules**              | Prinsip UI, panduan UX, token desain, komponen, aksesibilitas, responsif *(bila ada UI)* |
+| **Layout Specification**      | Pengguna, tujuan, information architecture, navigasi, inventaris halaman, section, hierarki, pemetaan data ke UI, state, keputusan desain *(bila ada UI)* |
 | **Use Cases**                 | Aktor, alur, aturan bisnis, kondisi gagal                                   |
 | **Acceptance Criteria**       | Kondisi yang harus dipenuhi fitur                                           |
 | **Decisions**                 | Asumsi, pertanyaan, konflik, risiko, dan penyelesaiannya                    |
 | **Project-specific**          | Kontrak API, model domain, protokol, threat model, strategi pengujian, dll. |
+
+### Desain UX otonom
+
+Untuk produk dengan layar, Foundry menurunkan UI/UX dari tujuan pengguna, use case, model data, permission, dan batasan platform - bukan dari nama tabel. Pekerjaan desain memuat konteks tersebut dan wajib menghasilkan:
+
+- **Pengguna dan tujuan**: peran, platform, konteks, tugas, tujuan terukur beserta keberhasilan dan prioritas.
+- **Information architecture**: grup navigasi menurut pekerjaan pengguna, bukan tabel database; setiap halaman dapat dicapai dari navigasi atau link.
+- **Inventaris halaman**: tujuan halaman dan goal pengguna yang dilayani, sehingga layar ada karena tugas, bukan karena entity.
+- **Keputusan desain**: untuk setiap halaman, section atau komponen, pilihan beserta alasan dan dasar dari blueprint (goal, flow, fitur, requirement, entity, permission, platform atau token), ditandai fakta, asumsi atau constraint.
+- **Pemetaan data ke UI**: field mana yang tampil, di mana dan bagaimana; state, validasi, akses ditolak, dan feedback.
+- **Responsif, aksesibilitas, dan token**: semua nilai visual berasal dari design token.
+
+Validasi menolak basis keputusan yang tidak dikenal, halaman tanpa keputusan, item navigasi ke halaman yang tidak ada, dan state wajib yang kosong. Desain diekspor sebagai Markdown yang terbaca plus JSON untuk tools. Setiap command yang membangun layar wajib merujuk `design-rules` + `layout-spec` dan menyebut id halaman yang diimplementasikan.
+
+### Evaluasi kualitas visual
+
+Build atau unit test bukan bukti UI. Foundry tidak membuka browser sendiri: setelah coding agent mengimplementasikan layar, agen (atau alat browser) mengirim **snapshot terukur** per viewport dan state: berkas screenshot di dalam project, ukuran viewport, dan node DOM beserta bounds, computed style, dan atribut aksesibilitas. Foundry memeriksa secara deterministik:
+
+- kontras teks terhadap WCAG AA;
+- overflow horizontal, target sentuh < 44 px, label dan `alt` yang hilang;
+- hierarki heading dan pergeseran perataan tepi kiri;
+- spasi dan ukuran font di luar design token;
+- aksi utama halaman ada;
+- state wajib (loading, empty, error, ...) punya bukti screenshot;
+- tampilan pada lebih dari satu viewport.
+
+Setiap temuan punya keparahan, bukti (path node + viewport), dan rekomendasi perbaikan. Halaman tanpa screenshot nyata tetap **belum diuji**, bukan lulus; kriteria yang tidak bisa diukur dilaporkan belum diuji. `create_visual_fixes` mengubah temuan terbuka menjadi command koreksi konkret di workflow yang sudah ada (membuka kembali project yang sudah difinalisasi karena spesifikasi berubah), dan progres menampilkan ringkasan visual beserta peringatannya.
+
+Kontrak HTTP: `GET /api/v1/project/visual` (ringkasan + audit), `POST /api/v1/project/visual/reviews` (review snapshot), `POST /api/v1/project/visual/fixes` (buat command koreksi). MCP menyediakan operasi yang sama lewat `get_visual_review`, `record_visual_review`, dan `create_visual_fixes`.
+
+Bila proyek juga punya CLI, UX terminal (grammar command, flag, help, output, error, exit code) dicatat di `rules.platforms` dengan platform `cli`; terminal tidak punya layout page atau evaluasi visual. Produk CLI-only karena itu melewati desain layar; UX-nya ada di artefak proyek sendiri.
 
 ### Contoh command workflow
 
@@ -249,6 +280,9 @@ foundry mcp --print-config --project ~/kerja/klinik
 | `get_design`       | `READ`   | Design rules & layout spec terstruktur beserta isu validasi            |
 | `get_spec`         | `READ`   | Spesifikasi lengkap (JSON + Markdown) untuk implementasi di luar Foundry |
 | `get_progress`     | `READ`   | Progres pengerjaan workflow (hitungan, command siap, peringatan)       |
+| `get_visual_review` | `READ`  | Kualitas UI terukur per halaman: lulus/sebagian/gagal/belum diuji, temuan, kriteria |
+| `record_visual_review` | `WRITE` | Kirim snapshot browser + bukti screenshot untuk satu halaman |
+| `create_visual_fixes` | `WRITE` | Ubah temuan visual terbuka menjadi command koreksi di workflow |
 | `report_progress`  | `WRITE`  | Laporan agen untuk satu command: started / done / failed / blocked / skipped / review |
 | `next_work`        | `MODIFY` | Ambil pekerjaan rancangan berikutnya yang dibutuhkan Foundry           |
 | `submit_work`      | `WRITE`  | Serahkan hasil kerja; Foundry yang memvalidasi                         |
@@ -263,6 +297,10 @@ Foundry mencatat progres implementasi dari coding agent eksternal. Foundry tidak
 
 **Wajib di sisi agen:** coding agent harus memanggil `report_progress` (atau HTTP yang sama) saat mulai/selesai/gagal/terhambat/dilewati/ditinjau. Foundry tidak menyimpulkan progres dari git, tes, atau prompt yang disalin. Host yang tidak memanggil tool akan menampilkan semua command sebagai belum terkonfirmasi.
 
+**Evaluasi visual terintegrasi:** progres juga memuat ringkasan visual (`visual`, `visual_ready`) dan peringatan bila layar belum dievaluasi, ada temuan berat, atau ada halaman yang belum diuji. Halaman tanpa screenshot tidak dihitung lulus; build dan unit test tidak dipakai sebagai bukti kualitas tampilan.
+
+**Batasan:** Foundry tidak membuka browser atau mengambil screenshot sendiri. Evaluasi memakai snapshot terukur dan screenshot yang dikirim alat browser/coding agent. Aspek yang tidak ada di snapshot (nada copy, kecocokan brand, rasa animasi) dilaporkan belum diuji, bukan diklaim lulus.
+
 **Bukan pekerjaan Foundry:** mengeksekusi command, menulis kode proyek, menjalankan tes proyek, atau mengambil alih kerja agen.
 
 ## 🚫 Yang Tidak Dilakukan Foundry
@@ -272,6 +310,9 @@ Batas tanggung jawab ini disengaja. Foundry **tidak**:
 - menulis kode aplikasi sebagai hasil implementasi;
 - menjalankan build, test, atau deployment aplikasi;
 - mengeksekusi command workflow atau menjalankan coding agent untuk implementasi;
+- membuka browser atau mengambil screenshot sendiri: evaluasi visual butuh snapshot dan screenshot yang dikirim;
+- memverifikasi bahwa screenshot benar-benar diambil dari URL yang diklaim saat itu; snapshot adalah bukti yang dikirim, diperiksa konsistensi dan keberadaan berkasnya, bukan provenance;
+- menilai keindahan atau kualitas semantik yang tidak ada di snapshot; kriteria itu dibiarkan belum diuji;
 - membuat scaffold atau struktur folder aplikasi;
 - menggantikan IDE, repository, Figma, atau tool implementasi.
 

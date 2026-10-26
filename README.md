@@ -116,12 +116,43 @@ Works with Claude Code, Codex, OpenCode, Qwen Code, Gemini, and other MCP hosts.
 | **Requirements**              | System requirements and constraints                                              |
 | **Architecture**              | Architecture and division of responsibilities                                    |
 | **Technology**                | Technology choices and their rationale                                           |
-| **Design Rules**              | UI principles, design tokens, components, accessibility, UX rules *(if there's a UI)* |
-| **Layout Specification**      | Shells, pages, routes, sections, navigation, UI states *(if there's a UI)*       |
+| **Design Rules**              | UI principles, UX guidance, design tokens, components, accessibility, responsive rules *(if there's a UI)* |
+| **Layout Specification**      | Users, goals, information architecture, navigation, page inventory, sections, hierarchy, data-to-UI mapping, states, design decisions *(if there's a UI)* |
 | **Use Cases**                 | Actors, flows, business rules, failure conditions                                |
 | **Acceptance Criteria**       | Conditions a feature must meet                                                   |
 | **Decisions**                 | Assumptions, open questions, conflicts, risks, and their resolutions             |
 | **Project-specific**          | API contracts, domain models, protocols, threat models, test strategy, etc.      |
+
+### Autonomous UX design
+
+For a product with screens, Foundry derives the UI/UX from the user goals, use cases, data model, permissions and platform constraints - not from table names. The designer work item carries that context and must produce:
+
+- **Users and goals**: role, platform, context, tasks, measurable goals with success and priority.
+- **Information architecture**: navigation groups by the user's job, not by database tables; every page reachable from navigation or a link.
+- **Page inventory**: purpose and the user goal each page serves, so a screen exists for a task and not for an entity.
+- **Design decisions**: for each page, section or component, a choice with the reason and a basis drawn from the blueprint (goal, flow, feature, requirement, entity, permission, platform or token), marked as fact, assumption or constraint.
+- **Data-to-UI mapping**: which fields are shown, where and how; states, validation, permission-denied and feedback.
+- **Responsive, accessibility and token rules**: all visual values come from design tokens.
+
+The specification is validated: an unknown basis, a page without a decision, a navigation item to a missing page or a missing required state blocks saving and finalizing. The same design is exported as readable Markdown plus JSON for tools, and each command that builds screens must list `design-rules` + `layout-spec` and name the page ids it implements.
+
+### Visual quality review
+
+Foundry does not trust a build or unit test as UI proof, and it does not open a browser itself. After a coding agent implements a screen, it (or a browser automation tool) submits a **measured snapshot** per viewport and state: a screenshot file inside the project, the viewport size, and the DOM nodes with bounds, computed styles and accessible attributes. Foundry then checks deterministically:
+
+- contrast against WCAG AA, text/background colors;
+- horizontal overflow, touch targets smaller than 44 px, missing labels and `alt`;
+- heading hierarchy, left-edge alignment drift;
+- spacing and font sizes outside the design tokens;
+- the page's primary action is present;
+- required states (loading, empty, error, ...) have screenshot evidence;
+- response at more than one viewport.
+
+Each finding has a severity, evidence (node path + viewport) and a concrete fix. A page without a real screenshot stays **untested**, never "passed"; criteria that cannot be measured are reported as untested. `create_visual_fixes` turns open findings into a concrete correction command in the existing command workflow (reopening a finalized project because the specification changes), and progress shows the visual summary and warnings next to the command progress.
+
+HTTP contract: `GET /api/v1/project/visual` (summary + audit), `POST /api/v1/project/visual/reviews` (snapshot review), `POST /api/v1/project/visual/fixes` (create the correction command). MCP exposes the same operations as `get_visual_review`, `record_visual_review` and `create_visual_fixes`.
+
+When a project also has a CLI, terminal UX (command grammar, flags, help, output, errors, exit codes) is captured in `rules.platforms` with platform `cli`; the terminal has no layout pages and no visual review. A CLI-only product therefore skips screen design by design; its UX belongs in the project's own artifacts.
 
 ### Example command workflow
 
@@ -151,7 +182,7 @@ docs/foundry/
 └── adr/            0001-stack.md · …
 ```
 
-> The structure above is illustrative — generated files match the artifacts that apply to the project.
+> The structure above is illustrative — generated files match the artifacts that apply to the project. After a visual review the package also contains `review/visual.md` (findings, criteria, pass/fail/untested) and `review/visual.json`.
 
 ## 🌐 Supported Platforms
 
@@ -251,6 +282,9 @@ foundry mcp --print-config --project ~/work/clinic
 | `get_design`       | `READ`     | Structured design rules & layout spec with validation issues                |
 | `get_spec`         | `READ`     | Full specification (JSON + Markdown) for implementation outside Foundry     |
 | `get_progress`     | `READ`     | Execution progress of the command workflow (counts, next eligible commands, warnings) |
+| `get_visual_review` | `READ`    | Measured UI quality per page: pass/partial/fail/untested, findings, criteria |
+| `record_visual_review` | `WRITE` | Submit browser snapshots + screenshot evidence for one page |
+| `create_visual_fixes` | `WRITE` | Turn open visual findings into a correction command in the workflow |
 | `report_progress`  | `WRITE`    | Agent report for one command: started / done / failed / blocked / skipped / review |
 | `next_work`        | `MODIFY`   | Fetch the next piece of design work Foundry needs                           |
 | `submit_work`      | `WRITE`    | Hand back a result; Foundry validates it                                    |
@@ -274,6 +308,9 @@ These boundaries are intentional. Foundry does **not**:
 - write application code as an implementation output;
 - run application builds, tests, or deployments;
 - execute the command workflow or run coding agents to implement it;
+- open a browser or capture screenshots itself: visual review requires measured snapshots and screenshot files submitted by a browser tool or the coding agent;
+- verify that a submitted screenshot was actually captured from the claimed URL at that moment; the snapshot is supplied evidence, checked for internal consistency and file presence, not for provenance;
+- judge aesthetics or semantic quality that is not present in the measured snapshot (copy tone, brand fit, motion feel); those criteria stay untested instead of being claimed;
 - scaffold application code or folder structures;
 - replace your IDE, repository, Figma, or implementation tools.
 

@@ -85,6 +85,9 @@ func layoutMarkdown(p *core.Project) string {
 	if flows := pageFlows(p); flows != "" {
 		b.WriteString(flows)
 	}
+	if ux := uxMarkdown(l); ux != "" {
+		b.WriteString(ux)
+	}
 	if len(l.Shells) > 0 {
 		b.WriteString("## Shell layout\n\n")
 		for _, sh := range l.Shells {
@@ -125,10 +128,20 @@ func layoutMarkdown(p *core.Project) string {
 		if pg.Existing {
 			b.WriteString("Halaman sudah ada di kode: ubah seperlunya, jangan buat ulang.\n\n")
 		}
+		if pg.Goal != "" {
+			fmt.Fprintf(&b, "Tujuan pengguna: %s\n\n", pg.Goal)
+		}
 		field(&b, "Aksi utama", pg.PrimaryAction)
 		field(&b, "Grid", pg.Grid)
 		if len(pg.Hierarchy) > 0 {
 			fmt.Fprintf(&b, "Hierarki: %s\n\n", strings.Join(pg.Hierarchy, " > "))
+		}
+		if len(pg.Fields) > 0 {
+			b.WriteString("**Pemetaan field ke tampilan**\n\n| Field | Label | Tampilan | Format | Catatan |\n|---|---|---|---|---|\n")
+			for _, f := range pg.Fields {
+				fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n", cell(f.Field), cell(f.Label), cell(f.Presentation), cell(f.Format), cell(f.Note))
+			}
+			b.WriteString("\n")
 		}
 		sections(&b, pg.Sections)
 		states(&b, pg.States)
@@ -142,6 +155,91 @@ func layoutMarkdown(p *core.Project) string {
 		}
 		bullets(&b, "**Data**", pg.Data)
 	}
+	b.WriteString(uiAcceptanceMarkdown(l))
+	return b.String()
+}
+
+// uiAcceptanceMarkdown is the checkable acceptance of the UI design. It is
+// derived from the spec only; it never claims a result and never reads the
+// visual audit, so recording a review does not change the design artifact's
+// hash.
+func uiAcceptanceMarkdown(l *core.LayoutSpec) string {
+	var b strings.Builder
+	b.WriteString("## Kriteria penerimaan UI/UX\n\nBerlaku untuk setiap halaman yang disebut di atas:\n\n")
+	bullets(&b, "", []string{
+		"Tujuan pengguna halaman terlihat dari judul dan aksi utama, tanpa menebak dari nama tabel.",
+		"Setiap halaman dapat dicapai dari navigasi atau link halaman lain; tidak ada halaman yatim.",
+		"Setiap keputusan layout, komponen dan interaksi punya alasan yang tertelusur ke tujuan, alur, data, permission, platform atau token.",
+		"Semua warna, tipografi, spasi, radius dan breakpoint berasal dari design token; tidak ada nilai hardcode.",
+		"Setiap state yang diwajibkan pola halaman tampil dan dapat digunakan (bukan hanya teks di dokumen).",
+		"Kontras WCAG AA, fokus keyboard, label kontrol, alt gambar dan target sentuh terpenuhi.",
+		"Layout bertahan di breakpoint yang ditetapkan tanpa overflow horizontal dan tanpa informasi yang hilang.",
+		"Field yang ditampilkan sesuai pemetaan field; tidak menampilkan seluruh entity tanpa alasan.",
+	})
+	b.WriteString("| Halaman | Aksi utama | State wajib | Field dipetakan | Keputusan |\n|---|---|---|---|---|\n")
+	for _, pg := range l.Pages {
+		states := core.RequiredStates[pg.Pattern]
+		decisions := 0
+		for _, d := range l.Decisions {
+			if d.Subject == pg.ID {
+				decisions++
+			}
+		}
+		fmt.Fprintf(&b, "| `%s` %s | %s | %s | %d | %d |\n", pg.ID, cell(pg.Name), cell(dash(pg.PrimaryAction)),
+			cell(dash(strings.Join(states, ", "))), len(pg.Fields), decisions)
+	}
+	b.WriteString("\nBukti visual diperiksa terpisah di `review/visual.md` setelah implementasi; halaman tanpa screenshot dan snapshot terukur belum diuji, dan build atau unit test bukan bukti kualitas UI.\n")
+	return b.String()
+}
+
+// uxMarkdown is the UX layer: who the users are, what they must achieve,
+// how the information is organized and why the design choices were made.
+func uxMarkdown(l *core.LayoutSpec) string {
+	if len(l.Users) == 0 && len(l.Goals) == 0 && len(l.Navigation) == 0 && len(l.Decisions) == 0 &&
+		len(l.Assumptions) == 0 && len(l.Unknowns) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	if len(l.Users) > 0 {
+		b.WriteString("## Pengguna dan konteks\n\n| Peran | Platform | Konteks | Tujuan | Tugas |\n|---|---|---|---|---|\n")
+		for _, u := range l.Users {
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n", cell(u.Role), cell(u.Platform), cell(u.Context),
+				cell(strings.Join(u.Goals, "; ")), cell(strings.Join(u.Tasks, "; ")))
+		}
+		b.WriteString("\n")
+	}
+	if len(l.Goals) > 0 {
+		b.WriteString("## Tujuan pengguna\n\n| ID | Peran | Tujuan | Keberhasilan | Prioritas |\n|---|---|---|---|---|\n")
+		for _, g := range l.Goals {
+			fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n", cell(g.ID), cell(g.Role), cell(g.Text), cell(g.Success), cell(g.Priority))
+		}
+		b.WriteString("\n")
+	}
+	if len(l.Navigation) > 0 {
+		b.WriteString("## Information architecture\n\n")
+		for _, g := range l.Navigation {
+			fmt.Fprintf(&b, "**%s**\n\n", g.Name)
+			for _, it := range g.Items {
+				primary := ""
+				if it.Primary {
+					primary = " (utama)"
+				}
+				fmt.Fprintf(&b, "- %s → `%s`%s\n", it.Label, it.Page, primary)
+			}
+			b.WriteString("\n")
+		}
+	}
+	if len(l.Decisions) > 0 {
+		b.WriteString("## Keputusan desain\n\nSetiap pilihan ditelusuri ke tujuan, alur, data, permission, platform atau token.\n\n")
+		b.WriteString("| Subjek | Pilihan | Alasan | Dasar | Sumber | Alternatif |\n|---|---|---|---|---|---|\n")
+		for _, d := range l.Decisions {
+			fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s | %s |\n", cell(d.Subject), cell(d.Choice),
+				cell(strings.Join(d.Why, "; ")), cell(strings.Join(d.Basis, ", ")), cell(d.Source), cell(d.Alternative))
+		}
+		b.WriteString("\n")
+	}
+	bullets(&b, "**Asumsi desain**", l.Assumptions)
+	bullets(&b, "**Belum diketahui**", l.Unknowns)
 	return b.String()
 }
 

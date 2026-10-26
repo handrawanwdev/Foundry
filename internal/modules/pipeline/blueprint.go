@@ -145,7 +145,14 @@ func (s *Service) ReviewCommand(id string, needs bool, reason string) (*core.Pro
 
 // CheckWorkflow reports the workflow against the current blueprint.
 func CheckWorkflow(p *core.Project) workflow.Report {
-	return workflow.Check(p.Workflow, spec.Artifacts(p), p.Requirements)
+	r := workflow.Check(p.Workflow, spec.Artifacts(p), p.Requirements)
+	if p.Workflow != nil {
+		if issues := work.CheckUI(p, p.Workflow.Commands); len(issues) > 0 {
+			r.Issues = append(r.Issues, issues...)
+			r.Ready = false
+		}
+	}
+	return r
 }
 
 // ---------- Finalize ----------

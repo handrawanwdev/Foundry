@@ -29,9 +29,10 @@ const PackageGuide = `Paket ini dibuat oleh Foundry. Foundry merancang dan menyu
 5. Satu command selesai bila semua acceptance criteria terpenuhi dan output yang diharapkan diserahkan, dengan bukti (test, perintah, hasil). Foundry tidak menganggap selesai hanya karena instruksi sudah dikirim.
 6. Laporkan progres ke Foundry lewat MCP: ` + "`report_progress`" + ` saat mulai, selesai, gagal, terhambat, dilewati (wajib alasan), atau diserahkan untuk ditinjau. Sertakan id laporan yang stabil, ringkasan, dan bukti (` + "`evidence.ref`" + `). Cek command berikutnya dengan ` + "`get_progress`" + `; jangan mulai sebelum dependency terverifikasi. Bila pengiriman gagal, kirim ulang laporan dengan id yang sama.
 7. Bila blueprint bertentangan dengan kondisi repository atau dengan command lain, berhenti dan laporkan; jangan memutuskan sendiri.
-8. Untuk layar: ` + "`blueprint/design-rules.md`" + ` (aturan desain dan token) dan ` + "`blueprint/layout-spec.md`" + ` (layout per halaman) adalah acuannya; versi JSON ada di ` + "`design/`" + `. Semua nilai visual dari token; jangan nilai hardcode. Halaman bertanda *sudah ada* diubah seperlunya, tidak dibuat ulang.
+8. Untuk layar: ` + "`blueprint/design-rules.md`" + ` (aturan desain dan token) dan ` + "`blueprint/layout-spec.md`" + ` (pengguna, tujuan, information architecture, navigasi, halaman, section, state, pemetaan field, dan keputusan desain) adalah acuannya; versi JSON ada di ` + "`design/`" + `. Semua nilai visual dari token; jangan nilai hardcode. Halaman bertanda *sudah ada* diubah seperlunya, tidak dibuat ulang. Halaman tanpa id di command belum tercakup workflow.
 9. ` + "`blueprint/acceptance.md`" + ` berisi kriteria penerimaan per requirement dan Definition of Done; command menyebut requirement yang dicakupnya. Bukti yang diharapkan adalah syarat, bukan hasil: belum ada yang terverifikasi sampai agent menjalankannya dan Foundry menerima laporannya. ` + "`traceability.md`" + ` memetakan requirement ke use case, kriteria, dan command.
 10. ` + "`blueprint/decisions.md`" + ` berisi asumsi, keputusan, risiko, dan area yang sengaja tidak dicakup. Keputusan di bagian *Diputuskan* mengikat dan mengalahkan asumsi, rekomendasi, atau aturan di artefak lain dan di command; bila ada yang bertentangan, ikuti keputusan dan laporkan pertentangannya. Jangan mengimplementasikan bagian yang bergantung pada keputusan yang masih terbuka; tanyakan ke user.
+11. Setelah membangun layar, kirim snapshot browser terukur + screenshot setiap viewport dan state ke Foundry (` + "`record_visual_review`" + `). Build dan unit test bukan bukti kualitas UI. Baca temuan di ` + "`review/visual.md`" + ` (bila ada); temuan berat menghasilkan command koreksi lewat ` + "`create_visual_fixes`" + `, lalu kirim ulang snapshot untuk verifikasi.
 `
 
 // AgentsMD is written at the project root when it has no AGENTS.md.
@@ -42,7 +43,8 @@ Rancangan project ini ada di docs/foundry/ (dibuat oleh Foundry).
 - Mulai dari docs/foundry/README.md dan docs/foundry/manifest.json.
 - Blueprint di docs/foundry/blueprint/ adalah sumber kebenaran.
 - Kerjakan command di docs/foundry/workflow/ sesuai urutan gelombang dan dependency.
-- Untuk UI: ikuti docs/foundry/blueprint/design-rules.md dan layout-spec.md.
+- Untuk UI: ikuti docs/foundry/blueprint/design-rules.md dan layout-spec.md (pengguna, tujuan, navigasi, keputusan desain, pemetaan field, state).
+- Setelah layar jadi: kirim snapshot browser terukur + screenshot ke Foundry (record_visual_review). Build/unit test bukan bukti kualitas UI; halaman tanpa screenshot belum diuji.
 - Periksa repository sebelum mengubah kode; jangan mengarang path atau API.
 - Penuhi acceptance criteria tiap command (docs/foundry/blueprint/acceptance.md) dan laporkan buktinya ke Foundry lewat report_progress (MCP). Jangan anggap selesai tanpa bukti.
 - Keputusan di docs/foundry/blueprint/decisions.md bagian *Diputuskan* mengikat dan menimpa artefak, use case, aturan desain, layout, dan command lain. Bila ada yang bertentangan, ikuti keputusan dan laporkan pertentangannya.

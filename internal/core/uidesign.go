@@ -20,6 +20,10 @@ type UIDesign struct {
 	// Request is a change waiting for the AI. Nil (or a request without
 	// text) while nothing is written yet means the AI writes the design.
 	Request *ChangeRequest `json:"request,omitempty"`
+	// Format is the schema generation. Format 2 carries the autonomous UX
+	// layer (users, goals, navigation, decisions, field rules); older
+	// designs keep loading and only warn about what they lack.
+	Format int `json:"format,omitempty"`
 	// Version counts the changes.
 	Version int `json:"version"`
 	// TechVersion is the technology version the design was last checked
@@ -104,11 +108,74 @@ type PlatformRules struct {
 	Rules    []string `json:"rules"`
 }
 
+// UIDesignFormat is the current schema generation of UIDesign.
+const UIDesignFormat = 2
+
 // LayoutSpec is the layout of every page: shared shells, then pages made of
-// sections in visual order.
+// sections in visual order. Users, goals, navigation and decisions are the
+// UX layer that makes every layout choice traceable; they are written by the
+// designer, not derived from table names.
 type LayoutSpec struct {
-	Shells []LayoutShell `json:"shells"`
-	Pages  []LayoutPage  `json:"pages"`
+	Shells      []LayoutShell    `json:"shells"`
+	Pages       []LayoutPage     `json:"pages"`
+	Users       []UIUser         `json:"users,omitempty"`
+	Goals       []UIGoal         `json:"goals,omitempty"`
+	Navigation  []NavGroup       `json:"navigation,omitempty"`
+	Decisions   []DesignDecision `json:"decisions,omitempty"`
+	Assumptions []string         `json:"assumptions,omitempty"`
+	Unknowns    []string         `json:"unknowns,omitempty"`
+}
+
+// UIUser is one kind of user with the context and tasks the design serves.
+type UIUser struct {
+	Role     string   `json:"role"`
+	Platform string   `json:"platform,omitempty"`
+	Context  string   `json:"context,omitempty"`
+	Goals    []string `json:"goals,omitempty"`
+	Tasks    []string `json:"tasks,omitempty"`
+}
+
+// UIGoal is one measurable user goal the screens must support.
+type UIGoal struct {
+	ID       string `json:"id"`
+	Role     string `json:"role,omitempty"`
+	Text     string `json:"text"`
+	Success  string `json:"success,omitempty"`
+	Priority string `json:"priority,omitempty"` // must | should | could
+}
+
+// NavGroup is one information-architecture group and its destinations.
+type NavGroup struct {
+	Name  string    `json:"name"`
+	Items []NavItem `json:"items"`
+}
+
+// NavItem is one navigation destination; Page is a page id.
+type NavItem struct {
+	Label   string `json:"label"`
+	Page    string `json:"page"`
+	Primary bool   `json:"primary,omitempty"`
+}
+
+// DesignDecision is one contextual design choice and why it was made.
+// Basis names the user goal, flow, entity, permission, platform or token
+// the choice is traceable to.
+type DesignDecision struct {
+	Subject     string   `json:"subject"` // page id, section id, component name, or *
+	Choice      string   `json:"choice"`
+	Why         []string `json:"why"`
+	Basis       []string `json:"basis,omitempty"`
+	Source      string   `json:"source"` // fact | assumption | constraint
+	Alternative string   `json:"alternative,omitempty"`
+}
+
+// FieldRule is how one data field is presented on a page.
+type FieldRule struct {
+	Field        string `json:"field"` // Entity.field
+	Label        string `json:"label,omitempty"`
+	Presentation string `json:"presentation"`
+	Format       string `json:"format,omitempty"`
+	Note         string `json:"note,omitempty"`
 }
 
 // LayoutShell is a layout pages share (app frame, auth frame, ...).
@@ -136,11 +203,15 @@ type LayoutPage struct {
 	Access    string `json:"access,omitempty"` // public | auth
 	FeatureID string `json:"feature_id,omitempty"`
 	Purpose   string `json:"purpose"`
+	// Goal is the user goal the page serves, from the layout goals.
+	Goal string `json:"goal,omitempty"`
 	// Shell is the id of the shell the page sits in; empty for a page
 	// with its own frame.
 	Shell         string `json:"shell,omitempty"`
 	Pattern       string `json:"pattern"`
 	PrimaryAction string `json:"primary_action,omitempty"`
+	// Fields maps data fields to how they are shown on this page.
+	Fields []FieldRule `json:"fields,omitempty"`
 	// Sections are in visual order; Hierarchy lists section ids from the
 	// most important (empty: the visual order).
 	Sections   []Section         `json:"sections"`
@@ -183,9 +254,19 @@ var (
 	LayoutPatterns = []string{"sidebar", "navbar", "dashboard", "form", "table", "list", "detail", "master-detail",
 		"wizard", "auth", "settings", "search", "cards", "feed", "tabs", "split", "modal", "editor", "chat",
 		"calendar", "kanban", "map", "report", "landing", "empty", "custom"}
-	UIStates   = []string{"loading", "empty", "no_results", "error", "success", "disabled", "interactive"}
+	UIStates   = []string{"loading", "empty", "no_results", "error", "success", "disabled", "permission_denied", "interactive"}
 	UIPlatform = []string{PlatformWeb, PlatformAndroid, PlatformIOS, PlatformDesktop}
-	Accesses   = []string{"public", "auth"}
+	// RulesPlatforms may carry UX rules for a platform without screen
+	// layouts too (terminal/CLI conventions), but layout pages stay on
+	// UIPlatform.
+	RulesPlatforms = []string{PlatformWeb, PlatformAndroid, PlatformIOS, PlatformDesktop, PlatformCLI}
+	Accesses       = []string{"public", "auth"}
+	// DecisionSources tell a fact from an assumption and a platform limit.
+	DecisionSources = []string{"fact", "assumption", "constraint"}
+	// FieldPresentations are the ways a field may be shown.
+	FieldPresentations = []string{"table-column", "list-item", "card-title", "card-meta", "detail",
+		"form-input", "filter", "summary", "chart", "badge", "hidden"}
+	GoalPriorities = []string{"must", "should", "could"}
 	// RequiredStates are the states a page of the pattern must specify.
 	RequiredStates = map[string][]string{
 		"dashboard": {"loading", "empty", "error"}, "table": {"loading", "empty", "error"},
@@ -208,6 +289,10 @@ const (
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,47}$`)
+
+// lengthLiteral finds an arbitrary CSS length in a layout value. Layout
+// values must name design tokens, never carry a hardcoded distance.
+var lengthLiteral = regexp.MustCompile(`(?i)\b\d+(?:\.\d+)?(?:px|rem|em)\b`)
 
 // ValidID holds for design ids: lowercase letters, digits and dashes.
 func ValidID(id string) bool { return idPattern.MatchString(id) }
@@ -277,6 +362,20 @@ func (p *Project) UIPlatforms() []string {
 	return out
 }
 
+// UXPlatforms are the platforms whose UX rules the design may specify,
+// including terminal/CLI conventions that have no layout pages.
+func (p *Project) UXPlatforms() []string {
+	var out []string
+	if p.Platform != nil {
+		for _, t := range p.Platform.Targets {
+			if slices.Contains(RulesPlatforms, t.Kind) && !slices.Contains(out, t.Kind) {
+				out = append(out, t.Kind)
+			}
+		}
+	}
+	return out
+}
+
 // DesignIssues checks the design rules and layout spec of d against the
 // project: references resolve, vocabulary is known, every page specifies
 // the states its pattern needs. Nil d checks p.UI.
@@ -291,7 +390,7 @@ func (p *Project) DesignIssues(d *UIDesign) []Issue {
 	if d == nil || d.Rules == nil {
 		add(IssueError, "rules", "aturan desain belum ada")
 	} else {
-		out = append(out, rulesIssues(d.Rules, p.UIPlatforms())...)
+		out = append(out, rulesIssues(d.Rules, p.UXPlatforms())...)
 	}
 	if d == nil || d.Layout == nil || len(d.Layout.Pages) == 0 {
 		add(IssueError, "layout", "spesifikasi layout belum berisi halaman")
@@ -304,7 +403,7 @@ func (p *Project) DesignIssues(d *UIDesign) []Issue {
 			comps[strings.ToLower(c.Name)] = true
 		}
 	}
-	return append(out, layoutIssues(p, d.Layout, comps)...)
+	return append(out, layoutIssues(p, d.Layout, d.Rules, comps, d.Format)...)
 }
 
 func rulesIssues(r *DesignRules, platforms []string) []Issue {
@@ -355,8 +454,8 @@ func rulesIssues(r *DesignRules, platforms []string) []Issue {
 	}
 	for _, pr := range r.Platforms {
 		switch {
-		case !slices.Contains(UIPlatform, pr.Platform):
-			add(IssueError, "aturan platform %q: bukan platform dengan layar (%s)", pr.Platform, strings.Join(UIPlatform, ", "))
+		case !slices.Contains(RulesPlatforms, pr.Platform):
+			add(IssueError, "aturan platform %q: platform harus salah satu dari %s", pr.Platform, strings.Join(RulesPlatforms, ", "))
 		case len(platforms) > 0 && !slices.Contains(platforms, pr.Platform):
 			add(IssueWarning, "aturan platform %q: platform ini tidak dipilih untuk project", pr.Platform)
 		}
@@ -367,7 +466,7 @@ func rulesIssues(r *DesignRules, platforms []string) []Issue {
 	return out
 }
 
-func layoutIssues(p *Project, l *LayoutSpec, comps map[string]bool) []Issue {
+func layoutIssues(p *Project, l *LayoutSpec, rules *DesignRules, comps map[string]bool, format int) []Issue {
 	var out []Issue
 	add := func(level, where, format string, a ...any) {
 		out = append(out, Issue{Level: level, Where: where, Message: fmt.Sprintf(format, a...)})
@@ -418,6 +517,12 @@ func layoutIssues(p *Project, l *LayoutSpec, comps map[string]bool) []Issue {
 			if s.Pattern != "" && !slices.Contains(LayoutPatterns, s.Pattern) {
 				add(IssueError, sw, "pattern %q tidak dikenal", s.Pattern)
 			}
+			for _, v := range []string{s.Grid, s.Spacing, s.Sizing, s.Responsive} {
+				if lengthLiteral.MatchString(v) {
+					add(IssueWarning, sw, "nilai visual %q hardcode; pakai token spacing/breakpoint dari design rules", v)
+					break
+				}
+			}
 			for _, c := range s.Components {
 				if comps != nil && !comps[strings.ToLower(c)] {
 					add(IssueWarning, sw, "komponen %q tidak ada di aturan desain", c)
@@ -452,6 +557,12 @@ func layoutIssues(p *Project, l *LayoutSpec, comps map[string]bool) []Issue {
 			add(IssueError, where, "pattern %q tidak dikenal (%s)", sh.Pattern, strings.Join(LayoutPatterns, ", "))
 		}
 		checkPlatform(where, sh.Platform, false)
+		for _, v := range append([]string{sh.Grid}, sh.Responsive...) {
+			if lengthLiteral.MatchString(v) {
+				add(IssueWarning, where, "nilai visual %q hardcode; pakai token breakpoint/spacing", v)
+				break
+			}
+		}
 		checkSections(where, sh.Regions)
 	}
 
@@ -504,6 +615,12 @@ func layoutIssues(p *Project, l *LayoutSpec, comps map[string]bool) []Issue {
 			add(IssueError, where, "fitur %q tidak ada", pg.FeatureID)
 		}
 		secs := checkSections(where, pg.Sections)
+		for _, v := range append([]string{pg.Grid}, pg.Responsive...) {
+			if lengthLiteral.MatchString(v) {
+				add(IssueWarning, where, "nilai visual %q hardcode; pakai token breakpoint/spacing", v)
+				break
+			}
+		}
 		for _, h := range pg.Hierarchy {
 			if !secs[h] {
 				add(IssueError, where, "hierarchy menyebut section %q yang tidak ada", h)
@@ -526,6 +643,10 @@ func layoutIssues(p *Project, l *LayoutSpec, comps map[string]bool) []Issue {
 				add(IssueError, where, "state %q wajib untuk pattern %s", st, pg.Pattern)
 			}
 		}
+		if pg.Access == "auth" && pg.States["permission_denied"] == "" && !sectionsHave(pg.Sections, "permission_denied") &&
+			pageRestricted(p, pg) {
+			add(IssueWarning, where, "halaman dibatasi peran/permission tetapi state permission_denied belum dijelaskan")
+		}
 	}
 	for _, fl := range p.Flows {
 		for _, id := range fl.PageIDs {
@@ -541,9 +662,376 @@ func layoutIssues(p *Project, l *LayoutSpec, comps map[string]bool) []Issue {
 			add(IssueWarning, "layout", "fitur %s %s belum punya halaman", f.ID, f.Name)
 		}
 	}
+	out = append(out, experienceIssues(p, l, rules, comps, format)...)
+	return out
+}
+
+// experienceIssues checks the UX layer: who the users are, what they must
+// achieve, how they navigate, and why every layout choice was made. A design
+// in the current format must carry all of it; an older design is only
+// warned, so existing projects keep loading.
+func experienceIssues(p *Project, l *LayoutSpec, rules *DesignRules, comps map[string]bool, format int) []Issue {
+	var out []Issue
+	add := func(level, where, format string, a ...any) {
+		out = append(out, Issue{Level: level, Where: where, Message: fmt.Sprintf(format, a...)})
+	}
+	missing := IssueWarning
+	if format >= UIDesignFormat {
+		missing = IssueError
+	}
+	known := designBasis(p, l, rules)
+	subjects := map[string]bool{"*": true}
+	for _, pg := range l.Pages {
+		subjects[pg.ID] = true
+		for _, s := range pg.Sections {
+			subjects[s.ID] = true
+		}
+	}
+	for _, sh := range l.Shells {
+		subjects[sh.ID] = true
+		for _, s := range sh.Regions {
+			subjects[s.ID] = true
+		}
+	}
+	for name := range comps {
+		subjects[name] = true
+	}
+
+	if len(l.Users) == 0 {
+		add(missing, "layout", "jenis pengguna, konteks dan tugasnya (users) belum diisi")
+	}
+	roles := map[string]bool{}
+	for _, u := range l.Users {
+		r := strings.ToLower(strings.TrimSpace(u.Role))
+		switch {
+		case r == "":
+			add(IssueError, "layout", "user tanpa peran")
+		case roles[r]:
+			add(IssueWarning, "layout", "peran pengguna %q ganda", u.Role)
+		}
+		roles[r] = true
+		if u.Platform != "" && !slices.Contains(UIPlatform, u.Platform) {
+			add(IssueError, "user:"+u.Role, "platform %q tidak dikenal", u.Platform)
+		}
+	}
+
+	if len(l.Goals) == 0 {
+		add(missing, "layout", "tujuan pengguna (goals) belum diisi")
+	}
+	goals := map[string]bool{}
+	for _, g := range l.Goals {
+		id := strings.ToLower(strings.TrimSpace(g.ID))
+		switch {
+		case id == "":
+			add(IssueError, "layout", "tujuan pengguna tanpa id")
+		case goals[id]:
+			add(IssueError, "layout", "id tujuan %q ganda", g.ID)
+		}
+		goals[id] = true
+		if strings.TrimSpace(g.Text) == "" {
+			add(IssueError, "goal:"+g.ID, "isi tujuan belum diisi")
+		}
+		if g.Priority != "" && !slices.Contains(GoalPriorities, g.Priority) {
+			add(IssueError, "goal:"+g.ID, "prioritas %q harus must, should atau could", g.Priority)
+		}
+		if g.Role != "" && len(roles) > 0 && !roles[strings.ToLower(strings.TrimSpace(g.Role))] {
+			add(IssueWarning, "goal:"+g.ID, "peran %q tidak ada di users", g.Role)
+		}
+	}
+
+	nav := map[string]bool{}
+	navEmpty := len(l.Navigation) == 0
+	if navEmpty {
+		add(missing, "layout", "information architecture dan navigasi (navigation) belum diisi")
+	}
+	for _, g := range l.Navigation {
+		where := "nav:" + strings.TrimSpace(g.Name)
+		if strings.TrimSpace(g.Name) == "" {
+			add(IssueError, "layout", "grup navigasi tanpa nama")
+		}
+		if len(g.Items) == 0 {
+			add(IssueError, where, "grup navigasi tanpa tujuan")
+		}
+		for _, it := range g.Items {
+			it.Page = strings.TrimSpace(it.Page)
+			switch {
+			case strings.TrimSpace(it.Label) == "":
+				add(IssueError, where, "item navigasi tanpa label")
+			case it.Page == "":
+				add(IssueError, where, "item %q tanpa halaman", it.Label)
+			case !slices.ContainsFunc(l.Pages, func(pg LayoutPage) bool { return pg.ID == it.Page }):
+				add(IssueError, where, "item %q menuju halaman %q yang tidak ada", it.Label, it.Page)
+			}
+			nav[it.Page] = true
+		}
+	}
+
+	decisions := map[string]int{}
+	for i, d := range l.Decisions {
+		where := fmt.Sprintf("decision:%d", i+1)
+		subject := strings.TrimSpace(d.Subject)
+		switch {
+		case subject == "":
+			add(IssueError, where, "subjek keputusan belum diisi (halaman, section, komponen atau *)")
+		case !subjects[subject] && !subjects[strings.ToLower(subject)]:
+			add(IssueError, where, "subjek %q bukan halaman, section, atau komponen", subject)
+		}
+		decisions[subject]++
+		if strings.TrimSpace(d.Choice) == "" {
+			add(IssueError, where, "pilihan desain (choice) belum diisi")
+		}
+		if len(d.Why) == 0 {
+			add(IssueError, where, "alasan (why) belum diisi")
+		}
+		if !slices.Contains(DecisionSources, d.Source) {
+			add(IssueError, where, "source %q harus %s", d.Source, strings.Join(DecisionSources, ", "))
+		}
+		if len(d.Basis) == 0 {
+			add(missing, where, "dasar keputusan (basis) belum diisi: sebut tujuan, alur, entity, permission, platform atau token")
+		}
+		for _, b := range d.Basis {
+			b = strings.TrimSpace(b)
+			if b == "" {
+				continue
+			}
+			if !known[strings.ToLower(b)] {
+				add(IssueError, where, "basis %q tidak ada di blueprint (tujuan, alur, fitur, requirement, entity, permission, platform, token atau halaman)", b)
+			}
+		}
+	}
+
+	entities := designEntities(p)
+	for _, pg := range l.Pages {
+		where := "page:" + pg.ID
+		if strings.TrimSpace(pg.Goal) == "" {
+			lvl := missing
+			if pg.Existing {
+				lvl = IssueWarning
+			}
+			add(lvl, where, "tujuan pengguna halaman (goal) belum diisi")
+		} else if len(l.Goals) > 0 && !goals[strings.ToLower(strings.TrimSpace(pg.Goal))] {
+			add(IssueError, where, "goal %q tidak ada di daftar goals", pg.Goal)
+		}
+		if n := decisions[pg.ID]; n == 0 {
+			lvl := missing
+			if pg.Existing {
+				lvl = IssueWarning
+			}
+			add(lvl, where, "belum ada keputusan desain (decisions) yang menjelaskan pilihan halaman ini")
+		}
+		for j, f := range pg.Fields {
+			fw := fmt.Sprintf("%s/field:%s", where, f.Field)
+			switch {
+			case strings.TrimSpace(f.Field) == "":
+				add(IssueError, where, "field ke-%d tanpa nama", j+1)
+			case !slices.Contains(FieldPresentations, f.Presentation):
+				add(IssueError, fw, "presentation %q harus %s", f.Presentation, strings.Join(FieldPresentations, ", "))
+			}
+			checkFieldEntity(p, entities, fw, f.Field, add)
+		}
+		out = append(out, pageAdvice(p, l, pg)...)
+	}
+
+	// Every page must be reachable from the navigation or from another page.
+	if !navEmpty {
+		reach := map[string]bool{}
+		var walk func(string)
+		walk = func(id string) {
+			if reach[id] {
+				return
+			}
+			reach[id] = true
+			for _, pg := range l.Pages {
+				if pg.ID != id {
+					continue
+				}
+				for _, ln := range pg.Links {
+					walk(ln.To)
+				}
+			}
+		}
+		for id := range nav {
+			walk(id)
+		}
+		// A page may be entered from a shell (login, settings) without a link.
+		for _, pg := range l.Pages {
+			if !reach[pg.ID] && !pg.Existing && !pg.AccessIsPublic() {
+				add(IssueWarning, "page:"+pg.ID, "halaman tidak dapat dicapai dari navigasi atau link halaman lain")
+			}
+		}
+	}
+	return out
+}
+
+// AccessIsPublic reports whether the page needs no signed-in user.
+func (pg LayoutPage) AccessIsPublic() bool { return pg.Access == "public" }
+
+// designEntities indexes the blueprint entities by lowercase name.
+func designEntities(p *Project) map[string][]string {
+	out := map[string][]string{}
+	if p.Blueprint == nil {
+		return out
+	}
+	for _, e := range p.Blueprint.Database.Entities {
+		name := strings.ToLower(strings.TrimSpace(e.Name))
+		if name == "" {
+			continue
+		}
+		var fields []string
+		for _, f := range e.Fields {
+			fields = append(fields, strings.ToLower(strings.TrimSpace(f)))
+		}
+		out[name] = fields
+	}
+	return out
+}
+
+func checkFieldEntity(_ *Project, entities map[string][]string, where, field string, add func(string, string, string, ...any)) {
+	entity, name, ok := strings.Cut(field, ".")
+	if !ok {
+		return // a page-local label, not an entity field
+	}
+	fields, known := entities[strings.ToLower(strings.TrimSpace(entity))]
+	if !known {
+		add(IssueWarning, where, "entity %q tidak ada di blueprint data", entity)
+		return
+	}
+	if len(fields) == 0 {
+		return
+	}
+	if !slices.Contains(fields, strings.ToLower(strings.TrimSpace(name))) {
+		add(IssueWarning, where, "field %q tidak tercatat pada entity %s", name, entity)
+	}
+}
+
+// designBasis lists every id a design decision may point at.
+func designBasis(p *Project, l *LayoutSpec, rules *DesignRules) map[string]bool {
+	out := map[string]bool{}
+	add := func(v string) {
+		if v = strings.ToLower(strings.TrimSpace(v)); v != "" {
+			out[v] = true
+		}
+	}
+	for _, g := range l.Goals {
+		add(g.ID)
+	}
+	for _, u := range l.Users {
+		add(u.Role)
+	}
+	if p.Discovery != nil {
+		for _, r := range p.Discovery.Roles {
+			add(r.Name)
+		}
+	}
+	for _, pg := range l.Pages {
+		add(pg.ID)
+	}
+	for _, fl := range p.Flows {
+		add(fl.ID)
+		for _, perm := range fl.Permissions {
+			add(perm)
+		}
+	}
+	for _, f := range p.Features {
+		add(f.ID)
+	}
+	for _, r := range p.Requirements {
+		add(r.ID)
+	}
+	for _, t := range p.UIPlatforms() {
+		add(t)
+	}
+	if p.Blueprint != nil {
+		for _, e := range p.Blueprint.Database.Entities {
+			add(e.Name)
+			for _, f := range e.Fields {
+				add(e.Name + "." + f)
+			}
+		}
+		for _, perm := range p.Blueprint.Authz.Permissions {
+			add(perm)
+		}
+	}
+	if rules != nil {
+		for _, g := range rules.Tokens.Groups() {
+			for _, tok := range *g.Tokens {
+				add(tok.Name)
+			}
+		}
+	}
+	return out
+}
+
+// pageAdvice reports contextual design risks: a layout that is unlikely to
+// serve the page's tasks on its platform. They are warnings, not schema
+// errors, so the designer can justify an intentional exception.
+func pageAdvice(p *Project, l *LayoutSpec, pg LayoutPage) []Issue {
+	var out []Issue
+	add := func(where, format string, a ...any) {
+		out = append(out, Issue{Level: IssueWarning, Where: where, Message: fmt.Sprintf(format, a...)})
+	}
+	where := "page:" + pg.ID
+	mobile := pg.Platform == PlatformAndroid || pg.Platform == PlatformIOS
+	if mobile && pg.Pattern == "table" {
+		for _, s := range pg.Sections {
+			for _, line := range s.Content {
+				if cols := strings.Count(line, ",") + strings.Count(line, "|") + 1; cols > 4 {
+					add(where, "tabel %d kolom di layar %s: pertimbangkan list atau kartu dengan informasi prioritas", cols, pg.Platform)
+					break
+				}
+			}
+		}
+	}
+	if pg.Pattern == "form" && len(pg.Fields) > 8 {
+		add(where, "form memuat %d field: kelompokkan per bagian atau pecah menjadi wizard", len(pg.Fields))
+	}
+	if !pg.Existing && pg.PrimaryAction == "" && slices.Contains([]string{"table", "list", "detail", "dashboard", "form", "wizard"}, pg.Pattern) {
+		add(where, "aksi utama belum ditentukan untuk pattern %s", pg.Pattern)
+	}
+	if !pg.Existing && len(pg.Data) == 0 && slices.Contains([]string{"table", "list", "detail", "dashboard", "report"}, pg.Pattern) {
+		add(where, "halaman menampilkan data tetapi daftar data (data) kosong")
+	}
+	for _, fl := range p.Flows {
+		if !slices.Contains(fl.PageIDs, pg.ID) || len(fl.Steps) < 5 {
+			continue
+		}
+		allForm := len(fl.PageIDs) > 0
+		for _, id := range fl.PageIDs {
+			i := slices.IndexFunc(l.Pages, func(x LayoutPage) bool { return x.ID == id })
+			if i < 0 || l.Pages[i].Pattern != "form" {
+				allForm = false
+				break
+			}
+		}
+		if allForm {
+			add(where, "alur %s punya %d langkah tetapi seluruh halamannya form: pertimbangkan wizard atau stepper", fl.ID, len(fl.Steps))
+		}
+	}
+	for _, fl := range p.Flows {
+		if !slices.Contains(fl.PageIDs, pg.ID) || len(fl.Permissions) == 0 {
+			continue
+		}
+		if pg.Role == "" && pg.Access != "public" {
+			add(where, "alur %s memakai permission %s tetapi halaman belum menyebut peran yang diizinkan", fl.ID, strings.Join(fl.Permissions, ", "))
+		}
+	}
 	return out
 }
 
 func sectionsHave(secs []Section, state string) bool {
 	return slices.ContainsFunc(secs, func(s Section) bool { return s.States[state] != "" })
+}
+
+// pageRestricted reports whether a page serves a role or a use case with
+// permissions, so a permission-denied state is relevant.
+func pageRestricted(p *Project, pg LayoutPage) bool {
+	if strings.TrimSpace(pg.Role) != "" {
+		return true
+	}
+	for _, fl := range p.Flows {
+		if slices.Contains(fl.PageIDs, pg.ID) && len(fl.Permissions) > 0 {
+			return true
+		}
+	}
+	return false
 }

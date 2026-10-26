@@ -81,6 +81,10 @@ type Snapshot struct {
 	Warnings        []Warning           `json:"warnings"`
 	Issues          []string            `json:"issues"`
 	History         []core.StatusChange `json:"history"`
+	// Visual is the latest measured UI quality; it never changes command
+	// status, but completion does not imply a visually verified product.
+	Visual      core.VisualSummary `json:"visual"`
+	VisualReady bool               `json:"visual_ready"`
 }
 
 type Counts struct {
@@ -534,6 +538,27 @@ func View(p *core.Project, now time.Time, agent Agent) Snapshot {
 		s.Warnings = append(s.Warnings, Warning{Kind: "incomplete",
 			Message: fmt.Sprintf("Workflow belum selesai: %d command wajib belum terverifikasi.", left),
 			Action:  "Lanjutkan command yang siap, atau pulihkan laporan yang hilang."})
+	}
+	if p.HasUI() && p.UI != nil && p.UI.Layout != nil && len(p.UI.Layout.Pages) > 0 {
+		s.Visual = p.Visual.Summary(p.UI.Layout.Pages)
+		s.VisualReady = s.Visual.Pages > 0 && s.Visual.Fail == 0 && s.Visual.Untested == 0 && s.Visual.OpenHigh == 0
+		implemented := s.Counts.Verified+s.Counts.Done > 0
+		switch {
+		case !implemented:
+		case s.Visual.CheckedAt.IsZero():
+			s.Warnings = append(s.Warnings, Warning{Kind: "visual_missing",
+				Message: "UI diimplementasikan tetapi belum dievaluasi secara visual; kualitas tampilan belum terbukti.",
+				Action:  "Kirim snapshot browser + screenshot untuk setiap halaman melalui evaluasi visual."})
+		case s.Visual.OpenHigh > 0:
+			s.Warnings = append(s.Warnings, Warning{Kind: "visual",
+				Message: fmt.Sprintf("%d temuan visual berat pada %d halaman yang diuji.", s.Visual.OpenHigh, s.Visual.Pages-s.Visual.Untested),
+				Action:  "Buat command perbaikan dari temuan, lalu kirim ulang snapshot setelah diperbaiki."})
+		}
+		if implemented && len(s.Visual.NotChecked) > 0 && !s.Visual.CheckedAt.IsZero() {
+			s.Warnings = append(s.Warnings, Warning{Kind: "visual_unchecked",
+				Message: "Halaman belum diuji secara visual: " + strings.Join(s.Visual.NotChecked, ", ") + ".",
+				Action:  "Kirim snapshot halaman tersebut; halaman tanpa bukti tidak dianggap lulus."})
+		}
 	}
 	return s
 }

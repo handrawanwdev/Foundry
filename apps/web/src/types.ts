@@ -168,22 +168,58 @@ export interface LayoutShell {
   id: string; name: string; platform?: string; pattern: string; regions: Section[] | null; navigation?: string; grid?: string;
   responsive?: string[]; existing?: boolean; source?: string;
 }
+export interface UIUser { role: string; platform?: string; context?: string; goals?: string[]; tasks?: string[] }
+export interface UIGoal { id: string; role?: string; text: string; success?: string; priority?: "must" | "should" | "could" }
+export interface NavItem { label: string; page: string; primary?: boolean }
+export interface NavGroup { name: string; items: NavItem[] }
+export interface DesignDecision {
+  subject: string; choice: string; why: string[]; basis?: string[];
+  source: "fact" | "assumption" | "constraint"; alternative?: string;
+}
+export type FieldPresentation = "table-column" | "list-item" | "card-title" | "card-meta" | "detail" |
+  "form-input" | "filter" | "summary" | "chart" | "badge" | "hidden";
+export interface FieldRule { field: string; label?: string; presentation: FieldPresentation; format?: string; note?: string }
 export interface LayoutPage {
   id: string; name: string; platform: string; route?: string; role?: string; access?: "public" | "auth"; feature_id?: string;
-  purpose: string; shell?: string; pattern: string; primary_action?: string; sections: Section[] | null; hierarchy?: string[];
+  purpose: string; goal?: string; shell?: string; pattern: string; primary_action?: string; fields?: FieldRule[];
+  sections: Section[] | null; hierarchy?: string[];
   grid?: string; responsive?: string[]; links?: { to: string; via: string }[]; states?: Partial<Record<UIState, string>>;
   data?: string[]; existing?: boolean;
 }
 // Layout specification: shells pages share, then pages of sections.
-export interface LayoutSpec { shells: LayoutShell[] | null; pages: LayoutPage[] | null }
+export interface LayoutSpec {
+  shells: LayoutShell[] | null; pages: LayoutPage[] | null;
+  users?: UIUser[]; goals?: UIGoal[]; navigation?: NavGroup[]; decisions?: DesignDecision[];
+  assumptions?: string[]; unknowns?: string[];
+}
 // The UI design as text and structured data; never drawn or rendered.
 export interface UIDesign {
-  rules?: DesignRules; layout?: LayoutSpec; request?: ChangeRequest; version: number; tech_version?: number; updated_at: string;
+  format?: number; rules?: DesignRules; layout?: LayoutSpec; request?: ChangeRequest; version: number; tech_version?: number; updated_at: string;
 }
 export interface DesignIssue { level: "error" | "warning"; where?: string; message: string }
 export interface DesignView {
   design: UIDesign | null; issues: DesignIssue[]; has_ui: boolean; platforms: string[] | null;
-  vocabulary: { patterns: string[]; states: UIState[]; required_states: Record<string, UIState[]>; platforms: string[] };
+  vocabulary: { patterns: string[]; states: UIState[]; required_states: Record<string, UIState[]>; platforms: string[];
+    field_presentations?: string[]; decision_sources?: string[] };
+}
+export type VisualStatus = "pass" | "partial" | "fail" | "untested";
+export interface VisualFinding {
+  page: string; criterion: string; severity: "critical" | "high" | "medium" | "low";
+  message: string; evidence?: string; fix?: string;
+}
+export interface VisualCriterion { id: string; title: string; status: VisualStatus; severity?: string; detail?: string }
+export interface VisualPageAudit {
+  page: string; url?: string; status: VisualStatus; previous_status?: VisualStatus; resolved?: string[];
+  source?: string; checked_at: string; viewports?: string[]; screenshots?: string[];
+  findings: VisualFinding[]; criteria: VisualCriterion[];
+}
+export interface VisualAudit {
+  version: number; updated_at: string; source?: string;
+  pages?: Record<string, VisualPageAudit>; reviews?: { at: string; page: string; source?: string; status: VisualStatus; findings: number; viewports?: string[] }[];
+}
+export interface VisualSummary {
+  pages: number; pass: number; partial: number; fail: number; untested: number;
+  open_findings: number; open_high: number; checked_at?: string; not_checked?: string[];
 }
 export interface Job {
   kind: string; status: "running" | "done" | "failed" | "waiting_host";
@@ -196,7 +232,7 @@ export interface RecentProject { dir: string; name: string }
 export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string; survey?: Survey;
   discovery?: Discovery; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
-  platform?: PlatformPlan; structure?: Structure; stack?: TechStack; ui?: UIDesign;
+  platform?: PlatformPlan; structure?: Structure; stack?: TechStack; ui?: UIDesign; visual?: VisualAudit;
   artifacts?: Artifact[]; artifact_request?: ChangeRequest; workflow?: Workflow;
   decisions?: Decision[]; area_skips?: AreaSkip[]; definition_of_done?: string[];
   // Decisions changed since the artifacts and commands were brought in line.
@@ -291,6 +327,7 @@ export interface ProgressSnapshot {
   workflow_version: number; stale_after_sec: number; updated_at?: string; last_report_at?: string; last_source?: string;
   complete: boolean; counts: ProgressCounts; waves: WaveProgress[]; commands: CommandProgress[];
   next: string[]; warnings: ProgressWarning[]; issues: string[]; history: StatusChange[];
+  visual?: VisualSummary; visual_ready?: boolean;
 }
 export interface CommandEdit {
   name: string; objective: string; context: string; inputs: string[]; instructions: string; depends_on: string[];

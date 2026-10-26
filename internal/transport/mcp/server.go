@@ -123,7 +123,8 @@ func (s *Server) handle(req request) (any, *rpcError) {
 				"then hand the result back with the tool named in `submit`. Never mark work done yourself; Foundry validates what you submit. " +
 				"To implement a finalized blueprint, read get_blueprint and get_workflow and follow the commands wave by wave; screens follow the design-rules and layout-spec artifacts. " +
 				"Report every command with report_progress when you start, finish, fail, get blocked, skip (with a reason), or hand work for review. " +
-				"A command is not done until Foundry verifies evidence against its acceptance criteria. Call get_progress for the next eligible commands; do not start a command before its dependencies are verified. Do not assume Foundry ran the work.",
+				"A command is not done until Foundry verifies evidence against its acceptance criteria. Call get_progress for the next eligible commands; do not start a command before its dependencies are verified. Do not assume Foundry ran the work. " +
+				"After implementing screens, submit measured browser snapshots with record_visual_review; without snapshots and screenshots the UI is untested, and a build or unit test is not visual proof. Call create_visual_fixes to turn findings into a workflow command.",
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
@@ -194,6 +195,30 @@ var tools = []tool{
 	{Name: "submit_work", perm: PermWrite, Description: "Hand back a result (the JSON object requested by next_work).",
 		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "stack", "structure", "blueprint", "workflow"}}, "result": str}, "kind", "result")},
 	{Name: "get_progress", perm: PermRead, Description: "Execution progress of the command workflow: overall and per-wave counts, per-command status, next eligible commands, warnings (stale, disconnected, skipped, missing evidence), and status history. Foundry does not run the commands.", InputSchema: obj(nil)},
+	{Name: "get_visual_review", perm: PermRead, Description: "Measured quality of implemented screens: per-page status (pass/partial/fail/untested), findings with severity/evidence/fix, criteria results, and a summary. Empty until snapshots are submitted; pages without screenshot evidence are untested, never passed.", InputSchema: obj(nil)},
+	{Name: "record_visual_review", perm: PermWrite, Description: "Submit measured browser snapshots for one designed page: viewport, screenshot file inside the project, state (default/loading/empty/error/...), and measured DOM nodes (tag, text, bounds, computed style, attrs). Foundry checks contrast, overflow, spacing/typography tokens, labels, headings, targets and the primary action. Use after implementing or fixing a screen; resubmit to verify fixes.", InputSchema: obj(map[string]any{
+		"page":   str,
+		"url":    str,
+		"source": str,
+		"snapshots": map[string]any{"type": "array", "items": obj(map[string]any{
+			"viewport":   obj(map[string]any{"name": str, "width": map[string]any{"type": "number"}, "height": map[string]any{"type": "number"}}, "width", "height"),
+			"state":      str,
+			"screenshot": str,
+			"background": str,
+			"nodes": map[string]any{"type": "array", "items": obj(map[string]any{
+				"path": str, "tag": str, "role": str, "text": str,
+				"bounds": obj(map[string]any{"x": map[string]any{"type": "number"}, "y": map[string]any{"type": "number"},
+					"width": map[string]any{"type": "number"}, "height": map[string]any{"type": "number"}}),
+				"style": obj(map[string]any{"color": str, "background": str, "font_size": map[string]any{"type": "number"},
+					"font_weight": map[string]any{"type": "integer"}, "line_height": map[string]any{"type": "number"},
+					"padding": map[string]any{"type": "array", "items": map[string]any{"type": "number"}},
+					"margin":  map[string]any{"type": "array", "items": map[string]any{"type": "number"}},
+					"gap":     map[string]any{"type": "number"}, "display": str}),
+				"attrs": map[string]any{"type": "object"},
+			})},
+		})},
+	}, "page", "snapshots")},
+	{Name: "create_visual_fixes", perm: PermWrite, Description: "Turn the open visual findings into one concrete correction command in the existing workflow and reopen a finalized project for that revision. Use after get_visual_review shows findings; then implement the command wave and resubmit snapshots.", InputSchema: obj(nil)},
 	{Name: "report_progress", perm: PermWrite, Description: "Report execution progress for one command. Send when you start, finish, fail, get blocked, skip (reason required), or hand work for review. Include a stable id for retries. Done without required evidence is stored as review, not verified. Duplicate ids are idempotent.",
 		InputSchema: obj(map[string]any{
 			"id":               str,
@@ -265,13 +290,41 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		if p.UI.Written() {
 			issues = p.DesignIssues(nil)
 		}
-		return map[string]any{"design": p.UI, "issues": issues}, nil
+		return map[string]any{"design": p.UI, "issues": issues,
+			"vocabulary": map[string]any{"patterns": core.LayoutPatterns, "states": core.UIStates, "required_states": core.RequiredStates,
+				"platforms": core.UIPlatform, "field_presentations": core.FieldPresentations, "decision_sources": core.DecisionSources}}, nil
 	case "get_spec":
 		return map[string]any{"spec": spec.Export(p), "markdown": spec.Markdown(p)}, nil
 	case "next_work":
 		return s.Svc.NextWork()
 	case "get_progress":
 		return s.Svc.ProgressOf(p), nil
+	case "get_visual_review":
+		summary, audit, err := s.Svc.VisualReport()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"summary": summary, "audit": audit}, nil
+	case "record_visual_review":
+		var in core.VisualReviewIn
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &in); err != nil {
+				return nil, fmt.Errorf("argumen tidak valid: %v", err)
+			}
+		}
+		if in.Source == "" {
+			in.Source = s.client
+			if in.Source == "" {
+				in.Source = "mcp"
+			}
+		}
+		return s.Svc.RecordVisualReview(in, "mcp")
+	case "create_visual_fixes":
+		id, err := s.Svc.CreateVisualFixes()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"command": id}, nil
 	case "report_progress":
 		var in progress.ReportIn
 		if len(raw) > 0 {

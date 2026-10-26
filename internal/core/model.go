@@ -46,6 +46,9 @@ type Project struct {
 	// UI is the design rules and layout specification of a product with
 	// screens; nil until they are written.
 	UI *UIDesign `json:"ui,omitempty"`
+	// Visual is the measured quality of the implemented screens, submitted
+	// with browser snapshots and screenshot evidence. Nil until reviewed.
+	Visual *VisualAudit `json:"visual,omitempty"`
 	// Artifacts are the blueprint documents written for this project
 	// besides the built-in ones; ArtifactRequest a change waiting for the AI.
 	Artifacts       []Artifact     `json:"artifacts,omitempty"`

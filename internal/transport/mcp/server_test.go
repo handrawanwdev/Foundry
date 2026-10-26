@@ -3,6 +3,8 @@ package mcp
 import (
 	"bufio"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -136,6 +138,51 @@ func TestReportProgress(t *testing.T) {
 	}
 	if txt, isErr := text(res[3]); isErr || !strings.Contains(txt, `"verified": 1`) || !strings.Contains(txt, `"complete": true`) {
 		t.Fatalf("progress = %s", txt)
+	}
+}
+
+func TestVisualReviewTool(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	dir := t.TempDir()
+	st, _ := core.NewStore(dir)
+	st.Init("Klinik")
+	if err := os.MkdirAll(filepath.Join(dir, "review"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "review", "detail.png"), []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st.Update(func(p *core.Project) error {
+		p.Dir = dir
+		p.Platform = &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}}
+		p.UI = &core.UIDesign{Format: core.UIDesignFormat, Rules: &core.DesignRules{Source: core.RulesNew},
+			Layout: &core.LayoutSpec{Pages: []core.LayoutPage{{ID: "detail", Name: "Detail", Platform: core.PlatformWeb, Pattern: "detail",
+				Purpose: "Lihat", Goal: "GOAL-1", Sections: []core.Section{{ID: "isi", Name: "Isi", Content: []string{"Data"}}}}}}}
+		return nil
+	})
+	perms, _ := ParseAllow("READ,WRITE")
+	s := &Server{Svc: pipeline.New(st, hostAI{}), Allow: perms, Version: "test"}
+	review := `{"page":"detail","source":"claude-code","snapshots":[{"viewport":{"name":"desktop","width":1440,"height":900},"screenshot":"review/detail.png","nodes":[{"path":"body > h1","tag":"h1","text":"Detail","bounds":{"x":0,"y":0,"width":200,"height":40},"style":{"color":"#111111","background":"#ffffff","font_size":24}}]}]}`
+	lines := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"record_visual_review","arguments":` + review + `}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_visual_review","arguments":{}}}`,
+	}
+	var out strings.Builder
+	if err := s.Serve(strings.NewReader(strings.Join(lines, "\n")), &out); err != nil {
+		t.Fatal(err)
+	}
+	var res []map[string]any
+	sc := bufio.NewScanner(strings.NewReader(out.String()))
+	for sc.Scan() {
+		var m map[string]any
+		json.Unmarshal(sc.Bytes(), &m)
+		res = append(res, m)
+	}
+	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"page": "detail"`) {
+		t.Fatalf("record = %s err=%v", txt, isErr)
+	}
+	if txt, isErr := text(res[1]); isErr || !strings.Contains(txt, `"pages": 1`) || !strings.Contains(txt, `"detail"`) {
+		t.Fatalf("report = %s err=%v", txt, isErr)
 	}
 }
 

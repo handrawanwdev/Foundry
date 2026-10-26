@@ -12,6 +12,45 @@ import (
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
+func TestFilesIncludeVisualReport(t *testing.T) {
+	p := &core.Project{Name: "Klinik", UI: sampleUI(), Flows: []core.Flow{{ID: "FLOW-001", Name: "Cek", PageIDs: []string{"antrean"}}},
+		Visual: &core.VisualAudit{Version: 1, Pages: map[string]core.PageAudit{
+			"antrean": {Page: "antrean", Status: core.VisualFail, Screenshots: []string{"review/a.png"},
+				Findings: []core.VisualFinding{{Page: "antrean", Criterion: "contrast", Severity: core.SeverityHigh,
+					Message: "kontras 2.0:1", Fix: "gelapkan teks"}},
+				Criteria: []core.VisualCriterion{{ID: "contrast", Title: "Kontras", Status: core.VisualFail}}}}}}
+	files := Files(p)
+	md := files["review/visual.md"]
+	if md == "" || !strings.Contains(md, "Evaluasi Visual") || !strings.Contains(md, "kontras 2.0:1") ||
+		!strings.Contains(md, "Foundry tidak membuka browser") {
+		t.Fatalf("visual.md = %s", md)
+	}
+	if raw := files["review/visual.json"]; !strings.Contains(raw, `"contrast"`) {
+		t.Fatalf("visual.json = %s", raw)
+	}
+	if raw := files["design/layout-spec.json"]; !strings.Contains(raw, `"navigation"`) || !strings.Contains(raw, `"decisions"`) {
+		t.Fatalf("layout-spec.json = %s", raw)
+	}
+}
+
+func TestVisualReviewDoesNotChangeDesignArtifact(t *testing.T) {
+	p := &core.Project{Name: "Klinik", UI: sampleUI(), Flows: []core.Flow{{ID: "FLOW-001", Name: "Cek", PageIDs: []string{"antrean"}}}}
+	hashOf := func() string {
+		for _, a := range Artifacts(p) {
+			if a.ID == core.ArtifactLayoutSpec {
+				return a.Hash()
+			}
+		}
+		return ""
+	}
+	before := hashOf()
+	p.Visual = &core.VisualAudit{Pages: map[string]core.PageAudit{"antrean": {Page: "antrean", Status: core.VisualFail,
+		Findings: []core.VisualFinding{{Page: "antrean", Criterion: "contrast", Severity: core.SeverityHigh, Message: "x"}}}}}
+	if after := hashOf(); after == "" || after != before {
+		t.Fatalf("layout hash changed by visual review: %q -> %q", before, after)
+	}
+}
+
 func TestMarkdownIncludesBlueprint(t *testing.T) {
 	p := &core.Project{Name: "Klinik", Story: "Aplikasi klinik",
 		Discovery: &core.Discovery{Summary: "Klinik", Business: "Pratama"},
@@ -83,15 +122,23 @@ func TestWriteDocs(t *testing.T) {
 }
 
 func sampleUI() *core.UIDesign {
-	return &core.UIDesign{
+	return &core.UIDesign{Format: core.UIDesignFormat,
 		Rules: &core.DesignRules{Source: core.RulesNew, Principles: []string{"Tabel padat untuk operator"},
 			UX: []string{"Konfirmasi aksi hapus"}, Accessibility: []string{"Kontras AA"}, Responsive: []string{"Tabel jadi list di mobile"},
 			Tokens: core.DesignTokens{Colors: []core.Token{{Name: "action.primary", Value: "#1f6feb"}},
 				Typography: []core.Token{{Name: "type.body", Value: "Inter 14px"}}, Spacing: []core.Token{{Name: "space.md", Value: "16px"}}},
 			Components: []core.ComponentRule{{Name: "DataTable", Use: "daftar data"}}},
-		Layout: &core.LayoutSpec{Pages: []core.LayoutPage{{ID: "antrean", Name: "Antrean", Platform: "web", Route: "/antrean",
-			Purpose: "Lihat antrean", Pattern: "table", States: map[string]string{"loading": "skeleton", "empty": "belum ada", "error": "gagal"},
-			Sections: []core.Section{{ID: "tabel", Name: "Tabel", Content: []string{"No, Pasien, Status"}, Components: []string{"DataTable"}}}}}},
+		Layout: &core.LayoutSpec{
+			Users:      []core.UIUser{{Role: "Operator", Platform: "web", Context: "harian", Tasks: []string{"lihat antrean"}}},
+			Goals:      []core.UIGoal{{ID: "GOAL-1", Role: "Operator", Text: "Melihat antrean", Priority: "must"}},
+			Navigation: []core.NavGroup{{Name: "Operasional", Items: []core.NavItem{{Label: "Antrean", Page: "antrean", Primary: true}}}},
+			Decisions: []core.DesignDecision{{Subject: "antrean", Choice: "table", Why: []string{"operator membandingkan banyak baris"},
+				Basis: []string{"GOAL-1", "FLOW-001"}, Source: "fact"}},
+			Pages: []core.LayoutPage{{ID: "antrean", Name: "Antrean", Platform: "web", Route: "/antrean", Goal: "GOAL-1",
+				Purpose: "Lihat antrean", Pattern: "table", PrimaryAction: "Panggil",
+				Fields:   []core.FieldRule{{Field: "Queue.status", Label: "Status", Presentation: "table-column", Format: "badge"}},
+				States:   map[string]string{"loading": "skeleton", "empty": "belum ada", "error": "gagal"},
+				Sections: []core.Section{{ID: "tabel", Name: "Tabel", Content: []string{"No, Pasien, Status"}, Components: []string{"DataTable"}}}}}},
 	}
 }
 
@@ -114,7 +161,9 @@ func TestWriteDocsIncludesDesignAndSpecJSON(t *testing.T) {
 	}
 	layout, err := os.ReadFile(filepath.Join(root, "blueprint", "layout-spec.md"))
 	if err != nil || !strings.Contains(string(layout), "/antrean") || !strings.Contains(string(layout), "Komponen: DataTable") ||
-		!strings.Contains(string(layout), "- empty: belum ada") || !strings.Contains(string(layout), "FLOW-001 Cek") {
+		!strings.Contains(string(layout), "- empty: belum ada") || !strings.Contains(string(layout), "FLOW-001 Cek") ||
+		!strings.Contains(string(layout), "Information architecture") || !strings.Contains(string(layout), "Keputusan desain") ||
+		!strings.Contains(string(layout), "Pemetaan field ke tampilan") {
 		t.Fatalf("layout-spec.md = %s, %v", layout, err)
 	}
 	rules, err := os.ReadFile(filepath.Join(root, "blueprint", "design-rules.md"))

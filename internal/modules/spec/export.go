@@ -306,6 +306,12 @@ func Files(p *core.Project) map[string]string {
 			}{d.Layout, pageFlowList(p.Flows)})
 		}
 	}
+	if p.Visual != nil && len(p.Visual.Pages) > 0 {
+		if md := visualMarkdown(p); md != "" {
+			out["review/visual.md"] = md
+		}
+		out["review/visual.json"] = jsonFile(p.Visual)
+	}
 	return out
 }
 
@@ -354,6 +360,9 @@ func packageReadme(p *core.Project, m Manifest, docs []core.Artifact) string {
 		fmt.Fprintf(&b, "| %s | %s | %s |\n", a.Title, areaLabel[a.Status], cell(areaNote(a)))
 	}
 	b.WriteString("\nKeterlacakan requirement ke command: [traceability.md](traceability.md).\n")
+	if p.Visual != nil && len(p.Visual.Pages) > 0 {
+		b.WriteString("Evaluasi visual UI yang diimplementasikan: [review/visual.md](review/visual.md). Halaman tanpa screenshot belum diuji.\n")
+	}
 	b.WriteString("\n## Urutan pengerjaan\n\n")
 	if len(m.Commands) == 0 {
 		b.WriteString("Belum ada command.\n")
@@ -414,7 +423,7 @@ func WriteDocs(dir string, p *core.Project) error {
 			return err
 		}
 	}
-	for _, sub := range []string{"blueprint", "workflow", "adr", "design"} {
+	for _, sub := range []string{"blueprint", "workflow", "adr", "design", "review"} {
 		entries, _ := os.ReadDir(filepath.Join(root, sub))
 		for _, e := range entries {
 			name := sub + "/" + e.Name()

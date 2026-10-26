@@ -19,6 +19,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/modules/stack"
 	"github.com/handrawanwdev/foundry/internal/modules/structure"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
+	"github.com/handrawanwdev/foundry/internal/modules/workflow"
 )
 
 // The test binary doubles as a fake agent CLI: when FOUNDRY_FAKE_AGENT=1 it
@@ -61,7 +62,18 @@ const discoveryJSON = `Here you go:
 // designJSON is the designer's first answer: rules, one shell, three pages
 // and the pages of the flow. Ids, platform and access are not normalized
 // yet; a blank principle, token and state are dropped.
-const designJSON = `{"rules": {"source": "NEW", "direction": "Tenang dan jelas", "principles": ["Satu aksi utama per layar", " "],
+const designJSON = `{"users": [{"role": "Pasien", "platform": "android", "context": "memesan dari HP", "goals": ["GOAL-1"], "tasks": ["Cari dokter", "Konfirmasi janji"]},
+   {"role": "Admin", "platform": "web", "context": "mengelola jadwal di kantor", "goals": ["GOAL-2"], "tasks": ["Kelola jadwal"]}],
+ "goals": [{"id": "GOAL-1", "role": "Pasien", "text": "Mendapat jadwal periksa", "success": "Janji tersimpan", "priority": "must"},
+           {"id": "GOAL-2", "role": "Admin", "text": "Mengelola jadwal dokter", "success": "Jadwal tampil di tabel", "priority": "must"}],
+ "navigation": [{"name": "Pasien", "items": [{"label": "Cari dokter", "page": "dokter", "primary": true}]},
+                {"name": "Admin", "items": [{"label": "Jadwal", "page": "jadwal"}]}],
+ "assumptions": ["Pasien memakai satu akun untuk semua janji"],
+ "unknowns": ["Jumlah janji per hari belum diketahui"],
+ "decisions": [{"subject": "dokter", "choice": "list", "why": ["pasien memilih dari sedikit dokter"], "basis": ["GOAL-1", "FLOW-001"], "source": "fact"},
+               {"subject": "konfirmasi", "choice": "form", "why": ["satu langkah konfirmasi dengan data ringkas"], "basis": ["GOAL-1", "FLOW-001", "appointment:create"], "source": "fact"},
+               {"subject": "jadwal", "choice": "table", "why": ["admin membandingkan banyak jadwal"], "basis": ["GOAL-2", "FEAT-002", "Admin", "web"], "source": "fact"}],
+ "rules": {"source": "NEW", "direction": "Tenang dan jelas", "principles": ["Satu aksi utama per layar", " "],
   "ux_guidelines": ["Konfirmasi sebelum membatalkan janji"],
   "tokens": {"colors": [{"name": "action.primary", "value": "#1f6feb", "use": "aksi utama"}, {"name": " ", "value": " "}],
              "typography": [{"name": "type.body", "value": "Inter 14px/20px 400"}], "spacing": [{"name": "space.md", "value": "16px"}],
@@ -73,33 +85,50 @@ const designJSON = `{"rules": {"source": "NEW", "direction": "Tenang dan jelas",
    "regions": [{"id": "nav", "name": "Navigasi", "content": ["Logo", "Menu"]}]}],
  "pages": [
   {"id": "Dokter", "name": "Daftar Dokter", "platform": "android", "route": "Dokter", "role": "Pasien", "access": "AUTH", "feature_id": "FEAT-001",
-   "purpose": "Cari dokter", "pattern": "list",
+   "purpose": "Cari dokter", "goal": "GOAL-1", "pattern": "list", "primary_action": "Pilih",
+   "fields": [{"field": "Doctor.name", "label": "Nama", "presentation": "card-title"}, {"field": "Doctor.specialty", "label": "Spesialis", "presentation": "card-meta"}],
    "sections": [{"id": "daftar", "name": "Daftar dokter", "content": ["Kartu dokter: nama, spesialis, jadwal"], "components": ["Button"]}],
    "links": [{"to": "konfirmasi", "via": "Tombol Pilih"}],
    "states": {"loading": "Memuat dokter", "empty": "Belum ada dokter", "error": "Gagal memuat. Coba lagi.", "success": " "}},
   {"id": "konfirmasi", "name": "Konfirmasi Janji", "platform": "android", "route": "Konfirmasi", "role": "Pasien", "access": "auth",
-   "feature_id": "FEAT-001", "purpose": "Konfirmasi janji", "pattern": "form", "primary_action": "Kirim",
+   "feature_id": "FEAT-001", "purpose": "Konfirmasi janji", "goal": "GOAL-1", "pattern": "form", "primary_action": "Kirim",
+   "fields": [{"field": "Appointment.scheduled_at", "label": "Jadwal", "presentation": "form-input", "format": "date-time"}],
    "sections": [{"id": "ringkasan", "name": "Ringkasan", "content": ["Dokter, tanggal, jam"]},
                 {"id": "form", "name": "Form", "content": ["Tanggal", "Catatan"], "components": ["Button"]}],
    "hierarchy": ["form", "ringkasan"],
    "states": {"error": "Jadwal bentrok", "success": "Janji dibuat", "disabled": "Tombol Kirim nonaktif saat mengirim"}},
   {"id": "jadwal", "name": "Admin Jadwal", "platform": "web", "route": "/jadwal", "role": "Admin", "access": "auth", "feature_id": "FEAT-002",
-   "shell": "admin", "purpose": "Kelola jadwal", "pattern": "table",
+   "shell": "admin", "purpose": "Kelola jadwal", "goal": "GOAL-2", "pattern": "table", "primary_action": "Tambah jadwal",
+   "fields": [{"field": "Schedule.day", "label": "Hari", "presentation": "table-column"}, {"field": "Doctor.name", "label": "Dokter", "presentation": "table-column"}],
    "sections": [{"id": "tabel", "name": "Tabel jadwal", "content": ["Hari, Dokter, Jam"], "components": ["DataTable"], "spacing": "space.md"}],
    "states": {"loading": "Skeleton tabel", "empty": "Belum ada jadwal", "error": "Jadwal gagal dimuat"}}],
  "flows": {"FLOW-001": ["Dokter", "konfirmasi"]}}`
 
 // webDesignJSON is the design of the web platform only.
-var webDesignJSON = designJSON[:strings.Index(designJSON, `  {"id": "Dokter"`)] + designJSON[strings.Index(designJSON, `  {"id": "jadwal"`):strings.Index(designJSON, `,
- "flows"`)] + "}"
+const webDesignJSON = `{"users": [{"role": "Admin", "platform": "web", "context": "mengelola jadwal di kantor", "tasks": ["Kelola jadwal"]}],
+ "goals": [{"id": "GOAL-2", "role": "Admin", "text": "Mengelola jadwal dokter", "success": "Jadwal tampil di tabel", "priority": "must"}],
+ "navigation": [{"name": "Admin", "items": [{"label": "Jadwal", "page": "jadwal"}]}],
+ "decisions": [{"subject": "jadwal", "choice": "table", "why": ["admin membandingkan banyak jadwal"], "basis": ["GOAL-2", "FEAT-002", "Admin", "web"], "source": "fact"}],
+ "rules": {"source": "new", "principles": ["Tabel padat"], "ux_guidelines": ["Konfirmasi hapus"],
+  "tokens": {"colors": [{"name": "action.primary", "value": "#1f6feb"}], "typography": [{"name": "type.body", "value": "Inter 14px"}],
+             "spacing": [{"name": "space.md", "value": "16px"}]}, "accessibility": ["Kontras WCAG AA"],
+  "responsive": ["Tabel jadi list di bawah breakpoint.tablet"]},
+ "shells": [{"id": "admin", "name": "Admin", "platform": "web", "pattern": "sidebar", "navigation": "Menu kiri: Jadwal",
+   "regions": [{"id": "nav", "name": "Navigasi", "content": ["Logo", "Menu"]}]}],
+ "pages": [{"id": "jadwal", "name": "Admin Jadwal", "platform": "web", "route": "/jadwal", "role": "Admin", "access": "auth",
+   "feature_id": "FEAT-002", "shell": "admin", "purpose": "Kelola jadwal", "goal": "GOAL-2", "pattern": "table", "primary_action": "Tambah jadwal",
+   "sections": [{"id": "tabel", "name": "Tabel jadwal", "content": ["Hari, Dokter, Jam"], "components": ["DataTable"], "spacing": "space.md"}],
+   "states": {"loading": "Skeleton tabel", "empty": "Belum ada jadwal", "error": "Jadwal gagal dimuat"}}],
+ "flows": {}}`
 
 // revisedDesignJSON adds a page, removes one and changes the flow; the
 // link to the removed page is dropped by Foundry.
 const revisedDesignJSON = `{"pages": [{"id": "profil", "name": "Profil", "platform": "android", "route": "Profil", "access": "auth",
-   "feature_id": "FEAT-001", "purpose": "Data diri", "pattern": "form",
+   "feature_id": "FEAT-001", "purpose": "Data diri", "goal": "GOAL-1", "pattern": "form",
    "sections": [{"id": "form", "name": "Form profil", "content": ["Nama", "Telepon"]}],
    "states": {"error": "Gagal menyimpan", "success": "Tersimpan", "disabled": "Simpan nonaktif saat mengirim"},
    "links": [{"to": "dokter", "via": "Kembali"}]}],
+ "decisions": [{"subject": "profil", "choice": "form", "why": ["pasien memperbarui data diri"], "basis": ["GOAL-1", "FEAT-001"], "source": "fact"}],
  "remove_pages": ["konfirmasi"],
  "flows": {"FLOW-001": ["dokter", "profil"]}}`
 
@@ -191,7 +220,7 @@ const workflowJSON = `{"commands": [
   "artifacts": ["requirements", "architecture"], "covers": ["REQ-001", "req-002"], "expected_outputs": ["openapi.yaml"], "acceptance_criteria": ["Kontrak mencakup REQ-001"]},
  {"id": "C2", "name": "Backend janji temu", "objective": "Endpoint janji", "instructions": "Implementasikan endpoint sesuai kontrak C1.",
   "depends_on": ["C1"], "artifacts": ["architecture"]},
- {"id": "C3", "name": "Layar janji", "objective": "Layar janji temu", "instructions": "Bangun layar sesuai desain.",
+ {"id": "C3", "name": "Layar janji", "objective": "Layar janji temu", "instructions": "Bangun layar dokter, konfirmasi, dan jadwal sesuai desain.",
   "depends_on": ["C1"], "artifacts": ["design-rules", "layout-spec", "requirements"], "covers": ["REQ-001"]}]}`
 
 // cleanupArtifactsJSON is the AI's rewrite of the threat model after a
@@ -660,8 +689,15 @@ func TestDesignRevise(t *testing.T) {
 	if !slices.Equal(r.Stale["CMD-003"], []string{core.ArtifactLayoutSpec}) || len(r.Stale["CMD-001"]) != 0 || r.Ready {
 		t.Fatalf("report = %+v", r)
 	}
-	if b := pipeline.Blockers(p); !slices.Contains(b, "workflow: 1 command perlu ditinjau") {
+	if b := pipeline.Blockers(p); !slices.Contains(b, "workflow: 1 masalah dependency/isi") {
 		t.Fatalf("blockers = %v", b)
+	}
+	// The new page `profil` has no command yet: the design change also
+	// requires the workflow to be revised, not only reviewed.
+	if r := pipeline.CheckWorkflow(p); !slices.ContainsFunc(r.Issues, func(is workflow.Issue) bool {
+		return strings.Contains(is.Message, "profil")
+	}) {
+		t.Fatalf("issues = %+v", r.Issues)
 	}
 	if _, err := s.ApproveStack(); err != nil {
 		t.Fatal(err)

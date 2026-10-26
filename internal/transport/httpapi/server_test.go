@@ -273,6 +273,18 @@ func TestDesignRoutes(t *testing.T) {
 	if w := do("POST", "/api/v1/project/design/revise", `{"text": "lebih padat"}`); w.Code != http.StatusPreconditionFailed {
 		t.Fatalf("revise without AI: %d %s", w.Code, w.Body)
 	}
+	// Visual review routes are wired: the report counts designed pages, a
+	// review without snapshots is refused, and fixes need a workflow and
+	// findings.
+	if w := do("GET", "/api/v1/project/visual", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"summary"`) || !strings.Contains(w.Body.String(), `"pages":1`) {
+		t.Fatalf("visual report: %d %s", w.Code, w.Body)
+	}
+	if w := do("POST", "/api/v1/project/visual/reviews", `{"page":"antrean"}`); w.Code != 400 {
+		t.Fatalf("review without proof: %d %s", w.Code, w.Body)
+	}
+	if w := do("POST", "/api/v1/project/visual/fixes", ""); w.Code != 400 {
+		t.Fatalf("fixes without findings: %d %s", w.Code, w.Body)
+	}
 }
 
 func TestAIDisconnect(t *testing.T) {

@@ -298,7 +298,7 @@ func (s *Server) Handler() http.Handler {
 			issues = []core.Issue{}
 		}
 		vocab := map[string]any{"patterns": core.LayoutPatterns, "states": core.UIStates, "required_states": core.RequiredStates,
-			"platforms": core.UIPlatform}
+			"platforms": core.UIPlatform, "field_presentations": core.FieldPresentations, "decision_sources": core.DecisionSources}
 		return map[string]any{"design": p.UI, "issues": issues, "has_ui": p.HasUI(), "platforms": p.UIPlatforms(), "vocabulary": vocab}, nil
 	}))
 	api("POST /api/v1/project/design/generate", s.action(func(svc *pipeline.Service) error { return svc.GenerateDesign() }))
@@ -311,6 +311,29 @@ func (s *Server) Handler() http.Handler {
 			return nil, err
 		}
 		return ok(svc.ReviseDesign(in.Text, in.Focus))
+	}))
+	// Visual quality: measured snapshots and screenshots of implemented
+	// screens; findings feed a correction command in the workflow.
+	api("GET /api/v1/project/visual", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		summary, audit, err := svc.VisualReport()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"summary": summary, "audit": audit}, nil
+	}))
+	api("POST /api/v1/project/visual/reviews", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in core.VisualReviewIn
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.RecordVisualReview(in, "ui")
+	}))
+	api("POST /api/v1/project/visual/fixes", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		id, err := svc.CreateVisualFixes()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"command": id}, nil
 	}))
 	api("PUT /api/v1/project/design/rules", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in core.DesignRules

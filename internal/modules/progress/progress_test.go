@@ -272,3 +272,37 @@ func TestNoWorkflow(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestVisualQualityIsPartOfProgress(t *testing.T) {
+	p := clinic()
+	p.Platform = &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}}
+	p.UI = &core.UIDesign{Format: core.UIDesignFormat, Rules: &core.DesignRules{Source: core.RulesNew},
+		Layout: &core.LayoutSpec{Pages: []core.LayoutPage{{ID: "antrean", Name: "Antrean", Platform: "web", Pattern: "detail",
+			Purpose: "Lihat", Goal: "GOAL-1", Sections: []core.Section{{ID: "isi", Name: "Isi", Content: []string{"Data"}}}}}}}
+	now := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	s := View(p, now, Agent{})
+	if hasKind(s.Warnings, "visual_missing") {
+		t.Fatalf("warned before any implementation: %+v", s.Warnings)
+	}
+	mustApply(t, p, ReportIn{Command: "CMD-001", Status: core.RunDone, Source: "agent",
+		Evidence: []core.Evidence{{Kind: "files", Ref: "db/schema.sql"}}}, now)
+	s = View(p, now, Agent{})
+	if !hasKind(s.Warnings, "visual_missing") || s.Visual.Pages != 1 || s.Visual.Untested != 1 || s.VisualReady {
+		t.Fatalf("visual = %+v warnings = %+v", s.Visual, s.Warnings)
+	}
+	p.Visual = &core.VisualAudit{Pages: map[string]core.PageAudit{"antrean": {Page: "antrean", Status: core.VisualFail,
+		CheckedAt: now, Findings: []core.VisualFinding{{Page: "antrean", Criterion: "contrast", Severity: core.SeverityHigh}}}}}
+	s = View(p, now, Agent{})
+	if !hasKind(s.Warnings, "visual") || s.Visual.OpenHigh != 1 || s.VisualReady {
+		t.Fatalf("visual = %+v warnings = %+v", s.Visual, s.Warnings)
+	}
+}
+
+func hasKind(ws []Warning, kind string) bool {
+	for _, w := range ws {
+		if w.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
