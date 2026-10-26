@@ -158,6 +158,9 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 - covers lists the requirement IDs (REQ-...) the command implements; every MUST requirement must be covered
 
 ` + commandRules)
+	if HasUI(p) {
+		b.WriteString(VisualVerificationRules)
+	}
 	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"name\": \"\", \"objective\": \"\", \"depends_on\": [], \"artifacts\": [\"requirements\"], \"covers\": [\"REQ-001\"]}]}")
 	return b.String()
 }
@@ -224,6 +227,9 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 - constraints: limits that apply (technology, compatibility, performance, security)
 
 ` + commandRules)
+	if HasUI(p) {
+		b.WriteString(VisualVerificationRules)
+	}
 	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"]}]}")
 	return b.String()
 }
@@ -259,6 +265,9 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + w.Request.Rejected + "\n\n")
 	}
 	b.WriteString(commandRules)
+	if HasUI(p) {
+		b.WriteString(VisualVerificationRules)
+	}
 	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [" + commandShape + "]}")
 	return b.String()
 }
@@ -311,6 +320,9 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		}
 	}
 	b.WriteString(commandRules)
+	if HasUI(p) {
+		b.WriteString(VisualVerificationRules)
+	}
 	b.WriteString(`Revision rules:
 - change only the commands the request affects. Return only commands you add or change, each in full. Keep the id of a changed command; give new commands ids NEW1, NEW2, ...
 - when the request asks to follow changed blueprint artifacts, return every command whose artifacts changed even if its text stays valid; that records the new artifact versions.
@@ -328,6 +340,7 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block:
 // - Commands with instructions → complete workflow (original behavior)
 // - Commands without instructions → sketch phase (triggers detail batches)
 // - Existing skeleton + commands with details → detail batch phase
+// Visual verification commands can be added explicitly via AddVisualVerificationCommands.
 func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 	var out workflowOut
 	err := ExtractJSONFunc(raw, &out, func() bool { return out.Commands != nil || out.Remove != nil })
@@ -352,12 +365,11 @@ func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 	}
 
 	// Route based on project state and response content
+	var applyErr error
 	if fresh && !hasInstructions && len(out.Commands) > 0 {
 		// Fresh workflow + no instructions → sketch phase
-		return applyWorkflowSketchFromParsed(p, out, docs)
-	}
-
-	if !fresh {
+		applyErr = applyWorkflowSketchFromParsed(p, out, docs)
+	} else if !fresh {
 		// Check if existing commands need details
 		needsDetails := false
 		for _, cmd := range w.Commands {
@@ -368,12 +380,17 @@ func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 		}
 		if needsDetails && hasInstructions {
 			// Skeleton exists + response has instructions → detail batch
-			return applyWorkflowDetailBatchFromParsed(p, out, docs)
+			applyErr = applyWorkflowDetailBatchFromParsed(p, out, docs)
+		} else {
+			// Default: original revision behavior
+			applyErr = applyWorkflowRevisionFromParsed(p, out, docs)
 		}
+	} else {
+		// Default: original revision behavior
+		applyErr = applyWorkflowRevisionFromParsed(p, out, docs)
 	}
 
-	// Default: original revision behavior
-	return applyWorkflowRevisionFromParsed(p, out, docs)
+	return applyErr
 }
 
 // applyWorkflowRevisionFromParsed applies a revision using already-parsed output.
