@@ -60,7 +60,211 @@ const commandShape = `{"id": "C1", "name": "", "objective": "", "context": "", "
 
 // WorkflowPrompt asks for the workflow (no commands yet) or for a revision
 // of it (the pending request). docs is the whole blueprint.
+// When the blueprint is large (total body > threshold), uses two-phase batching
+// to avoid context-limit / quota errors:
+// Phase 1 (Sketch): Generate command skeleton with artifact summaries only
+// Phase 2 (Details): Fill in details for commands in batches
+// Small blueprints use the original single-pass prompt.
 func WorkflowPrompt(p *core.Project, docs []core.Artifact) string {
+	mode := detectWorkflowPromptMode(p, docs)
+	switch mode {
+	case "sketch":
+		return workflowSketchPrompt(p, docs)
+	case "detail":
+		return workflowDetailBatchPrompt(p, docs)
+	case "fresh":
+		return workflowFreshPrompt(p, docs)
+	default:
+		return workflowRevisionPrompt(p, docs)
+	}
+}
+
+// workflowBatchThreshold is the total artifact body size above which the
+// workflow prompt switches to sketch mode to avoid context-limit errors.
+const workflowBatchThreshold = 50_000
+
+// detectWorkflowPromptMode decides which prompt style to use.
+// Returns "sketch" for large fresh workflows, "detail" for workflows with
+// commands that still lack instructions, "fresh" for small new workflows,
+// and "" for the original revision prompt.
+func detectWorkflowPromptMode(p *core.Project, docs []core.Artifact) string {
+	w := p.Workflow
+
+	// Existing commands that still need details → detail phase
+	if w != nil && len(w.Commands) > 0 {
+		for _, cmd := range w.Commands {
+			if cmd.Instructions == "" {
+				return "detail"
+			}
+		}
+		// All commands have instructions → revision
+		return ""
+	}
+
+	// Fresh workflow (no commands)
+	totalBody := 0
+	for _, d := range docs {
+		totalBody += len(d.Body)
+	}
+	if totalBody > workflowBatchThreshold {
+		return "sketch"
+	}
+	return "fresh"
+}
+
+// workflowSketchPrompt generates a prompt for command skeleton only
+// Uses artifact summaries instead of full bodies to reduce context size
+func workflowSketchPrompt(p *core.Project, docs []core.Artifact) string {
+	var b strings.Builder
+	b.WriteString(`You are the workflow planner of Foundry. Foundry designs software and writes instructions for an EXTERNAL coding agent (Claude Code, Codex, OpenCode, Qwen Code, ...). Foundry never runs them. Do not write application code. Do not modify files.
+Write every human-readable text in the same language as the story.
+
+PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
+	if p.Platform != nil {
+		var kinds []string
+		for _, t := range p.Platform.Targets {
+			kinds = append(kinds, t.Kind)
+		}
+		b.WriteString("PLATFORM: " + strings.Join(kinds, ", ") + "\n")
+	}
+	if p.Structure != nil && p.Structure.Mode == core.StructureExisting {
+		b.WriteString("EXISTING CODEBASE: yes. Commands change it; the agent inspects it first.\n")
+	} else {
+		b.WriteString("EXISTING CODEBASE: no (new project).\n")
+	}
+	b.WriteString("\n" + surveyWorkflowRules(p))
+	writeBinding(&b, p)
+	
+	// Use artifact summaries only (not full bodies) to reduce context size
+	b.WriteString("BLUEPRINT ARTIFACTS (summaries only):\n")
+	for _, d := range docs {
+		fmt.Fprintf(&b, "=== %s (%s, %s%s) %s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary)
+	}
+	b.WriteString("\n")
+	b.WriteString(precedenceRules)
+	
+	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Rejected != "" {
+		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + w.Request.Rejected + "\n\n")
+	}
+	
+	b.WriteString(`SKETCH PHASE - Generate command skeleton only:
+- Create 3-25 commands that cover all MUST requirements
+- For each command, provide ONLY: id, name, objective, depends_on, artifacts (IDs), covers (requirement IDs)
+- DO NOT provide instructions, context, inputs, outputs, or acceptance_criteria yet
+- Use ids C1, C2, C3, etc.
+- depends_on lists only commands whose result this one needs (a contract, schema, module, interface)
+- No cycles, no self dependency
+- artifacts lists the blueprint artifact IDs the command implements (from the list above)
+- covers lists the requirement IDs (REQ-...) the command implements; every MUST requirement must be covered
+
+` + commandRules)
+	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"name\": \"\", \"objective\": \"\", \"depends_on\": [], \"artifacts\": [\"requirements\"], \"covers\": [\"REQ-001\"]}]}")
+	return b.String()
+}
+
+// workflowDetailBatchPrompt generates a prompt for filling in details for a batch of commands
+func workflowDetailBatchPrompt(p *core.Project, docs []core.Artifact) string {
+	var b strings.Builder
+	b.WriteString(`You are the workflow planner of Foundry. Foundry designs software and writes instructions for an EXTERNAL coding agent (Claude Code, Codex, OpenCode, Qwen Code, ...). Foundry never runs them. Do not write application code. Do not modify files.
+Write every human-readable text in the same language as the story.
+
+PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
+	
+	w := p.Workflow
+	b.WriteString("CURRENT COMMANDS (skeleton):\n" + mustJSON(w.Commands) + "\n\n")
+	
+	// Find commands that need details (instructions empty)
+	var needsDetails []core.Command
+	for _, cmd := range w.Commands {
+		if cmd.Instructions == "" {
+			needsDetails = append(needsDetails, cmd)
+		}
+	}
+	
+	// Process in batches of 5 commands
+	batchSize := 5
+	if len(needsDetails) < batchSize {
+		batchSize = len(needsDetails)
+	}
+	batch := needsDetails[:batchSize]
+	
+	b.WriteString(fmt.Sprintf("DETAIL PHASE - Fill in details for these %d commands:\n", len(batch)))
+	for _, cmd := range batch {
+		b.WriteString(fmt.Sprintf("- %s: %s\n", cmd.ID, cmd.Name))
+	}
+	b.WriteString("\n")
+	
+	// Include full artifact bodies only for artifacts referenced by this batch
+	neededArtifacts := make(map[string]bool)
+	for _, cmd := range batch {
+		for _, art := range cmd.Artifacts {
+			neededArtifacts[art.ID] = true
+		}
+	}
+	
+	b.WriteString("BLUEPRINT ARTIFACTS (full details for this batch only):\n")
+	for _, d := range docs {
+		if neededArtifacts[d.ID] {
+			// Include full body for needed artifacts
+			fmt.Fprintf(&b, "=== %s (%s, %s%s) %s\n%s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary, d.Body)
+		} else {
+			// Include summary only for others
+			fmt.Fprintf(&b, "=== %s (%s, %s%s) %s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary)
+		}
+	}
+	b.WriteString("\n")
+	b.WriteString(precedenceRules)
+	
+	b.WriteString(`For each command in the batch, provide:
+- context: background and why this command exists
+- instructions: specific Markdown instructions (what to build/change, behavior, edge cases, which artifact sections to follow). Never generic. Understandable without this conversation.
+- inputs: what the command needs (from dependencies)
+- expected_outputs: what the agent hands back (code, migration, test, document, report)
+- acceptance_criteria: checkable conditions (include criterion IDs like REQ-001-AC1)
+- constraints: limits that apply (technology, compatibility, performance, security)
+
+` + commandRules)
+	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"]}]}")
+	return b.String()
+}
+
+// workflowFreshPrompt generates the prompt for creating a new workflow (no commands yet)
+func workflowFreshPrompt(p *core.Project, docs []core.Artifact) string {
+	var b strings.Builder
+	b.WriteString(`You are the workflow planner of Foundry. Foundry designs software and writes instructions for an EXTERNAL coding agent (Claude Code, Codex, OpenCode, Qwen Code, ...). Foundry never runs them. Do not write application code. Do not modify files.
+Write every human-readable text in the same language as the story.
+
+PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
+	if p.Platform != nil {
+		var kinds []string
+		for _, t := range p.Platform.Targets {
+			kinds = append(kinds, t.Kind)
+		}
+		b.WriteString("PLATFORM: " + strings.Join(kinds, ", ") + "\n")
+	}
+	if p.Structure != nil && p.Structure.Mode == core.StructureExisting {
+		b.WriteString("EXISTING CODEBASE: yes. Commands change it; the agent inspects it first.\n")
+	} else {
+		b.WriteString("EXISTING CODEBASE: no (new project).\n")
+	}
+	b.WriteString("\n" + surveyWorkflowRules(p))
+	writeBinding(&b, p)
+	cut := promptBody
+	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Sync {
+		cut = 0
+	}
+	writeDocs(&b, docs, cut)
+	b.WriteString("Turn the blueprint into a command workflow of 3-25 commands. Use ids C1, C2, ...\n\n")
+	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Rejected != "" {
+		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + w.Request.Rejected + "\n\n")
+	}
+	b.WriteString(commandRules)
+	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [" + commandShape + "]}")
+	return b.String()
+}
+
+// workflowRevisionPrompt is the original prompt for revising an existing complete workflow
+func workflowRevisionPrompt(p *core.Project, docs []core.Artifact) string {
 	var b strings.Builder
 	b.WriteString(`You are the workflow planner of Foundry. Foundry designs software and writes instructions for an EXTERNAL coding agent (Claude Code, Codex, OpenCode, Qwen Code, ...). Foundry never runs them. Do not write application code. Do not modify files.
 Write every human-readable text in the same language as the story.
@@ -86,15 +290,6 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	writeDocs(&b, docs, cut)
 	w := p.Workflow
-	if w == nil || len(w.Commands) == 0 {
-		b.WriteString("Turn the blueprint into a command workflow of 3-25 commands. Use ids C1, C2, ...\n\n")
-		if w != nil && w.Request != nil && w.Request.Rejected != "" {
-			b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + w.Request.Rejected + "\n\n")
-		}
-		b.WriteString(commandRules)
-		b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [" + commandShape + "]}")
-		return b.String()
-	}
 	b.WriteString("CURRENT COMMANDS:\n" + mustJSON(w.Commands) + "\n\n")
 	stale := workflow.Stale(w.Commands, workflow.Hashes(docs))
 	if len(stale) > 0 {
@@ -129,19 +324,60 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block:
 
 // ApplyWorkflow lands the AI's workflow or revision. The result must pass
 // the workflow check (references, no cycle) or nothing changes.
+// Routes based on response content:
+// - Commands with instructions → complete workflow (original behavior)
+// - Commands without instructions → sketch phase (triggers detail batches)
+// - Existing skeleton + commands with details → detail batch phase
 func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 	var out workflowOut
 	err := ExtractJSONFunc(raw, &out, func() bool { return out.Commands != nil || out.Remove != nil })
 	if err != nil {
-		// A CLI cuts a long answer at the model's output limit. Keep the
-		// commands that arrived whole so the revision still makes progress;
-		// the orchestrator asks again for the rest.
 		if cmds := salvageCommands(raw); len(cmds) > 0 {
 			out = workflowOut{Commands: cmds}
 		} else {
 			return err
 		}
 	}
+
+	w := p.Workflow
+	fresh := w == nil || len(w.Commands) == 0
+
+	// Check if response has instructions
+	hasInstructions := false
+	for _, o := range out.Commands {
+		if strings.TrimSpace(o.Instructions) != "" {
+			hasInstructions = true
+			break
+		}
+	}
+
+	// Route based on project state and response content
+	if fresh && !hasInstructions && len(out.Commands) > 0 {
+		// Fresh workflow + no instructions → sketch phase
+		return applyWorkflowSketchFromParsed(p, out, docs)
+	}
+
+	if !fresh {
+		// Check if existing commands need details
+		needsDetails := false
+		for _, cmd := range w.Commands {
+			if cmd.Instructions == "" {
+				needsDetails = true
+				break
+			}
+		}
+		if needsDetails && hasInstructions {
+			// Skeleton exists + response has instructions → detail batch
+			return applyWorkflowDetailBatchFromParsed(p, out, docs)
+		}
+	}
+
+	// Default: original revision behavior
+	return applyWorkflowRevisionFromParsed(p, out, docs)
+}
+
+// applyWorkflowRevisionFromParsed applies a revision using already-parsed output.
+func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []core.Artifact) error {
 	w := p.Workflow
 	fresh := w == nil || len(w.Commands) == 0
 	if fresh && len(out.Commands) == 0 {
@@ -225,6 +461,128 @@ func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 	w.Commands, w.Status = cmds, core.CommandDraft
 	w.Version++
 	pendingRequest(w, staleBefore, hashes)
+	return nil
+}
+
+// applyWorkflowSketchFromParsed applies a command skeleton (no instructions yet)
+// and triggers the detail phase.
+func applyWorkflowSketchFromParsed(p *core.Project, out workflowOut, docs []core.Artifact) error {
+	if len(out.Commands) == 0 {
+		return errors.New("workflow kosong: tidak ada command")
+	}
+	hashes := workflow.Hashes(docs)
+	var cmds []core.Command
+	idMap := map[string]string{}
+	next := 1
+	for _, o := range out.Commands {
+		id := strings.TrimSpace(o.ID)
+		if _, dup := idMap[id]; dup || id == "" {
+			return fmt.Errorf("id command %q kosong atau ganda", id)
+		}
+		idMap[id] = fmt.Sprintf("CMD-%03d", next)
+		next++
+	}
+	for _, o := range out.Commands {
+		c, err := commandFrom(o, idMap, hashes)
+		if err != nil {
+			return err
+		}
+		// Instructions are empty — will be filled in detail phase
+		c.Instructions = ""
+		c.Status = core.CommandDraft
+		cmds = append(cmds, c)
+	}
+	if len(cmds) > MaxCommands {
+		return fmt.Errorf("terlalu banyak command (%d, maks %d)", len(cmds), MaxCommands)
+	}
+	// Validate sketch (structure only — no instructions required)
+	if err := checkSketchCommands(cmds, hashes, p.Requirements); err != nil {
+		return err
+	}
+	if _, uncovered := workflow.Covers(cmds, p.Requirements); len(uncovered) > 0 {
+		return fmt.Errorf("workflow tidak valid: requirement MUST belum dicakup command mana pun (covers): %s", strings.Join(uncovered, ", "))
+	}
+	if p.Workflow == nil {
+		p.Workflow = &core.Workflow{}
+	}
+	p.Workflow.Commands = cmds
+	p.Workflow.Status = core.CommandDraft
+	p.Workflow.Version++
+	// Set Request to trigger detail phase
+	p.Workflow.Request = &core.ChangeRequest{
+		Text: "Fill in details for all commands (context, instructions, acceptance criteria, etc.)",
+	}
+	return nil
+}
+
+// applyWorkflowDetailBatchFromParsed applies details for a batch of commands.
+func applyWorkflowDetailBatchFromParsed(p *core.Project, out workflowOut, docs []core.Artifact) error {
+	if len(out.Commands) == 0 {
+		return errors.New("tidak ada detail command yang diberikan")
+	}
+	w := p.Workflow
+	hashes := workflow.Hashes(docs)
+	// Build a map of command details from the output
+	detailsMap := make(map[string]commandOut)
+	for _, o := range out.Commands {
+		id := strings.TrimSpace(o.ID)
+		if id != "" {
+			detailsMap[id] = o
+		}
+	}
+	// Apply details to existing commands that lack instructions
+	updated := 0
+	for i := range w.Commands {
+		cmd := &w.Commands[i]
+		if cmd.Instructions != "" {
+			continue // Already has details
+		}
+		d, ok := detailsMap[cmd.ID]
+		if !ok {
+			continue
+		}
+		cmd.Context = strings.TrimSpace(d.Context)
+		cmd.Instructions = strings.TrimSpace(d.Instructions)
+		cmd.Inputs = nonEmpty(d.Inputs)
+		cmd.Outputs = nonEmpty(d.Outputs)
+		cmd.Acceptance = nonEmpty(d.Acceptance)
+		cmd.Constraints = nonEmpty(d.Constraints)
+		updated++
+	}
+	if updated == 0 {
+		return errors.New("tidak ada command yang diupdate; pastikan id command sesuai")
+	}
+	w.Version++
+	// Check if all commands now have details
+	allDone := true
+	for _, cmd := range w.Commands {
+		if cmd.Instructions == "" {
+			allDone = false
+			break
+		}
+	}
+	// Validate based on completion status
+	if allDone {
+		if err := checkCommands(w.Commands, hashes, p.Requirements); err != nil {
+			return err
+		}
+		if issues := CheckUI(p, w.Commands); len(issues) > 0 {
+			return UIError(issues)
+		}
+		pendingRequest(w, nil, hashes)
+		w.Request = nil
+	} else {
+		if err := checkSketchCommands(w.Commands, hashes, p.Requirements); err != nil {
+			return err
+		}
+		remaining := 0
+		for _, cmd := range w.Commands {
+			if cmd.Instructions == "" {
+				remaining++
+			}
+		}
+		w.Request.Text = fmt.Sprintf("Fill in details for remaining %d commands", remaining)
+	}
 	return nil
 }
 
@@ -338,6 +696,89 @@ func artifactRefs(ids []string, hashes map[string]string) ([]core.ArtifactRef, e
 		}
 	}
 	return out, nil
+}
+
+// validateSketch checks only structural validity for sketch phase:
+// IDs, dependencies, artifacts, and cycles. Does NOT require instructions.
+func validateSketch(cmds []core.Command, hashes map[string]string) []workflow.Issue {
+	exists := map[string]bool{}
+	for id := range hashes {
+		exists[id] = true
+	}
+	
+	var issues []workflow.Issue
+	add := func(id, format string, a ...any) {
+		issues = append(issues, workflow.Issue{Command: id, Message: fmt.Sprintf(format, a...)})
+	}
+	
+	// Check for duplicate/missing IDs
+	ids := map[string]bool{}
+	for _, c := range cmds {
+		switch {
+		case strings.TrimSpace(c.ID) == "":
+			add("", "command tanpa ID (%q)", c.Name)
+			continue
+		case ids[c.ID]:
+			add(c.ID, "ID %s dipakai lebih dari satu command", c.ID)
+		}
+		ids[c.ID] = true
+	}
+	
+	// Check dependencies and artifacts (but NOT instructions)
+	for _, c := range cmds {
+		if c.ID == "" {
+			continue
+		}
+		if strings.TrimSpace(c.Name) == "" {
+			add(c.ID, "nama belum diisi")
+		}
+		if strings.TrimSpace(c.Objective) == "" {
+			add(c.ID, "tujuan belum diisi")
+		}
+		// Skip instruction check for sketch phase
+		for _, d := range c.DependsOn {
+			switch {
+			case d == c.ID:
+				add(c.ID, "bergantung pada dirinya sendiri")
+			case !ids[d]:
+				add(c.ID, "dependency %s tidak ada", d)
+			}
+		}
+		if len(c.Artifacts) == 0 {
+			add(c.ID, "belum merujuk artefak blueprint")
+		}
+		for _, r := range c.Artifacts {
+			if !exists[r.ID] {
+				add(c.ID, "artefak blueprint %q tidak ada", r.ID)
+			}
+		}
+	}
+	
+	// Check for cycles
+	if cycle := workflow.Cycle(cmds); len(cycle) > 0 {
+		add(cycle[0], "dependency melingkar: %s", strings.Join(cycle, " → "))
+	}
+	
+	return issues
+}
+
+// checkSketchCommands validates sketch phase commands (no instructions required)
+func checkSketchCommands(cmds []core.Command, hashes map[string]string, reqs []core.Requirement) error {
+	issues := validateSketch(cmds, hashes)
+	unknown, _ := workflow.Covers(cmds, reqs)
+	issues = append(issues, unknown...)
+	if len(issues) == 0 {
+		return nil
+	}
+	var msgs []string
+	for i, is := range issues {
+		if i == 5 {
+			msgs = append(msgs, fmt.Sprintf("… %d lagi", len(issues)-5))
+			break
+		}
+		msgs = append(msgs, strings.TrimSpace(is.Command+" "+is.Message))
+	}
+	return fmt.Errorf("workflow tidak valid: %s", strings.Join(msgs, "; "))
 }
 
 // checkCommands refuses a workflow that fails the check.
