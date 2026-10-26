@@ -255,6 +255,10 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		if kind == work.KindWorkflow {
+			s.runWorkflow(runner)
+			return
+		}
 		out, err := runner.Run(s.context(), p.Dir, prompt)
 		if err != nil {
 			s.failJob(kind, err)
@@ -269,6 +273,43 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 		}
 	}()
 	return nil
+}
+
+// runWorkflow runs a workflow job in rounds. A long answer can be cut at the
+// model's output limit; ApplyWorkflow keeps the request when the answer
+// revised only part of the stale commands, so the next round asks for the
+// rest. Each round rebuilds the prompt from the saved project.
+func (s *Service) runWorkflow(runner *agent.Runner) {
+	kind := work.KindWorkflow
+	p, err := s.Store.Load()
+	if err != nil {
+		s.failJob(kind, err)
+		return
+	}
+	out, err := runner.Run(s.context(), p.Dir, s.promptFor(p, kind))
+	if err != nil {
+		s.failJob(kind, err)
+		return
+	}
+	if err := s.applyAI(kind, out, "agent"); err != nil {
+		if s.noteRejection(kind, err) {
+			s.startAI(kind) // one retry with the rejection in the prompt
+			return
+		}
+		s.failJob(kind, err)
+		return
+	}
+	if p, err = s.Store.Load(); err != nil || p.Workflow == nil || p.Workflow.Request == nil {
+		return
+	}
+	if s.context().Err() != nil {
+		return
+	}
+	// The request survived: some stale commands are still untouched. Start a
+	// new round; applyAI already closed this job, so the next one is clean.
+	if err := s.startAI(kind); err != nil {
+		s.failJob(kind, err)
+	}
 }
 
 func jobMessage(kind string) string {

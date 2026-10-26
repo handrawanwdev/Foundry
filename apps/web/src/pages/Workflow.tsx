@@ -125,7 +125,7 @@ export function WorkflowPage() {
             <span><strong>{reviewIds.length} command perlu ditinjau</strong>{staleIds.length > 0 && " — artefak blueprint yang dirujuk sudah berubah"}.</span>
             {staleIds.length > 0 && (
               <button disabled={working || pending === "reviseWorkflow"} onClick={() => void run("reviseWorkflow",
-                () => api.reviseWorkflow("Perbarui command yang terdampak perubahan artefak blueprint. Ubah hanya yang memang perlu.", staleIds))}>
+                () => api.reviseWorkflow("Perbarui command yang terdampak perubahan artefak blueprint. Ubah hanya yang memang perlu.", staleIds, true))}>
                 ✦ Perbarui yang terdampak
               </button>
             )}

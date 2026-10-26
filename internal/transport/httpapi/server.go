@@ -468,9 +468,13 @@ func (s *Server) Handler() http.Handler {
 		var in struct {
 			Text  string
 			Focus []string
+			Sync  bool
 		}
 		if err := decode(r, &in); err != nil {
 			return nil, err
+		}
+		if in.Sync {
+			return ok(svc.ReviseWorkflowSync(in.Text, in.Focus))
 		}
 		return ok(svc.ReviseWorkflow(in.Text, in.Focus))
 	}))

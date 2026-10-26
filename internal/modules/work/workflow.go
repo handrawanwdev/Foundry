@@ -1,6 +1,7 @@
 package work
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -117,8 +118,9 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	b.WriteString(commandRules)
 	b.WriteString(`Revision rules:
 - change only the commands the request affects. Return only commands you add or change, each in full. Keep the id of a changed command; give new commands ids NEW1, NEW2, ...
+- when the request asks to follow changed blueprint artifacts, return every command whose artifacts changed even if its text stays valid; that records the new artifact versions.
 - remove lists the ids of commands to delete; commands that depended on them must be returned with fixed depends_on.
-- commands not returned stay as they are.
+- commands not returned stay as they are. A long answer may be cut short; Foundry asks again for the commands you did not return yet.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block:
 {"commands": [` + commandShape + `], "remove": ["CMD-003"]}`)
@@ -129,20 +131,35 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block:
 // the workflow check (references, no cycle) or nothing changes.
 func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 	var out workflowOut
-	if err := ExtractJSON(raw, &out); err != nil {
-		return err
+	err := ExtractJSONFunc(raw, &out, func() bool { return out.Commands != nil || out.Remove != nil })
+	if err != nil {
+		// A CLI cuts a long answer at the model's output limit. Keep the
+		// commands that arrived whole so the revision still makes progress;
+		// the orchestrator asks again for the rest.
+		if cmds := salvageCommands(raw); len(cmds) > 0 {
+			out = workflowOut{Commands: cmds}
+		} else {
+			return err
+		}
 	}
 	w := p.Workflow
 	fresh := w == nil || len(w.Commands) == 0
 	if fresh && len(out.Commands) == 0 {
 		return errors.New("workflow kosong: tidak ada command")
 	}
+	hashes := workflow.Hashes(docs)
 	if !fresh && len(out.Commands) == 0 && len(out.Remove) == 0 {
 		if w.Request != nil && w.Request.Sync {
-			w.Request = nil // no command contradicts the changed decisions
+			acceptStale(w, w.Request.Focus, hashes) // reviewed, text stays valid
+			w.Request = nil
+			w.Version++
 			return nil
 		}
 		return errors.New("AI tidak menemukan perubahan untuk permintaan ini; tulis lebih spesifik")
+	}
+	var staleBefore map[string][]string
+	if !fresh {
+		staleBefore = workflow.Stale(w.Commands, hashes)
 	}
 	var cmds []core.Command
 	if !fresh {
@@ -176,7 +193,6 @@ func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 		idMap[id] = fmt.Sprintf("CMD-%03d", next)
 		next++
 	}
-	hashes := workflow.Hashes(docs)
 	for _, o := range out.Commands {
 		c, err := commandFrom(o, idMap, hashes)
 		if err != nil {
@@ -206,9 +222,80 @@ func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 		w = &core.Workflow{}
 		p.Workflow = w
 	}
-	w.Commands, w.Request, w.Status = cmds, nil, core.CommandDraft
+	w.Commands, w.Status = cmds, core.CommandDraft
 	w.Version++
+	pendingRequest(w, staleBefore, hashes)
 	return nil
+}
+
+// salvageCommands recovers the complete command objects from an answer that
+// was cut off at the model's output limit.
+func salvageCommands(raw string) []commandOut {
+	i := strings.LastIndex(raw, `"commands"`)
+	if i < 0 {
+		return nil
+	}
+	rest := raw[i+len(`"commands"`):]
+	j := strings.IndexByte(rest, '[')
+	if j < 0 {
+		return nil
+	}
+	dec := json.NewDecoder(strings.NewReader(rest[j:]))
+	if _, err := dec.Token(); err != nil {
+		return nil
+	}
+	var out []commandOut
+	for dec.More() {
+		var o commandOut
+		if err := dec.Decode(&o); err != nil {
+			break
+		}
+		if strings.TrimSpace(o.ID) != "" {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// acceptStale records the current artifact versions on the focused commands:
+// their text still matches the blueprint, so nothing needs rewriting.
+func acceptStale(w *core.Workflow, focus []string, hashes map[string]string) {
+	for i := range w.Commands {
+		c := &w.Commands[i]
+		if len(focus) > 0 && !slices.Contains(focus, c.ID) {
+			continue
+		}
+		for j, r := range c.Artifacts {
+			if h, ok := hashes[r.ID]; ok {
+				c.Artifacts[j].Hash = h
+			}
+		}
+		c.Status, c.Review = core.CommandDraft, ""
+	}
+}
+
+// pendingRequest keeps a change request alive while the answer changed only
+// some of the focused stale commands; the orchestrator runs another round for
+// the rest. No progress clears it, so a revision always terminates.
+func pendingRequest(w *core.Workflow, staleBefore map[string][]string, hashes map[string]string) {
+	if w.Request == nil {
+		return
+	}
+	focus := w.Request.Focus
+	staleAfter := workflow.Stale(w.Commands, hashes)
+	remaining, progressed := false, false
+	for _, c := range w.Commands {
+		if len(focus) > 0 && !slices.Contains(focus, c.ID) {
+			continue
+		}
+		before := len(staleBefore[c.ID]) > 0
+		after := len(staleAfter[c.ID]) > 0
+		remaining = remaining || after
+		progressed = progressed || before && !after
+	}
+	if !remaining || !progressed {
+		w.Request = nil
+	}
 }
 
 func commandFrom(o commandOut, idMap, hashes map[string]string) (core.Command, error) {
@@ -349,8 +436,10 @@ func ReviewCommand(p *core.Project, id string, needs bool, reason string, docs [
 }
 
 // RequestWorkflowChange records a change request for the AI. focus are
-// command ids; unknown ones are refused.
-func RequestWorkflowChange(p *core.Project, text string, focus []string) error {
+// command ids; unknown ones are refused. sync marks a request that only
+// brings the commands in line with changed artifacts, so an empty answer
+// means nothing needs rewriting.
+func RequestWorkflowChange(p *core.Project, text string, focus []string, sync bool) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return errors.New("tuliskan perubahan yang diinginkan")
@@ -363,7 +452,7 @@ func RequestWorkflowChange(p *core.Project, text string, focus []string) error {
 			return fmt.Errorf("command %s tidak ada", id)
 		}
 	}
-	p.Workflow.Request = &core.ChangeRequest{Text: text, Focus: focus}
+	p.Workflow.Request = &core.ChangeRequest{Text: text, Focus: focus, Sync: sync}
 	return nil
 }
 

@@ -96,11 +96,21 @@ func (s *Service) GenerateWorkflow() error {
 // ReviseWorkflow asks the AI to change the commands for a request; focus
 // names the commands it is about.
 func (s *Service) ReviseWorkflow(text string, focus []string) error {
+	return s.reviseWorkflow(text, focus, false)
+}
+
+// ReviseWorkflowSync asks the AI to bring the focused commands in line with
+// changed artifacts. An empty answer is valid: the text still matches.
+func (s *Service) ReviseWorkflowSync(text string, focus []string) error {
+	return s.reviseWorkflow(text, focus, true)
+}
+
+func (s *Service) reviseWorkflow(text string, focus []string, sync bool) error {
 	return s.startAIIf(work.KindWorkflow, func(p *core.Project) error {
 		if err := blueprintEditable(p); err != nil {
 			return err
 		}
-		if err := work.RequestWorkflowChange(p, text, focus); err != nil {
+		if err := work.RequestWorkflowChange(p, text, focus, sync); err != nil {
 			return err
 		}
 		p.Log("ui", "Minta perubahan workflow: "+text)
