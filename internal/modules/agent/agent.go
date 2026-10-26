@@ -68,7 +68,10 @@ var Presets = []Preset{
 	{ID: "gemini", Name: "Gemini", Binary: "gemini",
 		think: []string{}},
 	// opencode run reads the prompt from stdin; the plan agent is read-only.
+	// The listed models are free ones, used when the default model has no
+	// balance.
 	{ID: "opencode", Name: "OpenCode", Binary: "opencode", sub: []string{"run"},
+		Models:     []string{"opencode/big-pickle", "opencode/deepseek-v4.1-flash-free"},
 		listModels: opencodeModels,
 		think:      []string{"--agent", "plan"}},
 }
@@ -123,6 +126,7 @@ type Runner struct {
 	promptFile string
 	Timeout    time.Duration
 	unwrap     func(raw string) (string, bool)
+	opt        Options
 }
 
 // NewRunner builds a runner from a preset id, or from a custom command when
@@ -150,6 +154,7 @@ func NewRunner(id string, custom []string, opt Options) (*Runner, error) {
 		promptFile: p.PromptFile,
 		unwrap:     p.unwrap,
 		Timeout:    30 * time.Minute,
+		opt:        opt,
 	}, nil
 }
 
@@ -286,6 +291,31 @@ func (r *Runner) probe(ctx context.Context, dir string, timeout time.Duration) e
 		return fmt.Errorf("%w: tidak ada output", ErrAgentFailed)
 	}
 	return nil
+}
+
+// Connect probes the agent and, when the chosen model has no quota or balance,
+// retries with a listed model that answers. It returns the model to store, or
+// "" when the configured model already works.
+func (r *Runner) Connect(ctx context.Context, dir string) (string, error) {
+	err := r.Ping(ctx, dir)
+	if err == nil {
+		return "", nil
+	}
+	if !errors.Is(err, ErrLimit) || r.ID == "" {
+		return "", err
+	}
+	model := r.SuggestModel(ctx, dir)
+	if model == "" {
+		return "", err
+	}
+	retry, err := NewRunner(r.ID, nil, Options{Model: model, Effort: r.opt.Effort})
+	if err != nil {
+		return "", err
+	}
+	if err := retry.Ping(ctx, dir); err != nil {
+		return "", err
+	}
+	return model, nil
 }
 
 func tail(s string, n int) string {

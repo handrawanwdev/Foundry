@@ -52,7 +52,9 @@ export function ConnectPage() {
   useEffect(() => {
     if (picked || showMCP || waitingMCP || !state) return;
     const found = state.agents.filter((a) => a.detected);
-    if (found.length === 1) setPicked(found[0].id);
+    // OpenCode is the default choice; otherwise a single detected agent picks itself.
+    const preferred = found.find((a) => a.id === "opencode") ?? (found.length === 1 ? found[0] : undefined);
+    if (preferred) setPicked(preferred.id);
   }, [state, picked, showMCP, waitingMCP]);
 
   const loadingModels = !!picked && models?.agent !== picked;

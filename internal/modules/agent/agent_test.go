@@ -116,3 +116,30 @@ case "$*" in *good*) echo OK;; *) echo 'Error: Insufficient account funds';; esa
 		t.Fatalf("suggested %q", got)
 	}
 }
+
+// A default model with no balance must not fail the connection: Connect falls
+// back to a listed model that answers and reports the model to store.
+func TestConnectFallsBackToFreeModel(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script")
+	}
+	dir := t.TempDir()
+	script := `#!/bin/sh
+if [ "$1" = models ]; then printf 'p/paid\np/good-free\n'; exit 0; fi
+cat >/dev/null
+case "$*" in *good*) echo OK;; *) echo 'Error: Insufficient account funds' >&2; exit 1;; esac
+`
+	os.WriteFile(filepath.Join(dir, "opencode"), []byte(script), 0o755)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	modelCache.Lock()
+	delete(modelCache.m, "opencode")
+	modelCache.Unlock()
+	r, err := NewRunner("opencode", nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.Connect(context.Background(), t.TempDir())
+	if err != nil || got != "p/good-free" {
+		t.Fatalf("Connect = %q, %v", got, err)
+	}
+}

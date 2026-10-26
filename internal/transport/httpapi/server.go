@@ -747,8 +747,14 @@ func (s *Server) connectAgent(r *http.Request) (any, error) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
-	if err := runner.Ping(ctx, dir); err != nil {
+	// A preset whose default model is out of balance is retried with a model
+	// that answers (free models first) instead of failing the connection.
+	model, err := runner.Connect(ctx, dir)
+	if err != nil {
 		return nil, badRequest("Agent tidak merespons: " + err.Error())
+	}
+	if model != "" {
+		in.Model = model
 	}
 	c, err := config.Update(func(c *config.Config) {
 		c.Connection = &config.Connection{Mode: config.ModeAgent, AgentID: in.AgentID, Command: in.Command,
