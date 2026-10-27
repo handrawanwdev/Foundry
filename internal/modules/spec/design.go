@@ -231,9 +231,9 @@ func uxMarkdown(l *core.LayoutSpec) string {
 	}
 	if len(l.Decisions) > 0 {
 		b.WriteString("## Keputusan desain\n\nSetiap pilihan ditelusuri ke tujuan, alur, data, permission, platform atau token.\n\n")
-		b.WriteString("| Subjek | Pilihan | Alasan | Dasar | Sumber | Alternatif |\n|---|---|---|---|---|---|\n")
+		b.WriteString("| Subjek | Aspek | Pilihan | Alasan | Dasar | Sumber | Alternatif |\n|---|---|---|---|---|---|---|\n")
 		for _, d := range l.Decisions {
-			fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s | %s |\n", cell(d.Subject), cell(d.Choice),
+			fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s | %s | %s |\n", cell(d.Subject), cell(dash(d.Topic)), cell(d.Choice),
 				cell(strings.Join(d.Why, "; ")), cell(strings.Join(d.Basis, ", ")), cell(d.Source), cell(d.Alternative))
 		}
 		b.WriteString("\n")

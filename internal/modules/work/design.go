@@ -46,7 +46,7 @@ const designShape = `{
  "goals": [{"id": "GOAL-1", "role": "Operator", "text": "", "success": "", "priority": "must|should|could"}],
  "navigation": [{"name": "Operasional", "items": [{"label": "Antrean", "page": "antrean", "primary": true}]}],
  "assumptions": [""], "unknowns": [""],
- "decisions": [{"subject": "antrean", "choice": "table", "why": ["operator membandingkan banyak baris"], "basis": ["GOAL-1", "FLOW-001", "Appointment"], "source": "fact|assumption|constraint", "alternative": ""}],
+ "decisions": [{"subject": "antrean", "topic": "kepadatan", "choice": "table", "why": ["operator membandingkan banyak baris"], "basis": ["GOAL-1", "FLOW-001", "Appointment"], "source": "fact|assumption|constraint", "alternative": ""}],
  "rules": {"source": "new|existing", "direction": "", "principles": [""], "ux_guidelines": [""],
    "tokens": {"colors": [{"name": "action.primary", "value": "#1f6feb", "use": ""}], "typography": [{"name": "type.body", "value": "Inter 14px/20px 400", "use": ""}],
               "spacing": [{"name": "space.md", "value": "16px", "use": ""}], "radius": [], "shadow": [], "breakpoints": [{"name": "breakpoint.tablet", "value": "768px", "use": ""}]},
@@ -85,9 +85,9 @@ Work like a senior product designer: understand the users and their tasks BEFORE
    table: compare or operate on many records with several attributes; list: scan many records with one dominant attribute; cards: browse a small set with visual identity; detail: one record with many fields and actions; form: create or edit; wizard: a long or dependent sequence; dashboard: only when KPIs and aggregates are a real task; search: only when the set is large or unbounded; modal/drawer: a short side task without leaving context; tabs: parallel facets of one record; settings: user or workspace configuration; master-detail: rapid switching between items.
    On a small screen prefer list/cards over wide tables. Do not make every page a dashboard or a card grid.
 6. Density: operators who repeat a task need compact rows and few clicks; occasional users need more guidance; touch users need larger targets and actions close to the thumb. State the choice.
-7. Every layout, component and interaction choice gets a decision: subject (page id, section id, component name or *), choice, why (concrete), basis (ids from the inputs), source (fact | assumption | constraint), alternative considered. A decision that cannot name its basis is a guess; do not write it.
+7. Every layout, component and interaction choice gets a decision: subject (the element it affects: page id, section id, component name or * for the whole app), topic (the design aspect when the element alone is not enough: navigation, density/kepadatan, data status, price change/perubahan harga, real-time updates/tick, ...; empty when the choice IS the element's pattern), choice, why (concrete), basis (ids from the inputs), source (fact | assumption | constraint), alternative considered. A decision that cannot name its basis is a guess; do not write it. Every page must have at least one decision whose subject is the page id itself, stating its pattern and why; a form page also names its structure, input validation, submit state and error feedback. No page is left without a decision.
 8. Facts, assumptions and unknowns are separate. Never invent volume, permissions, compliance or integrations that the blueprint does not state; record the gap as an assumption or unknown.
-9. Data-to-UI mapping: for each page with records, map the fields that matter to presentation (table-column, list-item, card-title, card-meta, detail, form-input, filter, summary, chart, badge, hidden) and say how formats and long values are handled. Do not show every field of an entity.
+9. Data-to-UI mapping: for each page with records, map the fields that matter to presentation (table-column, list-item, card-title, card-meta, card-value, delta, detail, form-input, filter, summary, chart, badge, row-action, hidden) and say how formats and long values are handled. Do not show every field of an entity. card-value is a prominent value in a card (a big price); delta is a change indicator (amount or percent with a direction); row-action names an action on each row (open, edit, remove, acknowledge, ...) and its note says what the action does. A record's identity (symbol, name) is card-title, not a separate type.
 10. States, validation, permissions and feedback are part of the page design: loading, empty, no_results, error, success, disabled, permission_denied, and what a user without the permission sees.
 11. For a CLI/terminal platform (no screen layout), put its UX in rules.platforms with platform "cli": command and subcommand grammar, flags and defaults, help and examples, output shape and columns, error messages and exit codes, confirmation for destructive actions, and non-interactive/pipe behavior. Do not create layout pages for the terminal.
 `
@@ -155,16 +155,10 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString(uxRules + "\n")
 
-	// Add contextual design rules based on product type
-	if _, contextualRules := DetectProductTypeAndRules(p); contextualRules != "" {
-		b.WriteString(contextualRules + "\n")
-	}
-
-	// Add the reusable UI design preset (design language) for this project.
-	// It is framework-agnostic guidance; the existing design system still wins.
-	if preset := DetectPreset(p); preset != nil {
-		b.WriteString(PresetPrompt(preset) + "\n")
-	}
+	// The design language is seeded from the UI template (ui-template-ai-friendly):
+	// one framework-agnostic guidance for every product; the existing design
+	// system still wins.
+	b.WriteString(designTemplate + "\n")
 
 	// Add learned patterns from previous projects
 	if learnedRules := GetLearnedDesignRules(p, ""); learnedRules != "" {
@@ -405,6 +399,7 @@ func ApplyDesign(p *core.Project, raw string) error {
 	}
 	dropPages(l, flows, gone)
 	applyExisting(p, next)
+	completePageStates(l.Pages)
 	if err := commitDesign(p, next, flows); err != nil {
 		return err
 	}
@@ -590,6 +585,22 @@ func splitComponent(s string) (name, src string) {
 
 func normID(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
+// presentationAliases maps a presentation the designer names onto the
+// supported one that means the same thing, so a valid choice is never
+// dropped or hidden just to pass validation. Record identity (symbol, name)
+// is the record's title, not a separate presentation type.
+var presentationAliases = map[string]string{
+	"identity": "card-title",
+}
+
+func normPresentation(s string) string {
+	s = normID(s)
+	if a, ok := presentationAliases[s]; ok {
+		return a
+	}
+	return s
+}
+
 func normRules(r core.DesignRules) *core.DesignRules {
 	r.Source = normID(r.Source)
 	if r.Source == "" {
@@ -673,7 +684,7 @@ func normNavigation(in []core.NavGroup) []core.NavGroup {
 func normDecisions(in []core.DesignDecision) []core.DesignDecision {
 	var out []core.DesignDecision
 	for _, d := range in {
-		d = core.DesignDecision{Subject: strings.TrimSpace(d.Subject), Choice: strings.TrimSpace(d.Choice),
+		d = core.DesignDecision{Subject: strings.TrimSpace(d.Subject), Topic: strings.TrimSpace(d.Topic), Choice: strings.TrimSpace(d.Choice),
 			Why: nonEmpty(d.Why), Basis: nonEmpty(d.Basis), Source: normID(d.Source), Alternative: strings.TrimSpace(d.Alternative)}
 		if d.Subject != "" || d.Choice != "" {
 			out = append(out, d)
@@ -682,18 +693,18 @@ func normDecisions(in []core.DesignDecision) []core.DesignDecision {
 	return out
 }
 
-// mergeDesignDecisions replaces the decisions of the subjects an answer mentions
-// and keeps the others: a revision of one page does not need to resend the
-// whole decision register.
+// mergeDesignDecisions replaces the decisions of the subjects and topics an
+// answer mentions and keeps the others: a revision of one page does not need
+// to resend the whole decision register.
 func mergeDesignDecisions(existing, in []core.DesignDecision) []core.DesignDecision {
 	in = normDecisions(in)
 	touched := map[string]bool{}
 	for _, d := range in {
-		touched[d.Subject] = true
+		touched[d.Subject+"\x00"+d.Topic] = true
 	}
 	var out []core.DesignDecision
 	for _, d := range existing {
-		if !touched[d.Subject] {
+		if !touched[d.Subject+"\x00"+d.Topic] {
 			out = append(out, d)
 		}
 	}
@@ -724,7 +735,7 @@ func normPage(pg core.LayoutPage) core.LayoutPage {
 	var fields []core.FieldRule
 	for _, f := range pg.Fields {
 		f = core.FieldRule{Field: strings.TrimSpace(f.Field), Label: strings.TrimSpace(f.Label),
-			Presentation: normID(f.Presentation), Format: strings.TrimSpace(f.Format), Note: strings.TrimSpace(f.Note)}
+			Presentation: normPresentation(f.Presentation), Format: strings.TrimSpace(f.Format), Note: strings.TrimSpace(f.Note)}
 		if f.Field != "" {
 			fields = append(fields, f)
 		}
@@ -776,6 +787,38 @@ func normStates(in map[string]string) map[string]string {
 		return nil
 	}
 	return out
+}
+
+// defaultStateText is the fallback description for a state the designer did
+// not describe. The generator fills the states every pattern requires so the
+// blueprint never fails validation on an omitted loading/empty/error state;
+// the designer's text always wins.
+var defaultStateText = map[string]string{
+	"loading":           "Menampilkan indikator loading saat data dimuat",
+	"empty":             "Menampilkan bahwa belum ada data dan langkah selanjutnya",
+	"no_results":        "Menampilkan bahwa pencarian tidak menemukan hasil",
+	"error":             "Menampilkan pesan kesalahan dan cara memuat ulang",
+	"success":           "Menampilkan konfirmasi bahwa aksi berhasil",
+	"disabled":          "Menampilkan kondisi saat aksi belum tersedia",
+	"permission_denied": "Menampilkan penolakan akses bagi pengguna tanpa izin",
+	"interactive":       "Menampilkan interaksi yang tersedia",
+}
+
+// completePageStates guarantees every generated page specifies the states its
+// pattern requires. A missing required state gets a default description; a
+// state the designer already described is kept.
+func completePageStates(pages []core.LayoutPage) {
+	for i := range pages {
+		pg := &pages[i]
+		if pg.States == nil {
+			pg.States = map[string]string{}
+		}
+		for _, st := range core.RequiredStates[pg.Pattern] {
+			if strings.TrimSpace(pg.States[st]) == "" {
+				pg.States[st] = defaultStateText[st]
+			}
+		}
+	}
 }
 
 // nonEmpty trims items and drops the empty ones.

@@ -173,11 +173,11 @@ export interface UIGoal { id: string; role?: string; text: string; success?: str
 export interface NavItem { label: string; page: string; primary?: boolean }
 export interface NavGroup { name: string; items: NavItem[] }
 export interface DesignDecision {
-  subject: string; choice: string; why: string[]; basis?: string[];
+  subject: string; topic?: string; choice: string; why: string[]; basis?: string[];
   source: "fact" | "assumption" | "constraint"; alternative?: string;
 }
-export type FieldPresentation = "table-column" | "list-item" | "card-title" | "card-meta" | "detail" |
-  "form-input" | "filter" | "summary" | "chart" | "badge" | "hidden";
+export type FieldPresentation = "table-column" | "list-item" | "card-title" | "card-meta" | "card-value" |
+  "delta" | "detail" | "form-input" | "filter" | "summary" | "chart" | "badge" | "row-action" | "hidden";
 export interface FieldRule { field: string; label?: string; presentation: FieldPresentation; format?: string; note?: string }
 export interface LayoutPage {
   id: string; name: string; platform: string; route?: string; role?: string; access?: "public" | "auth"; feature_id?: string;

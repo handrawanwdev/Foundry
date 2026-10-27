@@ -71,6 +71,53 @@ func TestDesignDecisionsMustBeTraceable(t *testing.T) {
 	}
 }
 
+// A design aspect (navigation, density, data status, price change, real-time
+// updates) is a topic, not the subject: the subject stays the affected
+// element, and a subject that names no element is refused.
+func TestDesignDecisionSubjectAndTopic(t *testing.T) {
+	p := uxProject()
+	d := uxDesign()
+	d.Layout.Decisions = []DesignDecision{
+		{Subject: "antrean", Topic: "kepadatan", Choice: "compact", Why: []string{"operator butuh padat"}, Basis: []string{"GOAL-1"}, Source: "fact"},
+		{Subject: "ghost", Topic: "status data", Choice: "badge", Why: []string{"status jelas"}, Basis: []string{"GOAL-1"}, Source: "fact"},
+	}
+	msgs := issueMessages(p.DesignIssues(d))
+	if strings.Contains(msgs, "kepadatan") || strings.Contains(msgs, "status data") {
+		t.Fatalf("topic wrongly rejected:\n%s", msgs)
+	}
+	if !strings.Contains(msgs, `subjek "ghost" bukan halaman, section, atau komponen`) {
+		t.Fatalf("missing subject reference error:\n%s", msgs)
+	}
+}
+
+// row-action is a real table/list concept: an action on each row, not a data
+// value. It is a valid presentation, never a reason to refuse the design.
+func TestRowActionPresentationValid(t *testing.T) {
+	p := uxProject()
+	d := uxDesign()
+	d.Layout.Pages[0].Fields = []FieldRule{
+		{Field: "WatchlistItem", Label: "Item", Presentation: "row-action", Note: "hapus dari watchlist"},
+		{Field: "Alert", Label: "Peringatan", Presentation: "row-action", Note: "akui atau abaikan"},
+	}
+	if errs := Errors(p.DesignIssues(d)); len(errs) != 0 {
+		t.Fatalf("row-action field rejected: %+v", errs)
+	}
+}
+
+// card-value (a prominent card value) and delta (a change indicator) are
+// real concepts, valid presentations, never a reason to refuse the design.
+func TestValueAndDeltaPresentationsValid(t *testing.T) {
+	p := uxProject()
+	d := uxDesign()
+	d.Layout.Pages[0].Fields = []FieldRule{
+		{Field: "Asset.current_price", Presentation: "card-value"},
+		{Field: "Asset.price_change_pct_24h", Presentation: "delta"},
+	}
+	if errs := Errors(p.DesignIssues(d)); len(errs) != 0 {
+		t.Fatalf("card-value/delta field rejected: %+v", errs)
+	}
+}
+
 func TestDesignLegacyFormatOnlyWarns(t *testing.T) {
 	p := uxProject()
 	d := uxDesign()

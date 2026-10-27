@@ -65,3 +65,96 @@ func TestApplyDesignRefusesIncomplete(t *testing.T) {
 		t.Fatalf("unknown pattern err = %v", err)
 	}
 }
+
+// A record's identity (symbol, name) maps to the supported card-title
+// presentation; the new value/delta presentations pass through unchanged.
+func TestNormPresentationAliases(t *testing.T) {
+	for in, want := range map[string]string{
+		"identity":     "card-title",
+		"card-title":   "card-title",
+		"card-value":   "card-value",
+		"delta":        "delta",
+		"row-action":   "row-action",
+		"table-column": "table-column",
+	} {
+		if got := normPresentation(in); got != want {
+			t.Errorf("normPresentation(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The design prompt tells the designer to give every page a decision (its
+// pattern and why, plus form concerns) and documents the row-action
+// presentation, so the generator produces complete, valid field mappings.
+func TestDesignPromptCoversEveryPageAndRowAction(t *testing.T) {
+	p := &core.Project{Story: "Aplikasi register akun", Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}}}
+	prompt := DesignPrompt(p)
+	for _, want := range []string{"row-action", "Every page must have at least one decision", "No page is left without a decision", "submit state and error feedback"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt missing %q", want)
+		}
+	}
+}
+
+// The design language is seeded from the UI template (ui-template-ai-friendly),
+// not from per-product presets or contextual rules.
+func TestDesignPromptSeedsFromTemplate(t *testing.T) {
+	p := &core.Project{Story: "Aplikasi data pasar", Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}}}
+	prompt := DesignPrompt(p)
+	for _, want := range []string{"UI DESIGN TEMPLATE", "PRIORITAS KEPUTUSAN", "PAGE PATTERNS", "AKSESIBILITAS", "RESPONSIF"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt missing template marker %q", want)
+		}
+	}
+	// The old per-product presets and contextual rules are gone.
+	for _, gone := range []string{"PRODUCT CONTEXT:", "Clean SaaS Dashboard", "Enterprise Admin"} {
+		if strings.Contains(prompt, gone) {
+			t.Errorf("prompt still carries removed guidance %q", gone)
+		}
+	}
+}
+
+// The generator fills the states every pattern requires, so a table page that
+// omits `empty` still lands complete; and a design aspect stays in the
+// decision's topic, never in the subject.
+func TestApplyDesignFillsRequiredStatesAndKeepsTopics(t *testing.T) {
+	p := &core.Project{Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}}}
+	raw := `{"rules": {"source": "new", "principles": ["Satu tugas per halaman"], "ux_guidelines": ["Filter di atas"],
+	  "accessibility": ["AA"], "responsive": ["Tabel scroll di mobile"],
+	  "tokens": {"colors": [{"name": "action.primary", "value": "#000000"}], "typography": [{"name": "type.body", "value": "Inter 14px"}],
+	              "spacing": [{"name": "space.md", "value": "16px"}]},
+	  "components": [{"name": "DataTable", "use": "daftar data"}]},
+	 "users": [{"role": "Operator", "platform": "web", "tasks": ["saring"]}],
+	 "goals": [{"id": "GOAL-1", "role": "Operator", "text": "Saring data pasar"}],
+	 "navigation": [{"name": "Utama", "items": [{"label": "Screener", "page": "screener"}]}],
+	 "decisions": [
+	   {"subject": "screener", "topic": "kepadatan", "choice": "compact", "why": ["banyak baris"], "basis": ["GOAL-1"], "source": "fact"},
+	   {"subject": "screener", "topic": "status data", "choice": "badge", "why": ["status jelas"], "basis": ["GOAL-1"], "source": "fact"},
+	   {"subject": "screener", "topic": "perubahan harga", "choice": "warna naik/turun", "why": ["arah jelas"], "basis": ["GOAL-1"], "source": "fact"},
+	   {"subject": "screener", "topic": "tick real-time", "choice": "highlight", "why": ["perubahan terlihat"], "basis": ["GOAL-1"], "source": "fact"},
+	   {"subject": "*", "topic": "navigation", "choice": "sidebar", "why": ["grup tugas"], "basis": ["GOAL-1"], "source": "fact"}],
+	 "pages": [{"id": "screener", "name": "Screener", "platform": "web", "route": "/screener", "purpose": "Saring", "goal": "GOAL-1", "pattern": "table",
+	   "sections": [{"id": "tabel", "name": "Tabel", "content": ["Simbol, Harga, Perubahan"]}],
+	   "states": {"loading": "Memuat"}}]}`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	pg := p.UI.Layout.Pages[0]
+	for _, st := range []string{"loading", "empty", "error"} {
+		if pg.States[st] == "" {
+			t.Errorf("required state %q not filled: %+v", st, pg.States)
+		}
+	}
+	if len(p.UI.Layout.Decisions) != 5 {
+		t.Fatalf("decisions = %+v", p.UI.Layout.Decisions)
+	}
+	topics := map[string]bool{}
+	for _, d := range p.UI.Layout.Decisions {
+		topics[d.Topic] = true
+	}
+	for _, tp := range []string{"kepadatan", "status data", "perubahan harga", "tick real-time", "navigation"} {
+		if !topics[tp] {
+			t.Errorf("topic %q lost: %+v", tp, p.UI.Layout.Decisions)
+		}
+	}
+}

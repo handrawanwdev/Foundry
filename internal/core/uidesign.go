@@ -161,7 +161,13 @@ type NavItem struct {
 // Basis names the user goal, flow, entity, permission, platform or token
 // the choice is traceable to.
 type DesignDecision struct {
-	Subject     string   `json:"subject"` // page id, section id, component name, or *
+	// Subject is the element the choice affects: a page id, section id,
+	// component name, or * for the whole app.
+	Subject string `json:"subject"`
+	// Topic is the design aspect the choice is about when the element alone
+	// is not enough: navigation, density, data status, price change,
+	// real-time updates, ... It keeps the aspect distinct from the element.
+	Topic       string   `json:"topic,omitempty"`
 	Choice      string   `json:"choice"`
 	Why         []string `json:"why"`
 	Basis       []string `json:"basis,omitempty"`
@@ -169,7 +175,8 @@ type DesignDecision struct {
 	Alternative string   `json:"alternative,omitempty"`
 }
 
-// FieldRule is how one data field is presented on a page.
+// FieldRule is how one data field (or one row's action) is presented on a
+// page.
 type FieldRule struct {
 	Field        string `json:"field"` // Entity.field
 	Label        string `json:"label,omitempty"`
@@ -263,9 +270,13 @@ var (
 	Accesses       = []string{"public", "auth"}
 	// DecisionSources tell a fact from an assumption and a platform limit.
 	DecisionSources = []string{"fact", "assumption", "constraint"}
-	// FieldPresentations are the ways a field may be shown.
-	FieldPresentations = []string{"table-column", "list-item", "card-title", "card-meta", "detail",
-		"form-input", "filter", "summary", "chart", "badge", "hidden"}
+	// FieldPresentations are the ways a field may be shown. "row-action" is
+	// an action (button/link) on each row of a table or list, not a data
+	// value; the field's note names what the action does. "card-value" is a
+	// prominent value in a card (a big price); "delta" is a change indicator
+	// (amount or percent with a direction).
+	FieldPresentations = []string{"table-column", "list-item", "card-title", "card-meta", "card-value", "delta",
+		"detail", "form-input", "filter", "summary", "chart", "badge", "row-action", "hidden"}
 	GoalPriorities = []string{"must", "should", "could"}
 	// RequiredStates are the states a page of the pattern must specify.
 	RequiredStates = map[string][]string{
