@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { archOptions, defaultSurvey, existingComponents, isExistingProject, surveySummary, tellIntro, tellPlaceholder, tellTitle, tellWaiting, toggle } from "./tell";
+import { archOptions, defaultSurvey, existingComponents, isExistingProject, surveySummary, TELL_ANALYSIS, tellIntro, tellPlaceholder, tellTitle, tellWaiting, toggle } from "./tell";
 import type { Project } from "./types";
 
 const project = (mode?: "existing" | "new") =>
@@ -36,7 +36,7 @@ describe("tell copy", () => {
 
   it("leaves unanswered survey questions to Foundry", () => {
     const s = defaultSurvey();
-    expect(s).toEqual({ kinds: [], users: "", stage: "", architecture: "", priorities: [], constraints: "" });
+    expect(s).toEqual({ kinds: [], users: "", stage: "", architecture: "", priorities: [], constraints: "", design_reference: "" });
     expect(surveySummary(s)).toBe("platform otomatis · MVP · arsitektur otomatis");
     expect(archOptions(false).map((o) => o.id)).toEqual(["modular", "services"]);
     expect(archOptions(false, "existing").map((o) => o.id)).toContain("existing");
@@ -56,5 +56,17 @@ describe("tell copy", () => {
   it("toggles multi-select answers", () => {
     expect(toggle(undefined, "web")).toEqual(["web"]);
     expect(toggle(["web", "api"], "web")).toEqual(["api"]);
+  });
+
+  it("shows exactly the seven planning domains, not the old flat categories", () => {
+    expect(TELL_ANALYSIS).toEqual([
+      "Product & Business",
+      "Domain & Data",
+      "Security & Access",
+      "Experience & Platform",
+      "Architecture & Infrastructure",
+      "Quality & Delivery",
+      "Planning Validation",
+    ]);
   });
 });

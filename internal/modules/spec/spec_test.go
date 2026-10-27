@@ -142,6 +142,39 @@ func sampleUI() *core.UIDesign {
 	}
 }
 
+// A user-provided design reference flows to the structured spec, the
+// design-rules JSON and both markdown artifacts, so an external agent can
+// trace the rules back to the template.
+func TestDesignReferenceFlowsToExport(t *testing.T) {
+	p := &core.Project{Name: "Belajar", Survey: &core.Survey{DesignReference: "Duolingo"},
+		Discovery: &core.Discovery{Summary: "Belajar"}, UI: sampleUI(),
+		Flows: []core.Flow{{ID: "FLOW-001", Name: "Cek", PageIDs: []string{"antrean"}}}}
+	p.UI.Rules.Reference = "Duolingo"
+
+	if spec := Export(p); spec.DesignRules == nil || spec.DesignRules.Reference != "Duolingo" {
+		t.Fatalf("export design_rules.reference = %+v", spec.DesignRules)
+	}
+	files := Files(p)
+	if json := files[designFile(core.ArtifactDesignRules)]; !strings.Contains(json, "Duolingo") {
+		t.Fatalf("design-rules.json missing reference: %s", json)
+	}
+	var rulesMD, surveyMD string
+	for _, d := range Artifacts(p) {
+		switch d.ID {
+		case core.ArtifactDesignRules:
+			rulesMD = d.Body
+		case core.ArtifactSurvey:
+			surveyMD = d.Body
+		}
+	}
+	if !strings.Contains(rulesMD, "Referensi desain") || !strings.Contains(rulesMD, "Duolingo") {
+		t.Fatalf("design-rules markdown missing reference:\n%s", rulesMD)
+	}
+	if !strings.Contains(surveyMD, "Duolingo") {
+		t.Fatalf("survey markdown missing reference:\n%s", surveyMD)
+	}
+}
+
 func TestWriteDocsIncludesDesignAndSpecJSON(t *testing.T) {
 	dir := t.TempDir()
 	p := &core.Project{Name: "Klinik", Dir: dir, UI: sampleUI(), Flows: []core.Flow{{ID: "FLOW-001", Name: "Cek", PageIDs: []string{"antrean"}}}}

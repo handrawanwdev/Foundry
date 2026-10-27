@@ -45,9 +45,11 @@ Do not write application code. Do not modify files.
 Produce a blueprint a developer or AI coding agent can follow, sized to THIS project. Do not design a toy that merely runs,
 and do not add parts the project does not need.
 
-Analyze what applies: goal, problem, users, roles, workflows, core features, data, interfaces and integrations,
-platform/device/hardware, constraints (technology, performance, resources, compliance), failure handling, security, quality.
-Mark assumptions; if something essential is unknown, record it as an assumption instead of inventing it.
+` + analysisDomains + `
+
+` + analysisRules + `
+
+` + adaptiveSurveyRules + `
 
 Write every human-readable text in the same language as the story.
 
@@ -76,7 +78,6 @@ in the blueprint. For other software
 into an artifact, marked as recommendation when the user did not name them.
 When modules exchange domain events, list them (name domain.happened, producer module, consumers) in blueprint.events.events.
 Set performance.budget only when the story or the survey gives a reason; otherwise leave it empty.
-Every requirement must be covered by at least one feature. Every feature needs 2-6 concrete sub-features.
 
 Blueprint rules:
 - modules/ are domain boundaries (identity, the core business, files, audit, …), never folders of file types (controllers/, services/).
@@ -98,8 +99,10 @@ Do not use the ids requirements, survey-decisions, architecture, technology, des
 `)
 	areaGuide(&b, p)
 	b.WriteString(scopeRules)
+	b.WriteString(traceabilityRules)
+	b.WriteString(consistencyRules)
+	b.WriteString(outputValidationRules)
 	b.WriteString(`
-
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
   "name": "short product name",

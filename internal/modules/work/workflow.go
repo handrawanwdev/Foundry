@@ -42,6 +42,8 @@ const commandRules = `Command rules:
 - one command is one coherent unit of work an agent can finish and verify on its own.
 - derive the commands and their order from THIS blueprint and the real dependencies, not from a fixed list of phases.
 - depends_on lists only the commands whose result this one needs (a contract, schema, module, interface). Commands without such a need do not depend on each other, so they can be done in parallel. No cycles, no self dependency.
+- a business rule that is a data invariant (stock never negative, a transfer is atomic) becomes an instruction and an acceptance criterion with a test; a transaction must fail without partial change. Never a generic "implement all features".
+- access by role is explicit: a command that changes protected data names the permission(s) from authz that gate the action, and its acceptance criteria prove an actor without the permission is refused.
 - artifacts lists the ids of the blueprint artifacts the command implements or must follow (from the list above); at least one. system-overview is a plain-language explanation for humans; do not add a command whose only job is to write or implement it.
 - when the blueprint has design-rules and layout-spec, every command that builds or changes screens lists both, and its instructions name the page and shell ids of layout-spec it implements; the design reaches the code only through these commands. Every page id of layout-spec must be named by at least one command that lists layout-spec.
 - an API, migration or backend command that does not build screens does not list the design artifacts; only commands that name page ids do.
@@ -134,7 +136,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
-	
+
 	// Use artifact summaries only (not full bodies) to reduce context size
 	b.WriteString("BLUEPRINT ARTIFACTS (summaries only):\n")
 	for _, d := range docs {
@@ -142,11 +144,11 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\n")
 	b.WriteString(precedenceRules)
-	
+
 	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Rejected != "" {
 		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + w.Request.Rejected + "\n\n")
 	}
-	
+
 	b.WriteString(`SKETCH PHASE - Generate command skeleton only:
 - Create 3-25 commands that cover all MUST requirements
 - For each command, provide ONLY: id, name, objective, depends_on, artifacts (IDs), covers (requirement IDs)
@@ -172,10 +174,10 @@ func workflowDetailBatchPrompt(p *core.Project, docs []core.Artifact) string {
 Write every human-readable text in the same language as the story.
 
 PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
-	
+
 	w := p.Workflow
 	b.WriteString("CURRENT COMMANDS (skeleton):\n" + mustJSON(w.Commands) + "\n\n")
-	
+
 	// Find commands that need details (instructions empty)
 	var needsDetails []core.Command
 	for _, cmd := range w.Commands {
@@ -183,20 +185,20 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 			needsDetails = append(needsDetails, cmd)
 		}
 	}
-	
+
 	// Process in batches of 5 commands
 	batchSize := 5
 	if len(needsDetails) < batchSize {
 		batchSize = len(needsDetails)
 	}
 	batch := needsDetails[:batchSize]
-	
+
 	b.WriteString(fmt.Sprintf("DETAIL PHASE - Fill in details for these %d commands:\n", len(batch)))
 	for _, cmd := range batch {
 		b.WriteString(fmt.Sprintf("- %s: %s\n", cmd.ID, cmd.Name))
 	}
 	b.WriteString("\n")
-	
+
 	// Include full artifact bodies only for artifacts referenced by this batch
 	neededArtifacts := make(map[string]bool)
 	for _, cmd := range batch {
@@ -204,7 +206,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 			neededArtifacts[art.ID] = true
 		}
 	}
-	
+
 	b.WriteString("BLUEPRINT ARTIFACTS (full details for this batch only):\n")
 	for _, d := range docs {
 		if neededArtifacts[d.ID] {
@@ -217,7 +219,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\n")
 	b.WriteString(precedenceRules)
-	
+
 	b.WriteString(`For each command in the batch, provide:
 - context: background and why this command exists
 - instructions: specific Markdown instructions (what to build/change, behavior, edge cases, which artifact sections to follow). Never generic. Understandable without this conversation.
@@ -722,12 +724,12 @@ func validateSketch(cmds []core.Command, hashes map[string]string) []workflow.Is
 	for id := range hashes {
 		exists[id] = true
 	}
-	
+
 	var issues []workflow.Issue
 	add := func(id, format string, a ...any) {
 		issues = append(issues, workflow.Issue{Command: id, Message: fmt.Sprintf(format, a...)})
 	}
-	
+
 	// Check for duplicate/missing IDs
 	ids := map[string]bool{}
 	for _, c := range cmds {
@@ -740,7 +742,7 @@ func validateSketch(cmds []core.Command, hashes map[string]string) []workflow.Is
 		}
 		ids[c.ID] = true
 	}
-	
+
 	// Check dependencies and artifacts (but NOT instructions)
 	for _, c := range cmds {
 		if c.ID == "" {
@@ -770,12 +772,12 @@ func validateSketch(cmds []core.Command, hashes map[string]string) []workflow.Is
 			}
 		}
 	}
-	
+
 	// Check for cycles
 	if cycle := workflow.Cycle(cmds); len(cycle) > 0 {
 		add(cycle[0], "dependency melingkar: %s", strings.Join(cycle, " → "))
 	}
-	
+
 	return issues
 }
 

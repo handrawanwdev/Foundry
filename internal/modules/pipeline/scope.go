@@ -44,6 +44,9 @@ func scopeBlockers(p *core.Project) []string {
 	if n := len(core.Errors(core.RequirementCoverageIssues(p.Requirements, p.Features))); n > 0 {
 		out = append(out, fmt.Sprintf("keterlacakan requirement: %d requirement tidak terhubung ke feature atau merujuk requirement yang tidak ada", n))
 	}
+	if n := len(core.Errors(core.ConsistencyIssues(p))); n > 0 {
+		out = append(out, fmt.Sprintf("konsistensi antarartefak: %d konflik wajib diperbaiki", n))
+	}
 	for _, d := range p.OpenCritical() {
 		out = append(out, fmt.Sprintf("keputusan kritis %s belum diputuskan: %s", d.ID, d.Text))
 	}

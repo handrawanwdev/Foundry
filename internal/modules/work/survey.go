@@ -99,6 +99,9 @@ Never turn an open answer into a constraint, and do not ask again what the story
 	} else {
 		b.WriteString("- Mandatory constraints: none given\n")
 	}
+	if s.DesignReference != "" {
+		fmt.Fprintf(&b, "- Design reference/template (design direction, not a constraint): %s\n", s.DesignReference)
+	}
 	if s.Latency != "" {
 		fmt.Fprintf(&b, "- Latency budget p95 (earlier answer): < %s ms\n", s.Latency)
 	}

@@ -116,6 +116,10 @@ export function TellPage() {
               <textarea rows={3} maxLength={4000} value={survey.constraints ?? ""} onChange={(e) => set({ constraints: e.target.value })}
                 placeholder="Mis. wajib PostgreSQL; integrasi dengan sistem kasir yang ada; harus jalan di server sendiri; tidak boleh pakai layanan berbayar." />
             </label>
+            <label className="survey-wide">Referensi desain / template (opsional)
+              <input type="text" value={survey.design_reference ?? ""} onChange={(e) => set({ design_reference: e.target.value })}
+                placeholder="Mis. Duolingo; YouTube; Material 3; template minimalis — Foundry menurunkan aturan desain, bukan menyalin merek/aset." />
+            </label>
           </div>
         </details>
       </div>

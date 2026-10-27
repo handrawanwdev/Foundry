@@ -168,6 +168,26 @@ func issueMessages(issues []Issue) string {
 	return strings.Join(out, "\n")
 }
 
+// The design reference a user asked for must be recorded on the rules, so
+// the derived tokens, components and patterns stay traceable to the template.
+func TestDesignReferenceMustBeRecorded(t *testing.T) {
+	p := uxProject()
+	p.Survey = &Survey{DesignReference: "Duolingo"}
+	d := uxDesign()
+	if msgs := issueMessages(p.DesignIssues(d)); !strings.Contains(msgs, "referensi desain") {
+		t.Fatalf("missing reference error:\n%s", msgs)
+	}
+	d.Rules.Reference = "Duolingo"
+	if errs := Errors(p.DesignIssues(d)); len(errs) != 0 {
+		t.Fatalf("recorded reference still errors: %+v", errs)
+	}
+	// No reference asked, no requirement.
+	p.Survey = &Survey{}
+	if msgs := issueMessages(p.DesignIssues(uxDesign())); strings.Contains(msgs, "referensi desain") {
+		t.Fatalf("no reference asked, but flagged:\n%s", msgs)
+	}
+}
+
 func TestVisualSummaryNeverInventsPass(t *testing.T) {
 	pages := []LayoutPage{{ID: "a"}, {ID: "b"}}
 	var v *VisualAudit

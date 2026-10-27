@@ -46,6 +46,11 @@ const (
 // DesignRules are the rules a coding agent applies to every screen.
 type DesignRules struct {
 	Source string `json:"source"`
+	// Reference is the design template or product the user asked the UI to
+	// follow ("Duolingo", "YouTube", a custom template). The rules below are
+	// derived from it, adapted to this product; the reference itself is the
+	// user's words and is never copied as brand identity or assets.
+	Reference string `json:"reference,omitempty"`
 	// Direction is the visual direction in one sentence.
 	Direction  string          `json:"direction,omitempty"`
 	Principles []string        `json:"principles"`
@@ -308,19 +313,27 @@ var lengthLiteral = regexp.MustCompile(`(?i)\b\d+(?:\.\d+)?(?:px|rem|em)\b`)
 // ValidID holds for design ids: lowercase letters, digits and dashes.
 func ValidID(id string) bool { return idPattern.MatchString(id) }
 
-// Issue levels: an error blocks saving and finalizing, a warning is
-// shown only.
+// Issue levels: an error blocks saving and finalizing, a warning is shown
+// for review, info is a non-blocking recommendation.
 const (
 	IssueError   = "error"
 	IssueWarning = "warning"
+	IssueInfo    = "info"
 )
 
-// Issue is one problem of structured blueprint data (design, use cases,
-// acceptance criteria, decisions).
+// Issue is one problem or recommendation of structured blueprint data
+// (design, use cases, acceptance criteria, decisions, cross-artifact
+// consistency). Level is error (blocks), warning (should be reviewed) or
+// info (non-blocking suggestion).
 type Issue struct {
 	Level   string `json:"level"`
-	Where   string `json:"where,omitempty"` // rules | layout | page:<id> | shell:<id> | FLOW-001 | REQ-001 | DEC-001
+	Where   string `json:"where,omitempty"` // rules | layout | page:<id> | shell:<id> | FLOW-001 | REQ-001 | DEC-001 | module:<id> | feature:<id> | entity:<id>
 	Message string `json:"message"`
+	// Impact is the consequence if the problem stays; Suggestion how to
+	// resolve it. They are set by cross-artifact checks and stay empty on
+	// single-artifact schema errors.
+	Impact     string `json:"impact,omitempty"`
+	Suggestion string `json:"suggestion,omitempty"`
 }
 
 // Invalid refuses structured data with errors. Subject names what was
@@ -402,6 +415,15 @@ func (p *Project) DesignIssues(d *UIDesign) []Issue {
 		add(IssueError, "rules", "aturan desain belum ada")
 	} else {
 		out = append(out, rulesIssues(d.Rules, p.UXPlatforms())...)
+		// The user asked the UI to follow a design reference; the rules must
+		// record it so the derived tokens, components and patterns stay
+		// traceable to the template. A design that ignored the reference is
+		// incomplete.
+		if p.Survey != nil {
+			if ref := strings.TrimSpace(p.Survey.DesignReference); ref != "" && strings.TrimSpace(d.Rules.Reference) == "" {
+				add(IssueError, "rules", "referensi desain %q belum dicatat pada rules.reference; turunkan aturan dari referensi itu dan catat namanya", ref)
+			}
+		}
 	}
 	if d == nil || d.Layout == nil || len(d.Layout.Pages) == 0 {
 		add(IssueError, "layout", "spesifikasi layout belum berisi halaman")

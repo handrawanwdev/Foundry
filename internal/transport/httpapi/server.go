@@ -367,6 +367,7 @@ func (s *Server) Handler() http.Handler {
 		docs := spec.Artifacts(p)
 		issues := append(p.AreaIssues(core.AreaUseCases), p.AreaIssues(core.AreaAcceptance)...)
 		issues = append(issues, core.DecisionIssues(p.Decisions)...)
+		issues = append(issues, core.ConsistencyIssues(p)...)
 		if issues == nil {
 			issues = []core.Issue{}
 		}

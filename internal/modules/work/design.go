@@ -47,7 +47,7 @@ const designShape = `{
  "navigation": [{"name": "Operasional", "items": [{"label": "Antrean", "page": "antrean", "primary": true}]}],
  "assumptions": [""], "unknowns": [""],
  "decisions": [{"subject": "antrean", "topic": "kepadatan", "choice": "table", "why": ["operator membandingkan banyak baris"], "basis": ["GOAL-1", "FLOW-001", "Appointment"], "source": "fact|assumption|constraint", "alternative": ""}],
- "rules": {"source": "new|existing", "direction": "", "principles": [""], "ux_guidelines": [""],
+ "rules": {"source": "new|existing", "reference": "", "direction": "", "principles": [""], "ux_guidelines": [""],
    "tokens": {"colors": [{"name": "action.primary", "value": "#1f6feb", "use": ""}], "typography": [{"name": "type.body", "value": "Inter 14px/20px 400", "use": ""}],
               "spacing": [{"name": "space.md", "value": "16px", "use": ""}], "radius": [], "shadow": [], "breakpoints": [{"name": "breakpoint.tablet", "value": "768px", "use": ""}]},
    "components": [{"name": "Button", "use": "", "variants": ["primary", "secondary"], "rules": ["hover/focus/active/disabled: ..."], "source": ""}],
@@ -67,6 +67,7 @@ const designShape = `{
 
 const designRules = `DESIGN RULES (rules)
 - source: "new", or "existing" when the product already has a frontend: its tokens and components ARE the design system; keep them and add only what is missing.
+- reference: when the DESIGN REFERENCE section names a template or product, put it in reference (the user's words). The rules are derived from it, not a restatement of it: never copy its logo, brand identity, proprietary assets or exact screens; adapt its visual characteristics to THIS product's tasks and data. When no reference is given, leave reference empty.
 - principles: 3-7 principles for THIS product and its users, each one actionable and checkable ("operators compare many rows: dense tables, not cards"). Never generic ("modern and clean").
 - ux_guidelines: concrete rules for navigation, forms and validation, feedback, errors, empty states, confirmation of destructive actions.
 - tokens: colors, typography and spacing are required; radius, shadow, breakpoints when used. Semantic names (action.primary, text.secondary, surface.page, status.error, type.body, space.md, radius.md, breakpoint.tablet), concrete values (hex/rgb, px/rem, font family size/line-height weight), use = when to use it.
@@ -160,6 +161,12 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	// system still wins.
 	b.WriteString(designTemplate + "\n")
 
+	// A user-provided design reference (Duolingo, YouTube, a custom template)
+	// becomes concrete rules, adapted to this product, never cloned.
+	if ref := designReference(p); ref != "" {
+		b.WriteString(ref + "\n")
+	}
+
 	// Add learned patterns from previous projects
 	if learnedRules := GetLearnedDesignRules(p, ""); learnedRules != "" {
 		b.WriteString(learnedRules + "\n")
@@ -210,6 +217,29 @@ func requiredStates() string {
 		}
 	}
 	return strings.Join(out, "; ")
+}
+
+// designReference turns the user's design reference into a design-stage
+// instruction: extract the characteristics that matter, adapt them to this
+// product, never clone the reference's brand or assets, and record the
+// reference so the rules stay traceable.
+func designReference(p *core.Project) string {
+	if p == nil || p.Survey == nil {
+		return ""
+	}
+	ref := strings.TrimSpace(p.Survey.DesignReference)
+	if ref == "" {
+		return ""
+	}
+	return `DESIGN REFERENCE (the user asked the UI to follow this template or product):
+` + ref + `
+Translate it into THIS product's design rules, adapted to its function, users and data:
+- Identify the characteristics that matter: color palette and mood, typography (family, scale, weight), spacing and radius, elevation, layout and navigation structure, component patterns, interaction and motion, content tone.
+- Convert them into concrete values in the structured output: tokens (colors, typography, spacing, radius, shadow, breakpoints), components with use and variants, principles, interaction and responsive rules. Do not answer with the reference name alone; derive the rules.
+- Adapt, never clone: keep the feel but fit THIS product's tasks and data volume. Do not copy logos, brand identity, proprietary assets or exact screens, and do not reproduce copyrighted visual material.
+- The existing design system (if any) still wins over the reference; the reference fills only what the product needs.
+- Put the reference in rules.reference (the user's words). If the reference is too thin or ambiguous to derive from, choose the most fitting pattern and record the assumption in assumptions, naming the reference.
+`
 }
 
 // uxBrief is the UX input: who the users are, what they must accomplish,
@@ -606,6 +636,7 @@ func normRules(r core.DesignRules) *core.DesignRules {
 	if r.Source == "" {
 		r.Source = core.RulesNew
 	}
+	r.Reference = strings.TrimSpace(r.Reference)
 	r.Direction = strings.TrimSpace(r.Direction)
 	for _, l := range []*[]string{&r.Principles, &r.UX, &r.Hierarchy, &r.Accessibility, &r.Responsive, &r.Interaction, &r.Sources} {
 		*l = nonEmpty(*l)

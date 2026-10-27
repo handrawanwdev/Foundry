@@ -17,6 +17,7 @@ export interface Survey {
   architecture?: SurveyArch | "";
   priorities?: SurveyPriority[];
   constraints?: string;
+  design_reference?: string;
   // First survey; still honored when an older project has them.
   latency?: string;
   webhook?: string;
@@ -155,7 +156,7 @@ export interface DesignTokens {
 export interface ComponentRule { name: string; use: string; variants?: string[]; rules?: string[]; source?: string }
 // Design rules (internal/core/uidesign.go): what every screen follows.
 export interface DesignRules {
-  source: "new" | "existing"; direction?: string; principles: string[] | null; ux_guidelines: string[] | null;
+  source: "new" | "existing"; reference?: string; direction?: string; principles: string[] | null; ux_guidelines: string[] | null;
   tokens: DesignTokens; components: ComponentRule[] | null; visual_hierarchy?: string[]; accessibility: string[] | null;
   responsive: string[] | null; interaction?: string[]; platforms?: { platform: string; rules: string[] }[]; sources?: string[];
 }
@@ -196,7 +197,7 @@ export interface LayoutSpec {
 export interface UIDesign {
   format?: number; rules?: DesignRules; layout?: LayoutSpec; request?: ChangeRequest; version: number; tech_version?: number; updated_at: string;
 }
-export interface DesignIssue { level: "error" | "warning"; where?: string; message: string }
+export interface DesignIssue { level: "error" | "warning" | "info"; where?: string; message: string; impact?: string; suggestion?: string }
 export interface DesignView {
   design: UIDesign | null; issues: DesignIssue[]; has_ui: boolean; platforms: string[] | null;
   vocabulary: { patterns: string[]; states: UIState[]; required_states: Record<string, UIState[]>; platforms: string[];

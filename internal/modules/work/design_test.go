@@ -158,3 +158,69 @@ func TestApplyDesignFillsRequiredStatesAndKeepsTopics(t *testing.T) {
 		}
 	}
 }
+
+// A user-provided design reference is injected into the design prompt with
+// instructions to derive concrete rules and record the reference — never to
+// answer with the name alone.
+func TestDesignPromptCarriesDesignReference(t *testing.T) {
+	p := &core.Project{Story: "Aplikasi belajar bahasa", Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}},
+		Survey: &core.Survey{DesignReference: "Duolingo"}}
+	prompt := DesignPrompt(p)
+	for _, want := range []string{"DESIGN REFERENCE (the user asked", "Duolingo", "rules.reference", "Adapt, never clone", `"reference": ""`} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt missing %q", want)
+		}
+	}
+	// No reference, no section.
+	p2 := &core.Project{Story: "Aplikasi belajar bahasa", Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}}}
+	if strings.Contains(DesignPrompt(p2), "DESIGN REFERENCE (the user asked") {
+		t.Fatal("no reference given, but section present")
+	}
+}
+
+// A reference-derived design records the reference and lands concrete tokens
+// and components, not just the reference name.
+func TestApplyDesignRecordsReferenceWithConcreteRules(t *testing.T) {
+	p := &core.Project{Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}},
+		Survey: &core.Survey{DesignReference: "Duolingo"}}
+	raw := `{"rules": {"source": "new", "reference": "Duolingo", "direction": "Ceria, bulat, progres bertahap",
+	  "principles": ["Belajar bertahap: satu pelajaran pendek per sesi", "Progres selalu terlihat"],
+	  "ux_guidelines": ["Umpan balik langsung setelah jawaban"], "accessibility": ["Kontras AA"], "responsive": ["Satu kolom di mobile"],
+	  "tokens": {"colors": [{"name": "action.primary", "value": "#58cc02"}], "typography": [{"name": "type.body", "value": "Nunito 16px/24px 600"}],
+	              "spacing": [{"name": "space.md", "value": "16px"}], "radius": [{"name": "radius.md", "value": "12px"}]},
+	  "components": [{"name": "ProgressBar", "use": "progres pelajaran", "variants": ["default", "crown"]},
+	                 {"name": "LessonCard", "use": "satu pelajaran", "variants": ["locked", "active"]}]},
+	 "users": [{"role": "Pelajar", "platform": "web", "tasks": ["ambil pelajaran"]}],
+	 "goals": [{"id": "GOAL-1", "role": "Pelajar", "text": "Selesaikan pelajaran harian"}],
+	 "navigation": [{"name": "Belajar", "items": [{"label": "Pelajaran", "page": "pelajaran"}]}],
+	 "decisions": [{"subject": "pelajaran", "choice": "cards", "why": ["browse set kecil dengan identitas visual"], "basis": ["GOAL-1"], "source": "fact"}],
+	 "pages": [{"id": "pelajaran", "name": "Pelajaran", "platform": "web", "route": "/pelajaran", "purpose": "Ambil pelajaran", "goal": "GOAL-1", "pattern": "cards",
+	   "sections": [{"id": "daftar", "name": "Daftar pelajaran", "content": ["Kartu pelajaran"], "components": ["LessonCard"]}],
+	   "states": {"loading": "Memuat"}}]}`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	r := p.UI.Rules
+	if r.Reference != "Duolingo" {
+		t.Fatalf("reference = %q, want Duolingo", r.Reference)
+	}
+	if len(r.Tokens.Colors) != 1 || len(r.Tokens.Radius) != 1 || len(r.Components) != 2 {
+		t.Fatalf("concrete rules not landed: colors=%d radius=%d components=%d", len(r.Tokens.Colors), len(r.Tokens.Radius), len(r.Components))
+	}
+	// A complete reference-derived design has no errors.
+	if errs := core.Errors(p.DesignIssues(nil)); len(errs) != 0 {
+		t.Fatalf("reference design has errors: %+v", errs)
+	}
+}
+
+// A design that ignores the reference is refused as a whole: the rules must
+// record the reference before the design lands.
+func TestApplyDesignRefusesMissingReference(t *testing.T) {
+	p := &core.Project{Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}},
+		Survey: &core.Survey{DesignReference: "Duolingo"}}
+	// existingDesign has no reference field; the reference check must refuse it.
+	err := ApplyDesign(p, existingDesign)
+	if err == nil || !strings.Contains(err.Error(), "referensi desain") {
+		t.Fatalf("err = %v, want missing-reference refusal", err)
+	}
+}

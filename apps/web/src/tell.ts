@@ -1,9 +1,17 @@
 import type { Project, Survey, SurveyArch, SurveyKind, SurveyPriority, SurveyStage, SurveyUsers } from "./types";
 
+// The seven planning domains Foundry analyzes the story across, shown while
+// it understands the request. They mirror the discovery prompt's analysisDomains
+// (internal/modules/work/domains.go): a reasoning framework, not seven
+// artifacts or files. Keep the two in sync.
 export const TELL_ANALYSIS = [
-  "Bisnis", "Pengguna & peran", "Fitur & sub-fitur", "Alur kerja", "Data", "Integrasi", "Keamanan",
-  "Platform & perangkat", "Modul domain", "Auth & izin", "Penyimpanan file", "Worker", "Performa", "Struktur project",
-  "Survey FOUNDRY", "Konflik kebutuhan",
+  "Product & Business",
+  "Domain & Data",
+  "Security & Access",
+  "Experience & Platform",
+  "Architecture & Infrastructure",
+  "Quality & Delivery",
+  "Planning Validation",
 ];
 
 type Option<T extends string> = { id: T; label: string; hint?: string };
@@ -70,6 +78,7 @@ export const defaultSurvey = (s?: Survey | null, p?: Project | null): Survey => 
     architecture: s?.architecture ?? (existing ? "existing" : ""),
     priorities: s?.priorities ?? [],
     constraints: s?.constraints ?? "",
+    design_reference: s?.design_reference ?? "",
   };
 };
 

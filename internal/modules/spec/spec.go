@@ -212,6 +212,11 @@ func surveyMarkdown(p *core.Project) string {
 	} else {
 		row("Batasan wajib", "Tidak ada yang disebutkan", fromDefault)
 	}
+	if s.DesignReference != "" {
+		row("Referensi desain", s.DesignReference, fromUser)
+	} else {
+		row("Referensi desain", "Tidak ada", fromDefault)
+	}
 	b.WriteString("\nKualitas dasar (validasi input, kontrol akses sesuai pengguna, test alur utama) tetap berlaku walau tidak dipilih sebagai prioritas. " +
 		"Konflik antarjawaban tercatat di Keputusan, Asumsi & Risiko.\n")
 	return b.String()

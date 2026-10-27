@@ -23,6 +23,9 @@ func designRulesMarkdown(p *core.Project) string {
 	if len(r.Sources) > 0 {
 		fmt.Fprintf(&b, "Dibaca dari: %s\n\n", codeList(r.Sources))
 	}
+	if r.Reference != "" {
+		fmt.Fprintf(&b, "Referensi desain: **%s** — aturan di bawah diturunkan darinya dan disesuaikan dengan produk ini; bukan salinan merek, logo, atau aset proprietari.\n\n", r.Reference)
+	}
 	if r.Direction != "" {
 		fmt.Fprintf(&b, "Arah visual: %s\n\n", r.Direction)
 	}

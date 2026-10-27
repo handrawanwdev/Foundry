@@ -165,6 +165,11 @@ type Survey struct {
 	// Constraints are the user's mandatory constraints in their words:
 	// required stack, integrations, compatibility, limits, prohibitions.
 	Constraints string `json:"constraints,omitempty"`
+	// DesignReference is a design template or product the user asked the
+	// UI to follow ("Duolingo", "YouTube", "Material 3", a custom template).
+	// It is a design direction, not a constraint: the design stage turns it
+	// into concrete rules and records it on DesignRules.Reference.
+	DesignReference string `json:"design_reference,omitempty"`
 
 	// First survey: Latency and Webhook are still honored, Services and
 	// Stack move to Architecture and Constraints when the project loads.
@@ -183,6 +188,7 @@ func (s *Survey) FillDefaults() {
 	trim := func(v string) string { return strings.ToLower(strings.TrimSpace(v)) }
 	s.Users, s.Stage, s.Architecture = trim(s.Users), trim(s.Stage), trim(s.Architecture)
 	s.Constraints = strings.TrimSpace(s.Constraints)
+	s.DesignReference = strings.TrimSpace(s.DesignReference)
 	switch s.Users { // first survey
 	case "team":
 		s.Users = SurveyUsersInternal
