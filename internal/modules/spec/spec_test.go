@@ -283,3 +283,28 @@ func TestWriteDocsScope(t *testing.T) {
 		t.Errorf("traceability.md kept: %v", err)
 	}
 }
+
+// A requirement with no feature is retained in the blueprint export: it is
+// rendered into the requirements, acceptance and traceability documents,
+// never silently dropped from the artifacts.
+func TestOrphanedRequirementRetainedInExport(t *testing.T) {
+	p := &core.Project{Name: "Pasar", Stage: core.StageDesign,
+		Requirements: []core.Requirement{{ID: "REQ-010", Text: "Performa & latency: data pasar disajikan dari cache", Priority: "MUST",
+			Acceptance: []core.Criterion{{ID: "REQ-010-AC1", Kind: "performance", Text: "Request path tanpa panggilan upstream sinkron"}}}},
+		Features: []core.Feature{{ID: "FEAT-001", Name: "Autentikasi"}},
+		Done:     []string{"Test lulus"},
+	}
+	docs := Artifacts(p)
+	reqDoc := slices.IndexFunc(docs, func(a core.Artifact) bool { return a.ID == "requirements" })
+	if reqDoc < 0 || !strings.Contains(docs[reqDoc].Body, "REQ-010") || !strings.Contains(docs[reqDoc].Body, "Performa & latency") {
+		t.Fatalf("requirements artifact lost REQ-010: %+v", docs)
+	}
+	accDoc := slices.IndexFunc(docs, func(a core.Artifact) bool { return a.ID == core.ArtifactAcceptance })
+	if accDoc < 0 || !strings.Contains(docs[accDoc].Body, "REQ-010-AC1") {
+		t.Fatalf("acceptance artifact lost REQ-010: %+v", docs)
+	}
+	tr := Files(p)["traceability.md"]
+	if !strings.Contains(tr, "REQ-010") || !strings.Contains(tr, "REQ-010-AC1") {
+		t.Fatalf("traceability lost REQ-010:\n%s", tr)
+	}
+}

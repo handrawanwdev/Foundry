@@ -2,8 +2,10 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // The blueprint is complete when every area that applies to the project
@@ -275,6 +277,125 @@ func AcceptanceIssues(reqs []Requirement, done []string) []Issue {
 	}
 	if len(reqs) > 0 && len(done) == 0 {
 		add(IssueError, ArtifactAcceptance, "Definition of Done belum diisi")
+	}
+	return out
+}
+
+// ---------- Requirement → feature traceability ----------
+
+// RequirementCoverageIssues validates that every requirement is covered by
+// at least one feature and that no feature references a requirement that
+// does not exist. An orphaned requirement can never be built or accepted,
+// so both are errors that block finalize.
+func RequirementCoverageIssues(reqs []Requirement, feats []Feature) []Issue {
+	var out []Issue
+	covered := map[string]int{}
+	for _, f := range feats {
+		for _, r := range f.RequirementIDs {
+			covered[r]++
+		}
+	}
+	for _, r := range reqs {
+		if covered[r.ID] == 0 {
+			out = append(out, Issue{Level: IssueError, Where: r.ID, Message: "tidak terhubung ke feature mana pun"})
+		}
+	}
+	ids := make(map[string]bool, len(reqs))
+	for _, r := range reqs {
+		ids[r.ID] = true
+	}
+	for _, f := range feats {
+		seen := map[string]bool{}
+		for _, r := range f.RequirementIDs {
+			if !ids[r] && !seen[r] {
+				out = append(out, Issue{Level: IssueError, Where: f.ID, Message: fmt.Sprintf("merujuk requirement %q yang tidak ada", r)})
+				seen[r] = true
+			}
+		}
+	}
+	return out
+}
+
+// conceptTerm maps words that name the same system need onto one term, so a
+// requirement is matched to a feature by meaning, not by identical words.
+// "latency", "performa" and "cache" name the performance/caching need;
+// "pasar", "market" and "quote" name market data.
+var conceptTerm = map[string]string{
+	"performance": "performa", "performansi": "performa", "latency": "performa", "latensi": "performa",
+	"kecepatan": "performa", "throughput": "performa", "cache": "performa", "caching": "performa",
+	"responsif": "performa", "cepat": "performa",
+	"market": "pasar", "harga": "pasar", "price": "pasar", "quote": "pasar", "kutipan": "pasar",
+	"saham": "pasar", "stock": "pasar", "bursa": "pasar", "trading": "pasar", "orderbook": "pasar",
+}
+
+// stopTerms are words that name no system need on their own; matching on
+// them would tie every feature to every requirement.
+var stopTerms = map[string]bool{
+	"yang": true, "dan": true, "untuk": true, "dari": true, "dengan": true, "dalam": true, "pada": true,
+	"atau": true, "tidak": true, "ini": true, "itu": true, "adalah": true, "akan": true, "bisa": true,
+	"harus": true, "dapat": true, "mampu": true, "secara": true, "sebagai": true, "agar": true,
+	"the": true, "a": true, "an": true, "and": true, "or": true, "of": true, "to": true, "in": true,
+	"on": true, "for": true, "with": true, "is": true, "are": true, "be": true, "must": true,
+	"should": true, "can": true, "will": true, "that": true, "this": true,
+	"pengguna": true, "user": true, "sistem": true, "system": true, "aplikasi": true, "application": true,
+	"data": true, "fitur": true, "feature": true, "tanpa": true, "ada": true,
+}
+
+// MapRequirementToFeature links a requirement to the feature that covers it
+// by meaning: the feature whose name, description and sub-features share
+// the most normalized meaning with the requirement text. It returns "" when
+// no feature shares any meaning, so the caller can refuse instead of
+// inventing a link.
+func MapRequirementToFeature(req Requirement, feats []Feature) string {
+	best, bestScore := "", 0.0
+	for _, f := range feats {
+		if s := requirementFeatureScore(req.Text, f); s > bestScore {
+			best, bestScore = f.ID, s
+		}
+	}
+	return best
+}
+
+func requirementFeatureScore(text string, f Feature) float64 {
+	var b strings.Builder
+	b.WriteString(f.Name)
+	b.WriteString(" ")
+	b.WriteString(f.Description)
+	for _, s := range f.SubFeatures {
+		b.WriteString(" ")
+		b.WriteString(s.Name)
+	}
+	req := meaningfulTerms(text)
+	feat := meaningfulTerms(b.String())
+	if len(req) == 0 || len(feat) == 0 {
+		return 0
+	}
+	featCount := map[string]int{}
+	for _, t := range feat {
+		featCount[t]++
+	}
+	var shared float64
+	for _, t := range req {
+		if n := featCount[t]; n > 0 {
+			shared++
+			featCount[t] = n - 1
+		}
+	}
+	return shared / (math.Sqrt(float64(len(req))) * math.Sqrt(float64(len(feat))))
+}
+
+func meaningfulTerms(s string) []string {
+	var out []string
+	for _, t := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if len(t) < 2 || stopTerms[t] {
+			continue
+		}
+		if c, ok := conceptTerm[t]; ok {
+			t = c
+		}
+		out = append(out, t)
 	}
 	return out
 }

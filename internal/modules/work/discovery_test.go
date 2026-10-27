@@ -155,6 +155,39 @@ func TestCompleteBlueprintKeepsAIAndOverridesPattern(t *testing.T) {
 	}
 }
 
+// A requirement the AI left out of every feature is kept and mapped to the
+// feature that matches it by meaning, not dropped or refused.
+func TestApplyDiscoveryMapsOrphanRequirement(t *testing.T) {
+	p := &core.Project{Story: "Aplikasi data pasar saham"}
+	raw := `{
+	  "name": "Terminal Pasar",
+	  "discovery": {"summary": "Data pasar", "data": ["Quote: id, simbol, harga"]},
+	  "requirements": [
+	    {"id": "R1", "text": "Pengguna melihat harga saham", "priority": "MUST",
+	     "acceptance": [{"kind": "behavior", "text": "Harga tampil"}]},
+	    {"id": "R2", "text": "Performa & latency: data pasar disajikan dari cache; tidak ada panggilan upstream sinkron pada request path pengguna", "priority": "MUST"}
+	  ],
+	  "features": [{"id": "F1", "name": "Data Pasar", "description": "Menampilkan harga dan kutipan pasar", "requirement_ids": ["R1"], "platforms": ["backend"]}],
+	  "flows": [{"id": "FL1", "name": "Lihat harga", "feature_id": "F1", "role": "Pengguna", "goal": "Lihat harga",
+	    "steps": ["Buka daftar"], "postconditions": ["Harga tampil"], "failures": ["Data kosong"]}],
+	  "platform": {"targets": [{"kind": "backend"}], "reason": "API"},
+	  "definition_of_done": ["Test lulus"]
+	}`
+	if err := ApplyDiscovery(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Requirements) != 2 {
+		t.Fatalf("requirements = %+v", p.Requirements)
+	}
+	if p.Requirements[1].ID != "REQ-002" {
+		t.Fatalf("requirement id = %s", p.Requirements[1].ID)
+	}
+	f := p.Features[0]
+	if !containsStr(f.RequirementIDs, "REQ-002") {
+		t.Fatalf("REQ-002 not mapped to feature: %+v", f.RequirementIDs)
+	}
+}
+
 func TestDiscoveryPromptAsksForBlueprint(t *testing.T) {
 	p := &core.Project{Story: "Aplikasi klinik pasien buat janji"}
 	got := DiscoveryPrompt(p)

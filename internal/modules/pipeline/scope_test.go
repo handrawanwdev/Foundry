@@ -54,6 +54,29 @@ func TestCriticalDecisionBlocksFinalize(t *testing.T) {
 	}
 }
 
+// A requirement with no feature blocks finalize: it can never be built or
+// accepted, so the blueprint is not complete until it is mapped.
+func TestOrphanedRequirementBlocksFinalize(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	mcpDesigned(t, s)
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Requirements = append(p.Requirements, core.Requirement{
+			ID: "REQ-010", Text: "Performa & latency: data pasar disajikan dari cache", Priority: "MUST",
+			Acceptance: []core.Criterion{{ID: "REQ-010-AC1", Kind: "behavior", Text: "Harga dari cache"}},
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	if b := pipeline.Blockers(p); !slices.ContainsFunc(b, func(s string) bool { return strings.Contains(s, "keterlacakan requirement: 1") }) {
+		t.Fatalf("blockers = %v", b)
+	}
+	if err := s.Finalize(); !errors.Is(err, pipeline.ErrIncomplete) {
+		t.Fatalf("finalize err = %v", err)
+	}
+}
+
 func syncDecisions(t *testing.T, s *pipeline.Service) {
 	t.Helper()
 	if err := s.SyncDecisions(); err != nil {

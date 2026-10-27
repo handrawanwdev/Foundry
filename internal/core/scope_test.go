@@ -97,6 +97,39 @@ func TestAcceptanceIssues(t *testing.T) {
 	}
 }
 
+// Requirement coverage and semantic mapping.
+func TestRequirementCoverageIssues(t *testing.T) {
+	reqs := []Requirement{{ID: "REQ-001", Text: "Buat janji", Priority: "MUST"}, {ID: "REQ-002", Text: "Batal janji", Priority: "SHOULD"}}
+	feats := []Feature{{ID: "FEAT-001", Name: "Janji", RequirementIDs: []string{"REQ-001", "REQ-404"}}}
+	issues := RequirementCoverageIssues(reqs, feats)
+	if !slices.ContainsFunc(issues, func(i Issue) bool {
+		return i.Level == IssueError && i.Where == "REQ-002" && i.Message == "tidak terhubung ke feature mana pun"
+	}) {
+		t.Errorf("orphan not reported: %+v", issues)
+	}
+	if !slices.ContainsFunc(issues, func(i Issue) bool { return i.Where == "FEAT-001" && strings.Contains(i.Message, "REQ-404") }) {
+		t.Errorf("dangling ref not reported: %+v", issues)
+	}
+	if got := RequirementCoverageIssues([]Requirement{{ID: "REQ-001"}}, []Feature{{ID: "FEAT-001", RequirementIDs: []string{"REQ-001"}}}); len(got) != 0 {
+		t.Errorf("clean coverage = %+v", got)
+	}
+}
+
+func TestMapRequirementToFeature(t *testing.T) {
+	feats := []Feature{
+		{ID: "FEAT-001", Name: "Autentikasi", Description: "Login dan sesi pengguna"},
+		{ID: "FEAT-002", Name: "Data Pasar", Description: "Menampilkan harga dan kutipan pasar secara realtime",
+			SubFeatures: []SubFeature{{Name: "Ticker harga"}, {Name: "Order book"}}},
+	}
+	req := Requirement{ID: "REQ-010", Text: "Performa & latency: data pasar disajikan dari cache; tidak ada panggilan upstream sinkron pada request path pengguna"}
+	if got := MapRequirementToFeature(req, feats); got != "FEAT-002" {
+		t.Fatalf("mapped to %q, want FEAT-002", got)
+	}
+	if got := MapRequirementToFeature(Requirement{Text: "kirim email notifikasi"}, feats); got != "" {
+		t.Fatalf("unrelated mapped to %q", got)
+	}
+}
+
 // A critical open decision is what the user must decide; deciding it
 // clears it.
 func TestDecisions(t *testing.T) {

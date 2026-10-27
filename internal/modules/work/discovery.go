@@ -194,10 +194,27 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 		feats = append(feats, nf)
 	}
 	// Every requirement must reach a feature, otherwise it can never be built.
+	// A requirement the AI left out of every feature is kept and linked to
+	// the feature that matches it by meaning; only one with no meaningful
+	// feature is refused, so the AI retries instead of shipping an orphan.
 	covered := map[string]bool{}
 	for _, f := range feats {
 		for _, r := range f.RequirementIDs {
 			covered[r] = true
+		}
+	}
+	for i := range reqs {
+		if covered[reqs[i].ID] {
+			continue
+		}
+		if id := core.MapRequirementToFeature(reqs[i], feats); id != "" {
+			for j := range feats {
+				if feats[j].ID == id {
+					feats[j].RequirementIDs = append(feats[j].RequirementIDs, reqs[i].ID)
+					covered[reqs[i].ID] = true
+					break
+				}
+			}
 		}
 	}
 	for _, r := range reqs {
