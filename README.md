@@ -136,6 +136,21 @@ For a product with screens, Foundry derives the UI/UX from the user goals, use c
 
 The specification is validated: an unknown basis, a page without a decision, a navigation item to a missing page or a missing required state blocks saving and finalizing. The same design is exported as readable Markdown plus JSON for tools, and each command that builds screens must list `design-rules` + `layout-spec` and name the page ids it implements.
 
+### Reusable UI design presets
+
+Foundry seeds the design prompt with a reusable, framework-agnostic **UI design preset** — the design language the coding agent applies before it writes the concrete design rules. A preset is policy, not code: it names the visual direction, the layout blueprint (app shell + hierarchy), the shared components to reuse, the page-pattern rules, the interaction states, the semantic token roles, and the accessibility, responsive and quality checklists. It never names a framework or UI library, so the same preset fits any stack.
+
+Built-in presets:
+
+| Preset | For |
+| ------ | --- |
+| **Clean SaaS Dashboard** | SaaS, dashboards, analytics |
+| **Enterprise Admin** | internal operational systems, RBAC, audit |
+| **Minimal Data Management** | simple data-management (CRUD) apps — the baseline |
+| **Developer Tool** | SDKs, IDEs, API consoles, playgrounds, debuggers |
+
+The preset is detected from the project's story and features (`DetectPreset`), and the design prompt always states it. A product type with its own platform guidance (mobile, e-commerce, content, communication, workflow) has no design-language preset; its platform rules already cover it. An existing project's design system always wins over a preset. Backend, CLI-only, embedded and other screenless products never enter the UI design stage, so no preset is applied to them.
+
 ### Visual quality review
 
 Foundry does not trust a build or unit test as UI proof, and it does not open a browser itself. After a coding agent implements a screen, it (or a browser automation tool) submits a **measured snapshot** per viewport and state: a screenshot file inside the project, the viewport size, and the DOM nodes with bounds, computed styles and accessible attributes. Foundry then checks deterministically:

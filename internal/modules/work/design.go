@@ -154,22 +154,28 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		rejected = d.Request.Rejected
 	}
 	b.WriteString(uxRules + "\n")
-	
+
 	// Add contextual design rules based on product type
 	if _, contextualRules := DetectProductTypeAndRules(p); contextualRules != "" {
 		b.WriteString(contextualRules + "\n")
 	}
-	
+
+	// Add the reusable UI design preset (design language) for this project.
+	// It is framework-agnostic guidance; the existing design system still wins.
+	if preset := DetectPreset(p); preset != nil {
+		b.WriteString(PresetPrompt(preset) + "\n")
+	}
+
 	// Add learned patterns from previous projects
 	if learnedRules := GetLearnedDesignRules(p, ""); learnedRules != "" {
 		b.WriteString(learnedRules + "\n")
 	}
-	
+
 	// Add learned recommendations from project history
 	if recommendations := GetLearnedRecommendations(p, ""); recommendations != "" {
 		b.WriteString(recommendations + "\n")
 	}
-	
+
 	b.WriteString(designRules + "\n")
 	fmt.Fprintf(&b, layoutRules+"\n", strings.Join(core.LayoutPatterns, ", "), strings.Join(core.UIStates, ", "), requiredStates())
 	if !d.Written() {
