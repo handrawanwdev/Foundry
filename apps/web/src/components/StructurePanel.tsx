@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { Elapsed } from "./Elapsed";
 import { isWorking } from "../flow";
 import { STRUCTURE_TYPE, structureState, structureVersion, tree } from "../structure";
 import { changeText, TECH_STATUS } from "../tech";
@@ -44,7 +45,7 @@ export function StructurePanel({ project }: { project: Project }) {
         Deployment diputuskan sendiri dan tidak mengubah layout ini.
       </p>
 
-      {!finalized && s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}”</p>}
+      {!finalized && s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}” <Elapsed started={project.job?.started} /></p>}
 
       {s.proposal && <Proposal p={s.proposal} disabled={busy || finalized} />}
 

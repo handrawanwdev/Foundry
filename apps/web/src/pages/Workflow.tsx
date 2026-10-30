@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { commandState, commandText, dependents, lines, RUN_CLASS, RUN_LABEL, runOf, STATE_LABEL, waveOf } from "../blueprint";
+import { Elapsed } from "../components/Elapsed";
 import { Icon } from "../components/Icon";
 import { Markdown } from "../components/Markdown";
 import { PromptBar } from "../components/PromptBar";
@@ -52,7 +53,7 @@ export function WorkflowPage() {
           Foundry menyusun instruksi untuk coding agent eksternal dari blueprint: tujuan, konteks, dependency, output, dan
           acceptance criteria tiap command. Foundry tidak menjalankannya.
         </p>
-        {writing ? <p><span className="spinner" /> Menyusun workflow…</p> : (
+        {writing ? <p><span className="spinner" /> Menyusun workflow… <Elapsed started={project.job?.started} /></p> : (
           <button className="primary big" disabled={working || locked || pending === "generateWorkflow"}
             onClick={() => void run("generateWorkflow", api.generateWorkflow)}>Susun workflow dari blueprint</button>
         )}

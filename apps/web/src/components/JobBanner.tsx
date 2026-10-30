@@ -1,5 +1,6 @@
 import { api } from "../api";
 import { useProject } from "../store/project";
+import { Elapsed } from "./Elapsed";
 
 // Shows what Foundry is doing right now, for every step.
 export function JobBanner() {
@@ -24,7 +25,8 @@ export function JobBanner() {
     return (
       <div className="banner waiting">
         <span className="spinner" /> <strong>{job.message}</strong>
-        <div className="muted small">
+        <Elapsed started={job.started} />
+        <div className="muted small banner-hint">
           Di AI Host kamu, minta: <code>Lanjutkan pekerjaan Foundry (panggil next_work)</code>
         </div>
       </div>
@@ -33,6 +35,7 @@ export function JobBanner() {
   return (
     <div className="banner running">
       <span className="spinner" /> <strong>{job.message}…</strong>
+      <Elapsed started={job.started} />
     </div>
   );
 }

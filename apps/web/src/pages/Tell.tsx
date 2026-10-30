@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
+import { Elapsed } from "../components/Elapsed";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
 import type { Survey } from "../types";
@@ -32,7 +33,7 @@ export function TellPage() {
   if (discovering) {
     return (
       <section className="tell">
-        <h1><span className="spinner" /> Foundry memahami kebutuhan</h1>
+        <h1><span className="spinner" /> Foundry memahami kebutuhan <Elapsed started={project.job?.started} /></h1>
         <p className="muted">{tellWaiting(existing)}</p>
         {components && <p className="muted small">Kode yang dibaca: {components}</p>}
         <ul className="checklist">{TELL_ANALYSIS.map((a) => <li key={a}>{a}</li>)}</ul>

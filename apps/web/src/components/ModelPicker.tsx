@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Elapsed } from "./Elapsed";
 
 // Model input with a searchable dropdown: type to filter or enter any name
 // (the CLI accepts models not in the list); empty means the CLI default.
@@ -50,7 +51,7 @@ export function ModelPicker({ models, value, onChange, loading }: { models: stri
               {m}
             </li>
           ))}
-          {loading && <li className="muted" aria-live="polite"><span className="spinner" /> Memuat model terbaru…</li>}
+          {loading && <li className="muted" aria-live="polite"><span className="spinner" /> Memuat model terbaru… <Elapsed /></li>}
           {!loading && !options.length && <li className="muted">Tidak ada di daftar — nama ini tetap dipakai</li>}
         </ul>
       )}

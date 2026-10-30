@@ -6,6 +6,7 @@ import {
   isDesignDoc, SCOPE_DOCS, scopeIssuesOf, usedBy,
 } from "../blueprint";
 import { DeleteDialog } from "../components/DeleteDialog";
+import { Elapsed } from "../components/Elapsed";
 import { Markdown } from "../components/Markdown";
 import { PromptBar } from "../components/PromptBar";
 import { isWorking } from "../flow";
@@ -94,13 +95,14 @@ export function BlueprintPage() {
       <main className="ws-main">
         <DecisionSyncNotice project={project} locked={locked} />
         {id === "platform" ? <PlatformStructure project={project} />
-          : id === "scope" ? view && <ScopePanel project={project} view={view} locked={locked} onOpen={select} />
+          : !view ? <p className="muted"><span className="spinner" /> Memuat blueprint… <Elapsed /></p>
+          : id === "scope" ? <ScopePanel project={project} view={view} locked={locked} onOpen={select} />
           : id === "design" && designing ? <DesignEmpty project={project} locked={locked} />
           : doc ? <ArtifactDoc key={doc.id} project={project} doc={doc} locked={locked} design={design} view={view} onOpen={select} />
           : (id === SCOPE_DOCS.useCases || id === SCOPE_DOCS.acceptance) && !locked
             ? <div className="doc"><h1>{id === SCOPE_DOCS.useCases ? "Alur Bisnis & Use Case" : "Acceptance Criteria & Definition of Done"}</h1>
                 <ScopeEditor doc={id} project={project} onDone={() => select("scope")} /></div>
-          : <p className="muted">{view ? "Pilih artefak di kiri." : "Memuat blueprint…"}</p>}
+          : <p className="muted">Pilih artefak di kiri.</p>}
       </main>
 
       {!locked && (id === "platform" ? (
@@ -221,7 +223,7 @@ function DesignEmpty({ project, locked }: { project: Project; locked: boolean })
         interaksi, aturan platform) dan spesifikasi layout per halaman (section, hierarki, grid, navigasi, state UI) sebagai teks
         dan data terstruktur untuk coding agent. Tidak ada gambar atau kanvas.
       </p>
-      {busy ? <p><span className="spinner" /> {project.job?.message}…</p> : !locked && (
+      {busy ? <p><span className="spinner" /> {project.job?.message}… <Elapsed started={project.job?.started} /></p> : !locked && (
         <button className="primary" disabled={isWorking(project) || pending === "generateDesign"} onClick={() => void run("generateDesign", api.generateDesign)}>
           Susun dengan AI
         </button>
@@ -408,7 +410,7 @@ function ScopePanel({ project, view, locked, onOpen }: { project: Project; view:
         </p>
         {!locked && open > 0 && (
           <div className="doc-actions">
-            {busy ? <span><span className="spinner" /> {project.job?.message}…</span> : (
+            {busy ? <span><span className="spinner" /> {project.job?.message}… <Elapsed started={project.job?.started} /></span> : (
               <button className="primary" disabled={isWorking(project) || pending === "completeScope"} onClick={() => void run("completeScope", api.completeScope)}>
                 Lengkapi {open} area dengan AI
               </button>
@@ -471,7 +473,7 @@ function DecisionSyncNotice({ project, locked }: { project: Project; locked: boo
   return (
     <div className="notice warn">
       <span>Keputusan {ids.join(", ")} berubah. Artefak, use case, dan command yang masih memakai keputusan lama belum disesuaikan — jangan anggap dokumen lain berdiri sendiri.</span>
-      {busy ? <span><span className="spinner" /> {project.job?.message}…</span> : (
+      {busy ? <span><span className="spinner" /> {project.job?.message}… <Elapsed started={project.job?.started} /></span> : (
         <button disabled={isWorking(project) || pending === "syncDecisions"} onClick={() => void run("syncDecisions", api.syncDecisions)}>Sesuaikan dengan AI</button>
       )}
     </div>

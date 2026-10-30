@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { Elapsed } from "./Elapsed";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
 import {
@@ -66,7 +67,7 @@ export function TechStackPanel({ project }: { project: Project }) {
       </p>
       {s.needs?.length ? <p className="small">Kebutuhan teknis: <span className="theme-tags">{s.needs.map((n) => <i key={n}>{NEED[n] ?? n}</i>)}</span></p> : null}
 
-      {!finalized && s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}”</p>}
+      {!finalized && s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}” <Elapsed started={project.job?.started} /></p>}
 
       {s.proposal && <Proposal p={s.proposal} disabled={busy || finalized} />}
 

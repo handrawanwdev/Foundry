@@ -42,27 +42,23 @@ func (o designOut) hasExperience() bool {
 }
 
 const designShape = `{
- "users": [{"role": "Operator", "platform": "web", "context": "delapan jam sehari, banyak baris", "goals": [""], "tasks": [""]}],
- "goals": [{"id": "GOAL-1", "role": "Operator", "text": "", "success": "", "priority": "must|should|could"}],
+ "users": [{"role": "Operator", "platform": "web", "context": "kerja harian", "tasks": ["saring antrean"]}],
+ "goals": [{"id": "GOAL-1", "role": "Operator", "text": "Saring antrean", "success": "Janji diproses", "priority": "must"}],
  "navigation": [{"name": "Operasional", "items": [{"label": "Antrean", "page": "antrean", "primary": true}]}],
- "assumptions": [""], "unknowns": [""],
- "decisions": [{"subject": "antrean", "topic": "kepadatan", "choice": "table", "why": ["operator membandingkan banyak baris"], "basis": ["GOAL-1", "FLOW-001", "Appointment"], "source": "fact|assumption|constraint", "alternative": ""}],
- "rules": {"source": "new|existing", "reference": "", "direction": "", "principles": [""], "ux_guidelines": [""],
-   "tokens": {"colors": [{"name": "action.primary", "value": "#1f6feb", "use": ""}], "typography": [{"name": "type.body", "value": "Inter 14px/20px 400", "use": ""}],
-              "spacing": [{"name": "space.md", "value": "16px", "use": ""}], "radius": [], "shadow": [], "breakpoints": [{"name": "breakpoint.tablet", "value": "768px", "use": ""}]},
-   "components": [{"name": "Button", "use": "", "variants": ["primary", "secondary"], "rules": ["hover/focus/active/disabled: ..."], "source": ""}],
-   "visual_hierarchy": [""], "accessibility": [""], "responsive": [""], "interaction": [""],
-   "platforms": [{"platform": "android", "rules": [""]}]},
- "shells": [{"id": "app", "name": "", "platform": "web", "pattern": "sidebar", "navigation": "", "grid": "", "responsive": [""],
-   "regions": [{"id": "nav", "name": "", "content": [""], "components": ["Sidebar"], "sizing": "", "responsive": ""}]}],
- "pages": [{"id": "antrean", "name": "", "platform": "web", "route": "/antrean", "role": "", "access": "auth", "feature_id": "FEAT-001",
-   "purpose": "", "goal": "GOAL-1", "shell": "app", "pattern": "table", "primary_action": "",
-   "fields": [{"field": "Appointment.status", "label": "Status", "presentation": "table-column", "format": "badge", "note": ""}],
-   "sections": [{"id": "filter", "name": "", "pattern": "", "purpose": "", "content": [""], "components": [""],
-                 "grid": "", "alignment": "", "spacing": "space.md", "sizing": "", "responsive": "", "states": {}}],
-   "hierarchy": ["filter"], "grid": "", "responsive": [""], "links": [{"to": "detail-antrean", "via": ""}],
-   "states": {"loading": "", "empty": "", "error": ""}, "data": [""]}],
- "flows": {"FLOW-001": ["antrean", "detail-antrean"]}
+ "decisions": [{"subject": "antrean", "choice": "table", "why": ["bandingkan banyak baris"], "basis": ["GOAL-1"], "source": "fact"}],
+ "rules": {"source": "new", "reference": "", "direction": "", "principles": [""], "ux_guidelines": [""],
+   "tokens": {"colors": [{"name": "action.primary", "value": "#1f6feb", "use": "aksi"}], "typography": [{"name": "type.body", "value": "Inter 14px/20px 400"}],
+              "spacing": [{"name": "space.md", "value": "16px"}]},
+   "components": [{"name": "Button", "use": "aksi", "variants": ["primary"], "rules": ["disabled saat kirim"]}],
+   "accessibility": [""], "responsive": [""]},
+ "shells": [{"id": "app", "name": "App", "platform": "web", "pattern": "sidebar",
+   "regions": [{"id": "nav", "name": "Nav", "content": ["Menu"]}]}],
+ "pages": [{"id": "antrean", "name": "Antrean", "platform": "web", "route": "/antrean", "access": "auth", "feature_id": "FEAT-001",
+   "purpose": "Saring antrean", "goal": "GOAL-1", "shell": "app", "pattern": "table",
+   "fields": [{"field": "Appointment.status", "label": "Status", "presentation": "badge"}],
+   "sections": [{"id": "tabel", "name": "Tabel", "content": ["No, Pasien, Status, Aksi"], "components": ["Button"]}],
+   "states": {"loading": "", "empty": "", "error": ""}}],
+ "flows": {"FLOW-001": ["antrean"]}
 }`
 
 const designRules = `DESIGN RULES (rules)
@@ -81,14 +77,14 @@ Work like a senior product designer: understand the users and their tasks BEFORE
 1. Users: from the roles and the story, name each kind of user, the platform they use, the context (frequency, pressure, device, environment) and the tasks they must complete.
 2. Goals: one measurable goal per important task (id GOAL-1, ...), the role it belongs to, and what success looks like. Goals come from the use cases, not from the data model.
 3. Information architecture: group destinations by the user's job, not by database tables. Label them with the user's words. A primary destination belongs to the menu; a detail page is reached from its list. Keep the top level small.
-4. Page inventory: one page per user task or decision point. Reuse a page when the task is the same; split when the user's goal, permission or data scope differs.
+4. Page inventory: one page per user task or decision point, never per database entity. Reuse a page when the task is the same; split when the user's goal, permission or data scope differs. Typical 4-12 pages.
 5. Patterns: choose by task, data volume and platform, not by habit.
-   table: compare or operate on many records with several attributes; list: scan many records with one dominant attribute; cards: browse a small set with visual identity; detail: one record with many fields and actions; form: create or edit; wizard: a long or dependent sequence; dashboard: only when KPIs and aggregates are a real task; search: only when the set is large or unbounded; modal/drawer: a short side task without leaving context; tabs: parallel facets of one record; settings: user or workspace configuration; master-detail: rapid switching between items.
+   table: compare many records with several attributes; list: scan with one dominant attribute; cards: small set with visual identity; detail: one record; form: create or edit; wizard: long/dependent sequence; dashboard: only when KPIs are a real task; search: large/unbounded set; modal/drawer: short side task; tabs: facets of one record; settings: configuration; master-detail: rapid switching.
    On a small screen prefer list/cards over wide tables. Do not make every page a dashboard or a card grid.
-6. Density: operators who repeat a task need compact rows and few clicks; occasional users need more guidance; touch users need larger targets and actions close to the thumb. State the choice.
-7. Every layout, component and interaction choice gets a decision: subject (the element it affects: page id, section id, component name or * for the whole app), topic (the design aspect when the element alone is not enough: navigation, density/kepadatan, data status, price change/perubahan harga, real-time updates/tick, ...; empty when the choice IS the element's pattern), choice, why (concrete), basis (ids from the inputs), source (fact | assumption | constraint), alternative considered. A decision that cannot name its basis is a guess; do not write it. Every page must have at least one decision whose subject is the page id itself, stating its pattern and why; a form page also names its structure, input validation, submit state and error feedback. No page is left without a decision.
+6. Density: operators who repeat a task need compact rows and few clicks; occasional users need more guidance; touch users need larger targets. State the choice.
+7. Every page must have at least one decision whose subject is the page id itself, stating its pattern and why; a form page also names its structure, input validation, submit state and error feedback. No page is left without a decision. One decision per page is enough unless it is a form. why: one concrete sentence. basis: 1-2 ids from the inputs. source: fact|assumption|constraint. Do not write a decision that cannot name its basis.
 8. Facts, assumptions and unknowns are separate. Never invent volume, permissions, compliance or integrations that the blueprint does not state; record the gap as an assumption or unknown.
-9. Data-to-UI mapping: for each page with records, map the fields that matter to presentation (table-column, list-item, card-title, card-meta, card-value, delta, detail, form-input, filter, summary, chart, badge, row-action, hidden) and say how formats and long values are handled. Do not show every field of an entity. card-value is a prominent value in a card (a big price); delta is a change indicator (amount or percent with a direction); row-action names an action on each row (open, edit, remove, acknowledge, ...) and its note says what the action does. A record's identity (symbol, name) is card-title, not a separate type.
+9. Data-to-UI mapping: for each page with records, map only the fields shown (table-column, list-item, card-title, card-meta, card-value, delta, detail, form-input, filter, summary, chart, badge, row-action, hidden). Do not show every field of an entity. card-value is a prominent value; delta is a change indicator; row-action is a per-row action (note says what it does). Record identity (symbol, name) is card-title.
 10. States, validation, permissions and feedback are part of the page design: loading, empty, no_results, error, success, disabled, permission_denied, and what a user without the permission sees.
 11. For a CLI/terminal platform (no screen layout), put its UX in rules.platforms with platform "cli": command and subcommand grammar, flags and defaults, help and examples, output shape and columns, error messages and exit codes, confirmation for destructive actions, and non-interactive/pipe behavior. Do not create layout pages for the terminal.
 `
@@ -96,7 +92,7 @@ Work like a senior product designer: understand the users and their tasks BEFORE
 const layoutRules = `LAYOUT SPECIFICATION (shells, pages)
 - Text and structured data only. No images, mockups, HTML, CSS or code.
 - shells: the layouts pages share (app frame with sidebar or navbar, auth frame, ...): id, name, platform, pattern, regions (sections), navigation, grid, responsive.
-- pages: every screen the features need, per platform with screens. route: web starts with /, mobile/desktop is the screen name. access: public or auth. shell: a shell id, or empty for a page with its own frame.
+- pages: every screen the features need, per platform with screens — one page per user task, not per entity. route: web starts with /, mobile/desktop is the screen name. access: public or auth. shell: a shell id, or empty for a page with its own frame.
 - pages[].goal names the goal id the page serves; pages[].fields maps data fields to their presentation.
 - pattern (page, shell and optional for a section) is one of: %s.
 - sections: in visual order (top to bottom, start to end). content lists the elements in order, concretely ("Tabel antrean: No, Pasien, Dokter, Status, Aksi"). components are names from rules.components. grid, alignment, spacing, sizing and responsive use the tokens (space.md, breakpoint.tablet), never arbitrary values.
@@ -106,6 +102,17 @@ const layoutRules = `LAYOUT SPECIFICATION (shells, pages)
 - navigation groups pages by the user's job; every page is reachable from it or from a link.
 - flows: for each flow id, the page ids it passes through, in order.
 - ids: lowercase letters, digits and dashes. Page ids are unique; section ids are unique within their page.
+`
+
+const outputDiscipline = `OUTPUT DISCIPLINE
+Emit compact JSON. Omit empty keys, empty arrays and empty strings. Do not copy placeholder empty values from the shape.
+- principles 3-5 short clauses; ux_guidelines 4-6; accessibility, responsive, interaction 2-4 each. Do not repeat the same sentence across those lists.
+- tokens: 6-10 colors, 3-5 typography, 4-6 spacing, 2-3 radius, 1-2 shadow, 2-3 breakpoints. Short use.
+- components: only those pages reuse (typically 4-10). One short variants list and one short rules line each.
+- pages: one per user task. Typical 4-12. sections 2-4; content 1-3 concrete items; fields only those shown.
+- decisions: exactly one per page (pattern + why). Form pages may add one for validation/submit. why: one short sentence. basis: 1-2 existing ids.
+- states: one short sentence per required key only.
+- Reply with JSON only. No preamble.
 `
 
 // DesignPrompt asks for the design rules and layout spec, or for a
@@ -121,27 +128,15 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	if ux := p.UXPlatforms(); len(ux) > 0 {
 		b.WriteString("ALL PLATFORMS FOR UX RULES: " + strings.Join(ux, ", ") + "\n")
 	}
-	if d := p.Discovery; d != nil && len(d.Roles) > 0 {
-		b.WriteString("ROLES:\n")
-		for _, r := range d.Roles {
-			fmt.Fprintf(&b, "- %s (%s): %s\n", r.Name, r.Platform, r.Description)
+	if len(p.Features) > 0 {
+		b.WriteString("FEATURES (pages.feature_id):\n")
+		for _, f := range p.Features {
+			fmt.Fprintf(&b, "- %s %s [%s]\n", f.ID, f.Name, strings.Join(f.Platforms, ", "))
 		}
 	}
-	b.WriteString("FEATURES:\n")
-	for _, f := range p.Features {
-		var subs []string
-		for _, s := range f.SubFeatures {
-			subs = append(subs, s.Name)
-		}
-		fmt.Fprintf(&b, "- %s %s [%s]: %s. Sub: %s\n", f.ID, f.Name, strings.Join(f.Platforms, ", "), f.Description, strings.Join(subs, "; "))
+	if brief := p.Stack.Brief(); brief != "" {
+		b.WriteString("\n" + brief)
 	}
-	if len(p.Flows) > 0 {
-		b.WriteString("FLOWS:\n")
-		for _, fl := range p.Flows {
-			fmt.Fprintf(&b, "- %s %s (%s, %s): %s\n", fl.ID, fl.Name, fl.Role, fl.FeatureID, strings.Join(fl.Steps, " → "))
-		}
-	}
-	b.WriteString("\n" + p.Stack.Brief())
 	if brief := uxBrief(p); brief != "" {
 		b.WriteString("\n" + brief)
 	}
@@ -179,6 +174,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 
 	b.WriteString(designRules + "\n")
 	fmt.Fprintf(&b, layoutRules+"\n", strings.Join(core.LayoutPatterns, ", "), strings.Join(core.UIStates, ", "), requiredStates())
+	b.WriteString(outputDiscipline + "\n")
 	if !d.Written() {
 		if rejected != "" {
 			b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + rejected + "\n\n")
@@ -278,22 +274,23 @@ func uxBrief(p *core.Project) string {
 	if len(p.Flows) > 0 {
 		b.WriteString("- Use cases (tasks):\n")
 		for _, fl := range p.Flows {
-			fmt.Fprintf(&b, "  - %s %s; role %s; goal: %s\n", fl.ID, fl.Name, fl.Role, firstNonEmpty(fl.Goal, fl.Name))
+			fmt.Fprintf(&b, "  - %s %s; role %s; goal: %s", fl.ID, fl.Name, fl.Role, firstNonEmpty(fl.Goal, fl.Name))
 			if len(fl.Steps) > 0 {
-				fmt.Fprintf(&b, "    steps: %s\n", strings.Join(fl.Steps, " -> "))
+				fmt.Fprintf(&b, "; steps %s", strings.Join(fl.Steps, " -> "))
 			}
 			if len(fl.Rules) > 0 {
-				fmt.Fprintf(&b, "    business rules: %s\n", strings.Join(fl.Rules, " | "))
+				fmt.Fprintf(&b, "; rules %s", strings.Join(fl.Rules, " | "))
 			}
 			if len(fl.Permissions) > 0 {
-				fmt.Fprintf(&b, "    permissions: %s\n", strings.Join(fl.Permissions, ", "))
+				fmt.Fprintf(&b, "; perm %s", strings.Join(fl.Permissions, ", "))
 			}
 			if len(fl.Data) > 0 {
-				fmt.Fprintf(&b, "    data effects: %s\n", strings.Join(fl.Data, " | "))
+				fmt.Fprintf(&b, "; data %s", strings.Join(fl.Data, " | "))
 			}
 			if len(fl.Failures) > 0 {
-				fmt.Fprintf(&b, "    failure paths: %s\n", strings.Join(fl.Failures, " | "))
+				fmt.Fprintf(&b, "; fail %s", strings.Join(fl.Failures, " | "))
 			}
+			b.WriteString("\n")
 		}
 	}
 	if bp := p.Blueprint; bp != nil {
@@ -304,8 +301,12 @@ func uxBrief(p *core.Project) string {
 				if e.Module != "" {
 					fmt.Fprintf(&b, " [%s]", e.Module)
 				}
-				if len(e.Fields) > 0 {
-					fmt.Fprintf(&b, ": %s", strings.Join(e.Fields, ", "))
+				if n := len(e.Fields); n > 0 {
+					fields := e.Fields
+					if n > 8 {
+						fields = append(append([]string{}, e.Fields[:8]...), "…")
+					}
+					fmt.Fprintf(&b, ": %s", strings.Join(fields, ", "))
 				}
 				if len(e.Relates) > 0 {
 					fmt.Fprintf(&b, "; relates to %s", strings.Join(e.Relates, ", "))
@@ -381,9 +382,6 @@ func ApplyDesign(p *core.Project, raw string) error {
 	if out.Unknowns != nil {
 		l.Unknowns = nonEmpty(*out.Unknowns)
 	}
-	if fresh || len(l.Users) > 0 && len(l.Goals) > 0 && len(l.Navigation) > 0 && len(l.Decisions) > 0 {
-		next.Format = core.UIDesignFormat
-	}
 	for _, id := range out.RemoveShells {
 		i := slices.IndexFunc(l.Shells, func(s core.LayoutShell) bool { return s.ID == normID(id) })
 		if i < 0 {
@@ -429,7 +427,10 @@ func ApplyDesign(p *core.Project, raw string) error {
 	}
 	dropPages(l, flows, gone)
 	applyExisting(p, next)
-	completePageStates(l.Pages)
+	completeDesign(p, next)
+	if fresh || len(l.Users) > 0 && len(l.Goals) > 0 && len(l.Navigation) > 0 && len(l.Decisions) > 0 {
+		next.Format = core.UIDesignFormat
+	}
 	if err := commitDesign(p, next, flows); err != nil {
 		return err
 	}
@@ -833,6 +834,237 @@ var defaultStateText = map[string]string{
 	"disabled":          "Menampilkan kondisi saat aksi belum tersedia",
 	"permission_denied": "Menampilkan penolakan akses bagi pengguna tanpa izin",
 	"interactive":       "Menampilkan interaksi yang tersedia",
+}
+
+// completeDesign fills structural gaps the designer omitted so a nearly-valid
+// answer lands instead of a full LLM retry. Text the designer wrote always wins.
+func completeDesign(p *core.Project, d *core.UIDesign) {
+	if d == nil || d.Layout == nil {
+		return
+	}
+	l := d.Layout
+	completeUsers(p, l)
+	completeGoals(p, l)
+	completePageGoals(l)
+	completeNavigation(l)
+	completePageStates(l.Pages)
+	completePageDecisions(l)
+	sanitizeDecisions(p, l, d.Rules)
+}
+
+func completeUsers(p *core.Project, l *core.LayoutSpec) {
+	if len(l.Users) > 0 || p == nil || p.Discovery == nil {
+		return
+	}
+	seen := map[string]bool{}
+	for _, r := range p.Discovery.Roles {
+		role := strings.TrimSpace(r.Name)
+		if role == "" || seen[strings.ToLower(role)] {
+			continue
+		}
+		seen[strings.ToLower(role)] = true
+		u := core.UIUser{Role: role, Platform: normID(r.Platform), Context: strings.TrimSpace(r.Description)}
+		if u.Context != "" {
+			u.Tasks = []string{u.Context}
+		}
+		l.Users = append(l.Users, u)
+	}
+}
+
+func completeGoals(p *core.Project, l *core.LayoutSpec) {
+	if len(l.Goals) > 0 || p == nil {
+		return
+	}
+	for i, fl := range p.Flows {
+		text := firstNonEmpty(fl.Goal, fl.Name)
+		if text == "" {
+			continue
+		}
+		l.Goals = append(l.Goals, core.UIGoal{
+			ID:       fmt.Sprintf("GOAL-%d", i+1),
+			Role:     strings.TrimSpace(fl.Role),
+			Text:     text,
+			Priority: "must",
+		})
+	}
+}
+
+func completePageGoals(l *core.LayoutSpec) {
+	if len(l.Goals) == 0 {
+		return
+	}
+	first := l.Goals[0].ID
+	known := map[string]bool{}
+	byRole := map[string]string{}
+	for _, g := range l.Goals {
+		known[strings.ToLower(g.ID)] = true
+		if r := strings.ToLower(strings.TrimSpace(g.Role)); r != "" && byRole[r] == "" {
+			byRole[r] = g.ID
+		}
+	}
+	for i := range l.Pages {
+		g := strings.TrimSpace(l.Pages[i].Goal)
+		if g != "" && known[strings.ToLower(g)] {
+			continue
+		}
+		if id := byRole[strings.ToLower(l.Pages[i].Role)]; id != "" {
+			l.Pages[i].Goal = id
+			continue
+		}
+		l.Pages[i].Goal = first
+	}
+}
+
+func completeNavigation(l *core.LayoutSpec) {
+	if len(l.Navigation) > 0 || len(l.Pages) == 0 {
+		return
+	}
+	nested := map[string]bool{"detail": true, "form": true, "wizard": true, "modal": true, "auth": true}
+	var items []core.NavItem
+	for _, pg := range l.Pages {
+		if nested[pg.Pattern] {
+			continue
+		}
+		label := firstNonEmpty(pg.Name, pg.ID)
+		items = append(items, core.NavItem{Label: label, Page: pg.ID, Primary: true})
+	}
+	if len(items) == 0 {
+		for _, pg := range l.Pages {
+			items = append(items, core.NavItem{Label: firstNonEmpty(pg.Name, pg.ID), Page: pg.ID})
+		}
+	}
+	if len(items) > 0 {
+		l.Navigation = []core.NavGroup{{Name: "Utama", Items: items}}
+	}
+}
+
+func completePageDecisions(l *core.LayoutSpec) {
+	have := map[string]bool{}
+	for _, d := range l.Decisions {
+		have[strings.TrimSpace(d.Subject)] = true
+	}
+	for _, pg := range l.Pages {
+		if have[pg.ID] {
+			continue
+		}
+		why := firstNonEmpty(pg.Purpose, pg.Name, pg.Pattern)
+		var basis []string
+		if pg.Goal != "" {
+			basis = append(basis, pg.Goal)
+		}
+		if pg.FeatureID != "" {
+			basis = append(basis, pg.FeatureID)
+		}
+		src := "assumption"
+		if len(basis) > 0 {
+			src = "fact"
+		}
+		l.Decisions = append(l.Decisions, core.DesignDecision{
+			Subject: pg.ID,
+			Choice:  firstNonEmpty(pg.Pattern, "custom"),
+			Why:     []string{why},
+			Basis:   basis,
+			Source:  src,
+		})
+	}
+}
+
+func sanitizeDecisions(p *core.Project, l *core.LayoutSpec, rules *core.DesignRules) {
+	known := knownDesignBasis(p, l, rules)
+	for i := range l.Decisions {
+		d := &l.Decisions[i]
+		if strings.TrimSpace(d.Choice) == "" {
+			d.Choice = "custom"
+		}
+		if len(nonEmpty(d.Why)) == 0 {
+			d.Why = []string{firstNonEmpty(d.Choice, "pola halaman")}
+		} else {
+			d.Why = nonEmpty(d.Why)
+		}
+		if !slices.Contains(core.DecisionSources, d.Source) {
+			d.Source = "assumption"
+		}
+		var basis []string
+		for _, b := range d.Basis {
+			b = strings.TrimSpace(b)
+			if b != "" && known[strings.ToLower(b)] {
+				basis = append(basis, b)
+			}
+		}
+		if len(basis) == 0 {
+			if sub := strings.TrimSpace(d.Subject); known[strings.ToLower(sub)] {
+				basis = []string{sub}
+			}
+		}
+		d.Basis = basis
+	}
+}
+
+func knownDesignBasis(p *core.Project, l *core.LayoutSpec, rules *core.DesignRules) map[string]bool {
+	out := map[string]bool{}
+	add := func(v string) {
+		if v = strings.ToLower(strings.TrimSpace(v)); v != "" {
+			out[v] = true
+		}
+	}
+	if l != nil {
+		for _, g := range l.Goals {
+			add(g.ID)
+		}
+		for _, u := range l.Users {
+			add(u.Role)
+		}
+		for _, pg := range l.Pages {
+			add(pg.ID)
+			add(pg.FeatureID)
+			add(pg.Goal)
+		}
+	}
+	if p == nil {
+		return out
+	}
+	if p.Discovery != nil {
+		for _, r := range p.Discovery.Roles {
+			add(r.Name)
+		}
+	}
+	for _, fl := range p.Flows {
+		add(fl.ID)
+		for _, perm := range fl.Permissions {
+			add(perm)
+		}
+	}
+	for _, f := range p.Features {
+		add(f.ID)
+	}
+	for _, r := range p.Requirements {
+		add(r.ID)
+	}
+	for _, t := range p.UIPlatforms() {
+		add(t)
+	}
+	if p.Blueprint != nil {
+		for _, e := range p.Blueprint.Database.Entities {
+			add(e.Name)
+			for _, f := range e.Fields {
+				add(e.Name + "." + f)
+			}
+		}
+		for _, perm := range p.Blueprint.Authz.Permissions {
+			add(perm)
+		}
+	}
+	if rules != nil {
+		for _, g := range rules.Tokens.Groups() {
+			for _, t := range *g.Tokens {
+				add(t.Name)
+			}
+		}
+		for _, c := range rules.Components {
+			add(c.Name)
+		}
+	}
+	return out
 }
 
 // completePageStates guarantees every generated page specifies the states its

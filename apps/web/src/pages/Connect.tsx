@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { useNavigate } from "react-router-dom";
+import { Elapsed } from "../components/Elapsed";
 import { Icon } from "../components/Icon";
 import { ModelPicker } from "../components/ModelPicker";
 import { stepFor } from "../flow";
@@ -170,7 +171,7 @@ export function ConnectPage() {
                 )}
                 <div className="connect-config-foot">
                   <button type="submit" className="primary" disabled={!!connecting}>
-                    {connecting === chosen.id ? <><span className="spinner" /> Menguji koneksi…</> : `Hubungkan ${chosen.name}`}
+                    {connecting === chosen.id ? <><span className="spinner" /> Menguji koneksi… <Elapsed /></> : `Hubungkan ${chosen.name}`}
                   </button>
                 </div>
               </form>
@@ -221,12 +222,12 @@ export function ConnectPage() {
           {(showMCP || waitingMCP) && (
             <div className="connect-config">
               {waitingMCP
-                ? <p className="connect-wait"><span className="spinner" /> Buka AI Host dan panggil tool <code>get_project</code>.</p>
+                ? <p className="connect-wait"><span className="spinner" /> Buka AI Host dan panggil tool <code>get_project</code>. <Elapsed /></p>
                 : <p className="connect-mcp-copy">Tambahkan Foundry ke konfigurasi MCP di AI Host, lalu konfirmasi.</p>}
               <div className="connect-config-foot">
                 {!waitingMCP && (
                   <button className="primary" disabled={connecting === "mcp"} onClick={() => connectMCP()}>
-                    {connecting === "mcp" ? <><span className="spinner" /> Menghubungkan…</> : "Sudah ditambahkan"}
+                    {connecting === "mcp" ? <><span className="spinner" /> Menghubungkan… <Elapsed /></> : "Sudah ditambahkan"}
                   </button>
                 )}
                 {waitingMCP && (
@@ -296,7 +297,7 @@ function AgentRow({
           <span className="agent-sub">{connecting ? "Menguji koneksi…" : agent.binary}</span>
         </span>
         {connecting
-          ? <span className="agent-status ok"><span className="spinner" /> Menguji</span>
+          ? <span className="agent-status ok"><span className="spinner" /> Menguji <Elapsed /></span>
           : <span className="agent-status ok">Terdeteksi</span>}
       </button>
       {children}

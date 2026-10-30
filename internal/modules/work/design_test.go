@@ -224,3 +224,96 @@ func TestApplyDesignRefusesMissingReference(t *testing.T) {
 		t.Fatalf("err = %v, want missing-reference refusal", err)
 	}
 }
+
+func clinicPromptProject() *core.Project {
+	return &core.Project{
+		Name:  "Klinik Sehat",
+		Story: "Aplikasi klinik pratama: pasien membuat janji dari HP, admin mengelola jadwal di web.",
+		Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{
+			{Kind: core.PlatformWeb}, {Kind: core.PlatformAndroid}, {Kind: core.PlatformBackend},
+		}},
+		Discovery: &core.Discovery{
+			Roles: []core.Role{
+				{Name: "Pasien", Platform: "android", Description: "membuat janji"},
+				{Name: "Admin", Platform: "web", Description: "kelola jadwal"},
+			},
+			Users:     []string{"Pasien", "Admin"},
+			Workflows: []string{"Pasien membuat janji"},
+		},
+		Features: []core.Feature{
+			{ID: "FEAT-001", Name: "Janji Temu", Description: "Pasien membuat janji", Platforms: []string{"android", "backend"},
+				SubFeatures: []core.SubFeature{{Name: "Cari dokter"}, {Name: "Buat janji"}}},
+			{ID: "FEAT-002", Name: "Jadwal Dokter", Description: "Admin kelola jadwal", Platforms: []string{"web", "backend"}},
+		},
+		Flows: []core.Flow{
+			{ID: "FLOW-001", Name: "Buat janji", FeatureID: "FEAT-001", Role: "Pasien", Goal: "Mendapat jadwal periksa",
+				Steps: []string{"Pilih dokter", "Pilih jadwal", "Konfirmasi"}, Permissions: []string{"appointment:create"},
+				Failures: []string{"Jadwal sudah terisi"}},
+		},
+		Blueprint: &core.Blueprint{Database: core.DatabaseArch{
+			Entities: []core.Entity{
+				{Name: "Appointment", Fields: []string{"id", "pasien", "dokter", "waktu", "status"}, Module: "clinic"},
+				{Name: "Doctor", Fields: []string{"id", "name", "specialty"}, Module: "clinic"},
+			},
+		}},
+	}
+}
+
+// The generate prompt stays compact: no duplicate inventory dump, an output
+// budget, and a size cap so the model spends tokens on the answer.
+func TestDesignPromptStaysCompact(t *testing.T) {
+	prompt := DesignPrompt(clinicPromptProject())
+	for _, gone := range []string{"ROLES:\n", "FLOWS:\n"} {
+		if strings.Contains(prompt, gone) {
+			t.Errorf("prompt still dumps duplicate %q", gone)
+		}
+	}
+	for _, want := range []string{"OUTPUT DISCIPLINE", "FEATURES (pages.feature_id)", "one page per user task", "Emit compact JSON"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt missing %q", want)
+		}
+	}
+	if n := len(prompt); n > 18000 {
+		t.Errorf("clinic generate prompt is %d bytes; want ≤ 18000 so the LLM prefills less", n)
+	}
+}
+
+// A nearly-complete answer that omitted users, goals, navigation, decisions
+// and required states still lands: Foundry fills those gaps instead of a
+// full LLM retry.
+func TestApplyDesignFillsMissingExperience(t *testing.T) {
+	p := &core.Project{
+		Platform:  &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}},
+		Discovery: &core.Discovery{Roles: []core.Role{{Name: "Operator", Platform: "web", Description: "saring data"}}},
+		Features:  []core.Feature{{ID: "FEAT-001", Name: "Screener", Platforms: []string{"web"}}},
+		Flows:     []core.Flow{{ID: "FLOW-001", Name: "Saring", FeatureID: "FEAT-001", Role: "Operator", Goal: "Saring data pasar"}},
+	}
+	raw := `{"rules": {"source": "new", "principles": ["Satu tugas"], "ux_guidelines": ["Filter di atas"],
+	  "accessibility": ["AA"], "responsive": ["Tabel scroll"],
+	  "tokens": {"colors": [{"name": "action.primary", "value": "#000"}], "typography": [{"name": "type.body", "value": "Inter 14px"}],
+	              "spacing": [{"name": "space.md", "value": "16px"}]},
+	  "components": [{"name": "DataTable", "use": "daftar"}]},
+	 "pages": [{"id": "screener", "name": "Screener", "platform": "web", "route": "/screener", "purpose": "Saring", "pattern": "table",
+	   "feature_id": "FEAT-001",
+	   "sections": [{"id": "tabel", "name": "Tabel", "content": ["Simbol, Harga"]}]}]}`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	l := p.UI.Layout
+	if len(l.Users) == 0 || l.Users[0].Role != "Operator" {
+		t.Fatalf("users = %+v", l.Users)
+	}
+	if len(l.Goals) == 0 || l.Goals[0].ID != "GOAL-1" {
+		t.Fatalf("goals = %+v", l.Goals)
+	}
+	if len(l.Navigation) == 0 || l.Navigation[0].Items[0].Page != "screener" {
+		t.Fatalf("nav = %+v", l.Navigation)
+	}
+	if len(l.Decisions) == 0 || l.Decisions[0].Subject != "screener" {
+		t.Fatalf("decisions = %+v", l.Decisions)
+	}
+	pg := l.Pages[0]
+	if pg.States["empty"] == "" || pg.Goal != "GOAL-1" {
+		t.Fatalf("page = %+v", pg)
+	}
+}

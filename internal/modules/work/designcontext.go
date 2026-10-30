@@ -173,7 +173,10 @@ func GetLearnedRecommendations(p *core.Project, learningDir string) string {
 	// Build recommendations text
 	var recs strings.Builder
 	recs.WriteString("\nRECOMMENDED DESIGN RULES (learned from project history):\n")
-	for _, rule := range summary.RecommendedRules {
+	for i, rule := range summary.RecommendedRules {
+		if i >= 8 {
+			break
+		}
 		recs.WriteString(fmt.Sprintf("- %s\n", rule))
 	}
 

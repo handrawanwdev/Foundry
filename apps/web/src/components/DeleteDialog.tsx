@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { Elapsed } from "./Elapsed";
 import { useProject } from "../store/project";
 import type { DeleteImpact } from "../types";
 
@@ -28,7 +29,7 @@ export function DeleteDialog({ id, title, onClose, onDeleted }: {
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="modal" role="dialog" aria-label={`Hapus ${title}`} onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-title">Hapus “{title}”?</div>
-        {error ? <p className="warn-text small">{error}</p> : !impact ? <p className="muted small"><span className="spinner" /> Menghitung dampak…</p> : (
+        {error ? <p className="warn-text small">{error}</p> : !impact ? <p className="muted small"><span className="spinner" /> Menghitung dampak… <Elapsed /></p> : (
           <div className="delete-impact small">
             <p>{impact.erases}</p>
             {removed.length > 0 && (

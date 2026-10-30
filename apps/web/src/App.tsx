@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactElement } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Elapsed } from "./components/Elapsed";
 import { Workbench } from "./components/Workbench";
 import { stepFor, stepIndex, STEPS } from "./flow";
 import { BlueprintPage } from "./pages/Blueprint";
@@ -61,7 +62,13 @@ export default function App() {
   }, [project?.stage, project?.dir]);
 
   if (ai.loading || !loaded) {
-    return <div className="boot">Memuat Foundry…</div>;
+    return (
+      <div className="boot">
+        <span className="inline">
+          <span className="spinner" /> Memuat Foundry… <Elapsed />
+        </span>
+      </div>
+    );
   }
 
   const ready = !!ai.state?.ready;
