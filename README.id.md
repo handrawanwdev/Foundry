@@ -52,15 +52,16 @@ Intinya: Foundry **memisahkan perancangan software dari implementasi software**.
 
 ```mermaid
 flowchart LR
-    A["💬 Prompt<br/><sub>ide · kebutuhan · perubahan</sub>"] --> B["📐 Blueprint<br/><sub>requirements · arsitektur<br/>stack · desain · use case</sub>"]
-    B --> C["🧩 Command Workflow<br/><sub>instruksi · dependency<br/>gelombang eksekusi</sub>"]
-    C --> D["🔍 Review & Revisi<br/><sub>validasi · dampak perubahan</sub>"]
-    D -->|revisi| B
-    D --> E["📦 Finalisasi & Export<br/><sub>docs/foundry/ · ZIP</sub>"]
-    E --> F["🤖 Coding Agent<br/>Eksternal"]
+    A["💬 Prompt<br/><sub>ide · kebutuhan · perubahan</sub>"] --> B["📋 Fitur<br/><sub>modul · fitur · subfitur</sub>"]
+    B --> C["📐 Blueprint<br/><sub>requirements · arsitektur<br/>stack · desain · use case</sub>"]
+    C --> D["🧩 Command Workflow<br/><sub>instruksi · dependency<br/>gelombang eksekusi</sub>"]
+    D --> E["🔍 Review & Revisi<br/><sub>validasi · dampak perubahan</sub>"]
+    E -->|revisi| C
+    E --> F["📦 Finalisasi & Export<br/><sub>docs/foundry/ · ZIP</sub>"]
+    F --> G["🤖 Coding Agent<br/>Eksternal"]
 ```
 
-Foundry menyiapkan instruksi dan spesifikasi. **Developer tetap memegang kendali** atas keputusan, review, dan persetujuan sebelum spesifikasi difinalisasi.
+Foundry menyiapkan instruksi dan spesifikasi. Setelah prompt, Foundry menyusun **daftar fitur** yang bisa disempurnakan sebelum Blueprint. **Developer tetap memegang kendali** atas keputusan, review, dan persetujuan sebelum spesifikasi difinalisasi.
 
 ## ✨ Fitur Utama
 
@@ -244,7 +245,7 @@ foundry serve
 
 ### Alur di UI
 
-**Hubungkan AI → Prompt → Rancang (preview + revisi) → Finalisasi**
+**Hubungkan AI → Prompt → Fitur → Blueprint → Workflow → Export**
 
 Tanpa argumen folder, UI terbuka di halaman **Start** untuk Open / New / Close Project. State perencanaan disimpan di `.foundry/` dalam folder proyek.
 

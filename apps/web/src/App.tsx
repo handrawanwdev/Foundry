@@ -6,6 +6,7 @@ import { stepFor, stepIndex, STEPS } from "./flow";
 import { BlueprintPage } from "./pages/Blueprint";
 import { ConnectPage } from "./pages/Connect";
 import { ExportPage } from "./pages/Export";
+import { FeaturesPage } from "./pages/Features";
 import { StartPage } from "./pages/Start";
 import { TellPage } from "./pages/Tell";
 import { WorkflowPage } from "./pages/Workflow";
@@ -83,6 +84,7 @@ export default function App() {
         <Route path="/" element={project ? <Navigate to={stepFor(project.stage).path} replace /> : <StartPage />} />
         <Route path="/simple/connect" element={<ConnectPage />} />
         <Route path="/simple/tell" element={guard(<TellPage />)} />
+        <Route path="/features" element={guard(<FeaturesPage />)} />
         <Route path="/blueprint" element={guard(<BlueprintPage />)} />
         <Route path="/workflow" element={guard(<WorkflowPage />)} />
         <Route path="/export" element={guard(<ExportPage />)} />

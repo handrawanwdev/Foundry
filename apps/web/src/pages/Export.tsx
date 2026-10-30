@@ -21,8 +21,12 @@ export function ExportPage() {
     return (
       <div className="dw-empty">
         <h1>Belum ada yang diekspor</h1>
-        <p className="muted">Paket ekspor berisi blueprint dan command workflow. Mulai dari prompt.</p>
-        <Link className="button primary" to="/simple/tell">Tulis prompt</Link>
+        <p className="muted">{project.stage === "DISCOVERY"
+          ? "Paket ekspor berisi blueprint dan command workflow. Tinjau daftar fitur dulu, lalu lanjut."
+          : "Paket ekspor berisi blueprint dan command workflow. Mulai dari prompt."}</p>
+        <Link className="button primary" to={project.stage === "DISCOVERY" ? "/features" : "/simple/tell"}>
+          {project.stage === "DISCOVERY" ? "Tinjau daftar fitur" : "Tulis prompt"}
+        </Link>
       </div>
     );
   }
@@ -145,6 +149,7 @@ function BlockerLink({ text }: { text: string }) {
   const to = text.includes("workflow") ? "/workflow"
     : text.includes("desain") ? "/blueprint/ui"
     : text.includes("teknologi") || text.includes("struktur") ? "/blueprint?doc=platform"
+    : text.includes("fitur") ? "/features"
     : text.includes("prompt") ? "/simple/tell" : "";
   return to ? <Link className="small" to={to}>Buka</Link> : null;
 }

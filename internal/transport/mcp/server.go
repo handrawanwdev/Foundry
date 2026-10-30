@@ -185,15 +185,15 @@ func obj(props map[string]any, required ...string) map[string]any {
 var str = map[string]any{"type": "string"}
 
 var tools = []tool{
-	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, discovery, architecture blueprint, platform, structure, technology stack, job, counts.", InputSchema: obj(nil)},
+	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, feature map, discovery, architecture blueprint, platform, structure, technology stack, job, counts.", InputSchema: obj(nil)},
 	{Name: "get_requirements", perm: PermRead, Description: "Requirements with acceptance criteria, features, sub-features, use cases (flows) and the Definition of Done.", InputSchema: obj(nil)},
 	{Name: "get_blueprint", perm: PermRead, Description: "Blueprint: every artifact (requirements, architecture, technology, design rules, layout spec, use cases, acceptance criteria, decisions and the project's own documents) as Markdown, the structured architecture, area coverage, artifact states, the decision register and binding_decisions (decided entries that override every other artifact).", InputSchema: obj(nil)},
 	{Name: "get_workflow", perm: PermRead, Description: "Command workflow for the coding agent: commands with objective, instructions, dependencies, blueprint references, expected outputs and acceptance criteria; the execution waves; validation issues, commands that need review, and current execution progress.", InputSchema: obj(nil)},
 	{Name: "get_design", perm: PermRead, Description: "UI design as structured data: design rules (principles, UX guidelines, tokens, components, accessibility, responsive, interaction, platform rules) and layout spec (shells, pages, sections, hierarchy, grid, states, links), plus validation issues.", InputSchema: obj(nil)},
 	{Name: "get_spec", perm: PermRead, Description: "Whole spec for implementation outside Foundry (JSON: requirements, flows, stack, structure, blueprint, artifacts, design rules, layout spec, workflow) plus the same as Markdown.", InputSchema: obj(nil)},
-	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (discovery, design, stack, structure, blueprint or workflow).", InputSchema: obj(nil)},
+	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (feature_map, discovery, design, stack, structure, blueprint or workflow).", InputSchema: obj(nil)},
 	{Name: "submit_work", perm: PermWrite, Description: "Hand back a result (the JSON object requested by next_work).",
-		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"discovery", "design", "stack", "structure", "blueprint", "workflow"}}, "result": str}, "kind", "result")},
+		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"feature_map", "discovery", "design", "stack", "structure", "blueprint", "workflow"}}, "result": str}, "kind", "result")},
 	{Name: "get_progress", perm: PermRead, Description: "Execution progress of the command workflow: overall and per-wave counts, per-command status, next eligible commands, warnings (stale, disconnected, skipped, missing evidence), and status history. Foundry does not run the commands.", InputSchema: obj(nil)},
 	{Name: "get_visual_review", perm: PermRead, Description: "Measured quality of implemented screens: per-page status (pass/partial/fail/untested), findings with severity/evidence/fix, criteria results, and a summary. Empty until snapshots are submitted; pages without screenshot evidence are untested, never passed.", InputSchema: obj(nil)},
 	{Name: "record_visual_review", perm: PermWrite, Description: "Submit measured browser snapshots for one designed page: viewport, screenshot file inside the project, state (default/loading/empty/error/...), and measured DOM nodes (tag, text, bounds, computed style, attrs). Foundry checks contrast, overflow, spacing/typography tokens, labels, headings, targets and the primary action. Use after implementing or fixing a screen; resubmit to verify fixes.", InputSchema: obj(map[string]any{
@@ -271,7 +271,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		if p.UI != nil && p.UI.Layout != nil {
 			pages = len(p.UI.Layout.Pages)
 		}
-		return map[string]any{"name": p.Name, "stage": p.Stage, "story": p.Story, "discovery": p.Discovery,
+		return map[string]any{"name": p.Name, "stage": p.Stage, "story": p.Story, "feature_map": p.FeatureMap, "discovery": p.Discovery,
 			"blueprint": p.Blueprint,
 			"platform":  p.Platform, "structure": p.Structure, "stack": p.Stack, "job": p.Job,
 			"counts": map[string]int{"requirements": len(p.Requirements), "features": len(p.Features), "pages": pages}}, nil

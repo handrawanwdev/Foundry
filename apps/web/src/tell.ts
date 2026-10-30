@@ -113,7 +113,7 @@ export function tellTitle(existing: boolean): string {
 export function tellIntro(existing: boolean): string {
   return existing
     ? "Ceritakan fitur atau perubahan. Foundry mengikuti struktur, teknologi, dan UI project ini — tidak diganti template."
-    : "Ceritakan dengan bahasa biasa: aplikasi, layanan, pipeline data, firmware, atau perubahan teknis. Foundry menyusun blueprint dan command workflow untuk coding agent eksternal.";
+    : "Ceritakan dengan bahasa biasa: aplikasi, layanan, pipeline data, firmware, atau perubahan teknis. Foundry menyusun daftar fitur, lalu blueprint dan command workflow untuk coding agent eksternal.";
 }
 
 export function tellWaiting(existing: boolean): string {

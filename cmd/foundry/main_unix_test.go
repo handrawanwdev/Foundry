@@ -145,7 +145,7 @@ func TestServeStopsJobsOnSignal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Job == nil || p.Job.Kind != "discovery" || p.Job.Status == core.JobRunning {
+	if p.Job == nil || p.Job.Kind != "feature_map" || p.Job.Status == core.JobRunning {
 		t.Fatalf("job = %+v", p.Job)
 	}
 }

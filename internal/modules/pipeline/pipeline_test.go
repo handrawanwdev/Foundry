@@ -32,6 +32,15 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+const featureMapJSON = `{"summary":"Aplikasi klinik","modules":[{"name":"Janji Temu","features":[
+  {"name":"Buat Janji","description":"Pasien membuat janji","purpose":"Mendapat jadwal periksa","benefit":"Tanpa antrian","outcome":"Janji tersimpan",
+   "children":[{"name":"Cari dokter"},{"name":"Konfirmasi"}]}
+]}]}`
+
+const featureMapExpandJSON = `{"node":{"name":"Buat Janji","description":"Pasien memilih dokter dan jam","purpose":"Jadwal pasti","benefit":"Tanpa antrian","outcome":"Janji pending","children":[{"name":"Pilih jam"}]}}`
+
+const featureMapGapsJSON = `{"modules":[{"name":"Tagihan","features":[{"name":"Invoice","description":"Tagihan setelah janji","purpose":"Pembayaran jelas","benefit":"Admin tidak mencatat manual","outcome":"Invoice terbit"}]}]}`
+
 const discoveryJSON = `Here you go:
 ` + "```json" + `
 {"name": "Klinik Sehat",
@@ -139,6 +148,21 @@ func fakeAgent() {
 	switch {
 	case strings.HasPrefix(prompt, "Balas hanya"):
 		fmt.Println("OK")
+	case strings.Contains(prompt, "feature mapper"):
+		countRun("feature_map")
+		if mode == "bad_json" && strings.Contains(prompt, "ACTION: generate") && strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED") {
+			fmt.Println(featureMapJSON)
+			return
+		}
+		if strings.Contains(prompt, "ACTION: expand") {
+			fmt.Println(featureMapExpandJSON)
+			return
+		}
+		if strings.Contains(prompt, "ACTION: gaps") {
+			fmt.Println(featureMapGapsJSON)
+			return
+		}
+		fmt.Println(featureMapJSON)
 	case strings.Contains(prompt, "discovery analyst"):
 		countRun("discovery")
 		if mode == "bad_json" {
@@ -342,16 +366,30 @@ func mustJob(t *testing.T, p *core.Project, kind string, st core.JobStatus) {
 	}
 }
 
-// designReady drives Tell → Discovery → Design.
+// designReady drives Tell → Feature Map → Discovery → Design.
 func designReady(t *testing.T, s *pipeline.Service) *core.Project {
 	t.Helper()
 	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
 		t.Fatal(err)
 	}
 	s.Wait()
+	if err := s.StartBlueprint(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
 	p := load(t, s)
 	mustJob(t, p, work.KindDesign, core.JobDone)
 	return p
+}
+
+func mcpAfterStory(t *testing.T, s *pipeline.Service) {
+	t.Helper()
+	if err := s.SubmitWork(work.KindFeatureMap, featureMapJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StartBlueprint(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestEndToEndAgent(t *testing.T) {
@@ -469,12 +507,17 @@ func TestNoAIConnected(t *testing.T) {
 	if _, err := s.SubmitStory("Aplikasi laundry untuk pelanggan"); !errors.Is(err, pipeline.ErrNoAI) {
 		t.Fatalf("err = %v", err)
 	}
-	mustJob(t, load(t, s), work.KindDiscovery, core.JobFailed)
+	mustJob(t, load(t, s), work.KindFeatureMap, core.JobFailed)
 }
 
 func TestInvalidDiscoveryOutput(t *testing.T) {
 	s := newService(t, fakeAI{}, "bad_json")
 	s.SubmitStory("Aplikasi keuangan pribadi")
+	s.Wait()
+	mustJob(t, load(t, s), work.KindFeatureMap, core.JobDone)
+	if err := s.StartBlueprint(); err != nil {
+		t.Fatal(err)
+	}
 	s.Wait()
 	p := load(t, s)
 	mustJob(t, p, work.KindDiscovery, core.JobFailed)
@@ -486,6 +529,10 @@ func TestInvalidDiscoveryOutput(t *testing.T) {
 func TestDiscoveryCompletesBlueprint(t *testing.T) {
 	s := newService(t, fakeAI{}, "")
 	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	if err := s.StartBlueprint(); err != nil {
 		t.Fatal(err)
 	}
 	s.Wait()
@@ -610,10 +657,24 @@ func TestMCPHostFlow(t *testing.T) {
 	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
 		t.Fatal(err)
 	}
-	mustJob(t, load(t, s), work.KindDiscovery, core.JobWaiting)
+	mustJob(t, load(t, s), work.KindFeatureMap, core.JobWaiting)
 
 	w, _ := s.NextWork()
-	if w.Kind != work.KindDiscovery || !strings.Contains(w.Prompt, "klinik") {
+	if w.Kind != work.KindFeatureMap || !strings.Contains(w.Prompt, "feature mapper") || !strings.Contains(w.Prompt, "klinik") {
+		t.Fatalf("work = %+v", w)
+	}
+	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); !errors.Is(err, pipeline.ErrWrongStage) {
+		t.Fatalf("wrong kind err = %v", err)
+	}
+	if err := s.SubmitWork(work.KindFeatureMap, featureMapJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StartBlueprint(); err != nil {
+		t.Fatal(err)
+	}
+	mustJob(t, load(t, s), work.KindDiscovery, core.JobWaiting)
+	w, _ = s.NextWork()
+	if w.Kind != work.KindDiscovery || !strings.Contains(w.Prompt, "klinik") || !strings.Contains(w.Prompt, "FEATURE MAP") {
 		t.Fatalf("work = %+v", w)
 	}
 	if err := s.SubmitWork(work.KindDesign, designJSON); !errors.Is(err, pipeline.ErrWrongStage) {
@@ -691,6 +752,7 @@ func mcpDesigned(t *testing.T, s *pipeline.Service) {
 	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
 		t.Fatal(err)
 	}
+	mcpAfterStory(t, s)
 	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
 		t.Fatal(err)
 	}
@@ -881,6 +943,7 @@ func TestTechStack(t *testing.T) {
 	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
 		t.Fatal(err)
 	}
+	mcpAfterStory(t, s)
 	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
 		t.Fatal(err)
 	}
@@ -1042,6 +1105,7 @@ func TestStackRequest(t *testing.T) {
 	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
 		t.Fatal(err)
 	}
+	mcpAfterStory(t, s)
 	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
 		t.Fatal(err)
 	}
@@ -1085,6 +1149,7 @@ func TestStructureDecision(t *testing.T) {
 	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
 		t.Fatal(err)
 	}
+	mcpAfterStory(t, s)
 	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
 		t.Fatal(err)
 	}

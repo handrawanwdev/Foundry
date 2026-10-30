@@ -219,6 +219,38 @@ func (s *Server) Handler() http.Handler {
 		}
 		return svc.SubmitStoryWith(in.Story, in.Survey)
 	}))
+	api("PUT /api/v1/project/feature-map", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var m core.FeatureMap
+		if err := decode(r, &m); err != nil {
+			return nil, err
+		}
+		return svc.SaveFeatureMap(&m)
+	}))
+	api("POST /api/v1/project/feature-map/generate", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Text string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.GenerateFeatureMap(in.Text))
+	}))
+	api("POST /api/v1/project/feature-map/expand", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			ID   string `json:"id"`
+			Text string
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.ExpandFeature(in.ID, in.Text))
+	}))
+	api("POST /api/v1/project/feature-map/gaps", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Text string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.FindFeatureGaps(in.Text))
+	}))
+	api("POST /api/v1/project/discover", s.action(func(svc *pipeline.Service) error { return svc.StartBlueprint() }))
 	api("POST /api/v1/project/retry", s.action(func(svc *pipeline.Service) error { return svc.RetryJob() }))
 	api("POST /api/v1/project/job/dismiss", s.action(func(svc *pipeline.Service) error { return svc.DismissJob() }))
 	api("PUT /api/v1/project/platform", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
