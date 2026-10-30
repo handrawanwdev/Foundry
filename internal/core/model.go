@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// Stage is the pipeline position: Prompt (TELL, DISCOVERY) → Blueprint and
-// Workflow (DESIGN, with the design rules and layout specification when the
-// product has screens) →
+// Stage is the pipeline position: Prompt (TELL) → Feature Discovery
+// (DISCOVERY) → Blueprint and Workflow (DESIGN, with the design rules and
+// layout specification when the product has screens) →
 // Finalized (READY: blueprint and workflow approved, export written).
 type Stage string
 
@@ -33,6 +33,9 @@ type Project struct {
 	// Survey holds the optional answers that bind technical decisions.
 	Survey    *Survey    `json:"survey,omitempty"`
 	Discovery *Discovery `json:"discovery,omitempty"`
+	// FeatureMap is the user-editable product feature tree, composed
+	// before Blueprint. It is a reference for discovery, not Features.
+	FeatureMap *FeatureMap `json:"feature_map,omitempty"`
 	// Blueprint is the production architecture decided during discovery.
 	// Coding agents treat it as source of truth and do not invent another.
 	Blueprint    *Blueprint    `json:"blueprint,omitempty"`
@@ -454,7 +457,7 @@ const (
 )
 
 type Job struct {
-	Kind    string    `json:"kind"` // discovery | design | stack | structure | blueprint | workflow
+	Kind    string    `json:"kind"` // feature_map | discovery | design | stack | structure | blueprint | workflow
 	Status  JobStatus `json:"status"`
 	Message string    `json:"message"`
 	Error   string    `json:"error,omitempty"`

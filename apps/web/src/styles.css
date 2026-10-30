@@ -89,6 +89,7 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
 button.link:hover { background: none; text-decoration: underline; }
 
 button.danger { color: var(--bad); }
+button.ghost.danger:not(:disabled):hover { color: var(--bad); background: var(--bad-soft); }
 input, textarea {
   appearance: none; -webkit-appearance: none;
   font: inherit; padding: .5rem .75rem; border: 1px solid var(--line); border-radius: 10px;
@@ -201,6 +202,10 @@ body { overflow: hidden; }
 .pad { padding: .7rem; }
 .field { display: flex; flex-direction: column; gap: .3rem; font-size: 13px; }
 .modal-actions { display: flex; gap: .5rem; align-items: center; justify-content: flex-end; }
+.modal.confirm { width: min(420px, 94vw); gap: .65rem; }
+.modal.confirm p { margin: 0; line-height: 1.5; }
+.modal.confirm .danger { background: var(--bad-soft); border-color: transparent; font-weight: 500; }
+.modal.confirm .danger:not(:disabled):hover { background: var(--bad-soft); filter: brightness(1.08); }
 .path-preview { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- Tell ---------- */
@@ -445,6 +450,60 @@ button.ref-chip:not(:disabled):hover, a.ref-chip:hover { border-color: var(--acc
 .prompt-copy { margin: 0 0 .6rem; padding: .9rem 1rem; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;
   font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; }
 
+.feat-summary {
+  font-size: 12px; color: var(--muted); margin: 0; padding: 0 .5rem;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+.feat-empty-nav { padding: 0 .5rem; margin: 0; }
+.feat-mod-head { display: flex; align-items: center; justify-content: space-between; gap: .4rem; padding-right: .15rem; }
+.feat-mod-head .ghost {
+  text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 500;
+  padding: .15rem .45rem; color: var(--accent);
+}
+.feat-mod-head .ghost:not(:disabled):hover { color: var(--heading); }
+.feat-nav-actions { display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; padding: .15rem; }
+.feat-nav-actions .ghost { padding: .3rem .5rem; color: var(--muted); }
+.feat-nav-actions .ghost:not(:disabled):hover { color: var(--text); }
+.feat-nav-foot { margin-top: auto; display: flex; flex-direction: column; gap: .45rem; padding: .25rem .15rem 0; }
+.feat-nav-foot .primary { width: 100%; }
+.feat-path { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem .15rem; font-size: 13px; color: var(--muted); margin: 0 0 .15rem; }
+.feat-path-seg { display: inline-flex; align-items: center; gap: .15rem; }
+.feat-path-sep { opacity: .45; padding: 0 .1rem; }
+.feat-path button.ghost { padding: .1rem .4rem; color: var(--muted); border-radius: 6px; }
+.feat-path button.ghost:hover { color: var(--heading); }
+.feat-path-now { padding: .1rem .25rem; color: var(--text); }
+.doc-head:has(.feat-path) h1 { margin-top: 0; }
+.feat-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.feat-list.nested { margin: .15rem 0 .35rem .5rem; padding-left: .65rem; border-left: 1px solid var(--line); }
+.feat-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: .75rem; row-gap: .15rem;
+  width: 100%; text-align: left; padding: .65rem .75rem; border: none; border-radius: 10px; background: none;
+}
+.feat-row:not(:disabled):hover { background: var(--hover); border-color: transparent; }
+.feat-row.on { background: var(--accent-soft); }
+.feat-list.nested .feat-row { padding: .4rem .55rem; }
+.feat-row-name { grid-column: 1; color: var(--heading); font-weight: 550; }
+.feat-row-desc {
+  grid-column: 1; color: var(--muted); font-size: 13px; line-height: 1.45;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.feat-row.on .feat-row-desc { display: none; }
+.feat-row-n {
+  grid-column: 2; grid-row: 1 / span 2; align-self: center;
+  font-size: 11px; color: var(--muted); background: var(--surface-2); border-radius: 999px;
+  padding: 0 .45rem; min-width: 1.3rem; height: 1.3rem; display: inline-flex; align-items: center; justify-content: center;
+}
+.feat-row.on .feat-row-n { background: color-mix(in srgb, var(--accent) 18%, var(--surface-2)); color: var(--accent); }
+.feat-detail { padding: .2rem .75rem 1.15rem; margin: 0 0 .2rem; }
+.feat-list.nested .feat-detail { padding-left: .55rem; padding-right: .55rem; }
+.feat-lead { font-size: 15px; line-height: 1.6; margin: 0 0 .9rem; max-width: 62ch; }
+.feat-facts {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.15rem 1.5rem;
+  margin: 0; padding: .9rem 0 0; border-top: 1px solid var(--line);
+}
+.feat-facts dt { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 0 0 .3rem; }
+.feat-facts dd { margin: 0; font-size: 14px; line-height: 1.5; }
+
 @container (max-width: 860px) {
   .ws { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .ws-nav { border-right: none; border-bottom: 1px solid var(--line); flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: .5rem .75rem; gap: 1rem; max-height: 9.5rem; }
@@ -454,6 +513,19 @@ button.ref-chip:not(:disabled):hover, a.ref-chip:hover { border-color: var(--acc
   .ws-item { width: auto; max-width: 15rem; flex-shrink: 0; }
   .ws-main { padding: 1.25rem 1rem 8rem; }
   .ws-dock { left: 50%; width: calc(100% - 2rem); }
+  .feat-summary { display: none; }
+  .ws-nav:has(.feat-nav-foot) {
+    flex-direction: column; flex-wrap: nowrap; align-items: stretch;
+    overflow-x: hidden; overflow-y: hidden; max-height: none; gap: .4rem;
+  }
+  .ws-nav:has(.feat-nav-foot) .ws-group {
+    flex-direction: row; flex-wrap: nowrap; flex-shrink: 1; overflow-x: auto; min-width: 0; max-width: 100%;
+  }
+  .feat-nav-actions, .feat-nav-foot {
+    flex-direction: row; flex-wrap: wrap; margin-top: 0; width: auto; flex-shrink: 0; align-items: center; gap: .2rem .35rem;
+  }
+  .feat-nav-foot .primary { width: auto; }
+  .feat-mod-head { padding-right: 0; }
 }
 
 @media (max-width: 720px) {
@@ -461,6 +533,7 @@ button.ref-chip:not(:disabled):hover, a.ref-chip:hover { border-color: var(--acc
   .step + .step { margin-left: 1rem; }
   .step + .step::before { left: -.85rem; width: .6rem; }
   .start-title { margin-top: 1rem; }
+  .feat-facts { grid-template-columns: 1fr; }
 }
 
 

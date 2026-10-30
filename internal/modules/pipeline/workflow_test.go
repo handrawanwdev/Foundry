@@ -16,7 +16,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
-// Prompt → blueprint → workflow → revision → impact → finalize → export →
+// Prompt → feature map → blueprint → workflow → revision → impact → finalize → export →
 // reopen, with the agent.
 func TestWorkflowLifecycle(t *testing.T) {
 	s := newService(t, fakeAI{}, "")
@@ -222,6 +222,10 @@ func TestEmbeddedProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Wait()
+	if err := s.StartBlueprint(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
 	p := load(t, s)
 	mustJob(t, p, work.KindDiscovery, core.JobDone)
 	if p.HasUI() || p.UI != nil || p.Stage != core.StageDesign {
@@ -265,6 +269,7 @@ func TestWorkflowMCP(t *testing.T) {
 	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
 		t.Fatal(err)
 	}
+	mcpAfterStory(t, s)
 	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
 		t.Fatal(err)
 	}

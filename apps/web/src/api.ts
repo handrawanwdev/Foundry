@@ -1,4 +1,4 @@
-import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DeleteImpact, DesignRules, DesignView, ExportView, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
+import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
 
 // details lists what an invalid request broke (field = where).
 export interface ErrorDetail { field?: string; message: string }
@@ -43,6 +43,11 @@ export const api = {
 
   project: () => call<Project>("GET", "/project"),
   story: (story: string, survey?: Survey) => call<Project>("POST", "/project/story", { story, survey }),
+  saveFeatureMap: (m: FeatureMap) => call<Project>("PUT", "/project/feature-map", m),
+  generateFeatureMap: (text = "") => call("POST", "/project/feature-map/generate", { text }),
+  expandFeature: (id: string, text = "") => call("POST", "/project/feature-map/expand", { id, text }),
+  findFeatureGaps: (text = "") => call("POST", "/project/feature-map/gaps", { text }),
+  startBlueprint: () => call("POST", "/project/discover", {}),
   retry: () => call("POST", "/project/retry", {}),
   dismissJob: () => call("POST", "/project/job/dismiss", {}),
   setPlatform: (targets: PlatformTarget[]) => call<Project>("PUT", "/project/platform", { targets }),

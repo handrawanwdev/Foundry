@@ -183,6 +183,7 @@ func TestDeleteCleanupThroughMCP(t *testing.T) {
 	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
 		t.Fatal(err)
 	}
+	mcpAfterStory(t, s)
 	for _, w := range []struct{ kind, raw string }{{work.KindDiscovery, discoveryJSON}, {work.KindDesign, designJSON}} {
 		if err := s.SubmitWork(w.kind, w.raw); err != nil {
 			t.Fatal(err)
@@ -252,6 +253,7 @@ func TestDeleteDocumentWaitsForPendingJob(t *testing.T) {
 	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
 		t.Fatal(err)
 	}
+	mcpAfterStory(t, s)
 	for _, w := range []struct{ kind, raw string }{{work.KindDiscovery, discoveryJSON}, {work.KindDesign, designJSON}} {
 		if err := s.SubmitWork(w.kind, w.raw); err != nil {
 			t.Fatal(err)

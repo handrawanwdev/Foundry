@@ -29,11 +29,25 @@ export function BlueprintPage() {
 
   if (!project) return null;
   if (!project.discovery) {
+    const discovering = isWorking(project) && project.job?.kind === "discovery";
+    if (discovering) {
+      return (
+        <div className="dw-empty">
+          <h1><span className="spinner" /> Memahami kebutuhan <Elapsed started={project.job?.started} /></h1>
+          <p className="muted">Blueprint disusun dari daftar fitur yang sudah kamu tinjau.</p>
+        </div>
+      );
+    }
+    const toFeatures = project.stage === "DISCOVERY";
     return (
       <div className="dw-empty">
         <h1>Belum ada blueprint</h1>
-        <p className="muted">Blueprint dibuat dari prompt: apa yang ingin dibuat atau diubah.</p>
-        <Link className="button primary" to="/simple/tell">Tulis prompt</Link>
+        <p className="muted">{toFeatures
+          ? "Blueprint dibuat dari daftar fitur. Tinjau dan sempurnakan dulu, lalu lanjut."
+          : "Blueprint dibuat dari prompt: apa yang ingin dibuat atau diubah."}</p>
+        <Link className="button primary" to={toFeatures ? "/features" : "/simple/tell"}>
+          {toFeatures ? "Tinjau daftar fitur" : "Tulis prompt"}
+        </Link>
       </div>
     );
   }

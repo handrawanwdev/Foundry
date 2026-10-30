@@ -52,15 +52,16 @@ In short: Foundry **separates designing software from implementing it**.
 
 ```mermaid
 flowchart LR
-    A["💬 Prompt<br/><sub>idea · requirement · change</sub>"] --> B["📐 Blueprint<br/><sub>requirements · architecture<br/>stack · design · use cases</sub>"]
-    B --> C["🧩 Command Workflow<br/><sub>instructions · dependencies<br/>execution waves</sub>"]
-    C --> D["🔍 Review & Revise<br/><sub>validation · change impact</sub>"]
-    D -->|revise| B
-    D --> E["📦 Finalize & Export<br/><sub>docs/foundry/ · ZIP</sub>"]
-    E --> F["🤖 External<br/>Coding Agent"]
+    A["💬 Prompt<br/><sub>idea · requirement · change</sub>"] --> B["📋 Features<br/><sub>modules · features · subfeatures</sub>"]
+    B --> C["📐 Blueprint<br/><sub>requirements · architecture<br/>stack · design · use cases</sub>"]
+    C --> D["🧩 Command Workflow<br/><sub>instructions · dependencies<br/>execution waves</sub>"]
+    D --> E["🔍 Review & Revise<br/><sub>validation · change impact</sub>"]
+    E -->|revise| C
+    E --> F["📦 Finalize & Export<br/><sub>docs/foundry/ · ZIP</sub>"]
+    F --> G["🤖 External<br/>Coding Agent"]
 ```
 
-Foundry prepares the instructions and the specification. **The developer stays in control** of decisions, reviews, and approval before the specification is finalized.
+Foundry prepares the instructions and the specification. After the prompt, it composes a **feature list** that you refine before Blueprint. **The developer stays in control** of decisions, reviews, and approval before the specification is finalized.
 
 ## ✨ Key Features
 
@@ -259,7 +260,7 @@ foundry serve
 
 ### UI flow
 
-**Connect AI → Prompt → Design (preview + revise) → Finalize**
+**Connect AI → Prompt → Features → Blueprint → Workflow → Export**
 
 Without a folder argument, the UI opens on the **Start** page to Open / New / Close a project. Planning state is stored in `.foundry/` inside the project folder.
 

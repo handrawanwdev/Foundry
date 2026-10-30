@@ -188,6 +188,34 @@ func TestApplyDiscoveryMapsOrphanRequirement(t *testing.T) {
 	}
 }
 
+func TestApplyDiscoverySeedsAndKeepsFeatureMap(t *testing.T) {
+	p := &core.Project{Story: "klinik"}
+	if err := ApplyDiscovery(p, thinDiscovery); err != nil {
+		t.Fatal(err)
+	}
+	if p.FeatureMap.Empty() || p.FeatureMap.Find("feat-001") == nil {
+		t.Fatalf("seed = %+v", p.FeatureMap)
+	}
+	kept := &core.FeatureMap{Modules: []core.FeatureModule{{Name: "Trading", Features: []core.FeatureNode{{Name: "Spot"}}}}}
+	kept.Normalize()
+	p = &core.Project{Story: "klinik", FeatureMap: kept}
+	if err := ApplyDiscovery(p, thinDiscovery); err != nil {
+		t.Fatal(err)
+	}
+	if p.FeatureMap.FindModule("trading") == nil || p.FeatureMap.Find("spot") == nil {
+		t.Fatalf("rewrote map: %+v", p.FeatureMap)
+	}
+}
+
+func TestDiscoveryPromptIncludesFeatureMap(t *testing.T) {
+	m := &core.FeatureMap{Modules: []core.FeatureModule{{Name: "Trading", Features: []core.FeatureNode{{Name: "Spot Trading"}}}}}
+	m.Normalize()
+	got := DiscoveryPrompt(&core.Project{Story: "exchange cryptocurrency", FeatureMap: m})
+	if !strings.Contains(got, "FEATURE MAP") || !strings.Contains(got, "Spot Trading") {
+		t.Fatalf("prompt missing feature map: %s", got)
+	}
+}
+
 func TestDiscoveryPromptAsksForBlueprint(t *testing.T) {
 	p := &core.Project{Story: "Aplikasi klinik pasien buat janji"}
 	got := DiscoveryPrompt(p)

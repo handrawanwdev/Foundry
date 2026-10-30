@@ -4,4 +4,5 @@ apps/web/dist/*
 !apps/web/dist/.gitkeep
 .foundry/
 graphify-out/
+.agent-screenshots/
 /dist/

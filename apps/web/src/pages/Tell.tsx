@@ -28,15 +28,21 @@ export function TellPage() {
   const fromCode = project.survey?.kinds?.length ? [] : kindsFromCode(project);
   const set = (patch: Partial<Survey>) => setSurvey({ ...survey, ...patch });
   const discovering = project.stage === "DISCOVERY" && isWorking(project);
-  const hasDownstream = (project.features?.length ?? 0) > 0;
+  const mapping = project.job?.kind === "feature_map";
+  const hasDownstream = (project.features?.length ?? 0) > 0 || (project.feature_map?.modules?.length ?? 0) > 0;
 
   if (discovering) {
     return (
       <section className="tell">
-        <h1><span className="spinner" /> Foundry memahami kebutuhan <Elapsed started={project.job?.started} /></h1>
-        <p className="muted">{tellWaiting(existing)}</p>
+        <h1>
+          <span className="spinner" /> {mapping ? "Menyusun daftar fitur" : "Foundry memahami kebutuhan"}{" "}
+          <Elapsed started={project.job?.started} />
+        </h1>
+        <p className="muted">{mapping
+          ? "Foundry lagi bikin daftar fitur dari ceritamu. Bisa kamu ubah dulu sebelum lanjut ke blueprint."
+          : tellWaiting(existing)}</p>
         {components && <p className="muted small">Kode yang dibaca: {components}</p>}
-        <ul className="checklist">{TELL_ANALYSIS.map((a) => <li key={a}>{a}</li>)}</ul>
+        {!mapping && <ul className="checklist">{TELL_ANALYSIS.map((a) => <li key={a}>{a}</li>)}</ul>}
         <blockquote>{project.story}</blockquote>
       </section>
     );

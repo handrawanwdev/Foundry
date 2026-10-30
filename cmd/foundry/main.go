@@ -27,7 +27,7 @@ var version = "dev"
 const usage = `Foundry — dari prompt ke rancangan aplikasi dan spesifikasi final
 
   foundry serve [--addr 127.0.0.1:8080] [folder-project]
-      Buka UI: Hubungkan AI → Prompt → Rancang (preview + revisi) → Finalisasi
+      Buka UI: Hubungkan AI → Prompt → Fitur → Blueprint → Workflow → Export
       Tanpa folder: halaman Start untuk Open/New/Close Project
 
   foundry mcp [--allow READ,WRITE,MODIFY|ALL] [--project folder] [--print-config]

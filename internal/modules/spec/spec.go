@@ -522,6 +522,7 @@ var stateLabel = map[string]string{
 type Spec struct {
 	Name         string             `json:"name"`
 	Story        string             `json:"story"`
+	FeatureMap   *core.FeatureMap   `json:"feature_map,omitempty"`
 	Requirements []core.Requirement `json:"requirements"`
 	Features     []core.Feature     `json:"features"`
 	Flows        []core.Flow        `json:"flows"`
@@ -546,7 +547,7 @@ type Spec struct {
 
 // Export builds the Spec from the project.
 func Export(p *core.Project) Spec {
-	s := Spec{Name: p.Name, Story: p.Story, Requirements: p.Requirements, Features: p.Features, Flows: p.Flows,
+	s := Spec{Name: p.Name, Story: p.Story, FeatureMap: p.FeatureMap, Requirements: p.Requirements, Features: p.Features, Flows: p.Flows,
 		Platform: p.Platform, Stack: p.Stack, Structure: p.Structure, Blueprint: p.Blueprint,
 		Artifacts: p.Artifacts, Decisions: p.Decisions, BindingDecisions: p.BindingDecisions(),
 		Skips: p.Skips, Done: p.Done, Workflow: p.Workflow}

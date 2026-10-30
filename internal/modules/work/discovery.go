@@ -57,6 +57,10 @@ STORY:
 `)
 	b.WriteString(p.Story)
 	b.WriteString("\n\n")
+	if ctx := FeatureMapContext(p); ctx != "" {
+		b.WriteString(ctx)
+		b.WriteString("\n")
+	}
 	b.WriteString(standard.Rules)
 	b.WriteString("\n")
 	b.WriteString(surveyPrompt(p))
@@ -253,6 +257,9 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	p.Discovery = &d
 	p.Blueprint = NormalizeBlueprint(out.Blueprint)
 	p.Requirements, p.Features, p.Flows = reqs, feats, flows
+	if p.FeatureMap.Empty() {
+		p.FeatureMap = core.FeatureMapFromFeatures(feats)
+	}
 	p.Platform = &core.PlatformPlan{Targets: targets, Reason: out.Platform.Reason}
 	SetArtifacts(p, out.Artifacts)
 	p.UI = nil

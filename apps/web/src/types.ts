@@ -65,6 +65,15 @@ export interface Feature {
   id: string; name: string; description: string; requirement_ids: string[];
   platforms: PlatformKind[]; sub_features: SubFeature[];
 }
+// Feature Discovery tree, composed before Blueprint. Independent of Feature.
+export interface FeatureNode {
+  id: string; name: string;
+  description?: string; purpose?: string; benefit?: string; outcome?: string;
+  children?: FeatureNode[];
+}
+export interface FeatureModule { id: string; name: string; features: FeatureNode[] }
+export interface FeatureMapRequest { action: string; node_id?: string; text?: string; rejected?: string }
+export interface FeatureMap { summary?: string; modules: FeatureModule[]; request?: FeatureMapRequest }
 // A use case: role is the actor, steps the main flow.
 export interface Flow {
   id: string; name: string; feature_id: string; role: string; steps: string[]; page_ids: string[] | null;
@@ -232,7 +241,7 @@ export interface RecentProject { dir: string; name: string }
 
 export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string; survey?: Survey;
-  discovery?: Discovery; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
+  discovery?: Discovery; feature_map?: FeatureMap; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
   platform?: PlatformPlan; structure?: Structure; stack?: TechStack; ui?: UIDesign; visual?: VisualAudit;
   artifacts?: Artifact[]; artifact_request?: ChangeRequest; workflow?: Workflow;
   decisions?: Decision[]; area_skips?: AreaSkip[]; definition_of_done?: string[];

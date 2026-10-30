@@ -20,6 +20,10 @@ func submitSurvey(t *testing.T, s *pipeline.Service, sv core.Survey) *core.Proje
 		t.Fatal(err)
 	}
 	s.Wait()
+	if err := s.StartBlueprint(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
 	p := load(t, s)
 	mustJob(t, p, work.KindDesign, core.JobDone)
 	return p

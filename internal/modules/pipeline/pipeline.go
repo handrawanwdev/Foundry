@@ -1,6 +1,6 @@
 // Package pipeline is the Foundry orchestrator: it moves one project through
-// Prompt → Blueprint (with design rules and layout spec when the product has
-// screens) →
+// Prompt → Feature Discovery → Blueprint (with design rules and layout spec
+// when the product has screens) →
 // Command Workflow → Finalize → Export. Foundry never runs the workflow. AI work is done
 // either by a connected agent CLI (Foundry drives it) or by an MCP host (the
 // host pulls work with next_work and pushes answers with submit_work). Both
@@ -146,6 +146,7 @@ func (s *Service) SubmitStoryWith(story string, survey *core.Survey) (*core.Proj
 		}
 		unfinalize(p) // a new prompt reopens a finalized blueprint
 		p.Stage = core.StageDiscovery
+		p.FeatureMap = &core.FeatureMap{Request: &core.FeatureMapRequest{Action: core.FeatureMapGenerate}}
 		attachStructure(p)
 		p.Log("ui", "Cerita diterima")
 		return nil
@@ -153,7 +154,7 @@ func (s *Service) SubmitStoryWith(story string, survey *core.Survey) (*core.Proj
 	if err != nil {
 		return nil, err
 	}
-	return p, s.startAI(work.KindDiscovery)
+	return p, s.startAI(work.KindFeatureMap)
 }
 
 // DetectStructure records whether the folder already has a codebase, so
@@ -202,6 +203,8 @@ func (s *Service) SetPlatform(targets []core.PlatformTarget) (*core.Project, err
 
 func (s *Service) promptFor(p *core.Project, kind string) string {
 	switch kind {
+	case work.KindFeatureMap:
+		return work.FeatureMapPrompt(p)
 	case work.KindDiscovery:
 		return work.DiscoveryPrompt(p)
 	case work.KindDesign:
@@ -314,6 +317,8 @@ func (s *Service) runWorkflow(runner *agent.Runner) {
 
 func jobMessage(kind string) string {
 	switch kind {
+	case work.KindFeatureMap:
+		return "Menyusun daftar fitur"
 	case work.KindDiscovery:
 		return "Memahami kebutuhan"
 	case work.KindDesign:
@@ -355,6 +360,10 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			return fmt.Errorf("%w: tidak ada job %s yang aktif", ErrWrongStage, kind)
 		}
 		switch kind {
+		case work.KindFeatureMap:
+			if err := work.ApplyFeatureMap(p, raw); err != nil {
+				return err
+			}
 		case work.KindDiscovery:
 			if err := work.ApplyDiscovery(p, raw); err != nil {
 				return err
@@ -418,7 +427,26 @@ func (s *Service) applyAI(kind, raw, source string) error {
 // refused on its request, for the retry prompt. Only the first refusal
 // retries automatically.
 func (s *Service) noteRejection(kind string, err error) bool {
-	if err == nil || kind != work.KindWorkflow && kind != work.KindArtifacts && kind != work.KindDesign {
+	if err == nil {
+		return false
+	}
+	if kind == work.KindFeatureMap {
+		retry := false
+		s.Store.Update(func(p *core.Project) error {
+			if p.FeatureMap == nil {
+				p.FeatureMap = &core.FeatureMap{}
+			}
+			if p.FeatureMap.Request == nil {
+				p.FeatureMap.Request = &core.FeatureMapRequest{Action: core.FeatureMapGenerate}
+			}
+			retry = p.FeatureMap.Request.Rejected == ""
+			p.FeatureMap.Request.Rejected = err.Error()
+			p.Log("system", err.Error())
+			return nil
+		})
+		return retry
+	}
+	if kind != work.KindWorkflow && kind != work.KindArtifacts && kind != work.KindDesign {
 		return false
 	}
 	retry := false
@@ -458,6 +486,10 @@ func (s *Service) DismissJob() error {
 			return ErrNothingToDo
 		}
 		switch p.Job.Kind {
+		case work.KindFeatureMap:
+			if p.FeatureMap != nil {
+				p.FeatureMap.Request = nil
+			}
 		case work.KindArtifacts:
 			p.ArtifactRequest = nil
 			if p.Workflow != nil && p.Workflow.Request != nil && p.Workflow.Request.Cascade {
@@ -494,7 +526,7 @@ func (s *Service) RetryJob() error {
 	// the update that starts the job, so concurrent retries start it once.
 	kind := p.Job.Kind
 	switch kind {
-	case work.KindDiscovery, work.KindDesign:
+	case work.KindFeatureMap, work.KindDiscovery, work.KindDesign:
 		return s.startAIIf(kind, failedJob(kind))
 	case work.KindStack:
 		if p.Stack != nil && p.Stack.Request != "" {

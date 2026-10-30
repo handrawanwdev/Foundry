@@ -39,8 +39,12 @@ export function WorkflowPage() {
     return (
       <div className="dw-empty">
         <h1>Belum ada blueprint</h1>
-        <p className="muted">Workflow disusun dari blueprint. Mulai dari prompt.</p>
-        <Link className="button primary" to="/simple/tell">Tulis prompt</Link>
+        <p className="muted">{project.stage === "DISCOVERY"
+          ? "Workflow disusun dari blueprint. Tinjau daftar fitur dulu, lalu lanjut."
+          : "Workflow disusun dari blueprint. Mulai dari prompt."}</p>
+        <Link className="button primary" to={project.stage === "DISCOVERY" ? "/features" : "/simple/tell"}>
+          {project.stage === "DISCOVERY" ? "Tinjau daftar fitur" : "Tulis prompt"}
+        </Link>
       </div>
     );
   }

@@ -5,14 +5,17 @@ import type { Project } from "./types";
 describe("flow", () => {
   it("maps internal stages to the user steps", () => {
     expect(stepFor("TELL").label).toBe("Prompt");
-    expect(stepFor("DISCOVERY").label).toBe("Prompt");
+    expect(stepFor("DISCOVERY").label).toBe("Fitur");
     expect(stepFor("DESIGN").label).toBe("Blueprint");
     expect(stepFor("READY").label).toBe("Export");
   });
 
   it("locks steps until a blueprint exists", () => {
     expect(reachable("TELL", 0)).toBe(true);
+    expect(reachable("TELL", 1)).toBe(false);
     expect(reachable("TELL", 2)).toBe(false);
+    expect(reachable("DISCOVERY", 1)).toBe(true);
+    expect(reachable("DISCOVERY", 2)).toBe(false);
     expect(reachable("DESIGN", 2)).toBe(true);
     expect(reachable("DESIGN", 3)).toBe(true);
     expect(reachable("READY", 1)).toBe(true);
@@ -24,9 +27,10 @@ describe("flow", () => {
     expect(isWorking(null)).toBe(false);
   });
 
-  it("has the prompt, blueprint, workflow and export steps", () => {
-    expect(STEPS.map((s) => s.path)).toEqual(["/simple/tell", "/blueprint", "/workflow", "/export"]);
-    expect(stepOfPath("/blueprint/ui")).toBe(1);
-    expect(stepOfPath("/export")).toBe(3);
+  it("has the prompt, features, blueprint, workflow and export steps", () => {
+    expect(STEPS.map((s) => s.path)).toEqual(["/simple/tell", "/features", "/blueprint", "/workflow", "/export"]);
+    expect(stepOfPath("/features")).toBe(1);
+    expect(stepOfPath("/blueprint/ui")).toBe(2);
+    expect(stepOfPath("/export")).toBe(4);
   });
 });
