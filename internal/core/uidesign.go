@@ -439,6 +439,87 @@ func (p *Project) DesignIssues(d *UIDesign) []Issue {
 	return append(out, layoutIssues(p, d.Layout, d.Rules, comps, d.Format)...)
 }
 
+// DesignSketchIssues checks a partial AI answer: rules and page identity
+// (id, name, platform, pattern). Sections, states and the UX layer are
+// filled in a later round, so they are not required here.
+func (p *Project) DesignSketchIssues(d *UIDesign) []Issue {
+	if d == nil {
+		d = p.UI
+	}
+	var out []Issue
+	add := func(level, where, format string, a ...any) {
+		out = append(out, Issue{Level: level, Where: where, Message: fmt.Sprintf(format, a...)})
+	}
+	if d == nil || d.Rules == nil {
+		add(IssueError, "rules", "aturan desain belum ada")
+		return out
+	}
+	out = append(out, rulesIssues(d.Rules, p.UXPlatforms())...)
+	if p.Survey != nil {
+		if ref := strings.TrimSpace(p.Survey.DesignReference); ref != "" && strings.TrimSpace(d.Rules.Reference) == "" {
+			add(IssueError, "rules", "referensi desain %q belum dicatat pada rules.reference; turunkan aturan dari referensi itu dan catat namanya", ref)
+		}
+	}
+	if d.Layout == nil {
+		return out
+	}
+	platforms := p.UIPlatforms()
+	shells := map[string]bool{}
+	for _, sh := range d.Layout.Shells {
+		where := "shell:" + sh.ID
+		switch {
+		case !ValidID(sh.ID):
+			add(IssueError, "layout", "id shell %q tidak sah (huruf kecil, angka, tanda minus)", sh.ID)
+		case shells[sh.ID]:
+			add(IssueError, "layout", "id shell %q ganda", sh.ID)
+		}
+		shells[sh.ID] = true
+		if sh.Name == "" {
+			add(IssueError, where, "nama shell belum diisi")
+		}
+		if sh.Pattern != "" && !slices.Contains(LayoutPatterns, sh.Pattern) {
+			add(IssueError, where, "pattern %q tidak dikenal (%s)", sh.Pattern, strings.Join(LayoutPatterns, ", "))
+		}
+		if sh.Platform != "" && !slices.Contains(UIPlatform, sh.Platform) {
+			add(IssueError, where, "platform %q bukan platform dengan layar (%s)", sh.Platform, strings.Join(UIPlatform, ", "))
+		}
+		if sh.Platform != "" && len(platforms) > 0 && !slices.Contains(platforms, sh.Platform) {
+			add(IssueError, where, "platform %q tidak dipilih untuk project (%s)", sh.Platform, strings.Join(platforms, ", "))
+		}
+	}
+	pages := map[string]bool{}
+	for _, pg := range d.Layout.Pages {
+		where := "page:" + pg.ID
+		switch {
+		case !ValidID(pg.ID):
+			add(IssueError, "layout", "id halaman %q tidak sah (huruf kecil, angka, tanda minus)", pg.ID)
+		case pages[pg.ID]:
+			add(IssueError, "layout", "id halaman %q ganda", pg.ID)
+		}
+		pages[pg.ID] = true
+		if pg.Name == "" {
+			add(IssueError, where, "nama halaman belum diisi")
+		}
+		if pg.Platform == "" {
+			add(IssueError, where, "platform halaman belum diisi")
+		} else if !slices.Contains(UIPlatform, pg.Platform) {
+			add(IssueError, where, "platform %q bukan platform dengan layar (%s)", pg.Platform, strings.Join(UIPlatform, ", "))
+		} else if len(platforms) > 0 && !slices.Contains(platforms, pg.Platform) {
+			add(IssueError, where, "platform %q tidak dipilih untuk project (%s)", pg.Platform, strings.Join(platforms, ", "))
+		}
+		if pg.Pattern != "" && !slices.Contains(LayoutPatterns, pg.Pattern) {
+			add(IssueError, where, "pattern %q tidak dikenal (%s)", pg.Pattern, strings.Join(LayoutPatterns, ", "))
+		}
+		if pg.Shell != "" && len(shells) > 0 && !shells[pg.Shell] {
+			add(IssueError, where, "shell %q tidak ada", pg.Shell)
+		}
+		if pg.FeatureID != "" && p.Feature(pg.FeatureID) == nil {
+			add(IssueError, where, "fitur %q tidak ada", pg.FeatureID)
+		}
+	}
+	return out
+}
+
 func rulesIssues(r *DesignRules, platforms []string) []Issue {
 	var out []Issue
 	add := func(level, format string, a ...any) {
@@ -970,6 +1051,9 @@ func designBasis(p *Project, l *LayoutSpec, rules *DesignRules) map[string]bool 
 	}
 	for _, r := range p.Requirements {
 		add(r.ID)
+	}
+	for _, d := range p.Decisions {
+		add(d.ID)
 	}
 	for _, t := range p.UIPlatforms() {
 		add(t)

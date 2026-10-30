@@ -1,6 +1,7 @@
 package work
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -71,11 +72,15 @@ func TestApplyDesignRefusesIncomplete(t *testing.T) {
 func TestNormPresentationAliases(t *testing.T) {
 	for in, want := range map[string]string{
 		"identity":     "card-title",
+		"title":        "card-title",
 		"card-title":   "card-title",
 		"card-value":   "card-value",
+		"kpi":          "card-value",
 		"delta":        "delta",
 		"row-action":   "row-action",
+		"button":       "row-action",
 		"table-column": "table-column",
+		"column":       "table-column",
 	} {
 		if got := normPresentation(in); got != want {
 			t.Errorf("normPresentation(%q) = %q, want %q", in, got, want)
@@ -315,5 +320,172 @@ func TestApplyDesignFillsMissingExperience(t *testing.T) {
 	pg := l.Pages[0]
 	if pg.States["empty"] == "" || pg.Goal != "GOAL-1" {
 		t.Fatalf("page = %+v", pg)
+	}
+}
+
+func designRulesJSON() string {
+	return `{"source": "new", "principles": ["Satu tugas"], "ux_guidelines": ["Filter di atas"],
+	  "accessibility": ["AA"], "responsive": ["Tabel scroll"],
+	  "tokens": {"colors": [{"name": "action.primary", "value": "#000"}], "typography": [{"name": "type.body", "value": "Inter 14px"}],
+	              "spacing": [{"name": "space.md", "value": "16px"}]},
+	  "components": [{"name": "DataTable", "use": "daftar"}]}`
+}
+
+func webProject() *core.Project {
+	return &core.Project{
+		Platform:  &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}},
+		Discovery: &core.Discovery{Roles: []core.Role{{Name: "Operator", Platform: "web", Description: "saring data"}}},
+		Features:  []core.Feature{{ID: "FEAT-001", Name: "Screener", Platforms: []string{"web"}}},
+		Flows:     []core.Flow{{ID: "FLOW-001", Name: "Saring", FeatureID: "FEAT-001", Role: "Operator", Goal: "Saring data pasar"}},
+		Decisions: []core.Decision{{ID: "DEC-004", Text: "Dark mode", Resolution: "ikuti sistem"}},
+	}
+}
+
+// Recoverable mistakes (dangling link, unknown presentation, invented
+// decision subject/basis) are repaired so the answer lands without an LLM retry.
+func TestApplyDesignRepairsRecoverableIssues(t *testing.T) {
+	p := webProject()
+	raw := `{"rules": ` + designRulesJSON() + `,
+	 "pages": [{"id": "screener", "name": "Screener", "platform": "web", "route": "/screener", "purpose": "Saring", "pattern": "table",
+	   "feature_id": "FEAT-001",
+	   "fields": [{"field": "Asset.price", "label": "Harga", "presentation": "kpi"}],
+	   "sections": [{"id": "tabel", "name": "Tabel", "content": ["Simbol, Harga"]}],
+	   "links": [{"to": "screener", "via": "diri"}, {"to": "ghost", "via": "X"}, {"to": "screener"}]}],
+	 "decisions": [{"subject": "navigation", "choice": "sidebar", "why": ["grup tugas"], "basis": ["PRODUCT CONTEXT", "DEC-004"], "source": "fact"}]}`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	if DesignNeedsDetails(p) {
+		t.Fatal("complete page still flagged for details")
+	}
+	pg := p.UI.Layout.Pages[0]
+	if len(pg.Links) != 0 {
+		t.Fatalf("dangling/self links kept: %+v", pg.Links)
+	}
+	if pg.Fields[0].Presentation != "card-value" {
+		t.Fatalf("presentation = %q", pg.Fields[0].Presentation)
+	}
+	foundDEC := false
+	foundNav := false
+	for _, d := range p.UI.Layout.Decisions {
+		if d.Subject == "navigation" {
+			foundNav = true
+		}
+		if d.Subject == "*" && slices.Contains(d.Basis, "DEC-004") {
+			foundDEC = true
+		}
+	}
+	if foundNav {
+		t.Fatalf("invalid subject kept: %+v", p.UI.Layout.Decisions)
+	}
+	if !foundDEC {
+		t.Fatalf("DEC-004 basis dropped: %+v", p.UI.Layout.Decisions)
+	}
+}
+
+// A truncated JSON still lands the complete pages and rules; missing
+// sections trigger a detail round instead of refusing the whole answer.
+func TestApplyDesignSalvagesTruncationAndAsksDetails(t *testing.T) {
+	p := webProject()
+	raw := `{"rules": ` + designRulesJSON() + `,
+ "pages": [
+  {"id": "screener", "name": "Screener", "platform": "web", "route": "/screener", "purpose": "Saring", "pattern": "table", "feature_id": "FEAT-001"},
+  {"id": "detail", "name": "Detail", "platform": "web", "route": "/asset", "purpose": "Lihat", "pattern": "detail",
+   "sections": [{"id": "isi", "name": "Isi", "content": ["Harga"]}], "states": {"loading": "x", "error": "x"}},
+  {"id": "cut", "name": "Cut", "platform": "web", "route": "/cut", "purpose": "X", "pattern": "table", "sections": [{"id": "t"`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	if !DesignNeedsDetails(p) {
+		t.Fatal("inventory page should need details")
+	}
+	if n := len(p.UI.Layout.Pages); n != 2 {
+		t.Fatalf("salvaged pages = %d, want 2 (truncated third dropped)", n)
+	}
+	if p.UI.Rules == nil || p.UI.Rules.Tokens.Colors[0].Name != "action.primary" {
+		t.Fatalf("rules = %+v", p.UI.Rules)
+	}
+	prompt := DesignPrompt(p)
+	if !strings.Contains(prompt, "DETAIL PHASE") || !strings.Contains(prompt, `"id":"screener"`) {
+		t.Fatalf("detail prompt missing inventory page:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "UI DESIGN TEMPLATE") {
+		t.Fatal("detail prompt should not resend the full template")
+	}
+	detail := `{"pages": [{"id": "screener", "name": "Screener", "platform": "web", "route": "/screener", "purpose": "Saring", "pattern": "table",
+	  "feature_id": "FEAT-001", "sections": [{"id": "tabel", "name": "Tabel", "content": ["Simbol, Harga"]}],
+	  "states": {"loading": "x", "empty": "x", "error": "x"}}]}`
+	if err := ApplyDesign(p, detail); err != nil {
+		t.Fatal(err)
+	}
+	if DesignNeedsDetails(p) {
+		t.Fatalf("still needs details: %+v", p.UI.Layout.Pages)
+	}
+	if len(p.UI.Layout.Pages) != 2 {
+		t.Fatalf("pages after detail = %d", len(p.UI.Layout.Pages))
+	}
+}
+
+func TestApplyDesignLandsRulesThenAsksPages(t *testing.T) {
+	p := webProject()
+	raw := `{"rules": ` + designRulesJSON() + `}`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	if !DesignNeedsDetails(p) || p.UI.Rules == nil {
+		t.Fatalf("rules-only should need page details: %+v", p.UI)
+	}
+	prompt := DesignPrompt(p)
+	if !strings.Contains(prompt, "no pages yet") {
+		t.Fatalf("prompt = %s", prompt)
+	}
+}
+
+// Pages without rules still land: Foundry fills a valid default design system
+// instead of refusing the whole answer.
+func TestApplyDesignFillsMissingRulesFromPages(t *testing.T) {
+	p := webProject()
+	raw := `{"pages": [{"id": "screener", "name": "Screener", "platform": "web", "route": "/screener",
+	  "purpose": "Saring", "pattern": "table", "feature_id": "FEAT-001",
+	  "sections": [{"id": "tabel", "name": "Tabel", "content": ["Simbol, Harga"]}]}]}`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	if p.UI.Rules == nil || len(p.UI.Rules.Principles) == 0 || len(p.UI.Rules.Tokens.Colors) == 0 {
+		t.Fatalf("default rules missing: %+v", p.UI.Rules)
+	}
+	if len(p.UI.Layout.Pages) != 1 || p.UI.Layout.Pages[0].ID != "screener" {
+		t.Fatalf("pages = %+v", p.UI.Layout.Pages)
+	}
+}
+
+// A cut-off ```json fence with rules and one complete page still lands.
+func TestApplyDesignAcceptsTruncatedFence(t *testing.T) {
+	p := webProject()
+	raw := "here you go\n```json\n" + `{"rules": ` + designRulesJSON() + `,
+ "pages": [
+  {"id": "screener", "name": "Screener", "platform": "web", "route": "/screener", "purpose": "Saring", "pattern": "table", "feature_id": "FEAT-001"},
+  {"id": "cut", "name": "Cut", "platform": "web", "route": "/x", "purpose": "X", "pattern": "table", "sections": [{"id": "t"`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	if p.UI.Rules == nil || len(p.UI.Layout.Pages) < 1 {
+		t.Fatalf("ui = %+v", p.UI)
+	}
+}
+
+func TestApplyDesignStillRefusesEmptyProse(t *testing.T) {
+	p := webProject()
+	if err := ApplyDesign(p, "maaf, saya tidak bisa menyusun JSON saat ini"); err == nil || p.UI != nil {
+		t.Fatalf("err = %v ui = %+v", err, p.UI)
+	}
+}
+
+func TestDesignPromptPutsRulesBeforeUX(t *testing.T) {
+	prompt := DesignPrompt(clinicPromptProject())
+	rules := strings.Index(prompt, `"rules"`)
+	users := strings.Index(prompt, `"users"`)
+	if rules < 0 || users < 0 || rules > users {
+		t.Fatalf("shape should emit rules before users (rules=%d users=%d)", rules, users)
 	}
 }

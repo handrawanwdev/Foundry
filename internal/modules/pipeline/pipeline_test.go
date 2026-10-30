@@ -164,7 +164,7 @@ func fakeAgent() {
 		case strings.Contains(prompt, "rubah ini"):
 			fmt.Println("```json\n{}\n```")
 		case mode == "design_invalid_once" && !refused:
-			fmt.Println(strings.Replace(designJSON, `"to": "konfirmasi"`, `"to": "ghost"`, 1))
+			fmt.Println(strings.Replace(designJSON, `"pattern": "list"`, `"pattern": "hero"`, 1))
 		default:
 			fmt.Println(designJSON)
 		}
@@ -643,6 +643,48 @@ func TestMCPHostFlow(t *testing.T) {
 	}
 }
 
+// A truncated inventory (rules + pages without sections) lands and the next
+// MCP work is a detail round, not a full rewrite.
+func TestMCPDesignSketchChainsToDetails(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
+		t.Fatal(err)
+	}
+	sketch := `{"rules": {"source": "new", "principles": ["Satu aksi"], "ux_guidelines": ["Konfirmasi"],
+	  "accessibility": ["AA"], "responsive": ["List di HP"],
+	  "tokens": {"colors": [{"name": "action.primary", "value": "#1f6feb"}], "typography": [{"name": "type.body", "value": "Inter 14px"}],
+	              "spacing": [{"name": "space.md", "value": "16px"}]},
+	  "components": [{"name": "Button", "use": "aksi"}]},
+	 "pages": [{"id": "dokter", "name": "Dokter", "platform": "android", "route": "Dokter", "purpose": "Cari dokter", "pattern": "list", "feature_id": "FEAT-001"},
+	           {"id": "jadwal", "name": "Jadwal", "platform": "web", "route": "/jadwal", "purpose": "Kelola jadwal", "pattern": "table", "feature_id": "FEAT-002"}]}`
+	if err := s.SubmitWork(work.KindDesign, sketch); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	if !work.DesignNeedsDetails(p) || p.Job == nil || p.Job.Kind != work.KindDesign || p.Job.Status != core.JobWaiting {
+		t.Fatalf("expected waiting detail job, job=%+v needs=%v", p.Job, work.DesignNeedsDetails(p))
+	}
+	w, _ := s.NextWork()
+	if w.Kind != work.KindDesign || !strings.Contains(w.Prompt, "DETAIL PHASE") || !strings.Contains(w.Prompt, "dokter") {
+		t.Fatalf("detail work = %+v", w)
+	}
+	detail := `{"pages": [
+	  {"id": "dokter", "name": "Dokter", "platform": "android", "route": "Dokter", "purpose": "Cari dokter", "pattern": "list", "feature_id": "FEAT-001",
+	   "sections": [{"id": "daftar", "name": "Daftar", "content": ["Kartu dokter"]}], "states": {"loading": "x", "empty": "x", "error": "x"}},
+	  {"id": "jadwal", "name": "Jadwal", "platform": "web", "route": "/jadwal", "purpose": "Kelola jadwal", "pattern": "table", "feature_id": "FEAT-002",
+	   "sections": [{"id": "tabel", "name": "Tabel", "content": ["Hari, Dokter"]}], "states": {"loading": "x", "empty": "x", "error": "x"}}]}`
+	if err := s.SubmitWork(work.KindDesign, detail); err != nil {
+		t.Fatal(err)
+	}
+	p = load(t, s)
+	if work.DesignNeedsDetails(p) || p.Job.Status != core.JobDone || len(p.UI.Layout.Pages) != 2 {
+		t.Fatalf("after detail job=%+v pages=%d needs=%v", p.Job, len(p.UI.Layout.Pages), work.DesignNeedsDetails(p))
+	}
+}
+
 // mcpDesigned drives an MCP project to a written design.
 func mcpDesigned(t *testing.T, s *pipeline.Service) {
 	t.Helper()
@@ -725,7 +767,7 @@ func TestDesignInvalidRetriedOnce(t *testing.T) {
 	if b, _ := os.ReadFile(runs); strings.Count(string(b), "design") != 2 {
 		t.Fatalf("design runs = %q", b)
 	}
-	if p.UI.Request != nil || len(p.UI.Layout.Pages) != 3 || !slices.ContainsFunc(p.Events, func(e core.Event) bool { return strings.Contains(e.Message, "ghost") }) {
+	if p.UI.Request != nil || len(p.UI.Layout.Pages) != 3 || !slices.ContainsFunc(p.Events, func(e core.Event) bool { return strings.Contains(e.Message, "hero") }) {
 		t.Fatalf("ui = %+v", p.UI)
 	}
 }

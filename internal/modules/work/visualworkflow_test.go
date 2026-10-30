@@ -182,18 +182,18 @@ func TestVisualVerificationCommands(t *testing.T) {
 
 		// Verify platform-specific command IDs exist
 		expectedPlatformCmds := map[string]bool{
-			"CMD-START-APP-WEB":        false,
-			"CMD-START-APP-ANDROID":    false,
-			"CMD-START-APP-IOS":        false,
-			"CMD-ENUMERATE-ROUTES-WEB":     false,
-			"CMD-ENUMERATE-ROUTES-ANDROID": false,
-			"CMD-ENUMERATE-ROUTES-IOS":     false,
+			"CMD-START-APP-WEB":               false,
+			"CMD-START-APP-ANDROID":           false,
+			"CMD-START-APP-IOS":               false,
+			"CMD-ENUMERATE-ROUTES-WEB":        false,
+			"CMD-ENUMERATE-ROUTES-ANDROID":    false,
+			"CMD-ENUMERATE-ROUTES-IOS":        false,
 			"CMD-CAPTURE-SCREENSHOTS-WEB":     false,
 			"CMD-CAPTURE-SCREENSHOTS-ANDROID": false,
 			"CMD-CAPTURE-SCREENSHOTS-IOS":     false,
-			"CMD-SUBMIT-VISUAL-REVIEWS":    false,
-			"CMD-CREATE-VISUAL-FIXES":      false,
-			"CMD-RE-VISUAL-VERIFY":         false,
+			"CMD-SUBMIT-VISUAL-REVIEWS":       false,
+			"CMD-CREATE-VISUAL-FIXES":         false,
+			"CMD-RE-VISUAL-VERIFY":            false,
 		}
 
 		for _, cmd := range cmds {

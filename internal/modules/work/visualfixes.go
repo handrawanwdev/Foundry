@@ -24,9 +24,9 @@ func VisualFixCommand(p *core.Project, pageID string, findings []core.VisualFind
 	slices.SortFunc(sortedFindings, func(a, b core.VisualFinding) int {
 		severityOrder := map[string]int{
 			core.SeverityCritical: 0,
-			core.SeverityHigh:    1,
-			core.SeverityMedium:  2,
-			core.SeverityLow:     3,
+			core.SeverityHigh:     1,
+			core.SeverityMedium:   2,
+			core.SeverityLow:      3,
 		}
 		return severityOrder[a.Severity] - severityOrder[b.Severity]
 	})
@@ -109,14 +109,14 @@ func GenerateVisualFixCommands(p *core.Project) []core.Command {
 
 // CorrectionLoopState tracks the state of the autonomous correction loop.
 type CorrectionLoopState struct {
-	Iteration       int      `json:"iteration"`
-	MaxIterations   int      `json:"max_iterations"`
-	PagesFixed      []string `json:"pages_fixed"`
-	PagesRemaining  []string `json:"pages_remaining"`
-	TotalFindings   int      `json:"total_findings"`
-	HighSeverity    int      `json:"high_severity"`
-	LastProgress    int      `json:"last_progress"`
-	StalledCount    int      `json:"stalled_count"`
+	Iteration      int      `json:"iteration"`
+	MaxIterations  int      `json:"max_iterations"`
+	PagesFixed     []string `json:"pages_fixed"`
+	PagesRemaining []string `json:"pages_remaining"`
+	TotalFindings  int      `json:"total_findings"`
+	HighSeverity   int      `json:"high_severity"`
+	LastProgress   int      `json:"last_progress"`
+	StalledCount   int      `json:"stalled_count"`
 }
 
 // NewCorrectionLoopState creates a new correction loop state.

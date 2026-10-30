@@ -13,7 +13,8 @@ import (
 
 // The UI design is text and structured data only: design rules and a
 // layout specification. The AI writes and revises them; Foundry validates
-// every answer and refuses an invalid one as a whole.
+// every answer, repairs recoverable gaps, and lands a truncated inventory
+// as a sketch instead of refusing the whole result.
 
 // ErrNoChange means the AI found nothing to change for the request.
 var ErrNoChange = errors.New("AI tidak menemukan perubahan rancangan UI untuk permintaan ini; tulis lebih spesifik")
@@ -42,10 +43,6 @@ func (o designOut) hasExperience() bool {
 }
 
 const designShape = `{
- "users": [{"role": "Operator", "platform": "web", "context": "kerja harian", "tasks": ["saring antrean"]}],
- "goals": [{"id": "GOAL-1", "role": "Operator", "text": "Saring antrean", "success": "Janji diproses", "priority": "must"}],
- "navigation": [{"name": "Operasional", "items": [{"label": "Antrean", "page": "antrean", "primary": true}]}],
- "decisions": [{"subject": "antrean", "choice": "table", "why": ["bandingkan banyak baris"], "basis": ["GOAL-1"], "source": "fact"}],
  "rules": {"source": "new", "reference": "", "direction": "", "principles": [""], "ux_guidelines": [""],
    "tokens": {"colors": [{"name": "action.primary", "value": "#1f6feb", "use": "aksi"}], "typography": [{"name": "type.body", "value": "Inter 14px/20px 400"}],
               "spacing": [{"name": "space.md", "value": "16px"}]},
@@ -58,6 +55,10 @@ const designShape = `{
    "fields": [{"field": "Appointment.status", "label": "Status", "presentation": "badge"}],
    "sections": [{"id": "tabel", "name": "Tabel", "content": ["No, Pasien, Status, Aksi"], "components": ["Button"]}],
    "states": {"loading": "", "empty": "", "error": ""}}],
+ "users": [{"role": "Operator", "platform": "web", "context": "kerja harian", "tasks": ["saring antrean"]}],
+ "goals": [{"id": "GOAL-1", "role": "Operator", "text": "Saring antrean", "success": "Janji diproses", "priority": "must"}],
+ "navigation": [{"name": "Operasional", "items": [{"label": "Antrean", "page": "antrean", "primary": true}]}],
+ "decisions": [{"subject": "antrean", "choice": "table", "why": ["bandingkan banyak baris"], "basis": ["GOAL-1"], "source": "fact"}],
  "flows": {"FLOW-001": ["antrean"]}
 }`
 
@@ -110,14 +111,20 @@ Emit compact JSON. Omit empty keys, empty arrays and empty strings. Do not copy 
 - tokens: 6-10 colors, 3-5 typography, 4-6 spacing, 2-3 radius, 1-2 shadow, 2-3 breakpoints. Short use.
 - components: only those pages reuse (typically 4-10). One short variants list and one short rules line each.
 - pages: one per user task. Typical 4-12. sections 2-4; content 1-3 concrete items; fields only those shown.
-- decisions: exactly one per page (pattern + why). Form pages may add one for validation/submit. why: one short sentence. basis: 1-2 existing ids.
-- states: one short sentence per required key only.
+- decisions: exactly one per page (pattern + why). Form pages may add one for validation/submit. why: one short sentence. basis: 1-2 existing ids from the UX inputs (GOAL-*, FLOW-*, FEAT-*, REQ-*, DEC-*, entity, permission, platform, token, page id). Never invent a basis.
+- states: one short sentence per required key only. Foundry fills users, goals, navigation, decisions and required states when omitted; omit them rather than emit invalid ids.
+- Emit keys in this order so a cut-off answer still has the required parts: rules, shells, pages, then users, goals, navigation, decisions, flows.
+- Prefer a complete answer. If output would be truncated, keep rules and every page id (name, platform, route, pattern, purpose, goal, shell, links); omit sections/fields/states on later pages rather than dropping pages. Foundry asks for those pages next.
 - Reply with JSON only. No preamble.
 `
 
 // DesignPrompt asks for the design rules and layout spec, or for a
-// revision of them (the pending request).
+// revision of them (the pending request). Pages that landed without
+// sections get a focused detail prompt instead of a full rewrite.
 func DesignPrompt(p *core.Project) string {
+	if DesignNeedsDetails(p) {
+		return designDetailPrompt(p)
+	}
 	var b strings.Builder
 	b.WriteString(`You are the UI/UX designer of Foundry. Foundry designs software and writes instructions for an EXTERNAL coding agent; it never implements, renders or draws. Write the UI design as text and structured data: design rules and a layout specification. Do not write code. Do not modify files.
 Write every human-readable text in the same language as the story.
@@ -179,7 +186,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		if rejected != "" {
 			b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + rejected + "\n\n")
 		}
-		b.WriteString("Write the UX layer (users, goals, navigation, decisions), the design rules and the layout specification of every page.\n\nReply with ONLY one JSON object in a ```json block, shape:\n" + designShape)
+		b.WriteString("Write the design rules first, then shells and every page, then the UX layer (users, goals, navigation, decisions).\n\nReply with ONLY one JSON object in a ```json block, shape:\n" + designShape)
 		return b.String()
 	}
 	b.WriteString("CURRENT DESIGN RULES:\n" + mustJSON(d.Rules) + "\n\nCURRENT LAYOUT SPECIFICATION:\n" + mustJSON(d.Layout) + "\n\n")
@@ -341,23 +348,50 @@ func uxBrief(p *core.Project) string {
 	return b.String()
 }
 
-// ApplyDesign lands the AI's design or revision. The result must pass the
-// design check or nothing changes.
+// ApplyDesign lands the AI's design or revision. Repairable gaps are filled
+// in-process. A truncated or inventory-only answer lands as a sketch and
+// Foundry asks for the missing page details instead of refusing the whole
+// result.
 func ApplyDesign(p *core.Project, raw string) error {
 	var out designOut
-	if err := ExtractJSON(raw, &out); err != nil {
-		return err
+	hasDesign := func() bool { return out.Rules != nil || len(out.Pages) > 0 || len(out.Shells) > 0 }
+	if err := ExtractJSONFunc(raw, &out, hasDesign); err != nil {
+		salvaged := salvageDesign(raw)
+		if salvaged == nil {
+			if p.UI.Written() {
+				var any map[string]json.RawMessage
+				if ExtractJSON(raw, &any) == nil {
+					return ErrNoChange
+				}
+			}
+			if !p.UI.Written() {
+				return errors.New("rancangan UI tidak lengkap: rules dan pages wajib diisi")
+			}
+			return err
+		}
+		out = *salvaged
+	} else if !hasDesign() {
+		if salvaged := salvageDesign(raw); salvaged != nil {
+			out = *salvaged
+		}
+	}
+	if DesignNeedsDetails(p) {
+		return applyDesignDetails(p, out)
 	}
 	fresh := !p.UI.Written()
 	switch {
-	case fresh && (out.Rules == nil || len(out.Pages) == 0):
+	case fresh && out.Rules == nil && len(out.Pages) == 0 && len(out.Shells) == 0:
 		return errors.New("rancangan UI tidak lengkap: rules dan pages wajib diisi")
+	case fresh && len(out.Pages) == 0 && len(out.Shells) == 0:
+		// Rules without pages still land; the next round asks for pages.
 	case !fresh && out.Rules == nil && len(out.Shells)+len(out.Pages)+len(out.RemoveShells)+len(out.RemovePages)+len(out.Flows) == 0 && !out.hasExperience():
 		return ErrNoChange
 	}
 	next := cloneDesign(p.UI)
 	if out.Rules != nil {
-		next.Rules = normRules(*out.Rules)
+		next.Rules = completeRules(p, normRules(*out.Rules))
+	} else if fresh {
+		next.Rules = defaultRules(p)
 	}
 	l := next.Layout
 	if l == nil {
@@ -431,7 +465,11 @@ func ApplyDesign(p *core.Project, raw string) error {
 	if fresh || len(l.Users) > 0 && len(l.Goals) > 0 && len(l.Navigation) > 0 && len(l.Decisions) > 0 {
 		next.Format = core.UIDesignFormat
 	}
-	if err := commitDesign(p, next, flows); err != nil {
+	if pagesNeedDetails(next) {
+		if err := commitDesignSketch(p, next, flows); err != nil {
+			return err
+		}
+	} else if err := commitDesign(p, next, flows); err != nil {
 		return err
 	}
 	if fresh {
@@ -621,7 +659,33 @@ func normID(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 // dropped or hidden just to pass validation. Record identity (symbol, name)
 // is the record's title, not a separate presentation type.
 var presentationAliases = map[string]string{
-	"identity": "card-title",
+	"identity": "card-title", "title": "card-title", "heading": "card-title", "name": "card-title",
+	"subtitle": "card-meta", "meta": "card-meta", "caption": "card-meta",
+	"column": "table-column", "cell": "table-column", "col": "table-column",
+	"kpi": "card-value", "metric": "card-value", "value": "card-value", "price": "card-value",
+	"change": "delta", "percent": "delta", "pct": "delta", "trend": "delta",
+	"input": "form-input", "text": "form-input", "field": "form-input",
+	"action": "row-action", "button": "row-action", "link": "row-action",
+	"search": "filter", "query": "filter",
+	"status": "badge", "tag": "badge", "chip": "badge",
+	"sparkline": "chart", "graph": "chart",
+	"total": "summary", "aggregate": "summary",
+}
+
+var patternAliases = map[string]string{
+	"data-table": "table", "datatable": "table", "list-view": "list", "listview": "list",
+	"card": "cards", "card-grid": "cards", "grid": "cards",
+	"login": "auth", "signin": "auth", "sign-in": "auth", "signup": "auth", "sign-up": "auth", "register": "auth",
+	"kanban-board": "kanban", "board": "kanban",
+	"map-view": "map", "chat-view": "chat", "messenger": "chat",
+	"landing-page": "landing", "settings-page": "settings",
+	"popup": "modal", "dialog": "modal", "drawer": "modal",
+	"stepper": "wizard", "steps": "wizard",
+}
+
+var decisionSubjectAliases = map[string]string{
+	"navigation": "*", "nav": "*", "ia": "*", "app": "*", "layout": "*",
+	"shell": "*", "global": "*", "product": "*",
 }
 
 func normPresentation(s string) string {
@@ -752,6 +816,9 @@ func dashText(s string) string {
 
 func normShell(sh core.LayoutShell) core.LayoutShell {
 	sh.ID, sh.Platform, sh.Pattern = normID(sh.ID), normID(sh.Platform), normID(sh.Pattern)
+	if a, ok := patternAliases[sh.Pattern]; ok {
+		sh.Pattern = a
+	}
 	sh.Name, sh.Navigation, sh.Grid, sh.Source = strings.TrimSpace(sh.Name), strings.TrimSpace(sh.Navigation), strings.TrimSpace(sh.Grid), strings.TrimSpace(sh.Source)
 	sh.Responsive = nonEmpty(sh.Responsive)
 	sh.Regions = normSections(sh.Regions)
@@ -760,6 +827,9 @@ func normShell(sh core.LayoutShell) core.LayoutShell {
 
 func normPage(pg core.LayoutPage) core.LayoutPage {
 	pg.ID, pg.Platform, pg.Pattern, pg.Access, pg.Shell = normID(pg.ID), normID(pg.Platform), normID(pg.Pattern), normID(pg.Access), normID(pg.Shell)
+	if a, ok := patternAliases[pg.Pattern]; ok {
+		pg.Pattern = a
+	}
 	pg.FeatureID = strings.ToUpper(strings.TrimSpace(pg.FeatureID))
 	for _, f := range []*string{&pg.Name, &pg.Route, &pg.Role, &pg.Purpose, &pg.Goal, &pg.PrimaryAction} {
 		*f = strings.TrimSpace(*f)
@@ -843,6 +913,7 @@ func completeDesign(p *core.Project, d *core.UIDesign) {
 		return
 	}
 	l := d.Layout
+	repairLayout(p, d)
 	completeUsers(p, l)
 	completeGoals(p, l)
 	completePageGoals(l)
@@ -850,6 +921,7 @@ func completeDesign(p *core.Project, d *core.UIDesign) {
 	completePageStates(l.Pages)
 	completePageDecisions(l)
 	sanitizeDecisions(p, l, d.Rules)
+	repairDecisions(p, l, d.Rules)
 }
 
 func completeUsers(p *core.Project, l *core.LayoutSpec) {
@@ -1022,6 +1094,9 @@ func knownDesignBasis(p *core.Project, l *core.LayoutSpec, rules *core.DesignRul
 	}
 	if p == nil {
 		return out
+	}
+	for _, d := range p.Decisions {
+		add(d.ID)
 	}
 	if p.Discovery != nil {
 		for _, r := range p.Discovery.Roles {

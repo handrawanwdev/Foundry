@@ -259,7 +259,9 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 			s.runWorkflow(runner)
 			return
 		}
+		t0 := time.Now()
 		out, err := runner.Run(s.context(), p.Dir, prompt)
+		s.logAgentTiming(kind, time.Since(t0), len(prompt), len(out))
 		if err != nil {
 			s.failJob(kind, err)
 			return
@@ -273,6 +275,13 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 		}
 	}()
 	return nil
+}
+
+func (s *Service) logAgentTiming(kind string, d time.Duration, promptBytes, outputBytes int) {
+	s.Store.Update(func(p *core.Project) error {
+		p.Log("system", fmt.Sprintf("%s agent %s prompt=%dB output=%dB", kind, d.Round(time.Millisecond), promptBytes, outputBytes))
+		return nil
+	})
 }
 
 // runWorkflow runs a workflow job in rounds. A long answer can be cut at the
@@ -370,6 +379,9 @@ func (s *Service) applyAI(kind, raw, source string) error {
 		case work.KindDesign:
 			if err := work.ApplyDesign(p, raw); err != nil {
 				return err
+			}
+			if work.DesignNeedsDetails(p) {
+				next = work.KindDesign
 			}
 		case work.KindStack:
 			if err := work.ApplyStackChange(p, raw); err != nil {
