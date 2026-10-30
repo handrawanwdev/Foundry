@@ -47,17 +47,40 @@ func (s *Store) Exists() bool {
 // PeekName reads the saved display name without loading the whole project.
 // Missing or empty name falls back to the folder name.
 func PeekName(dir string) string {
-	b, err := os.ReadFile(filepath.Join(dir, StateDir, "project.json"))
+	fallback := filepath.Base(dir)
+	f, err := os.Open(filepath.Join(dir, StateDir, "project.json"))
 	if err != nil {
-		return filepath.Base(dir)
+		return fallback
 	}
-	var p struct {
-		Name string `json:"name"`
+	defer f.Close()
+	dec := json.NewDecoder(f)
+	tok, err := dec.Token()
+	if err != nil {
+		return fallback
 	}
-	if json.Unmarshal(b, &p) != nil || p.Name == "" {
-		return filepath.Base(dir)
+	d, ok := tok.(json.Delim)
+	if !ok || d != '{' {
+		return fallback
 	}
-	return p.Name
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return fallback
+		}
+		ks, _ := key.(string)
+		if ks == "name" {
+			var name string
+			if err := dec.Decode(&name); err != nil || name == "" {
+				return fallback
+			}
+			return name
+		}
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return fallback
+		}
+	}
+	return fallback
 }
 
 // Init creates the project file if it does not exist yet.

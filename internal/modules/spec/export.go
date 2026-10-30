@@ -68,6 +68,14 @@ func BlueprintHash(docs []core.Artifact) string {
 	return hex.EncodeToString(h.Sum(nil)[:8])
 }
 
+func blueprintHash(ids, hashes []string) string {
+	h := sha256.New()
+	for i := range ids {
+		fmt.Fprintf(h, "%s=%s\n", ids[i], hashes[i])
+	}
+	return hex.EncodeToString(h.Sum(nil)[:8])
+}
+
 func artifactFile(id string) string { return "blueprint/" + id + ".md" }
 
 // safeName holds for ids that are safe as file names (ids are normalized
@@ -215,14 +223,30 @@ type ManifestCommand struct {
 
 // BuildManifest indexes the package of p.
 func BuildManifest(p *core.Project) Manifest {
+	return manifestOf(p, Artifacts(p))
+}
+
+// Package is the export package and its manifest, built from one artifact pass.
+func Package(p *core.Project) (Manifest, map[string]string) {
 	docs := Artifacts(p)
-	m := Manifest{Format: Format, Project: p.Name, Status: "draft", BlueprintHash: BlueprintHash(docs), Entry: "README.md",
+	m := manifestOf(p, docs)
+	return m, filesOf(p, m, docs)
+}
+
+func manifestOf(p *core.Project, docs []core.Artifact) Manifest {
+	ids := make([]string, len(docs))
+	hashes := make([]string, len(docs))
+	for i, d := range docs {
+		ids[i] = d.ID
+		hashes[i] = d.Hash()
+	}
+	m := Manifest{Format: Format, Project: p.Name, Status: "draft", BlueprintHash: blueprintHash(ids, hashes), Entry: "README.md",
 		Artifacts: []ManifestArtifact{}, Areas: core.Coverage(p, docs), Commands: []ManifestCommand{}, Waves: [][]string{}}
 	if p.Finalized() {
 		m.Status = "finalized"
 	}
-	for _, d := range docs {
-		m.Artifacts = append(m.Artifacts, ManifestArtifact{ID: d.ID, Title: d.Title, Category: d.Category, File: artifactFile(d.ID), Hash: d.Hash()})
+	for i, d := range docs {
+		m.Artifacts = append(m.Artifacts, ManifestArtifact{ID: d.ID, Title: d.Title, Category: d.Category, File: artifactFile(d.ID), Hash: hashes[i]})
 	}
 	w := p.Workflow
 	if w == nil {
@@ -235,8 +259,14 @@ func BuildManifest(p *core.Project) Manifest {
 	if waves := workflow.Waves(w.Commands); waves != nil {
 		m.Waves = waves
 	}
+	waveOf := make(map[string]int, len(w.Commands))
+	for i, wave := range m.Waves {
+		for _, id := range wave {
+			waveOf[id] = i + 1
+		}
+	}
 	for _, c := range w.Commands {
-		mc := ManifestCommand{ID: c.ID, Name: c.Name, File: commandFile(c.ID), DependsOn: c.DependsOn, Artifacts: []string{}, Covers: c.Covers}
+		mc := ManifestCommand{ID: c.ID, Name: c.Name, File: commandFile(c.ID), DependsOn: c.DependsOn, Artifacts: []string{}, Covers: c.Covers, Wave: waveOf[c.ID]}
 		if mc.Covers == nil {
 			mc.Covers = []string{}
 		}
@@ -246,11 +276,6 @@ func BuildManifest(p *core.Project) Manifest {
 		for _, r := range c.Artifacts {
 			mc.Artifacts = append(mc.Artifacts, r.ID)
 		}
-		for i, wave := range m.Waves {
-			if slices.Contains(wave, c.ID) {
-				mc.Wave = i + 1
-			}
-		}
 		m.Commands = append(m.Commands, mc)
 	}
 	return m
@@ -259,8 +284,11 @@ func BuildManifest(p *core.Project) Manifest {
 // Files is the export package: relative path → content. The same set is
 // written into ExportDir on finalize and downloaded as a zip.
 func Files(p *core.Project) map[string]string {
-	m := BuildManifest(p)
-	docs := Artifacts(p)
+	_, files := Package(p)
+	return files
+}
+
+func filesOf(p *core.Project, m Manifest, docs []core.Artifact) map[string]string {
 	binding := core.BindingText(p.Decisions)
 	out := map[string]string{"README.md": packageReadme(p, m, docs)}
 	if b, err := json.MarshalIndent(m, "", "  "); err == nil {

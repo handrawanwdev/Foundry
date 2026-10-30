@@ -59,3 +59,28 @@ func TestDetectsStack(t *testing.T) {
 		t.Error("mentions")
 	}
 }
+
+func TestMentionsBoundaries(t *testing.T) {
+	cases := []struct {
+		body, name string
+		want       bool
+	}{
+		{"flask==3", "flask", true},
+		{"Flask==3", "flask", true},
+		{"FLASK", "flask", true},
+		{"flask-cors", "flask", false},
+		{"xflask", "flask", false},
+		{"flasky", "flask", false},
+		{" laravel/framework ", "laravel/framework", true},
+		{"github.com/jackc/pgx/v5", "github.com/jackc/pgx", true},
+		{"psycopg2-binary", "psycopg2", false},
+		{"psycopg2-binary", "psycopg2-binary", true},
+		{"", "flask", false},
+		{"flask", "", false},
+	}
+	for _, c := range cases {
+		if got := mentions(c.body, c.name); got != c.want {
+			t.Errorf("mentions(%q, %q) = %v, want %v", c.body, c.name, got, c.want)
+		}
+	}
+}

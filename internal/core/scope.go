@@ -147,6 +147,22 @@ type AreaStatus struct {
 // Coverage reports every area against the blueprint docs (built-in and
 // written artifacts).
 func Coverage(p *Project, docs []Artifact) []AreaStatus {
+	return coverageOf(p, docs, nil)
+}
+
+// BlueprintChecks is Coverage and ArtifactStates from one AreaIssues pass.
+func BlueprintChecks(p *Project, docs []Artifact) ([]AreaStatus, map[string]ArtifactState) {
+	issues := make(map[string][]Issue, len(Areas))
+	errs := make(map[string]int, len(Areas))
+	for _, a := range Areas {
+		iss := p.AreaIssues(a.ID)
+		issues[a.ID] = iss
+		errs[a.ID] = len(Errors(iss))
+	}
+	return coverageOf(p, docs, errs), artifactStatesOf(p, docs, issues)
+}
+
+func coverageOf(p *Project, docs []Artifact, errByArea map[string]int) []AreaStatus {
 	out := make([]AreaStatus, 0, len(Areas))
 	for _, a := range Areas {
 		st := AreaStatus{ID: a.ID, Title: a.Title, Artifacts: []string{}, Skippable: a.Skippable}
@@ -155,7 +171,11 @@ func Coverage(p *Project, docs []Artifact) []AreaStatus {
 				st.Artifacts = append(st.Artifacts, d.ID)
 			}
 		}
-		st.Errors = len(Errors(p.AreaIssues(a.ID)))
+		if errByArea != nil {
+			st.Errors = errByArea[a.ID]
+		} else {
+			st.Errors = len(Errors(p.AreaIssues(a.ID)))
+		}
 		applies, why := p.AreaApplies(a.ID)
 		switch reason := p.Skip(a.ID); {
 		case reason != "" && a.Skippable:
@@ -523,25 +543,45 @@ func StaleRefs(a Artifact, hashes map[string]string) []string {
 
 // ArtifactStates reports the state of every doc.
 func ArtifactStates(p *Project, docs []Artifact) map[string]ArtifactState {
+	return artifactStatesOf(p, docs, nil)
+}
+
+func artifactStatesOf(p *Project, docs []Artifact, issuesByArea map[string][]Issue) map[string]ArtifactState {
 	hashes := make(map[string]string, len(docs))
 	for _, d := range docs {
 		hashes[d.ID] = d.Hash()
 	}
+	if issuesByArea == nil {
+		issuesByArea = make(map[string][]Issue)
+		for _, a := range Areas {
+			if a.Builtin {
+				issuesByArea[a.ID] = p.AreaIssues(a.ID)
+			}
+		}
+	}
+	var decisionErrs int
+	var openCrit int
+	checkedDecisions := false
 	out := make(map[string]ArtifactState, len(docs))
 	for _, d := range docs {
 		st := ArtifactState{Status: StateValid}
 		errs := 0
 		for _, a := range Areas {
 			if a.Builtin && slices.Contains(a.Artifacts, d.ID) {
-				issues := Errors(p.AreaIssues(a.ID))
+				issues := Errors(issuesByArea[a.ID])
 				if a.ID == AreaUI {
-					issues = slices.DeleteFunc(issues, func(i Issue) bool { return (i.Where == "rules") != (d.ID == ArtifactDesignRules) })
+					issues = slices.DeleteFunc(slices.Clone(issues), func(i Issue) bool { return (i.Where == "rules") != (d.ID == ArtifactDesignRules) })
 				}
 				errs = len(issues)
 			}
 		}
 		if d.ID == ArtifactDecisions {
-			errs = len(DecisionIssues(p.Decisions))
+			if !checkedDecisions {
+				decisionErrs = len(DecisionIssues(p.Decisions))
+				openCrit = len(p.OpenCritical())
+				checkedDecisions = true
+			}
+			errs = decisionErrs
 		}
 		switch stale := StaleRefs(d, hashes); {
 		case p.Finalized():
@@ -550,8 +590,8 @@ func ArtifactStates(p *Project, docs []Artifact) map[string]ArtifactState {
 			st.Status, st.Reason = StateNeedsReview, "artefak acuan berubah: "+strings.Join(stale, ", ")
 		case errs > 0:
 			st.Status, st.Reason = StateDraft, fmt.Sprintf("%d hal wajib diperbaiki", errs)
-		case d.ID == ArtifactDecisions && len(p.OpenCritical()) > 0:
-			st.Status, st.Reason = StateDraft, fmt.Sprintf("%d keputusan kritis belum diputuskan", len(p.OpenCritical()))
+		case d.ID == ArtifactDecisions && openCrit > 0:
+			st.Status, st.Reason = StateDraft, fmt.Sprintf("%d keputusan kritis belum diputuskan", openCrit)
 		}
 		out[d.ID] = st
 	}

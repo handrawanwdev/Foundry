@@ -62,7 +62,7 @@ func Scan(dir string, comps []core.Component) *core.ExistingUI {
 	if len(ui.Paths) == 0 {
 		return nil
 	}
-	ui.Routes = routes(dir, files)
+	ui.Routes = routes(dir, files, map[string]bool{})
 	ui.Shell, ui.Navigation = shell(files)
 	ui.NavItems = navItems(dir, files)
 	ui.Components = components(files)
@@ -127,7 +127,7 @@ var (
 
 // routes are the app's pages: file-based routing (Next.js, Nuxt,
 // SvelteKit) or the paths in a router config.
-func routes(dir string, files []file) []string {
+func routes(dir string, files []file, nuxt map[string]bool) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(r string) {
@@ -148,7 +148,7 @@ func routes(dir string, files []file) []string {
 		case name == "+page.svelte" && routerDir(segs, "routes") >= 0: // SvelteKit
 			add(routePath(segs[routerDir(segs, "routes")+1 : len(segs)-1]))
 			continue
-		case (f.tech == "Next.js" || hasNuxt(dir, f)) && routerDir(segs, "pages") >= 0: // pages router
+		case (f.tech == "Next.js" || hasNuxt(dir, f, nuxt)) && routerDir(segs, "pages") >= 0: // pages router
 			rest := segs[routerDir(segs, "pages")+1:]
 			if strings.HasPrefix(name, "_") || (len(rest) > 0 && rest[0] == "api") {
 				continue
@@ -200,14 +200,20 @@ func routePath(segs []string) string {
 	return "/" + strings.Join(keep, "/")
 }
 
-func hasNuxt(dir string, f file) bool {
+func hasNuxt(dir string, f file, cache map[string]bool) bool {
 	root := strings.TrimSuffix(strings.TrimSuffix(f.rel, f.sub), "/")
+	if v, ok := cache[root]; ok {
+		return v
+	}
+	found := false
 	for _, n := range []string{"nuxt.config.ts", "nuxt.config.js"} {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(root), n)); err == nil {
-			return true
+			found = true
+			break
 		}
 	}
-	return false
+	cache[root] = found
+	return found
 }
 
 var (

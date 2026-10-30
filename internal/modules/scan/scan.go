@@ -74,13 +74,13 @@ func Scan(dir string) Result {
 		if err != nil {
 			return nil
 		}
-		rel, _ := filepath.Rel(dir, path)
-		// Component paths are slash-separated on every OS: they end up in the spec.
-		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
 			if path != dir && (skipDirs[d.Name()] || strings.HasPrefix(d.Name(), ".")) {
 				return filepath.SkipDir
 			}
+			rel, _ := filepath.Rel(dir, path)
+			// Component paths are slash-separated on every OS: they end up in the spec.
+			rel = filepath.ToSlash(rel)
 			if strings.Count(rel, "/") >= 4 {
 				return filepath.SkipDir
 			}
@@ -101,8 +101,14 @@ func Scan(dir string) Result {
 			}
 			return nil
 		}
+		name := d.Name()
+		if skipUnscanned(name) {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, path)
+		rel = filepath.ToSlash(rel)
 		relDir := filepath.ToSlash(filepath.Dir(rel))
-		switch name := d.Name(); {
+		switch {
 		case name == "go.mod":
 			r.Existing = true
 			scanGo(relDir, read(path), add)
@@ -180,6 +186,27 @@ func Scan(dir string) Result {
 
 var hosts = map[string]string{"vercel.json": "Vercel", "netlify.toml": "Netlify", "fly.toml": "Fly.io", "render.yaml": "Render", "Procfile": "PaaS (Procfile)"}
 
+// skipUnscanned reports files the switch below never reads: source, assets
+// and binaries. Manifests, lockfiles and tests stay in the walk.
+func skipUnscanned(name string) bool {
+	if strings.HasSuffix(name, "_test.go") || strings.Contains(name, ".test.") || strings.Contains(name, ".spec.") {
+		return false
+	}
+	switch filepath.Ext(name) {
+	case ".go", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+		".css", ".scss", ".less", ".sass",
+		".md", ".rst",
+		".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".bmp",
+		".woff", ".woff2", ".ttf", ".eot", ".otf",
+		".map", ".o", ".a", ".so", ".dll", ".exe", ".dylib",
+		".class", ".pyc", ".py", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp",
+		".java", ".kt", ".swift", ".rb", ".php", ".vue", ".svelte",
+		".html", ".htm", ".lock", ".sum", ".proto", ".graphql":
+		return true
+	}
+	return false
+}
+
 func read(path string) string {
 	b, err := os.ReadFile(path)
 	if err != nil || len(b) > 1<<20 {
@@ -192,9 +219,56 @@ func read(path string) string {
 type dep struct{ name, kind, tech string }
 
 // mentions reports whether body names dependency as a whole token.
+// Same boundaries as `(?i)(^|[^A-Za-z0-9_./-])name($|[^A-Za-z0-9_-])`.
 func mentions(body, name string) bool {
-	re := regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_./-])` + regexp.QuoteMeta(name) + `($|[^A-Za-z0-9_-])`)
-	return re.MatchString(body)
+	n := len(name)
+	if n == 0 || n > len(body) {
+		return false
+	}
+	for i := 0; i+n <= len(body); i++ {
+		if !asciiEqualFold(body[i:i+n], name) {
+			continue
+		}
+		if i > 0 && isTokenPrefix(body[i-1]) {
+			continue
+		}
+		if i+n < len(body) && isTokenSuffix(body[i+n]) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func asciiEqualFold(s, name string) bool {
+	if len(s) != len(name) {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if toLowerASCII(s[i]) != toLowerASCII(name[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func toLowerASCII(c byte) byte {
+	if c >= 'A' && c <= 'Z' {
+		return c + ('a' - 'A')
+	}
+	return c
+}
+
+func isTokenPrefix(c byte) bool {
+	return isTokenAlnum(c) || c == '_' || c == '.' || c == '/' || c == '-'
+}
+
+func isTokenSuffix(c byte) bool {
+	return isTokenAlnum(c) || c == '_' || c == '-'
+}
+
+func isTokenAlnum(c byte) bool {
+	return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9'
 }
 
 // scanManifest reads a manifest of language lang: the first framework

@@ -6,9 +6,19 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
+)
+
+// readCache keeps the last loaded learnings.json so GetPatterns and
+// GetSummary in one request do not parse the file twice. Invalidated by mtime.
+var (
+	readMu   sync.Mutex
+	readPath string
+	readMod  time.Time
+	readRecs []core.LearningRecord
 )
 
 const learningFileName = "learnings.json"
@@ -69,7 +79,7 @@ func (s *Store) GetPatterns(productType string) ([]core.DesignPattern, error) {
 
 	// Aggregate patterns
 	patternMap := make(map[string]*core.DesignPattern)
-	
+
 	for _, record := range records {
 		if productType != "" && record.ProductType != productType {
 			continue
@@ -116,7 +126,7 @@ func (s *Store) GetSummary() (*core.LearningSummary, error) {
 	findingCounts := make(map[string]map[string]int) // criterion -> severity -> count
 	for _, record := range records {
 		summary.ProductTypeStats[record.ProductType]++
-		
+
 		for _, finding := range record.Findings {
 			if _, ok := findingCounts[finding.Criterion]; !ok {
 				findingCounts[finding.Criterion] = make(map[string]int)
@@ -158,7 +168,7 @@ func (s *Store) GetSummary() (*core.LearningSummary, error) {
 
 func (s *Store) loadAll() ([]core.LearningRecord, error) {
 	path := filepath.Join(s.basePath, learningFileName)
-	data, err := os.ReadFile(path)
+	st, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []core.LearningRecord{}, nil
@@ -166,12 +176,23 @@ func (s *Store) loadAll() ([]core.LearningRecord, error) {
 		return nil, err
 	}
 
+	readMu.Lock()
+	defer readMu.Unlock()
+	if readPath == path && readRecs != nil && st.ModTime().Equal(readMod) {
+		return cloneRecords(readRecs), nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
 	var records []core.LearningRecord
 	if err := json.Unmarshal(data, &records); err != nil {
 		return nil, fmt.Errorf("failed to parse learnings: %w", err)
 	}
-
-	return records, nil
+	readPath, readMod, readRecs = path, st.ModTime(), records
+	return cloneRecords(records), nil
 }
 
 func (s *Store) saveAll(records []core.LearningRecord) error {
@@ -186,7 +207,31 @@ func (s *Store) saveAll(records []core.LearningRecord) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return err
+	}
+	st, _ := os.Stat(path)
+	readMu.Lock()
+	readPath, readRecs = path, cloneRecords(records)
+	if st != nil {
+		readMod = st.ModTime()
+	}
+	readMu.Unlock()
+	return nil
+}
+
+func cloneRecords(in []core.LearningRecord) []core.LearningRecord {
+	out := make([]core.LearningRecord, len(in))
+	for i, r := range in {
+		out[i] = r
+		if r.Findings != nil {
+			out[i].Findings = append([]core.LearningFinding(nil), r.Findings...)
+		}
+		if r.PatternsLearned != nil {
+			out[i].PatternsLearned = append([]core.DesignPattern(nil), r.PatternsLearned...)
+		}
+	}
+	return out
 }
 
 // generateRecommendedRules creates design rules based on common findings.

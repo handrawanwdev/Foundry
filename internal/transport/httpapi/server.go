@@ -365,6 +365,7 @@ func (s *Server) Handler() http.Handler {
 			return nil, err
 		}
 		docs := spec.Artifacts(p)
+		areas, states := core.BlueprintChecks(p, docs)
 		issues := append(p.AreaIssues(core.AreaUseCases), p.AreaIssues(core.AreaAcceptance)...)
 		issues = append(issues, core.DecisionIssues(p.Decisions)...)
 		issues = append(issues, core.ConsistencyIssues(p)...)
@@ -376,7 +377,7 @@ func (s *Server) Handler() http.Handler {
 			decisions = []core.Decision{}
 		}
 		return map[string]any{"artifacts": docs, "has_ui": p.HasUI(), "request": p.ArtifactRequest,
-			"blueprint_hash": spec.BlueprintHash(docs), "areas": core.Coverage(p, docs), "states": core.ArtifactStates(p, docs),
+			"blueprint_hash": spec.BlueprintHash(docs), "areas": areas, "states": states,
 			"issues": issues, "decisions": decisions, "binding_decisions": p.BindingDecisions(), "criterion_kinds": core.CriterionKinds}, nil
 	}))
 	// Blueprint scope: areas, use cases, acceptance criteria, decisions.
@@ -533,12 +534,13 @@ func (s *Server) Handler() http.Handler {
 			Path string `json:"path"`
 			Size int    `json:"size"`
 		}
+		manifest, content := spec.Package(p)
 		files := []file{}
-		for path, body := range spec.Files(p) {
+		for path, body := range content {
 			files = append(files, file{path, len(body)})
 		}
 		slices.SortFunc(files, func(a, b file) int { return strings.Compare(a.Path, b.Path) })
-		return map[string]any{"dir": spec.ExportDir, "finalized": p.Finalized(), "manifest": spec.BuildManifest(p),
+		return map[string]any{"dir": spec.ExportDir, "finalized": p.Finalized(), "manifest": manifest,
 			"files": files, "blockers": pipeline.Blockers(p)}, nil
 	}))
 

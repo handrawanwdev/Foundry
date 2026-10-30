@@ -280,8 +280,9 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 			"binding_decisions": p.BindingDecisions()}, nil
 	case "get_blueprint":
 		docs := spec.Artifacts(p)
-		return map[string]any{"artifacts": docs, "blueprint": p.Blueprint, "areas": core.Coverage(p, docs),
-			"states": core.ArtifactStates(p, docs), "decisions": p.Decisions, "binding_decisions": p.BindingDecisions()}, nil
+		areas, states := core.BlueprintChecks(p, docs)
+		return map[string]any{"artifacts": docs, "blueprint": p.Blueprint, "areas": areas,
+			"states": states, "decisions": p.Decisions, "binding_decisions": p.BindingDecisions()}, nil
 	case "get_workflow":
 		return map[string]any{"workflow": p.Workflow, "report": pipeline.CheckWorkflow(p), "finalized": p.Finalized(),
 			"binding_decisions": p.BindingDecisions(), "progress": s.Svc.ProgressOf(p)}, nil
