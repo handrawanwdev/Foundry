@@ -38,7 +38,7 @@ func (s *Service) GenerateDesign() error {
 			return fmt.Errorf("%w: aturan desain dan layout sudah ada; minta perubahan lewat prompt", ErrWrongStage)
 		}
 		p.UI = nil
-		p.Log("ui", "Susun aturan desain dan spesifikasi layout")
+		p.Log("ui", "Susun aturan desain & layout")
 		return nil
 	})
 }

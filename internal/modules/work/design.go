@@ -70,22 +70,24 @@ const designRules = `DESIGN RULES (rules)
 - tokens: colors, typography and spacing are required; radius, shadow, breakpoints when used. Semantic names (action.primary, text.secondary, surface.page, status.error, type.body, space.md, radius.md, breakpoint.tablet), concrete values (hex/rgb, px/rem, font family size/line-height weight), use = when to use it.
 - components: every shared component the pages reuse: name, use, variants, rules (including hover, focus, active and disabled states). An existing component keeps its name and gets its file in source.
 - visual_hierarchy: how importance is shown (size, weight, color, position). accessibility: WCAG 2.2 AA (contrast, focus, keyboard, labels, touch targets). responsive: the breakpoints and what changes at each. interaction: feedback, loading behavior, motion.
-- platforms: rules that apply to one platform only (web, android, ios, desktop), e.g. Material 3 on android, Human Interface Guidelines on ios.
+- platforms: omit unless a named platform in ALL PLATFORMS FOR UX RULES needs rules the others do not (e.g. Material 3 on android). Never emit a platform that was not selected.
 `
 
 const uxRules = `UX INTELLIGENCE (users, goals, navigation, decisions)
 Work like a senior product designer: understand the users and their tasks BEFORE choosing a layout. A table, entity or field name is data, never a layout instruction.
 1. Users: from the roles and the story, name each kind of user, the platform they use, the context (frequency, pressure, device, environment) and the tasks they must complete.
 2. Goals: one measurable goal per important task (id GOAL-1, ...), the role it belongs to, and what success looks like. Goals come from the use cases, not from the data model.
-3. Information architecture: group destinations by the user's job, not by database tables. Label them with the user's words. A primary destination belongs to the menu; a detail page is reached from its list. Keep the top level small.
-4. Page inventory: one page per user task or decision point, never per database entity. Reuse a page when the task is the same; split when the user's goal, permission or data scope differs. Typical 4-12 pages.
+3. Information architecture: group destinations by the user's job, not by database tables and not one group per page. Each group has a name and items[{label, page}]; a group without items is invalid. Primary nav lists home destinations only. Auth, create/edit forms, detail and modal pages are reached by links, not the top-level menu. Keep the top level small (usually one group).
+4. Page inventory: one page per user task or decision point, never per database entity and never one page per feature. Reuse a page when the task is the same; split when the user's goal, permission or data scope differs. Typical 4-12 pages; a focused product is often 4-6.
+   Not a page: a field or status, a filter/search on a list, responsive/theming, automated tests, logout, confirm-delete. Those live on the page or shell that already serves the task.
+   Do not invent landing, settings, profile, OAuth, admin, team or sharing unless the story or features name them.
 5. Patterns: choose by task, data volume and platform, not by habit.
    table: compare many records with several attributes; list: scan with one dominant attribute; cards: small set with visual identity; detail: one record; form: create or edit; wizard: long/dependent sequence; dashboard: only when KPIs are a real task; search: large/unbounded set; modal/drawer: short side task; tabs: facets of one record; settings: configuration; master-detail: rapid switching.
    On a small screen prefer list/cards over wide tables. Do not make every page a dashboard or a card grid.
 6. Density: operators who repeat a task need compact rows and few clicks; occasional users need more guidance; touch users need larger targets. State the choice.
 7. Every page must have at least one decision whose subject is the page id itself, stating its pattern and why; a form page also names its structure, input validation, submit state and error feedback. No page is left without a decision. One decision per page is enough unless it is a form. why: one concrete sentence. basis: 1-2 ids from the inputs. source: fact|assumption|constraint. Do not write a decision that cannot name its basis.
 8. Facts, assumptions and unknowns are separate. Never invent volume, permissions, compliance or integrations that the blueprint does not state; record the gap as an assumption or unknown.
-9. Data-to-UI mapping: for each page with records, map only the fields shown (table-column, list-item, card-title, card-meta, card-value, delta, detail, form-input, filter, summary, chart, badge, row-action, hidden). Do not show every field of an entity. card-value is a prominent value; delta is a change indicator; row-action is a per-row action (note says what it does). Record identity (symbol, name) is card-title.
+9. Data-to-UI mapping: for each page with records, map only the fields shown (table-column, list-item, card-title, card-meta, card-value, delta, detail, form-input, filter, summary, chart, badge, row-action, hidden). Do not show every field of an entity. Omit storage secrets (password_hash, token_hash) and internal foreign keys, or mark them hidden. card-value is a prominent value; delta is a change indicator; row-action is a per-row action (note says what it does). Record identity (symbol, name) is card-title.
 10. States, validation, permissions and feedback are part of the page design: loading, empty, no_results, error, success, disabled, permission_denied, and what a user without the permission sees.
 11. For a CLI/terminal platform (no screen layout), put its UX in rules.platforms with platform "cli": command and subcommand grammar, flags and defaults, help and examples, output shape and columns, error messages and exit codes, confirmation for destructive actions, and non-interactive/pipe behavior. Do not create layout pages for the terminal.
 `
@@ -93,24 +95,28 @@ Work like a senior product designer: understand the users and their tasks BEFORE
 const layoutRules = `LAYOUT SPECIFICATION (shells, pages)
 - Text and structured data only. No images, mockups, HTML, CSS or code.
 - shells: the layouts pages share (app frame with sidebar or navbar, auth frame, ...): id, name, platform, pattern, regions (sections), navigation, grid, responsive.
-- pages: every screen the features need, per platform with screens — one page per user task, not per entity. route: web starts with /, mobile/desktop is the screen name. access: public or auth. shell: a shell id, or empty for a page with its own frame.
+- pages: every screen the user tasks need, per platform with screens — one page per user task, not per entity or feature. route: web starts with /, mobile/desktop is the screen name. access: public or auth. shell: a shell id, or empty for a page with its own frame.
 - pages[].goal names the goal id the page serves; pages[].fields maps data fields to their presentation.
 - pattern (page, shell and optional for a section) is one of: %s.
 - sections: in visual order (top to bottom, start to end). content lists the elements in order, concretely ("Tabel antrean: No, Pasien, Dokter, Status, Aksi"). components are names from rules.components. grid, alignment, spacing, sizing and responsive use the tokens (space.md, breakpoint.tablet), never arbitrary values.
 - hierarchy: section ids from the most important.
 - states (page or section): keys %s; the value says what the user sees and can do. Required per page pattern: %s.
 - links: {to: page id, via: what the user activates}; together they are the navigation between pages.
-- navigation groups pages by the user's job; every page is reachable from it or from a link.
+- navigation: groups named by the user's job, each with items[{label, page}]. Primary items are home destinations (list, dashboard). Auth, form, detail and modal pages stay off the top-level menu and are reached by links. Empty groups are invalid. Every page is reachable from navigation or from a link.
 - flows: for each flow id, the page ids it passes through, in order.
 - ids: lowercase letters, digits and dashes. Page ids are unique; section ids are unique within their page.
 `
 
 const outputDiscipline = `OUTPUT DISCIPLINE
-Emit compact JSON. Omit empty keys, empty arrays and empty strings. Do not copy placeholder empty values from the shape.
+Emit compact JSON. Omit empty keys, empty arrays and empty strings. Do not copy placeholder empty values from the shape. The shape shows keys and types only; do not copy its product, roles, pages or fields.
+- When DESIGN REFERENCE is present, rules.reference is required (the user's words); never omit it.
+- Every pages[].shell must name a shells[].id emitted in this same answer.
 - principles 3-5 short clauses; ux_guidelines 4-6; accessibility, responsive, interaction 2-4 each. Do not repeat the same sentence across those lists.
 - tokens: 6-10 colors, 3-5 typography, 4-6 spacing, 2-3 radius, 1-2 shadow, 2-3 breakpoints. Short use.
 - components: only those pages reuse (typically 4-10). One short variants list and one short rules line each.
-- pages: one per user task. Typical 4-12. sections 2-4; content 1-3 concrete items; fields only those shown.
+- pages: one per user task, not per feature. Typical 4-12. sections 2-4; content 1-3 concrete items; fields only those shown.
+- navigation: one or few groups; every group has items that name existing page ids. Never a group without items. Never one group per page.
+- rules.platforms: omit unless a selected platform needs distinct rules; never emit an unselected platform.
 - decisions: exactly one per page (pattern + why). Form pages may add one for validation/submit. why: one short sentence. basis: 1-2 existing ids from the UX inputs (GOAL-*, FLOW-*, FEAT-*, REQ-*, DEC-*, entity, permission, platform, token, page id). Never invent a basis.
 - states: one short sentence per required key only. Foundry fills users, goals, navigation, decisions and required states when omitted; omit them rather than emit invalid ids.
 - Emit keys in this order so a cut-off answer still has the required parts: rules, shells, pages, then users, goals, navigation, decisions, flows.
@@ -136,7 +142,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		b.WriteString("ALL PLATFORMS FOR UX RULES: " + strings.Join(ux, ", ") + "\n")
 	}
 	if len(p.Features) > 0 {
-		b.WriteString("FEATURES (pages.feature_id):\n")
+		b.WriteString("FEATURES (pages.feature_id): attach to a page that already serves the task; do not add a page per feature.\n")
 		for _, f := range p.Features {
 			fmt.Fprintf(&b, "- %s %s [%s]\n", f.ID, f.Name, strings.Join(f.Platforms, ", "))
 		}
@@ -909,7 +915,13 @@ var defaultStateText = map[string]string{
 // completeDesign fills structural gaps the designer omitted so a nearly-valid
 // answer lands instead of a full LLM retry. Text the designer wrote always wins.
 func completeDesign(p *core.Project, d *core.UIDesign) {
-	if d == nil || d.Layout == nil {
+	if d == nil {
+		return
+	}
+	if d.Rules != nil {
+		d.Rules = completeRules(p, d.Rules)
+	}
+	if d.Layout == nil {
 		return
 	}
 	l := d.Layout
@@ -988,17 +1000,46 @@ func completePageGoals(l *core.LayoutSpec) {
 }
 
 func completeNavigation(l *core.LayoutSpec) {
-	if len(l.Navigation) > 0 || len(l.Pages) == 0 {
+	if l == nil || len(l.Pages) == 0 {
+		return
+	}
+	pages := map[string]core.LayoutPage{}
+	for _, pg := range l.Pages {
+		pages[pg.ID] = pg
+	}
+	var groups []core.NavGroup
+	for _, g := range l.Navigation {
+		var items []core.NavItem
+		for _, it := range g.Items {
+			pg, ok := pages[it.Page]
+			if !ok {
+				continue
+			}
+			if it.Label == "" {
+				it.Label = firstNonEmpty(pg.Name, pg.ID)
+			}
+			items = append(items, it)
+		}
+		if len(items) == 0 {
+			continue
+		}
+		if g.Name == "" {
+			g.Name = "Utama"
+		}
+		g.Items = items
+		groups = append(groups, g)
+	}
+	if len(groups) > 0 {
+		l.Navigation = groups
 		return
 	}
 	nested := map[string]bool{"detail": true, "form": true, "wizard": true, "modal": true, "auth": true}
 	var items []core.NavItem
 	for _, pg := range l.Pages {
-		if nested[pg.Pattern] {
+		if nested[pg.Pattern] || pg.AccessIsPublic() {
 			continue
 		}
-		label := firstNonEmpty(pg.Name, pg.ID)
-		items = append(items, core.NavItem{Label: label, Page: pg.ID, Primary: true})
+		items = append(items, core.NavItem{Label: firstNonEmpty(pg.Name, pg.ID), Page: pg.ID, Primary: true})
 	}
 	if len(items) == 0 {
 		for _, pg := range l.Pages {

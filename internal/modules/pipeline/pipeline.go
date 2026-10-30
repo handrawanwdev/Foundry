@@ -331,7 +331,7 @@ func jobMessage(kind string) string {
 	case work.KindDiscovery:
 		return "Memahami kebutuhan"
 	case work.KindDesign:
-		return "Menyusun aturan desain dan spesifikasi layout"
+		return "Menyusun aturan desain & layout"
 	case work.KindStack:
 		return "Memahami permintaan perubahan teknologi"
 	case work.KindStructure:

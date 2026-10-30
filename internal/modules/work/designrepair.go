@@ -369,6 +369,9 @@ func completeRules(p *core.Project, r *core.DesignRules) *core.DesignRules {
 	if r.Source == "" {
 		r.Source = def.Source
 	}
+	if r.Reference == "" {
+		r.Reference = def.Reference
+	}
 	if len(r.Principles) == 0 {
 		r.Principles = def.Principles
 	}
@@ -392,6 +395,17 @@ func completeRules(p *core.Project, r *core.DesignRules) *core.DesignRules {
 	}
 	if len(r.Components) == 0 {
 		r.Components = def.Components
+	}
+	if p != nil && len(r.Platforms) > 0 {
+		if allowed := p.UXPlatforms(); len(allowed) > 0 {
+			var keep []core.PlatformRules
+			for _, pr := range r.Platforms {
+				if slices.Contains(allowed, pr.Platform) {
+					keep = append(keep, pr)
+				}
+			}
+			r.Platforms = keep
+		}
 	}
 	return r
 }
@@ -421,6 +435,40 @@ func firstUIPlatform(p *core.Project) string {
 	return core.PlatformWeb
 }
 
+// ensurePageShells creates a minimal shell for every pages[].shell the
+// designer named but did not emit. Designer-written shells always win.
+func ensurePageShells(l *core.LayoutSpec) {
+	if l == nil {
+		return
+	}
+	have := map[string]bool{}
+	for _, sh := range l.Shells {
+		have[sh.ID] = true
+	}
+	for _, pg := range l.Pages {
+		id := pg.Shell
+		if id == "" || have[id] || !core.ValidID(id) {
+			continue
+		}
+		if len(l.Shells) >= core.MaxLayoutShells {
+			return
+		}
+		l.Shells = append(l.Shells, core.LayoutShell{ID: id, Pattern: defaultShellPattern(id)})
+		have[id] = true
+	}
+}
+
+func defaultShellPattern(id string) string {
+	switch {
+	case id == "auth" || strings.Contains(id, "auth"):
+		return "auth"
+	case strings.Contains(id, "nav") && !strings.Contains(id, "sidebar"):
+		return "navbar"
+	default:
+		return "sidebar"
+	}
+}
+
 // repairLayout fixes recoverable layout mistakes so a nearly-valid answer
 // lands instead of a full LLM retry. Designer text always wins when valid.
 func repairLayout(p *core.Project, d *core.UIDesign) {
@@ -429,6 +477,7 @@ func repairLayout(p *core.Project, d *core.UIDesign) {
 	}
 	l := d.Layout
 	plat := firstUIPlatform(p)
+	ensurePageShells(l)
 	pageIDs := map[string]bool{}
 	for i := range l.Pages {
 		pg := &l.Pages[i]

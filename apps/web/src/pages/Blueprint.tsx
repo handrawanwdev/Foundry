@@ -231,12 +231,8 @@ function DesignEmpty({ project, locked }: { project: Project; locked: boolean })
   const busy = project.job?.kind === "design" && isWorking(project);
   return (
     <div className="doc">
-      <h1>Aturan desain & spesifikasi layout</h1>
-      <p className="muted">
-        Produk ini punya layar. Foundry menyusun aturan desain (prinsip, panduan UX, token, komponen, aksesibilitas, responsif,
-        interaksi, aturan platform) dan spesifikasi layout per halaman (section, hierarki, grid, navigasi, state UI) sebagai teks
-        dan data terstruktur untuk coding agent. Tidak ada gambar atau kanvas.
-      </p>
+      <h1>Aturan desain & layout</h1>
+      <p className="muted">Foundry menyusun aturan desain dan layout tiap halaman. Teks terstruktur, tanpa kanvas.</p>
       {busy ? <p><span className="spinner" /> {project.job?.message}… <Elapsed started={project.job?.started} /></p> : !locked && (
         <button className="primary" disabled={isWorking(project) || pending === "generateDesign"} onClick={() => void run("generateDesign", api.generateDesign)}>
           Susun dengan AI

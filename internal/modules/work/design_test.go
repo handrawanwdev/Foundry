@@ -218,15 +218,173 @@ func TestApplyDesignRecordsReferenceWithConcreteRules(t *testing.T) {
 	}
 }
 
-// A design that ignores the reference is refused as a whole: the rules must
-// record the reference before the design lands.
-func TestApplyDesignRefusesMissingReference(t *testing.T) {
+// A design that omitted rules.reference still lands: Foundry records the
+// survey design reference so the rules stay traceable. Validation still
+// requires the field; this fills the known value.
+func TestApplyDesignFillsMissingReference(t *testing.T) {
 	p := &core.Project{Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}},
 		Survey: &core.Survey{DesignReference: "Duolingo"}}
-	// existingDesign has no reference field; the reference check must refuse it.
-	err := ApplyDesign(p, existingDesign)
-	if err == nil || !strings.Contains(err.Error(), "referensi desain") {
-		t.Fatalf("err = %v, want missing-reference refusal", err)
+	if err := ApplyDesign(p, existingDesign); err != nil {
+		t.Fatal(err)
+	}
+	if p.UI.Rules == nil || p.UI.Rules.Reference != "Duolingo" {
+		t.Fatalf("reference = %q, want Duolingo", p.UI.Rules.Reference)
+	}
+	if errs := core.Errors(p.DesignIssues(nil)); len(errs) != 0 {
+		t.Fatalf("filled reference still errors: %+v", errs)
+	}
+}
+
+// Pages that name a shell the answer never emitted still land: Foundry
+// synthesizes the missing shells. Designer-written shells stay as they are.
+func TestApplyDesignFillsMissingShells(t *testing.T) {
+	p := webProject()
+	raw := `{"rules": ` + designRulesJSON() + `,
+	 "pages": [
+	  {"id": "masuk", "name": "Masuk", "platform": "web", "route": "/masuk", "purpose": "Masuk", "pattern": "auth", "shell": "auth",
+	   "sections": [{"id": "form", "name": "Form", "content": ["Email, Kata sandi"]}], "states": {"error": "Gagal", "disabled": "Kirim"}},
+	  {"id": "screener", "name": "Screener", "platform": "web", "route": "/screener", "purpose": "Saring", "pattern": "table", "shell": "app",
+	   "feature_id": "FEAT-001",
+	   "sections": [{"id": "tabel", "name": "Tabel", "content": ["Simbol, Harga"]}]}]}`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	shells := map[string]core.LayoutShell{}
+	for _, sh := range p.UI.Layout.Shells {
+		shells[sh.ID] = sh
+	}
+	if sh, ok := shells["auth"]; !ok || sh.Pattern != "auth" || sh.Name == "" || len(sh.Regions) == 0 {
+		t.Fatalf("auth shell = %+v", p.UI.Layout.Shells)
+	}
+	if sh, ok := shells["app"]; !ok || sh.Pattern != "sidebar" || sh.Name == "" || len(sh.Regions) == 0 {
+		t.Fatalf("app shell = %+v", p.UI.Layout.Shells)
+	}
+	if errs := core.Errors(p.DesignIssues(nil)); len(errs) != 0 {
+		t.Fatalf("filled shells still error: %+v", errs)
+	}
+
+	p2 := webProject()
+	kept := `{"rules": ` + designRulesJSON() + `,
+	 "shells": [{"id": "app", "name": "Kerangka", "platform": "web", "pattern": "navbar",
+	   "regions": [{"id": "top", "name": "Atas", "content": ["Logo"]}]}],
+	 "pages": [{"id": "screener", "name": "Screener", "platform": "web", "route": "/screener", "purpose": "Saring", "pattern": "table", "shell": "app",
+	   "feature_id": "FEAT-001",
+	   "sections": [{"id": "tabel", "name": "Tabel", "content": ["Simbol, Harga"]}]}]}`
+	if err := ApplyDesign(p2, kept); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(p2.UI.Layout.Shells); n != 1 {
+		t.Fatalf("designer shells overwritten: n=%d %+v", n, p2.UI.Layout.Shells)
+	}
+	sh := p2.UI.Layout.Shells[0]
+	if sh.ID != "app" || sh.Name != "Kerangka" || sh.Pattern != "navbar" || sh.Regions[0].ID != "top" {
+		t.Fatalf("designer shell mutated: %+v", sh)
+	}
+}
+
+// MiniTask-shaped answer: long survey reference omitted, pages name shells
+// that were never emitted. Both gaps are recoverable; the design lands.
+func TestApplyDesignLandsLongReferenceAndNamedShells(t *testing.T) {
+	ref := "Gunakan Todoist sebagai referensi desain dan pengalaman pengguna. Adaptasi karakteristik berikut: layout dashboard yang bersih, sidebar, daftar tugas sebagai fokus."
+	p := webProject()
+	p.Survey = &core.Survey{DesignReference: ref}
+	raw := `{"rules": ` + designRulesJSON() + `,
+	 "pages": [
+	  {"id": "masuk", "name": "Masuk", "platform": "web", "route": "/masuk", "purpose": "Masuk", "pattern": "auth", "shell": "auth", "access": "public",
+	   "sections": [{"id": "form", "name": "Form", "content": ["Email"]}], "states": {"error": "Gagal", "disabled": "Kirim"}},
+	  {"id": "dasbor", "name": "Dasbor", "platform": "web", "route": "/", "purpose": "Lihat tugas", "pattern": "list", "shell": "app", "access": "auth",
+	   "feature_id": "FEAT-001",
+	   "sections": [{"id": "daftar", "name": "Daftar", "content": ["Tugas"]}], "states": {"loading": "x", "empty": "x", "error": "x"}}]}`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	if p.UI.Rules.Reference != ref {
+		t.Fatalf("reference = %q", p.UI.Rules.Reference)
+	}
+	got := map[string]bool{}
+	for _, sh := range p.UI.Layout.Shells {
+		got[sh.ID] = true
+	}
+	if !got["auth"] || !got["app"] {
+		t.Fatalf("shells = %+v", p.UI.Layout.Shells)
+	}
+	if errs := core.Errors(p.DesignIssues(nil)); len(errs) != 0 {
+		t.Fatalf("still invalid: %+v", errs)
+	}
+}
+
+// Empty navigation groups (one named group per page, no items) are dropped
+// and rebuilt from home destinations: auth/form/public pages stay off the menu.
+func TestApplyDesignFillsEmptyNavGroups(t *testing.T) {
+	p := webProject()
+	raw := `{"rules": ` + designRulesJSON() + `,
+	 "pages": [
+	  {"id": "daftar", "name": "Daftar", "platform": "web", "route": "/daftar", "purpose": "Daftar", "pattern": "auth", "access": "public", "shell": "auth",
+	   "sections": [{"id": "form", "name": "Form", "content": ["Email"]}], "states": {"error": "x", "disabled": "x"}},
+	  {"id": "masuk", "name": "Masuk", "platform": "web", "route": "/masuk", "purpose": "Masuk", "pattern": "auth", "access": "public", "shell": "auth",
+	   "sections": [{"id": "form", "name": "Form", "content": ["Email"]}], "states": {"error": "x", "disabled": "x"}},
+	  {"id": "dasbor", "name": "Dasbor", "platform": "web", "route": "/", "purpose": "Lihat tugas", "pattern": "list", "access": "auth", "shell": "app",
+	   "feature_id": "FEAT-001",
+	   "sections": [{"id": "daftar", "name": "Daftar", "content": ["Tugas"]}], "states": {"loading": "x", "empty": "x", "error": "x"}},
+	  {"id": "tambah-tugas", "name": "Tambah tugas", "platform": "web", "route": "/tugas/baru", "purpose": "Buat tugas", "pattern": "form", "access": "auth", "shell": "app",
+	   "sections": [{"id": "form", "name": "Form", "content": ["Judul"]}], "states": {"error": "x", "success": "x", "disabled": "x"}},
+	  {"id": "ubah-tugas", "name": "Ubah tugas", "platform": "web", "route": "/tugas/ubah", "purpose": "Ubah tugas", "pattern": "form", "access": "auth", "shell": "app",
+	   "sections": [{"id": "form", "name": "Form", "content": ["Judul"]}], "states": {"error": "x", "success": "x", "disabled": "x"}}],
+	 "navigation": [
+	  {"name": "Daftar"}, {"name": "Masuk"}, {"name": "Tugas"}, {"name": "Tambah tugas"}, {"name": "Ubah tugas"}]}`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	nav := p.UI.Layout.Navigation
+	if len(nav) != 1 || nav[0].Name == "" || len(nav[0].Items) != 1 || nav[0].Items[0].Page != "dasbor" {
+		t.Fatalf("nav = %+v", nav)
+	}
+	if errs := core.Errors(p.DesignIssues(nil)); len(errs) != 0 {
+		t.Fatalf("still invalid: %+v", errs)
+	}
+}
+
+// A designer-written navigation with valid items is kept; empty sibling groups
+// and items that point nowhere are dropped.
+func TestApplyDesignKeepsValidNavDropsEmptyGroups(t *testing.T) {
+	p := webProject()
+	raw := `{"rules": ` + designRulesJSON() + `,
+	 "pages": [
+	  {"id": "screener", "name": "Screener", "platform": "web", "route": "/screener", "purpose": "Saring", "pattern": "table",
+	   "feature_id": "FEAT-001",
+	   "sections": [{"id": "tabel", "name": "Tabel", "content": ["Simbol"]}], "states": {"loading": "x", "empty": "x", "error": "x"}},
+	  {"id": "detail", "name": "Detail", "platform": "web", "route": "/detail", "purpose": "Lihat", "pattern": "detail",
+	   "sections": [{"id": "isi", "name": "Isi", "content": ["Harga"]}], "states": {"loading": "x", "error": "x"}}],
+	 "navigation": [
+	  {"name": "Pasar", "items": [{"label": "Screener", "page": "screener", "primary": true}, {"label": "Hantu", "page": "ghost"}]},
+	  {"name": "Kosong"}]}`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	nav := p.UI.Layout.Navigation
+	if len(nav) != 1 || nav[0].Name != "Pasar" || len(nav[0].Items) != 1 || nav[0].Items[0].Page != "screener" {
+		t.Fatalf("nav = %+v", nav)
+	}
+}
+
+// Platform rules for a platform the project did not select are dropped.
+func TestApplyDesignDropsUnselectedPlatformRules(t *testing.T) {
+	p := webProject()
+	raw := `{"rules": {"source": "new", "principles": ["Satu tugas"], "ux_guidelines": ["Filter di atas"],
+	  "accessibility": ["AA"], "responsive": ["Tabel scroll"],
+	  "tokens": {"colors": [{"name": "action.primary", "value": "#000"}], "typography": [{"name": "type.body", "value": "Inter 14px"}],
+	              "spacing": [{"name": "space.md", "value": "16px"}]},
+	  "components": [{"name": "DataTable", "use": "daftar"}],
+	  "platforms": [{"platform": "android", "rules": ["Material 3"]}, {"platform": "web", "rules": ["Fokus keyboard"]}]},
+	 "pages": [{"id": "screener", "name": "Screener", "platform": "web", "route": "/screener", "purpose": "Saring", "pattern": "table",
+	   "feature_id": "FEAT-001",
+	   "sections": [{"id": "tabel", "name": "Tabel", "content": ["Simbol, Harga"]}]}]}`
+	if err := ApplyDesign(p, raw); err != nil {
+		t.Fatal(err)
+	}
+	got := p.UI.Rules.Platforms
+	if len(got) != 1 || got[0].Platform != "web" {
+		t.Fatalf("platforms = %+v", got)
 	}
 }
 
@@ -273,7 +431,8 @@ func TestDesignPromptStaysCompact(t *testing.T) {
 			t.Errorf("prompt still dumps duplicate %q", gone)
 		}
 	}
-	for _, want := range []string{"OUTPUT DISCIPLINE", "FEATURES (pages.feature_id)", "one page per user task", "Emit compact JSON"} {
+	for _, want := range []string{"OUTPUT DISCIPLINE", "FEATURES (pages.feature_id)", "one page per user task", "Emit compact JSON",
+		"never one page per feature", "Never a group without items", "do not copy its product"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt missing %q", want)
 		}
