@@ -87,7 +87,11 @@ export interface PlatformPlan { targets: PlatformTarget[]; reason: string; appro
 export interface Component { kind: string; path: string; tech: string; evidence: string }
 export type StructureType = "simple" | "modular" | "monorepo" | "microservices";
 export type PartKind = "app" | "service" | "module" | "worker" | "package";
-export interface StructurePart { name: string; path: string; modules?: string[]; reason?: string }
+export interface StructurePart {
+  name: string; path: string; modules?: string[]; reason?: string;
+  // Responsibility of each module (domain folder).
+  module_reasons?: Record<string, string>;
+}
 // The structure decision of a new project (design level).
 export interface StructureIR {
   type: StructureType; apps?: StructurePart[]; services?: StructurePart[]; workers?: StructurePart[];
@@ -98,19 +102,37 @@ export interface StructureIR {
 export interface StructureOp { op: "type" | "add" | "remove" | "rename" | "move"; kind?: PartKind | "rule"; name: string; to?: string; reason?: string }
 export interface StructureImpact { area: string; message: string }
 export interface StructureProposal {
-  source: "user" | "ai" | "recommend"; request?: string; note?: string; ops?: StructureOp[]; ir: StructureIR; changes: string[];
+  source: "user" | "ai" | "recommend"; request?: string; note?: string; alternative?: string;
+  ops?: StructureOp[]; ir: StructureIR; changes: string[];
   tech?: TechChange[]; issues?: TechIssue[]; impact?: StructureImpact[]; previous: TechStatus; at: string;
 }
+export interface StructureEvaluation {
+  maintainability: number; simplicity: number; extensibility: number; testability: number;
+  separation_of_concerns: number; complexity: number; score?: number;
+}
+export interface StructureAlternative {
+  id: string; name: string; summary: string; type: StructureType; ir: StructureIR;
+  evaluation: StructureEvaluation; pros?: string[]; cons?: string[]; tradeoffs?: string[]; recommended?: boolean;
+}
+export interface StructureDomain { name: string; responsibility: string }
+export interface StructurePlan {
+  summary: string; drivers?: string[]; domains?: StructureDomain[]; alternatives: StructureAlternative[];
+  recommendation: string; reason: string; dependency_rules?: string[];
+  source_hash?: string; generated_at?: string; stale?: boolean;
+  selected?: string; decision?: string; decided_at?: string;
+}
+export interface StructurePlanRequest { text?: string; source_hash?: string; rejected?: string }
 export interface StructureVersion {
   version: number; at: string; source: string; request?: string; changes?: string[]; impact?: StructureImpact[];
-  status: TechStatus; ir: StructureIR;
+  status: TechStatus; ir: StructureIR; analysis?: string; alternative?: string; reason?: string; tree?: string;
 }
 export interface Structure {
   mode: "existing" | "new"; components: Component[] | null; template?: string; layout?: string[];
   reason: string; approved: boolean;
   ui?: ExistingUI;
   ir?: StructureIR; recommended?: StructureType; status?: TechStatus; issues?: TechIssue[];
-  proposal?: StructureProposal; request?: string; history?: StructureVersion[];
+  proposal?: StructureProposal; plan?: StructurePlan; plan_request?: StructurePlanRequest;
+  request?: string; history?: StructureVersion[];
 }
 // The frontend an existing project already has, read from its code.
 export interface ExistingUI {

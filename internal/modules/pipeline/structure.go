@@ -12,6 +12,10 @@ import (
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
+// maxStructurePlanRequest bounds the natural-language revision of an AI
+// structure analysis.
+const maxStructurePlanRequest = 6000
+
 // Project structure workspace: recommendation → user edit (by hand or in
 // words) → validation and impact → apply → approval. The approved Structure
 // IR is what the scaffold and the build follow.
@@ -36,6 +40,7 @@ func structureEditable(p *core.Project) error {
 	if p.Structure.IR == nil {
 		structure.Sync(p, "")
 	}
+	structure.Refresh(p.Structure, p)
 	return nil
 }
 
@@ -46,8 +51,8 @@ func (s *Service) ProposeStructure(ops []core.StructureOp) (*core.Project, error
 		if err := structureEditable(p); err != nil {
 			return err
 		}
-		if p.Structure.Request != "" {
-			return errors.New("AI masih memproses permintaan perubahan struktur")
+		if p.Structure.Request != "" || p.Structure.PlanRequest != nil {
+			return errors.New("AI masih memproses permintaan struktur")
 		}
 		if err := structure.Propose(p.Structure, p, ops, "user", "", ""); err != nil {
 			return err
@@ -63,6 +68,9 @@ func (s *Service) RecommendStructure() (*core.Project, error) {
 	return s.Store.Update(func(p *core.Project) error {
 		if err := structureEditable(p); err != nil {
 			return err
+		}
+		if p.Structure.Request != "" || p.Structure.PlanRequest != nil {
+			return errors.New("AI masih memproses permintaan struktur")
 		}
 		ir, why := structure.Recommend(p)
 		return structure.ProposeIR(p.Structure, p, ir, nil, "recommend", "", why)
@@ -83,6 +91,9 @@ func (s *Service) RequestStructureChange(text string) error {
 		if p.Job != nil && p.Job.Status == core.JobWaiting {
 			return ErrBusy
 		}
+		if p.Structure.PlanRequest != nil {
+			return errors.New("AI masih menganalisis struktur")
+		}
 		p.Structure.Request = text
 		p.Log("ui", "Minta perubahan struktur: "+text)
 		return nil
@@ -93,8 +104,143 @@ func (s *Service) RequestStructureChange(text string) error {
 	return s.startAI(work.KindStructure)
 }
 
+// AnalyzeStructure asks the AI to analyze the whole system and propose
+// alternatives. An empty text is a fresh analysis; a text revises the
+// current plan. The analysis is not repeated while its source is unchanged.
+func (s *Service) AnalyzeStructure(text string) error {
+	text = strings.TrimSpace(text)
+	if len(text) > maxStructurePlanRequest {
+		return fmt.Errorf("permintaan revisi terlalu panjang (maks. %d karakter)", maxStructurePlanRequest)
+	}
+	_, err := s.Store.Update(func(p *core.Project) error {
+		if err := structureEditable(p); err != nil {
+			return err
+		}
+		if p.Structure.Proposal != nil {
+			return structure.ErrPending
+		}
+		if p.Structure.Request != "" || p.Structure.PlanRequest != nil {
+			return errors.New("AI masih memproses permintaan struktur")
+		}
+		if p.Job != nil && p.Job.Status == core.JobWaiting {
+			return ErrBusy
+		}
+		if text == "" && structure.PlanCurrent(p.Structure, p) {
+			return structure.ErrPlanCurrent
+		}
+		p.Structure.PlanRequest = &core.StructurePlanRequest{Text: text, SourceHash: structure.SourceHash(p)}
+		if text == "" {
+			p.Log("ui", "Minta analisis struktur dengan AI")
+		} else {
+			p.Log("ui", "Minta revisi analisis struktur: "+text)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return s.startAI(work.KindStructure)
+}
+
+// UseStructureAlternative adopts one AI alternative as the structure and
+// approves it. When the alternative has validation errors the proposal is
+// left waiting, so the user can fix it with the existing editor.
+func (s *Service) UseStructureAlternative(alternative string) (*core.Project, error) {
+	alternative = strings.TrimSpace(alternative)
+	var adopted bool
+	p, err := s.Store.Update(func(p *core.Project) error {
+		if err := structureEditable(p); err != nil {
+			return err
+		}
+		if p.Structure.Proposal != nil {
+			return structure.ErrPending
+		}
+		if p.Structure.Request != "" || p.Structure.PlanRequest != nil {
+			return errors.New("AI masih memproses permintaan struktur")
+		}
+		plan := p.Structure.Plan
+		if plan == nil {
+			return structure.ErrNoPlan
+		}
+		if !structure.PlanCurrent(p.Structure, p) {
+			return structure.ErrPlanStale
+		}
+		alt := plan.Alternative(alternative)
+		if alternative == "" {
+			alt = plan.RecommendedAlternative()
+		}
+		if alt == nil {
+			return fmt.Errorf("alternatif struktur %q tidak ada", alternative)
+		}
+		ir := work.PlanAlternativeIR(plan, alt)
+		decision := alt.Summary
+		if alt.ID == plan.Recommendation {
+			decision = plan.Reason
+		}
+		err := structure.ProposeIR(p.Structure, p, ir, nil, "ai", plan.Reason, alt.Summary)
+		if errors.Is(err, structure.ErrNoChange) {
+			// The current structure is already this alternative; only the
+			// decision needs to be recorded.
+			if hasStructureError(structure.Validate(ir, p, p.Stack)) {
+				return err
+			}
+			plan.Selected, plan.Decision, plan.DecidedAt = alt.ID, decision, time.Now().UTC()
+			adopted = true
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		p.Structure.Proposal.Alternative = alt.ID
+		if hasStructureError(p.Structure.Proposal.Issues) {
+			// Leave the proposal for the existing review/editor flow.
+			return nil
+		}
+		plan.Selected, plan.Decision, plan.DecidedAt = alt.ID, decision, time.Now().UTC()
+		adopted = true
+		p.Log("ui", "Struktur AI dipilih: "+alt.Name)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !adopted {
+		return p, nil
+	}
+	if p.Structure.Proposal == nil {
+		return s.ApproveStructure()
+	}
+	if _, err := s.ApplyStructureProposal(); err != nil {
+		return nil, err
+	}
+	return s.ApproveStructure()
+}
+
+func hasStructureError(issues []core.TechIssue) bool {
+	for _, i := range issues {
+		if i.Level == "error" {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) dropStructureRequest(cause error) error {
 	_, err := s.Store.Update(func(p *core.Project) error {
+		if p.Structure != nil && p.Structure.PlanRequest != nil {
+			req := p.Structure.PlanRequest.Text
+			p.Structure.PlanRequest = nil
+			if r := []rune(req); len(r) > 160 {
+				req = string(r[:160]) + "…"
+			}
+			if req == "" {
+				req = "analisis seluruh sistem"
+			}
+			msg := fmt.Sprintf("Analisis struktur “%s” gagal: %v. Struktur tidak diubah; analisis sebelumnya (bila ada) tetap dipakai sampai kamu menganalisis ulang.", req, cause)
+			p.Job = &core.Job{Kind: work.KindStructure, Status: core.JobFailed, Message: "Analisis struktur", Error: msg, Started: time.Now().UTC()}
+			p.Log("system", msg)
+			return nil
+		}
 		req := ""
 		if p.Structure != nil {
 			req, p.Structure.Request = p.Structure.Request, ""
@@ -147,8 +293,11 @@ func (s *Service) ApplyStructureProposal() (*core.Project, error) {
 			stack.Follow(p.Stack, areas...)
 			stackChanged(p, old, "structure", "Struktur project: "+pr.IR.Type)
 			work.ResetBlueprintTech(p, stack.Diff(old, p.Stack.Decisions))
-			work.CompleteBlueprint(p)
 		}
+		// The architecture and technology artifacts render this structure;
+		// commands that recorded them become stale through their hashes.
+		work.CompleteBlueprint(p)
+		stampRefs(p)
 		structure.Refresh(st, p)
 		v := structure.Record(st, before, pr.Source, pr.Request)
 		p.Log("ui", fmt.Sprintf("Struktur v%d diterapkan: %s", v.Version, strings.Join(v.Changes, "; ")))
@@ -173,6 +322,9 @@ func (s *Service) ApproveStructure() (*core.Project, error) {
 	return s.Store.Update(func(p *core.Project) error {
 		if err := structureEditable(p); err != nil {
 			return err
+		}
+		if p.Structure.PlanRequest != nil {
+			return ErrBusy
 		}
 		if err := structure.Approve(p.Structure, p); err != nil {
 			return err

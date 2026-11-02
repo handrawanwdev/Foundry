@@ -261,7 +261,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 			return nil, fmt.Errorf("argumen tidak valid: %v", err)
 		}
 	}
-	p, err := s.Svc.Store.Load()
+	p, err := s.Svc.Snapshot()
 	if err != nil {
 		return nil, err
 	}

@@ -58,6 +58,10 @@ export const api = {
   discardStructure: () => call<Project>("POST", "/project/structure/discard", {}),
   approveStructure: () => call<Project>("POST", "/project/structure/approve", {}),
   recommendStructure: () => call<Project>("POST", "/project/structure/recommend", {}),
+  // AI analyzes the whole system and compares 2-3 alternatives; text revises it.
+  analyzeStructure: (text = "") => call("POST", "/project/structure/analyze", { text }),
+  // Adopt one alternative (empty = the AI recommendation) and approve it.
+  useStructureAlternative: (alternative = "") => call<Project>("POST", "/project/structure/use", { alternative }),
   // value "" returns the area to Foundry's recommendation.
   // Technology changes become a proposal; applyStack/discardStack decide it.
   proposeStack: (changes: { area: TechArea; value: string; reason?: string }[]) => call<Project>("PUT", "/project/stack", { changes }),

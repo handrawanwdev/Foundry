@@ -711,6 +711,7 @@ func TestMCPDesignSketchChainsToDetails(t *testing.T) {
 	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
 		t.Fatal(err)
 	}
+	mcpAfterStory(t, s)
 	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
 		t.Fatal(err)
 	}

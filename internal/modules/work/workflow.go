@@ -55,6 +55,7 @@ const commandRules = `Command rules:
 - expected_outputs: what the agent hands back (code, migration, test, document, report). acceptance_criteria: checkable conditions.
 - constraints: limits that apply (technology given by the user, compatibility, performance, security).
 - decided decisions override every artifact and command. An instruction, constraint or acceptance criterion that contradicts a decided decision is wrong; follow the decision and rewrite the command.
+- the project structure and its rules are the source of truth for folders, module boundaries and dependencies. Every command creates or changes code only in those folders, follows the dependency rules, and never invents a different layout or a new top-level folder.
 `
 
 const commandShape = `{"id": "C1", "name": "", "objective": "", "context": "", "inputs": [""], "instructions": "",
@@ -136,6 +137,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
+	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
 
 	// Use artifact summaries only (not full bodies) to reduce context size
 	b.WriteString("BLUEPRINT ARTIFACTS (summaries only):\n")
@@ -175,6 +177,7 @@ Write every human-readable text in the same language as the story.
 
 PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 
+	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
 	w := p.Workflow
 	b.WriteString("CURRENT COMMANDS (skeleton):\n" + mustJSON(w.Commands) + "\n\n")
 
@@ -257,6 +260,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
+	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
 	cut := promptBody
 	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Sync {
 		cut = 0
@@ -295,6 +299,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
+	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
 	cut := promptBody
 	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Sync {
 		cut = 0

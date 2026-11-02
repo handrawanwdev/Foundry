@@ -83,6 +83,12 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 				return fmt.Errorf("service tujuan modul %s tidak ditemukan", name)
 			}
 			ir.Services[i].Modules = append(ir.Services[i].Modules, name)
+			if reason := strings.TrimSpace(op.Reason); reason != "" {
+				if ir.Services[i].ModuleReasons == nil {
+					ir.Services[i].ModuleReasons = map[string]string{}
+				}
+				ir.Services[i].ModuleReasons[name] = reason
+			}
 			break
 		}
 		ps, err := list(ir, kind)
@@ -100,6 +106,7 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 				return fmt.Errorf("modul %s tidak ditemukan", name)
 			}
 			ir.Services[i].Modules = slices.DeleteFunc(ir.Services[i].Modules, func(m string) bool { return m == name })
+			delete(ir.Services[i].ModuleReasons, name)
 			break
 		}
 		ps, err := list(ir, kind)
@@ -125,6 +132,13 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 			}
 			ms := ir.Services[i].Modules
 			ms[slices.Index(ms, name)] = to
+			if reason := ir.Services[i].ModuleReasons[name]; reason != "" {
+				if ir.Services[i].ModuleReasons == nil {
+					ir.Services[i].ModuleReasons = map[string]string{}
+				}
+				ir.Services[i].ModuleReasons[to] = reason
+				delete(ir.Services[i].ModuleReasons, name)
+			}
 			break
 		}
 		ps, err := list(ir, kind)
@@ -152,6 +166,13 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 			}
 			ir.Services[src].Modules = slices.DeleteFunc(ir.Services[src].Modules, func(m string) bool { return m == name })
 			ir.Services[dst].Modules = append(ir.Services[dst].Modules, name)
+			if reason := ir.Services[src].ModuleReasons[name]; reason != "" {
+				if ir.Services[dst].ModuleReasons == nil {
+					ir.Services[dst].ModuleReasons = map[string]string{}
+				}
+				ir.Services[dst].ModuleReasons[name] = reason
+				delete(ir.Services[src].ModuleReasons, name)
+			}
 		case core.PartService:
 			src := find(ir.Services, name)
 			if src < 0 || src == dst {
@@ -160,14 +181,32 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 			// A service merged into another becomes its module(s).
 			svc := ir.Services[src]
 			mods := svc.Modules
+			reasons := moduleReasons(ir)
 			if !generic(svc.Name) {
 				mods = append([]string{svc.Name}, mods...)
+				if svc.Reason != "" {
+					reasons[svc.Name] = svc.Reason
+				}
 			}
 			d := &ir.Services[dst]
 			if len(d.Modules) == 0 && !generic(d.Name) {
 				d.Modules = append(d.Modules, d.Name) // the target keeps its own domain as a module
+				if d.Reason != "" {
+					if d.ModuleReasons == nil {
+						d.ModuleReasons = map[string]string{}
+					}
+					d.ModuleReasons[d.Name] = d.Reason
+				}
 			}
 			d.Modules = append(d.Modules, mods...)
+			for _, m := range mods {
+				if d.ModuleReasons[m] == "" && reasons[m] != "" {
+					if d.ModuleReasons == nil {
+						d.ModuleReasons = map[string]string{}
+					}
+					d.ModuleReasons[m] = reasons[m]
+				}
+			}
 			ir.Services = slices.Delete(ir.Services, src, src+1)
 		default:
 			return errors.New("yang bisa dipindah hanya module atau service")
@@ -642,9 +681,14 @@ func Approve(s *core.Structure, p *core.Project) error {
 	return nil
 }
 
-// Refresh re-validates the structure against the project and technology.
+// Refresh re-validates the structure against the project and technology,
+// and marks the AI analysis stale when the system it read changed.
 func Refresh(s *core.Structure, p *core.Project) {
-	if s != nil && s.IR != nil {
+	if s == nil {
+		return
+	}
+	RefreshPlan(s, p)
+	if s.IR != nil {
 		s.Issues = Validate(s.IR, p, p.Stack)
 	}
 }
@@ -656,6 +700,15 @@ func Record(s *core.Structure, before *core.StructureIR, source, request string)
 		s.History = append(s.History, core.StructureVersion{Version: 1, At: now, Source: "recommend", Status: core.TechRecommended, IR: *before.Clone()})
 	}
 	v := core.StructureVersion{Version: s.Version() + 1, At: now, Source: source, Request: request, Status: s.State(), IR: *s.IR.Clone()}
+	if s.Plan != nil {
+		v.Analysis, v.Tree = s.Plan.Summary, Tree(&v.IR)
+		if a := s.Plan.SelectedAlternative(); a != nil {
+			v.Alternative, v.Reason = a.ID, s.Plan.Decision
+			if v.Reason == "" {
+				v.Reason = a.Summary
+			}
+		}
+	}
 	if before != nil {
 		v.Changes = Diff(before, s.IR)
 		v.Impact = Impact(before, s.IR, nil)
@@ -677,8 +730,11 @@ func Sync(p *core.Project, why string) {
 		return
 	}
 	ir, reason := Recommend(p)
-	s.Recommended = ir.Type
-	follow := s.IR == nil && !s.Approved || s.IR != nil && s.State() == core.TechRecommended && s.Proposal == nil
+	current := PlanCurrent(s, p)
+	follow := (s.IR == nil && !s.Approved || s.IR != nil && s.State() == core.TechRecommended && s.Proposal == nil) && !current
+	if s.IR == nil {
+		follow = !s.Approved
+	}
 	if follow {
 		before := s.IR
 		if before == nil || len(Diff(before, ir)) > 0 {
@@ -692,6 +748,13 @@ func Sync(p *core.Project, why string) {
 				Record(s, before, "technology", why)
 			}
 		}
+	}
+	if current {
+		if rec := s.Plan.RecommendedAlternative(); rec != nil && rec.IR != nil {
+			s.Recommended, s.Reason = rec.IR.Type, s.Plan.Reason
+		}
+	} else {
+		s.Recommended = ir.Type
 	}
 	Refresh(s, p)
 }

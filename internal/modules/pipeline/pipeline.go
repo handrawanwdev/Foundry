@@ -71,6 +71,20 @@ func New(store *core.Store, ai AI) *Service {
 	return &Service{Store: store, AI: ai, ctx: ctx, stop: stop}
 }
 
+// Snapshot loads the project for a reader. Derived state that is cheap and
+// useful in the UI (whether the AI structure analysis is still current) is
+// refreshed on the copy; nothing is written.
+func (s *Service) Snapshot() (*core.Project, error) {
+	p, err := s.Store.Load()
+	if err != nil {
+		return nil, err
+	}
+	if p.Structure != nil {
+		structure.RefreshPlan(p.Structure, p)
+	}
+	return p, nil
+}
+
 // context is the parent of every job: cancelled by Shutdown.
 func (s *Service) context() context.Context {
 	if s.ctx == nil {
@@ -212,6 +226,9 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 	case work.KindStack:
 		return work.StackPrompt(p)
 	case work.KindStructure:
+		if p.Structure != nil && p.Structure.PlanRequest != nil {
+			return work.StructurePlanPrompt(p)
+		}
 		return work.StructurePrompt(p)
 	case work.KindArtifacts:
 		return work.ArtifactsPrompt(p, spec.Artifacts(p))
@@ -335,7 +352,7 @@ func jobMessage(kind string) string {
 	case work.KindStack:
 		return "Memahami permintaan perubahan teknologi"
 	case work.KindStructure:
-		return "Memahami permintaan perubahan struktur"
+		return "Memproses struktur project"
 	case work.KindArtifacts:
 		return "Merevisi blueprint"
 	case work.KindWorkflow:
@@ -398,6 +415,12 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			}
 			p.Stack.Proposal.Affected = affected(p)
 		case work.KindStructure:
+			if p.Structure != nil && p.Structure.PlanRequest != nil {
+				if err := work.ApplyStructurePlan(p, raw); err != nil {
+					return err
+				}
+				break
+			}
 			if err := work.ApplyStructureChange(p, raw); err != nil {
 				return err
 			}
@@ -518,6 +541,11 @@ func (s *Service) DismissJob() error {
 			if p.Workflow != nil {
 				p.Workflow.Request = nil
 			}
+		case work.KindStructure:
+			if p.Structure != nil {
+				p.Structure.PlanRequest = nil
+				p.Structure.Request = ""
+			}
 		}
 		p.Job = nil
 		p.Log("ui", "Pesan gagal ditutup")
@@ -545,7 +573,7 @@ func (s *Service) RetryJob() error {
 			return s.startAIIf(kind, failedJob(kind))
 		}
 	case work.KindStructure:
-		if p.Structure != nil && p.Structure.Request != "" {
+		if p.Structure != nil && (p.Structure.Request != "" || p.Structure.PlanRequest != nil) {
 			return s.startAIIf(kind, failedJob(kind))
 		}
 	case work.KindArtifacts:

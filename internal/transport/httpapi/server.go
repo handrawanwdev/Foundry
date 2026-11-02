@@ -203,11 +203,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Project pipeline
 	api("GET /api/v1/project", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		p, err := svc.Store.Load()
-		if err != nil {
-			return nil, err
-		}
-		return p, nil
+		return svc.Snapshot()
 	}))
 	api("POST /api/v1/project/story", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {
@@ -286,6 +282,24 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/v1/project/structure/discard", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.DiscardStructureProposal() }))
 	api("POST /api/v1/project/structure/approve", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.ApproveStructure() }))
 	api("POST /api/v1/project/structure/recommend", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.RecommendStructure() }))
+	// AI analysis of the whole system: alternatives + recommendation. The
+	// text revises a previous analysis; empty is a fresh one.
+	api("POST /api/v1/project/structure/analyze", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Text string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.AnalyzeStructure(in.Text))
+	}))
+	// Adopt one alternative (empty = the AI recommendation) as the final
+	// structure and approve it; a proposal with errors waits for the editor.
+	api("POST /api/v1/project/structure/use", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Alternative string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.UseStructureAlternative(in.Alternative)
+	}))
 	// Technology changes become a proposal; apply/discard decide it.
 	api("PUT /api/v1/project/stack", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct{ Changes []stack.Change }

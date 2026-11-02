@@ -72,11 +72,68 @@ func Recommend(p *core.Project) (*core.StructureIR, string) {
 	}
 	if pl.backend {
 		ir.Services = servicesFor(t, Domains(p))
+		fillModuleReasons(ir, p)
 	}
 	ir.Workers = workersOf(p)
 	ir.Packages = packagesFor(ir, p)
 	Normalize(ir)
 	return ir, why
+}
+
+// fillModuleReasons takes the responsibility of each domain from discovery,
+// so a module folder explains itself like every other folder.
+func fillModuleReasons(ir *core.StructureIR, p *core.Project) {
+	reasons := map[string]string{}
+	if bp := p.Blueprint; bp != nil {
+		for _, m := range bp.Modules {
+			if id := domainOf(m.ID); id != "" && strings.TrimSpace(m.Responsibility) != "" {
+				reasons[id] = strings.TrimSpace(m.Responsibility)
+			}
+		}
+	}
+	for i := range ir.Services {
+		if len(ir.Services[i].Modules) == 0 {
+			continue
+		}
+		if ir.Services[i].ModuleReasons == nil {
+			ir.Services[i].ModuleReasons = map[string]string{}
+		}
+		for _, m := range ir.Services[i].Modules {
+			if ir.Services[i].ModuleReasons[m] == "" && reasons[m] != "" {
+				ir.Services[i].ModuleReasons[m] = reasons[m]
+			}
+		}
+	}
+}
+
+// moduleReasons indexes the module reasons of every service.
+func moduleReasons(ir *core.StructureIR) map[string]string {
+	out := map[string]string{}
+	for _, s := range ir.Services {
+		for _, m := range s.Modules {
+			if r := s.ModuleReasons[m]; r != "" {
+				out[m] = r
+			}
+		}
+	}
+	return out
+}
+
+// applyModuleReasons puts the reasons back after a service regrouping.
+func applyModuleReasons(ir *core.StructureIR, reasons map[string]string) {
+	for i := range ir.Services {
+		if len(ir.Services[i].Modules) == 0 {
+			continue
+		}
+		if ir.Services[i].ModuleReasons == nil {
+			ir.Services[i].ModuleReasons = map[string]string{}
+		}
+		for _, m := range ir.Services[i].Modules {
+			if ir.Services[i].ModuleReasons[m] == "" && reasons[m] != "" {
+				ir.Services[i].ModuleReasons[m] = reasons[m]
+			}
+		}
+	}
 }
 
 func recommendType(p *core.Project) (string, string) {
@@ -297,13 +354,24 @@ func Normalize(ir *core.StructureIR) {
 	}
 	for i := range ir.Services {
 		var mods []string
+		reasons := map[string]string{}
 		for _, m := range ir.Services[i].Modules {
+			orig := m
 			if m = Slug(m); m != "" && !seen[m] {
 				seen[m] = true
 				mods = append(mods, m)
+				if r := strings.TrimSpace(ir.Services[i].ModuleReasons[orig]); r != "" {
+					reasons[m] = r
+				} else if r := strings.TrimSpace(ir.Services[i].ModuleReasons[m]); r != "" {
+					reasons[m] = r
+				}
 			}
 		}
 		ir.Services[i].Modules = mods
+		if len(reasons) == 0 {
+			reasons = nil
+		}
+		ir.Services[i].ModuleReasons = reasons
 	}
 	ir.Rules = cleanRules(ir.Rules)
 }
@@ -421,8 +489,10 @@ func domainsIn(ir *core.StructureIR) []string {
 func Convert(ir *core.StructureIR, t string, p *core.Project) *core.StructureIR {
 	out := ir.Clone()
 	out.Type = t
+	reasons := moduleReasons(ir)
 	if len(ir.Services) > 0 && !(t == core.StructMicroservices && ir.Type == core.StructMicroservices) {
 		out.Services = servicesFor(t, domainsIn(ir))
+		applyModuleReasons(out, reasons)
 	}
 	if t == core.StructSimple {
 		out.Packages = nil

@@ -246,22 +246,115 @@ func techMarkdown(p *core.Project) string {
 			}
 			b.WriteString("\n")
 		case s.IR != nil:
-			fmt.Fprintf(&b, "## Struktur project\n\nTipe: %s (v%d)\n\n```text\n%s```\n\n", s.IR.Type, s.Version(), structure.Tree(s.IR))
+			fmt.Fprintf(&b, "## Struktur project\n\nTipe: %s (v%d)", s.IR.Type, s.Version())
+			if a := s.Plan.SelectedAlternative(); a != nil {
+				fmt.Fprintf(&b, " · dipilih: %s", a.Name)
+			}
+			b.WriteString("\n\n")
+			writeStructurePlan(&b, s.Plan)
+			b.WriteString("### Folder tree\n\n```text\n")
+			b.WriteString(structure.Tree(s.IR))
+			b.WriteString("```\n\n")
 			for _, ps := range [][]core.StructurePart{s.IR.Apps, s.IR.Services, s.IR.Workers, s.IR.Packages} {
 				for _, x := range ps {
 					fmt.Fprintf(&b, "- `%s` %s\n", x.Path, x.Reason)
+					for _, m := range x.Modules {
+						fmt.Fprintf(&b, "  - `%s%s/` %s\n", x.Path, m, x.ModuleReasons[m])
+					}
 				}
 			}
 			if len(s.IR.Rules) > 0 {
-				b.WriteString("\n### Aturan struktur\n\n")
+				b.WriteString("\n### Aturan struktur & dependency\n\n")
 				for i, r := range s.IR.Rules {
 					fmt.Fprintf(&b, "%d. %s\n", i+1, r)
 				}
 			}
 			b.WriteString("\n")
+			if s.Plan != nil && len(s.Plan.Alternatives) > 0 {
+				b.WriteString("### Alternatif yang dipertimbangkan\n\n")
+				b.WriteString("| Alternatif | Tipe | Maintainability | Simplicity | Extensibility | Testability | Separation | Complexity | Skor |\n|---|---|---|---|---|---|---|---|---|\n")
+				for _, a := range s.Plan.Alternatives {
+					mark := ""
+					if a.Recommended {
+						mark = " (rekomendasi AI)"
+					}
+					if a.ID == s.Plan.Selected {
+						mark += " (dipilih)"
+					}
+					e := a.Evaluation
+					fmt.Fprintf(&b, "| %s%s | %s | %d | %d | %d | %d | %d | %d | %d |\n", cell(a.Name), mark, a.Type,
+						e.Maintainability, e.Simplicity, e.Extensibility, e.Testability, e.Separation, e.Complexity, e.Score)
+				}
+				b.WriteString("\n")
+				for _, a := range s.Plan.Alternatives {
+					fmt.Fprintf(&b, "#### %s\n\n%s\n\n", a.Name, a.Summary)
+					if len(a.Tradeoffs) > 0 {
+						b.WriteString("Trade-off: " + strings.Join(a.Tradeoffs, "; ") + "\n\n")
+					}
+				}
+			}
 		}
 	}
 	return b.String()
+}
+
+// writeStructurePlan writes the AI analysis and the recommendation behind
+// the chosen structure; without a plan it writes nothing.
+func writeStructurePlan(b *strings.Builder, plan *core.StructurePlan) {
+	if plan == nil {
+		return
+	}
+	if plan.Summary != "" {
+		b.WriteString("### Ringkasan analisis sistem\n\n" + plan.Summary + "\n\n")
+	}
+	if len(plan.Drivers) > 0 {
+		b.WriteString("Karakteristik yang menentukan struktur:\n")
+		for _, d := range plan.Drivers {
+			fmt.Fprintf(b, "- %s\n", d)
+		}
+		b.WriteString("\n")
+	}
+	if len(plan.Domains) > 0 {
+		b.WriteString("Domain dan tanggung jawab:\n\n| Domain | Tanggung jawab |\n|---|---|\n")
+		for _, d := range plan.Domains {
+			fmt.Fprintf(b, "| `%s` | %s |\n", d.Name, cell(d.Responsibility))
+		}
+		b.WriteString("\n")
+	}
+	if a := plan.RecommendedAlternative(); a != nil {
+		fmt.Fprintf(b, "### Rekomendasi AI: %s\n\n%s\n\n", a.Name, plan.Reason)
+		writeAlternativeNotes(b, a)
+	}
+	if plan.Decision != "" {
+		fmt.Fprintf(b, "### Keputusan struktur\n\n%s\n\n", plan.Decision)
+	}
+	if len(plan.DependencyRules) > 0 {
+		b.WriteString("### Aturan dependency antarbagian\n\n")
+		for _, r := range plan.DependencyRules {
+			fmt.Fprintf(b, "- %s\n", r)
+		}
+		b.WriteString("\n")
+	}
+}
+
+func writeAlternativeNotes(b *strings.Builder, a *core.StructureAlternative) {
+	if len(a.Pros) > 0 {
+		b.WriteString("Kelebihan:\n")
+		for _, x := range a.Pros {
+			fmt.Fprintf(b, "- %s\n", x)
+		}
+		b.WriteString("\n")
+	}
+	if len(a.Cons) > 0 {
+		b.WriteString("Kekurangan:\n")
+		for _, x := range a.Cons {
+			fmt.Fprintf(b, "- %s\n", x)
+		}
+		b.WriteString("\n")
+	}
+	if len(a.Tradeoffs) > 0 {
+		b.WriteString("Trade-off: " + strings.Join(a.Tradeoffs, "; ") + "\n\n")
+	}
 }
 
 // cell makes text safe inside a Markdown table cell.
@@ -407,6 +500,20 @@ func architectureMarkdown(p *core.Project) string {
 	if be := bp.Backend; be.Pattern != "" {
 		fmt.Fprintf(&b, "### Backend stack detail\n\n%s · DI %s · validation %s · background %s\n\n",
 			be.Pattern, be.DI, be.Validation, be.Background)
+	}
+	if s := p.Structure; s != nil && s.Mode == core.StructureNew && s.IR != nil {
+		b.WriteString("### Struktur project dan dependency\n\n")
+		fmt.Fprintf(&b, "Tipe **%s**; folder dan batas domain di bawah ini adalah sumber kebenaran untuk implementasi.\n\n", s.IR.Type)
+		b.WriteString("```text\n")
+		b.WriteString(structure.Tree(s.IR))
+		b.WriteString("```\n\n")
+		if len(s.IR.Rules) > 0 {
+			b.WriteString("Aturan dependency dan struktur:\n")
+			for _, r := range s.IR.Rules {
+				fmt.Fprintf(&b, "- %s\n", r)
+			}
+			b.WriteString("\n")
+		}
 	}
 	return b.String()
 }

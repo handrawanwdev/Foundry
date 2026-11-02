@@ -2,15 +2,20 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Elapsed } from "./Elapsed";
 import { isWorking } from "../flow";
-import { STRUCTURE_TYPE, structureState, structureVersion, tree } from "../structure";
+import {
+  otherAlternatives, recommendedAlternative, SCORE_LABEL, STRUCTURE_TYPE, structureState, structureVersion, tree,
+} from "../structure";
 import { changeText, TECH_STATUS } from "../tech";
 import { useProject } from "../store/project";
-import type { PartKind, Project, StructureIR, StructureOp, StructureProposal, Structure, Template, TechIssue } from "../types";
+import type {
+  PartKind, Project, StructureAlternative, StructureIR, StructureOp, StructurePlan, StructureProposal, Structure,
+  StructureEvaluation, Template, TechIssue,
+} from "../types";
 
 const KIND: Record<string, string> = {
   app: "App", service: "Service", module: "Modul", worker: "Worker", package: "Package", structure: "Struktur", technology: "Teknologi",
 };
-const SOURCE: Record<string, string> = { recommend: "rekomendasi", user: "diubah user", ai: "permintaan ke AI", technology: "mengikuti teknologi" };
+const SOURCE: Record<string, string> = { recommend: "rekomendasi", user: "diubah user", ai: "AI", technology: "mengikuti teknologi" };
 
 // Project structure workspace: Foundry recommends, the user edits (by hand
 // or in words), sees the impact, applies and approves. The final spec
@@ -25,10 +30,13 @@ export function StructurePanel({ project }: { project: Project }) {
   const ir = s.ir!;
   const finalized = project.stage === "READY";
   const busy = isWorking(project) || pending === "structure";
-  const editable = !finalized && !busy && !s.request;
+  const editable = !finalized && !busy && !s.request && !s.plan_request;
   const state = structureState(s);
   const shown = s.proposal?.ir ?? ir;
   const errors = (s.issues ?? []).filter((i) => i.level === "error");
+  const plan = s.plan;
+  const rec = recommendedAlternative(plan);
+  const recommendation = rec?.name ?? STRUCTURE_TYPE[s.recommended ?? ""] ?? "—";
 
   return (
     <section className="info-sec">
@@ -37,17 +45,19 @@ export function StructurePanel({ project }: { project: Project }) {
         <span className={`tech-status ${state}`}>{TECH_STATUS[state]}{structureVersion(s) ? ` · v${structureVersion(s)}` : ""}</span>
       </div>
       <p className="small muted">
-        Rekomendasi Foundry: <strong className="fg">{STRUCTURE_TYPE[s.recommended ?? ""] ?? "—"}</strong>
+        Rekomendasi: <strong className="fg">{recommendation}</strong>
         {s.reason && <> — {s.reason}</>}. Kamu yang memutuskan; yang disetujui masuk spesifikasi final.
       </p>
       <p className="small muted">
-        Layout folder diturunkan dari dua keputusan terpisah di Teknologi: arsitektur aplikasi dan struktur repository.
-        Deployment diputuskan sendiri dan tidak mengubah layout ini.
+        Layout folder diturunkan dari arsitektur aplikasi dan struktur repository di Teknologi, lalu diperiksa AI terhadap
+        seluruh blueprint. Deployment diputuskan sendiri dan tidak mengubah layout ini.
       </p>
 
       {!finalized && s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}” <Elapsed started={project.job?.started} /></p>}
+      {!finalized && s.plan_request && <p className="small muted"><span className="spinner" /> AI menganalisis sistem dan membandingkan alternatif struktur… <Elapsed started={project.job?.started} /></p>}
 
       {s.proposal && <Proposal p={s.proposal} disabled={busy || finalized} />}
+      {!s.proposal && <StructureAnalysis plan={plan} editable={editable} busy={busy} finalized={finalized} />}
 
       <div className="tech-list">
         <TypeRow s={s} type={shown.type} types={types} editable={editable && !s.proposal} open={typeOpen}
@@ -66,9 +76,6 @@ export function StructurePanel({ project }: { project: Project }) {
       {!s.proposal && <Issues issues={s.issues} />}
 
       <div className="tech-foot">
-        {editable && !s.proposal && s.recommended && (
-          <button className="ghost small" onClick={() => void run("structure", api.recommendStructure)}>↻ Gunakan rekomendasi</button>
-        )}
         {state === "approved" ? <span className="ok-text small">✓ Struktur v{structureVersion(s)} disetujui{finalized ? " dan masuk spesifikasi final" : ""}</span>
           : !finalized && (
             <button className="primary" disabled={!editable || !!s.proposal || errors.length > 0}
@@ -80,6 +87,131 @@ export function StructurePanel({ project }: { project: Project }) {
 
       <History s={s} />
     </section>
+  );
+}
+
+// The AI analysis: system summary, the recommendation, 1-2 other
+// alternatives with their trade-offs, and the actions the user asked for.
+function StructureAnalysis({ plan, editable, busy, finalized }: {
+  plan?: StructurePlan; editable: boolean; busy: boolean; finalized: boolean;
+}) {
+  const { run, pending } = useProject();
+  const [revision, setRevision] = useState("");
+  if (!plan) {
+    return (
+      <div className="plan-card">
+        <div className="tech-title"><strong>Analisis AI</strong><span className="tech-tag">belum ada</span></div>
+        <p className="small muted">
+          Rekomendasi di atas baru diturunkan dari keputusan teknologi. Minta AI membaca seluruh blueprint, fitur,
+          domain, arsitektur, data, keamanan, dan operasional, lalu membandingkan 2–3 alternatif struktur.
+        </p>
+        {!finalized && editable && (
+          <button className="primary" disabled={busy || pending === "structure"} onClick={() => void run("structure", () => api.analyzeStructure(""))}>
+            Analisis struktur dengan AI
+          </button>
+        )}
+      </div>
+    );
+  }
+  const rec = recommendedAlternative(plan);
+  const others = otherAlternatives(plan);
+  const stale = !!plan.stale;
+  const canUse = editable && !busy && !stale;
+  return (
+    <div className="plan-card">
+      <div className="tech-title">
+        <strong>Analisis AI</strong>
+        {plan.selected && <span className="tech-tag">dipilih {plan.alternatives.find((a) => a.id === plan.selected)?.name}</span>}
+        {stale && <span className="tech-tag">kedaluwarsa</span>}
+      </div>
+      {plan.summary && <p className="small">{plan.summary}</p>}
+      {!!plan.drivers?.length && (
+        <p className="small muted">Yang menentukan struktur: {plan.drivers.join(" · ")}</p>
+      )}
+      {!!plan.domains?.length && (
+        <details className="small">
+          <summary>Domain dan tanggung jawab ({plan.domains.length})</summary>
+          <ul>{plan.domains.map((d) => <li key={d.name}><code>{d.name}</code> — {d.responsibility}</li>)}</ul>
+        </details>
+      )}
+      {stale && (
+        <p className="small warn-text">
+          Artefak sumber berubah setelah analisis ini. Analisis ulang dulu sebelum memakai rekomendasinya.
+        </p>
+      )}
+      {rec && (
+        <AlternativeCard a={rec} plan={plan} primary canUse={canUse} busy={busy} finalized={finalized} open />
+      )}
+      {others.map((a) => (
+        <AlternativeCard key={a.id} a={a} plan={plan} canUse={canUse} busy={busy} finalized={finalized} />
+      ))}
+      {!!plan.dependency_rules?.length && (
+        <details className="small">
+          <summary>Aturan dependency antarbagian</summary>
+          <ul>{plan.dependency_rules.map((r) => <li key={r}>{r}</li>)}</ul>
+        </details>
+      )}
+      {!finalized && editable && (
+        <div className="tech-actions plan-revise">
+          <input value={revision} maxLength={6000} placeholder="Minta revisi analisis, mis. “jangan pisahkan reporting; buat worker terpisah”"
+            onChange={(e) => setRevision(e.target.value)} />
+          <button disabled={busy || pending === "structure" || !revision.trim()}
+            onClick={async () => { if (await run("structure", () => api.analyzeStructure(revision.trim()))) setRevision(""); }}>
+            Minta revisi
+          </button>
+          <button className="ghost" disabled={busy || pending === "structure" || !stale}
+            title={!stale ? "Artefak sumber belum berubah; analisis tidak diulang" : undefined}
+            onClick={() => void run("structure", () => api.analyzeStructure(""))}>
+            Analisis ulang
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One alternative: scores, reason, tree, responsibility of each folder,
+// trade-offs and the action that adopts it.
+function AlternativeCard({ a, plan, primary, canUse, busy, finalized, open }: {
+  a: StructureAlternative; plan: StructurePlan; primary?: boolean; canUse: boolean; busy: boolean; finalized: boolean; open?: boolean;
+}) {
+  const { run, pending } = useProject();
+  const chosen = plan.selected === a.id;
+  return (
+    <details className="plan-alt" open={open}>
+      <summary>
+        <strong>{a.name}</strong>
+        <span className="muted small"> · {STRUCTURE_TYPE[a.type] ?? a.type} · skor {a.evaluation.score ?? "—"}</span>
+        {a.recommended && <span className="tech-tag">rekomendasi AI</span>}
+        {chosen && <span className="tech-tag">dipilih</span>}
+      </summary>
+      <p className="small">{a.summary}</p>
+      <Scores e={a.evaluation} />
+      {!!a.pros?.length && <p className="small"><strong>Kelebihan:</strong> {a.pros.join(" · ")}</p>}
+      {!!a.cons?.length && <p className="small"><strong>Kekurangan:</strong> {a.cons.join(" · ")}</p>}
+      {!!a.tradeoffs?.length && <p className="small muted"><strong>Trade-off:</strong> {a.tradeoffs.join(" · ")}</p>}
+      <pre className="code small">{tree(a.ir)}</pre>
+      <Parts ir={a.ir} />
+      {!finalized && canUse && !chosen && (
+        <div className="tech-actions">
+          <button className={primary ? "primary" : ""} disabled={busy || pending === "structure"}
+            onClick={() => void run("structure", () => api.useStructureAlternative(a.id))}>
+            {primary ? "Gunakan rekomendasi AI" : "Pilih alternatif ini"}
+          </button>
+        </div>
+      )}
+    </details>
+  );
+}
+
+function Scores({ e }: { e: StructureEvaluation }) {
+  return (
+    <div className="plan-scores">
+      {Object.entries(SCORE_LABEL).map(([key, label]) => (
+        <span key={key} className="plan-score">{label} <strong>{(e as unknown as Record<string, number>)[key] ?? 0}</strong></span>
+      ))}
+      <span className="plan-score total">Skor <strong>{e.score ?? 0}</strong></span>
+    </div>
   );
 }
 
@@ -142,9 +274,17 @@ function Parts({ ir }: { ir: StructureIR }) {
   const parts = [...(ir.apps ?? []), ...(ir.services ?? []), ...(ir.workers ?? []), ...(ir.packages ?? [])];
   return (
     <details className="small">
-      <summary>Alasan tiap bagian</summary>
-      <ul>{parts.map((p) => <li key={p.path}><code>{p.path}</code> {p.reason || <span className="muted">ditambahkan user</span>}
-        {!!p.modules?.length && <span className="muted"> · modul: {p.modules.join(", ")}</span>}</li>)}</ul>
+      <summary>Tanggung jawab tiap folder</summary>
+      <ul>{parts.map((p) => (
+        <li key={p.path}>
+          <code>{p.path}</code> {p.reason || <span className="muted">ditambahkan user</span>}
+          {!!p.modules?.length && (
+            <ul>{p.modules.map((m) => (
+              <li key={m}><code>{p.path}{m}/</code> {p.module_reasons?.[m] || <span className="muted">tanggung jawab belum diisi</span>}</li>
+            ))}</ul>
+          )}
+        </li>
+      ))}</ul>
     </details>
   );
 }

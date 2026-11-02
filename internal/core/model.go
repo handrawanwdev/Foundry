@@ -406,6 +406,11 @@ type Structure struct {
 	Status      TechStatus         `json:"status,omitempty"`
 	Issues      []TechIssue        `json:"issues,omitempty"`
 	Proposal    *StructureProposal `json:"proposal,omitempty"`
+	// Plan is the AI analysis and the alternatives it compared. The user
+	// adopts one; until then IR stays the current decision.
+	Plan *StructurePlan `json:"plan,omitempty"`
+	// PlanRequest is a structure analysis or revision waiting for the AI.
+	PlanRequest *StructurePlanRequest `json:"plan_request,omitempty"`
 	// Request is a natural-language change waiting for the AI.
 	Request string             `json:"request,omitempty"`
 	History []StructureVersion `json:"history,omitempty"`

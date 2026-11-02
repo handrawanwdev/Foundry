@@ -1,8 +1,24 @@
-import type { Project, Structure, StructureIR, TechStatus } from "./types";
+import type { Project, Structure, StructureAlternative, StructureIR, StructurePlan, TechStatus } from "./types";
 
 export const STRUCTURE_TYPE: Record<string, string> = {
   simple: "Simple", modular: "Modular", monorepo: "Monorepo", microservices: "Microservices",
 };
+
+export const SCORE_LABEL: Record<string, string> = {
+  maintainability: "Maintainability", simplicity: "Simplicity", extensibility: "Extensibility",
+  testability: "Testability", separation_of_concerns: "Separation", complexity: "Complexity",
+};
+
+// The alternative the user should look at first (core.StructurePlan).
+export function recommendedAlternative(plan?: StructurePlan): StructureAlternative | undefined {
+  if (!plan) return undefined;
+  return plan.alternatives.find((a) => a.id === plan.recommendation) ?? plan.alternatives[0];
+}
+
+export function otherAlternatives(plan?: StructurePlan): StructureAlternative[] {
+  const rec = recommendedAlternative(plan);
+  return (plan?.alternatives ?? []).filter((a) => a.id !== rec?.id);
+}
 
 // Status of the structure decision; structures saved before the lifecycle
 // derive it (core.Structure.State).
