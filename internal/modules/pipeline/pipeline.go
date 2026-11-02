@@ -291,6 +291,12 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 				s.startAI(kind) // one retry with the rejection in the prompt
 				return
 			}
+			if kind == work.KindStructure && s.structurePlanPending() {
+				// The retry was refused too: close the analysis with the
+				// concrete reason and let the user analyze again.
+				s.dropStructureRequest(err)
+				return
+			}
 			s.failJob(kind, err)
 		}
 	}()
@@ -447,6 +453,12 @@ func (s *Service) applyAI(kind, raw, source string) error {
 		return s.dropStackRequest(err)
 	}
 	if kind == work.KindStructure && err != nil {
+		// A refused analysis keeps its request so the AI gets the concrete
+		// refusal in the prompt and can fix it; a refused structure change is
+		// dropped like before.
+		if s.structurePlanPending() {
+			return err
+		}
 		return s.dropStructureRequest(err)
 	}
 	if err != nil {
@@ -458,12 +470,25 @@ func (s *Service) applyAI(kind, raw, source string) error {
 	return nil
 }
 
-// noteRejection keeps why a design, workflow or blueprint answer was
-// refused on its request, for the retry prompt. Only the first refusal
-// retries automatically.
+// noteRejection keeps why a design, workflow, blueprint or structure
+// analysis answer was refused on its request, for the retry prompt. Only the
+// first refusal retries automatically.
 func (s *Service) noteRejection(kind string, err error) bool {
 	if err == nil {
 		return false
+	}
+	if kind == work.KindStructure {
+		retry := false
+		s.Store.Update(func(p *core.Project) error {
+			if p.Structure == nil || p.Structure.PlanRequest == nil {
+				return nil
+			}
+			retry = p.Structure.PlanRequest.Rejected == ""
+			p.Structure.PlanRequest.Rejected = err.Error()
+			p.Log("system", err.Error())
+			return nil
+		})
+		return retry
 	}
 	if kind == work.KindFeatureMap {
 		retry := false

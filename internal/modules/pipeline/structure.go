@@ -225,6 +225,13 @@ func hasStructureError(issues []core.TechIssue) bool {
 	return false
 }
 
+// structurePlanPending reports whether an AI structure analysis is still
+// waiting for a usable answer.
+func (s *Service) structurePlanPending() bool {
+	p, err := s.Store.Load()
+	return err == nil && p.Structure != nil && p.Structure.PlanRequest != nil
+}
+
 func (s *Service) dropStructureRequest(cause error) error {
 	_, err := s.Store.Update(func(p *core.Project) error {
 		if p.Structure != nil && p.Structure.PlanRequest != nil {

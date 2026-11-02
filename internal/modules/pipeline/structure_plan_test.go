@@ -3,6 +3,7 @@ package pipeline_test
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -76,6 +77,99 @@ func aiPlan(p *core.Project) core.StructurePlan {
 				Cons:       []string{"Biaya deploy dan observability lebih tinggi"},
 				Tradeoffs:  []string{"Butuh kontrak jaringan dan tracing"}},
 		},
+	}
+}
+
+// TestStructurePlanRetriesMissingDomain covers the agent path: an answer that
+// forgets a blueprint domain is refused once, the refusal goes back into the
+// prompt, and the corrected answer is accepted.
+func TestStructurePlanRetriesMissingDomain(t *testing.T) {
+	s := newService(t, fakeAI{}, "structure_invalid_once")
+	designReady(t, s)
+	if err := s.AnalyzeStructure(""); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	if p.Structure.Plan == nil || p.Structure.PlanRequest != nil {
+		t.Fatalf("analysis was not retried: plan=%v request=%+v job=%+v", p.Structure.Plan, p.Structure.PlanRequest, p.Job)
+	}
+	if p.Job == nil || p.Job.Status != core.JobDone {
+		t.Fatalf("job = %+v", p.Job)
+	}
+	rec := p.Structure.Plan.RecommendedAlternative()
+	if rec == nil {
+		t.Fatalf("plan = %+v", p.Structure.Plan)
+	}
+	var placed []string
+	for _, svc := range rec.IR.Services {
+		placed = append(placed, svc.Name)
+		placed = append(placed, svc.Modules...)
+	}
+	for _, d := range structure.Domains(p) {
+		if !slices.Contains(placed, d) {
+			t.Fatalf("domain %s not placed: %v", d, placed)
+		}
+	}
+}
+
+// TestStructurePlanRejectionIsFedBack covers the MCP path: the host receives
+// the concrete error, and the next prompt carries the refusal so it can fix
+// the answer instead of starting a fresh analysis.
+func TestStructurePlanRejectionIsFedBack(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	mcpAfterStory(t, s)
+	if err := s.SubmitWork(work.KindDiscovery, discoveryJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	plan := aiPlan(p)
+	domains := structure.Domains(p)
+	drop := domains[len(domains)-1]
+	alt := &plan.Alternatives[0]
+	for i := range alt.IR.Services {
+		alt.IR.Services[i].Modules = slices.DeleteFunc(alt.IR.Services[i].Modules, func(m string) bool { return m == drop })
+		delete(alt.IR.Services[i].ModuleReasons, drop)
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AnalyzeStructure(""); err != nil {
+		t.Fatal(err)
+	}
+	err = s.SubmitWork(work.KindStructure, string(raw))
+	if err == nil || !strings.Contains(err.Error(), "tidak menempatkan domain") || !strings.Contains(err.Error(), drop) {
+		t.Fatalf("err = %v", err)
+	}
+	p = load(t, s)
+	if p.Structure.Plan != nil || p.Structure.PlanRequest == nil ||
+		!strings.Contains(p.Structure.PlanRequest.Rejected, "tidak menempatkan domain") {
+		t.Fatalf("rejection not kept: plan=%v request=%+v", p.Structure.Plan, p.Structure.PlanRequest)
+	}
+	w, err := s.NextWork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(w.Prompt, "YOUR LAST ANSWER WAS REFUSED") || !strings.Contains(w.Prompt, drop) {
+		t.Fatalf("retry prompt does not carry the refusal:\n%s", w.Prompt)
+	}
+	raw, err = json.Marshal(aiPlan(p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindStructure, string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	p = load(t, s)
+	if p.Structure.Plan == nil || p.Structure.PlanRequest != nil {
+		t.Fatalf("corrected answer not accepted: %+v", p.Structure)
 	}
 }
 

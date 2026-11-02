@@ -140,8 +140,13 @@ func NormalizePlan(p *core.Project, plan *core.StructurePlan) error {
 			return fmt.Errorf("alternatif %q: %w", a.Name, err)
 		}
 		if missing := missingDomains(a.IR, Domains(p)); len(missing) > 0 {
-			return fmt.Errorf("alternatif %q tidak menempatkan domain %s; setiap domain harus punya folder dan tanggung jawab",
-				a.Name, strings.Join(missing, ", "))
+			placed := domainsIn(a.IR)
+			if len(placed) == 0 {
+				placed = []string{"belum ada"}
+			}
+			return fmt.Errorf("alternatif %q tidak menempatkan domain %s; setiap domain harus punya folder dan tanggung jawab. "+
+				"Tempatkan semuanya sebagai services[].modules atau service per domain; domain yang sudah ditempatkan: %s",
+				a.Name, strings.Join(missing, ", "), strings.Join(placed, ", "))
 		}
 		if errs := errorIssues(Validate(a.IR, p, p.Stack)); len(errs) > 0 {
 			return fmt.Errorf("alternatif %q tidak sesuai project: %s", a.Name, errs[0])
@@ -286,7 +291,7 @@ func partsHaveReasons(ir *core.StructureIR) error {
 			if kind == core.PartService {
 				for _, m := range p.Modules {
 					if strings.TrimSpace(p.ModuleReasons[m]) == "" {
-						return fmt.Errorf("modul %s%s tanpa alasan/tanggung jawab", p.Path, m)
+						return fmt.Errorf("modul %s%s/ tanpa alasan/tanggung jawab", p.Path, m)
 					}
 				}
 			}

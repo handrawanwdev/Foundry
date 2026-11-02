@@ -32,6 +32,10 @@ PROJECT: `)
 	b.WriteString("\n\n")
 	writeBinding(&b, p)
 	writeSystemSnapshot(&b, p)
+	if domains := structure.Domains(p); len(domains) > 0 {
+		fmt.Fprintf(&b, "DOMAINS THAT MUST APPEAR IN EVERY ALTERNATIVE (exact ids): %s\n", strings.Join(domains, ", "))
+		b.WriteString("Place every id in exactly one service or module, with its responsibility. An alternative that misses one domain is invalid and will be sent back to you once with the concrete error.\n\n")
+	}
 	writeStructureBrief(&b, p, "CURRENT STRUCTURE (the decision before this analysis)")
 	if plan := p.Structure.Plan; plan != nil {
 		b.WriteString("PREVIOUS ANALYSIS (revise it, keep what still holds):\n")
@@ -51,7 +55,7 @@ PROJECT: `)
 - type must be one of: simple | modular | monorepo | microservices, and must agree with the approved architecture and repository decisions.
 - apps must match the target platform exactly: web, mobile (android/ios), desktop, cli. Do not invent a platform the product does not have.
 - a backend platform needs exactly one API service unless the technology decision is Microservices; then one service per domain that is deployed and scaled independently.
-- services and modules are business domain boundaries. Put every domain from the blueprint in exactly one place (a service or a module). Never use controllers/, services/ or other file-type folders as module boundaries, and never use CRUD names (create-booking).
+- services and modules are business domain boundaries. Put every domain from the blueprint in exactly one place (a service or a module), in EVERY alternative. When the platform has no backend, keep the domains as modules of the single service that owns the app's data; never drop a domain, rename it away from its id, or turn it into a package. Never use controllers/, services/ or other file-type folders as module boundaries, and never use CRUD names (create-booking).
 - every app, service, module, worker and package needs a concrete reason/responsibility in this system. Module reasons go in the service's module_reasons map.
 - add packages/ only when code is really shared by at least two consumers. Add workers only when the blueprint has background jobs and the technology uses a separate worker.
 - the rules list contains the internal module layout and conventions; dependency_rules contains only the allowed dependencies between parts (what may import what, and what must go through a public interface or event). Keep both short and checkable.

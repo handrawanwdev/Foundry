@@ -211,6 +211,10 @@ func fakeAgent() {
 		default:
 			fmt.Println(workflowJSON)
 		}
+	case strings.Contains(prompt, "software architect of Foundry"):
+		countRun("structure")
+		refused := strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED")
+		fmt.Println(fakeStructurePlan(prompt, mode == "structure_invalid_once" && !refused))
 	case strings.Contains(prompt, "blueprint editor"):
 		countRun("blueprint")
 		if strings.Contains(prompt, "Sesuaikan blueprint dengan keputusan") {
@@ -237,6 +241,138 @@ func fakeAgent() {
 		fmt.Fprintln(os.Stderr, "unknown prompt")
 		os.Exit(3)
 	}
+}
+
+// fakeStructurePlan answers the structure analysis with a plan built from the
+// prompt's own domains and platforms. dropLast omits one domain, like an AI
+// that overlooks a blueprint module.
+func fakeStructurePlan(prompt string, dropLast bool) string {
+	domains := promptDomainList(prompt)
+	if len(domains) == 0 {
+		domains = promptSectionIDs(prompt, "DOMAIN MODULES")
+	}
+	if dropLast && len(domains) > 1 {
+		domains = domains[:len(domains)-1]
+	}
+	var apps []core.StructurePart
+	for _, a := range promptPlatforms(prompt) {
+		apps = append(apps, core.StructurePart{Name: a, Reason: "Aplikasi " + a + " pada platform yang dipilih"})
+	}
+	reasons := map[string]string{}
+	var planDomains []core.StructureDomain
+	var modules []string
+	var services []core.StructurePart
+	for _, d := range domains {
+		reasons[d] = "Tanggung jawab domain " + d
+		planDomains = append(planDomains, core.StructureDomain{Name: d, Responsibility: reasons[d]})
+		modules = append(modules, d)
+		services = append(services, core.StructurePart{Name: d, Reason: "Domain " + d + " dipisah"})
+	}
+	kind := fakeStructureType(prompt)
+	oneAPI := &core.StructureIR{Type: kind, Docs: "docs/", Apps: apps,
+		Services: []core.StructurePart{{Name: "api", Reason: "Satu API melayani semua domain", Modules: modules, ModuleReasons: reasons}}}
+	perDomain := &core.StructureIR{Type: kind, Docs: "docs/", Apps: apps, Services: services}
+	plan := core.StructurePlan{
+		Summary:         "Sistem dengan domain yang dipisah jelas.",
+		Drivers:         []string{"Domain bisnis jelas"},
+		Domains:         planDomains,
+		DependencyRules: []string{"Modul hanya memanggil modul lain lewat public API."},
+		Recommendation:  "recommended",
+		Reason:          "Satu API dengan modul per domain paling sederhana.",
+		Alternatives: []core.StructureAlternative{
+			{ID: "recommended", Name: "Satu API per domain", Summary: "Satu deploy, modul per domain.", Type: kind, IR: oneAPI,
+				Evaluation: core.StructureEvaluation{Maintainability: 5, Simplicity: 5, Extensibility: 3, Testability: 4, Separation: 4, Complexity: 2}},
+			{ID: "alt-2", Name: "Service per domain", Summary: "Tiap domain punya service sendiri.", Type: kind, IR: perDomain,
+				Evaluation: core.StructureEvaluation{Maintainability: 3, Simplicity: 2, Extensibility: 5, Testability: 3, Separation: 5, Complexity: 4}},
+		},
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
+}
+
+// promptDomainList reads the exact domain ids the analysis must place.
+func promptDomainList(prompt string) []string {
+	const header = "DOMAINS THAT MUST APPEAR IN EVERY ALTERNATIVE (exact ids): "
+	for _, line := range strings.Split(prompt, "\n") {
+		if !strings.HasPrefix(line, header) {
+			continue
+		}
+		var out []string
+		for _, d := range strings.Split(strings.TrimPrefix(line, header), ",") {
+			if d = strings.TrimSpace(d); d != "" {
+				out = append(out, d)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// fakeStructureType follows the approved architecture/repository decision, so
+// the fake answer is not refused for a technology mismatch.
+func fakeStructureType(prompt string) string {
+	monorepo, micro := false, false
+	for _, line := range strings.Split(prompt, "\n") {
+		if strings.HasPrefix(line, "- repository:") && strings.Contains(line, "Monorepo") {
+			monorepo = true
+		}
+		if strings.HasPrefix(line, "- architecture:") && strings.Contains(line, "Microservices") {
+			micro = true
+		}
+	}
+	switch {
+	case micro:
+		return core.StructMicroservices
+	case monorepo:
+		return core.StructMonorepo
+	}
+	return core.StructModular
+}
+
+// promptSectionIDs reads the first field of "- id | ..." lines under a
+// prompt section header.
+func promptSectionIDs(prompt, header string) []string {
+	var out []string
+	in := false
+	for _, line := range strings.Split(prompt, "\n") {
+		switch {
+		case strings.HasPrefix(line, header):
+			in = true
+		case in && strings.HasPrefix(line, "- "):
+			id := strings.TrimSpace(strings.SplitN(strings.TrimPrefix(line, "- "), " | ", 2)[0])
+			if id != "" {
+				out = append(out, id)
+			}
+		case in && strings.TrimSpace(line) == "":
+			return out
+		}
+	}
+	return out
+}
+
+// promptPlatforms maps the target platform lines to the app names the IR uses.
+func promptPlatforms(prompt string) []string {
+	names := map[string]string{"web": "web", "android": "mobile", "ios": "mobile", "desktop": "desktop", "cli": "cli"}
+	var out []string
+	in := false
+	for _, line := range strings.Split(prompt, "\n") {
+		switch {
+		case strings.HasPrefix(line, "TARGET PLATFORM:"):
+			in = true
+		case in && strings.HasPrefix(line, "- "):
+			kind := strings.TrimSpace(strings.SplitN(strings.TrimPrefix(line, "- "), ":", 2)[0])
+			name := names[kind]
+			if name != "" && !slices.Contains(out, name) {
+				out = append(out, name)
+			}
+		case in && strings.TrimSpace(line) == "":
+			return out
+		}
+	}
+	return out
 }
 
 const workflowJSON = `{"commands": [
