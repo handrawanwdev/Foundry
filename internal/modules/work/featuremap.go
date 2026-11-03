@@ -194,6 +194,9 @@ func ApplyFeatureMap(p *core.Project, raw string) error {
 	if err := p.FeatureMap.Validate(); err != nil {
 		return err
 	}
+	core.LinkFeatureMap(p.FeatureMap, p.Features)
+	core.MapFeatureMap(p.FeatureMap, p.Features)
+	core.BackfillCommandFeatures(p)
 	p.FeatureMap.Request = nil
 	return nil
 }

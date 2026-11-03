@@ -68,6 +68,7 @@ export interface Feature {
 // Feature Discovery tree, composed before Blueprint. Independent of Feature.
 export interface FeatureNode {
   id: string; parent_id?: string; name: string;
+  feature_id?: string; sub_feature_id?: string;
   description?: string; purpose?: string; benefit?: string; outcome?: string;
   children?: FeatureNode[];
 }

@@ -229,12 +229,14 @@ func featureRollups(p *core.Project, cmds []CommandProgress) ([]ModuleProgress, 
 		cmdSub[c.ID] = c.SubFeatureIDs
 	}
 
+	featByID := map[string]*core.Feature{}
 	featBySource := map[string]*core.Feature{}
 	featByName := map[string]*core.Feature{}
 	subBySource := map[string]*core.SubFeature{}
 	subByName := map[string]*core.SubFeature{}
 	for i := range p.Features {
 		f := &p.Features[i]
+		featByID[normName(f.ID)] = f
 		if f.SourceID != "" {
 			featBySource[f.SourceID] = f
 		}
@@ -266,7 +268,7 @@ func featureRollups(p *core.Project, cmds []CommandProgress) ([]ModuleProgress, 
 			var modCmds []string
 			for i := range mod.Features {
 				node := &mod.Features[i]
-				f := matchFeature(node, featBySource, featByName)
+				f := matchFeature(node, featByID, featBySource, featByName)
 				if f != nil {
 					used[f.ID] = true
 				}
@@ -372,9 +374,12 @@ func buildFeatureProgress(f *core.Feature, node *core.FeatureNode, cmdFeature, c
 	return fp, fp.Commands
 }
 
-func matchFeature(node *core.FeatureNode, bySource map[string]*core.Feature, byName map[string]*core.Feature) *core.Feature {
+func matchFeature(node *core.FeatureNode, byID, bySource, byName map[string]*core.Feature) *core.Feature {
 	if node == nil {
 		return nil
+	}
+	if f := byID[normName(node.FeatureID)]; f != nil {
+		return f
 	}
 	if f := bySource[node.ID]; f != nil {
 		return f
@@ -397,7 +402,8 @@ func matchChild(node *core.FeatureNode, s *core.SubFeature, bySource map[string]
 	}
 	for i := range node.Children {
 		child := &node.Children[i]
-		if child.ID == s.SourceID || bySource[child.ID] == s || byName[normName(child.Name)] == s {
+		if strings.EqualFold(strings.TrimSpace(child.SubFeatureID), strings.TrimSpace(s.ID)) ||
+			child.ID == s.SourceID || bySource[child.ID] == s || byName[normName(child.Name)] == s {
 			return child
 		}
 	}

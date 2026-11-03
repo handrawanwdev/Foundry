@@ -154,3 +154,20 @@ func featureByID(feats []FeatureProgress, id string) *FeatureProgress {
 	}
 	return nil
 }
+
+func TestFeatureNodeMappingDrivesProgress(t *testing.T) {
+	p := linkedProject()
+	for i := range p.FeatureMap.Modules[0].Features {
+		n := &p.FeatureMap.Modules[0].Features[i]
+		if n.ID == "janji" {
+			n.FeatureID = "FEAT-001"
+		}
+	}
+	for i := range p.Features {
+		p.Features[i].SourceID = ""
+	}
+	s := View(p, time.Now().UTC(), Agent{})
+	if f := featureByID(s.Features, "FEAT-001"); f == nil || len(f.Commands) != 3 || f.FeatureMapID != "janji" {
+		t.Fatalf("mapped feature = %+v", f)
+	}
+}

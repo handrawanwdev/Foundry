@@ -402,6 +402,11 @@ function FeatureDetail({ node, progress }: { node: FeatureNode; progress?: Progr
       <p className="feat-lead">
         {node.description || <span className="muted">Belum ada deskripsi.</span>}
       </p>
+      <p className="muted small">
+        {node.feature_id
+          ? `Terhubung ke blueprint ${node.feature_id}${node.sub_feature_id ? ` · ${node.sub_feature_id}` : ""}`
+          : "Belum terhubung ke fitur blueprint; progress CMD belum bisa diatribusikan ke node ini."}
+      </p>
       {roll && <RollupDetail roll={roll} />}
       <dl className="feat-facts">
         {facts.map(([k, v]) => (

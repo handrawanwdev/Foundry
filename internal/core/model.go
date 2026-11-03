@@ -507,6 +507,10 @@ func (p *Project) NormalizeLinks() {
 		return
 	}
 	p.Workflow.EnsureID()
+	if p.FeatureMap != nil && len(p.Features) > 0 {
+		LinkFeatureMap(p.FeatureMap, p.Features)
+		MapFeatureMap(p.FeatureMap, p.Features)
+	}
 	for i := range p.Features {
 		f := &p.Features[i]
 		for j := range f.SubFeatures {
@@ -515,6 +519,7 @@ func (p *Project) NormalizeLinks() {
 			}
 		}
 	}
+	BackfillCommandFeatures(p)
 }
 
 // Busy reports whether a job currently owns the project.

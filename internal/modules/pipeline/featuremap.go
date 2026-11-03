@@ -66,6 +66,9 @@ func (s *Service) SaveFeatureMap(m *core.FeatureMap) (*core.Project, error) {
 			return err
 		}
 		p.FeatureMap = m
+		core.LinkFeatureMap(p.FeatureMap, p.Features)
+		core.MapFeatureMap(p.FeatureMap, p.Features)
+		core.BackfillCommandFeatures(p)
 		p.Log("ui", "Daftar fitur disimpan")
 		return nil
 	})

@@ -262,6 +262,8 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 		p.FeatureMap = core.FeatureMapFromFeatures(feats)
 	}
 	core.LinkFeatureMap(p.FeatureMap, p.Features)
+	core.MapFeatureMap(p.FeatureMap, p.Features)
+	core.BackfillCommandFeatures(p)
 	p.NormalizeLinks()
 	p.Platform = &core.PlatformPlan{Targets: targets, Reason: out.Platform.Reason}
 	SetArtifacts(p, out.Artifacts)

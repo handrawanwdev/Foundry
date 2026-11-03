@@ -115,3 +115,71 @@ func TestLinkFeatureMapSetsSourceAndParent(t *testing.T) {
 		t.Fatalf("node parent = %q", parent)
 	}
 }
+
+func TestMapFeatureMapLegacyNames(t *testing.T) {
+	feats := []Feature{
+		{ID: "FEAT-002", Name: "Ringkasan tugas", Description: "Dasbor menampilkan jumlah tugas total dan per status milik pengguna."},
+		{ID: "FEAT-003", Name: "Kelola tugas", Description: "Buat, baca, ubah, hapus tugas milik sendiri; data tersimpan di server."},
+		{ID: "FEAT-004", Name: "Status dan prioritas", Description: "Tugas memakai status dan prioritas terbatas; prioritas tampak visual di daftar."},
+		{ID: "FEAT-005", Name: "Deadline", Description: "Deadline tanggal opsional pada tugas, dapat diisi, diubah, atau dikosongkan."},
+		{ID: "FEAT-006", Name: "Cari dan filter", Description: "Cari judul dan filter status/prioritas pada tugas milik sendiri."},
+		{ID: "FEAT-007", Name: "Pengalaman web responsif", Description: "Dasbor modern terinspirasi Todoist dengan identitas sendiri, mudah dipakai di desktop dan seluler."},
+	}
+	m := &FeatureMap{Modules: []FeatureModule{
+		{Name: "Ringkasan Tugas", Features: []FeatureNode{{Name: "Ringkasan Jumlah Tugas", Description: "Halaman awal menampilkan berapa banyak tugas yang ada."}}},
+		{Name: "Kelola Tugas", Features: []FeatureNode{
+			{Name: "Daftar Tugas", Description: "Semua tugas muncul di satu halaman."},
+			{Name: "Tambah Tugas", Description: "Isi judul tugas baru lalu simpan."},
+			{Name: "Ubah Tugas", Description: "Ganti judul atau isi tugas yang sudah ada."},
+			{Name: "Hapus Tugas", Description: "Buang tugas yang sudah tidak perlu."},
+		}},
+		{Name: "Status Tugas", Features: []FeatureNode{{Name: "Ubah Status Tugas", Description: "Ganti status tugas sesuai posisi kerjaannya."}}},
+		{Name: "Prioritas", Features: []FeatureNode{{Name: "Atur Prioritas", Description: "Pilih tingkat penting tiap tugas."}}},
+		{Name: "Deadline", Features: []FeatureNode{{Name: "Tentukan Deadline", Description: "Isi tanggal batas waktu tiap tugas."}}},
+		{Name: "Cari dan Filter", Features: []FeatureNode{
+			{Name: "Cari Tugas", Description: "Ketik kata kunci buat menemukan tugas."},
+			{Name: "Filter Tugas", Description: "Saring daftar tugas berdasar kriteria tertentu."},
+		}},
+		{Name: "Tampilan", Features: []FeatureNode{
+			{Name: "Tampilan Modern", Description: "Halaman dibuat bersih dan enak dilihat."},
+			{Name: "Tampilan Responsif", Description: "Layar menyesuaikan ukuran HP, tablet, dan laptop."},
+		}},
+		{Name: "Simpan Data", Features: []FeatureNode{
+			{Name: "Simpan Perubahan", Description: "Setiap tugas yang dibuat atau diubah langsung tersimpan."},
+			{Name: "Data Tetap Ada", Description: "Tugas yang sudah dicatat masih ada saat aplikasi dibuka lagi."},
+		}},
+	}}
+	m.Normalize()
+	MapFeatureMap(m, feats)
+	want := map[string]string{
+		"ringkasan-jumlah-tugas": "FEAT-002",
+		"daftar-tugas":           "FEAT-003",
+		"tambah-tugas":           "FEAT-003",
+		"ubah-status-tugas":      "FEAT-004",
+		"atur-prioritas":         "FEAT-004",
+		"tentukan-deadline":      "FEAT-005",
+		"cari-tugas":             "FEAT-006",
+		"filter-tugas":           "FEAT-006",
+		"tampilan-modern":        "FEAT-007",
+		"tampilan-responsif":     "FEAT-007",
+		"simpan-perubahan":       "FEAT-003",
+		"data-tetap-ada":         "FEAT-003",
+	}
+	for id, wantID := range want {
+		n := m.Find(id)
+		if n == nil || n.FeatureID != wantID {
+			t.Errorf("%s feature = %+v, want %s", id, n, wantID)
+		}
+	}
+}
+
+func TestBackfillCommandFeaturesFromCovers(t *testing.T) {
+	p := &Project{
+		Features: []Feature{{ID: "FEAT-001", Name: "Janji", RequirementIDs: []string{"REQ-001"}}},
+		Workflow: &Workflow{ID: "WF-001", Commands: []Command{{ID: "CMD-001", Covers: []string{"REQ-001"}}}},
+	}
+	p.NormalizeLinks()
+	if got := p.Workflow.Commands[0].FeatureIDs; len(got) != 1 || got[0] != "FEAT-001" {
+		t.Fatalf("backfilled features = %v", got)
+	}
+}

@@ -25,13 +25,18 @@ type FeatureModule struct {
 type FeatureNode struct {
 	ID string `json:"id"`
 	// ParentID is the module or parent feature node this item belongs to.
-	ParentID    string        `json:"parent_id,omitempty"`
-	Name        string        `json:"name"`
-	Description string        `json:"description,omitempty"`
-	Purpose     string        `json:"purpose,omitempty"`
-	Benefit     string        `json:"benefit,omitempty"`
-	Outcome     string        `json:"outcome,omitempty"`
-	Children    []FeatureNode `json:"children,omitempty"`
+	ParentID string `json:"parent_id,omitempty"`
+	Name     string `json:"name"`
+	// FeatureID links this node to the blueprint feature it implements;
+	// SubFeatureID links it to a specific subfeature. Both are filled by
+	// discovery or by the deterministic legacy mapping in MapFeatureMap.
+	FeatureID    string        `json:"feature_id,omitempty"`
+	SubFeatureID string        `json:"sub_feature_id,omitempty"`
+	Description  string        `json:"description,omitempty"`
+	Purpose      string        `json:"purpose,omitempty"`
+	Benefit      string        `json:"benefit,omitempty"`
+	Outcome      string        `json:"outcome,omitempty"`
+	Children     []FeatureNode `json:"children,omitempty"`
 }
 
 // FeatureMapRequest is an AI action waiting to land on the map.
@@ -305,6 +310,216 @@ func findChild(nodes []FeatureNode, name string, used map[string]bool) *FeatureN
 
 func equalName(a, b string) bool {
 	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+// MapFeatureMap links Feature Discovery nodes to the blueprint features they
+// implement. Explicit ids win; then exact names; then a conservative
+// token match using the node text and its module. A node whose module has one
+// confident feature match inherits it, so a group such as "Kelola Tugas"
+// points at the same blueprint feature. Nodes with no confident match stay
+// empty, never guessed.
+func MapFeatureMap(m *FeatureMap, feats []Feature) {
+	if m == nil || len(feats) == 0 {
+		return
+	}
+	byID := map[string]*Feature{}
+	for i := range feats {
+		byID[strings.ToLower(strings.TrimSpace(feats[i].ID))] = &feats[i]
+	}
+	for mi := range m.Modules {
+		mod := &m.Modules[mi]
+		matched := make([]*Feature, len(mod.Features))
+		for ni := range mod.Features {
+			node := &mod.Features[ni]
+			if f := byID[strings.ToLower(strings.TrimSpace(node.FeatureID))]; f != nil {
+				matched[ni] = f
+				continue
+			}
+			node.FeatureID = ""
+			matched[ni] = matchNodeFeature(node, mod.Name, feats)
+		}
+		// A module is a group of related features. When one node maps with
+		// confidence, its siblings inherit the same blueprint feature.
+		var moduleFeature *Feature
+		for _, f := range matched {
+			if f != nil {
+				moduleFeature = f
+				break
+			}
+		}
+		if moduleFeature == nil {
+			moduleFeature = bestFeature("", mod.Name, feats)
+		}
+		for ni := range mod.Features {
+			node := &mod.Features[ni]
+			f := matched[ni]
+			if f == nil {
+				f = moduleFeature
+			}
+			if f == nil {
+				node.FeatureID, node.SubFeatureID = "", ""
+			} else {
+				node.FeatureID = f.ID
+				node.SubFeatureID = ""
+				if f.SourceID == "" {
+					f.SourceID = node.ID
+				}
+				mapNodeChildren(node, f, feats)
+			}
+		}
+	}
+}
+
+func mapNodeChildren(node *FeatureNode, f *Feature, feats []Feature) {
+	for ci := range node.Children {
+		child := &node.Children[ci]
+		child.FeatureID = f.ID
+		if s := matchSubFeature(child.Name+" "+child.Description, feats); s != nil && s.FeatureID == f.ID {
+			child.SubFeatureID = s.ID
+		} else {
+			child.SubFeatureID = ""
+		}
+		mapNodeChildren(child, f, feats)
+	}
+}
+
+func matchNodeFeature(node *FeatureNode, module string, feats []Feature) *Feature {
+	if node == nil {
+		return nil
+	}
+	for i := range feats {
+		if equalName(feats[i].Name, node.Name) {
+			return &feats[i]
+		}
+	}
+	text := node.Name + " " + node.Description
+	return bestFeature(text, module, feats)
+}
+
+func bestFeature(text, module string, feats []Feature) *Feature {
+	if strings.TrimSpace(text+" "+module) == "" {
+		return nil
+	}
+	var best *Feature
+	candidate := text + " " + module
+	bestScore, bestName, bestModule := 0.0, 0.0, 0.0
+	for i := range feats {
+		f := &feats[i]
+		nameScore := tokenScore(candidate, f.Name)
+		moduleScore := 0.0
+		if strings.TrimSpace(module) != "" {
+			moduleScore = tokenScore(module, f.Name)
+		}
+		score := maxFloat(nameScore, tokenScore(candidate, f.Description))
+		if score > bestScore || (score == bestScore && (nameScore > bestName || nameScore == bestName && moduleScore > bestModule)) {
+			best, bestScore, bestName, bestModule = f, score, nameScore, moduleScore
+		}
+	}
+	if bestScore < 0.5 {
+		return nil
+	}
+	return best
+}
+
+func matchSubFeature(text string, feats []Feature) *SubFeature {
+	var best *SubFeature
+	bestScore := 0.0
+	for i := range feats {
+		for j := range feats[i].SubFeatures {
+			s := &feats[i].SubFeatures[j]
+			if score := tokenScore(text, s.Name); score > bestScore {
+				best, bestScore = s, score
+			}
+		}
+	}
+	if bestScore < 0.5 {
+		return nil
+	}
+	return best
+}
+
+var featureStopwords = map[string]bool{
+	"dan": true, "atau": true, "yang": true, "untuk": true, "dengan": true, "di": true, "ke": true,
+	"dari": true, "pada": true, "dalam": true, "secara": true, "ini": true, "itu": true, "semua": true,
+	"tiap": true, "setiap": true, "saat": true, "sudah": true, "akan": true, "baru": true, "lagi": true,
+	"bisa": true, "dapat": true, "milik": true, "oleh": true, "sebagai": true, "agar": true, "supaya": true,
+	"jika": true, "bila": true, "telah": true, "masih": true, "dibuat": true, "buat": true,
+}
+
+var featureGenericTokens = map[string]bool{
+	"tugas": true, "data": true, "halaman": true, "sistem": true, "aplikasi": true, "fitur": true, "layar": true,
+	"daftar": true, "catatan": true,
+}
+
+func tokenScore(a, b string) float64 {
+	ta, tb := featureTokens(a), featureTokens(b)
+	if len(ta) == 0 || len(tb) == 0 {
+		return 0
+	}
+	inter := 0
+	var shared []string
+	for t := range ta {
+		if tb[t] {
+			inter++
+			shared = append(shared, t)
+		}
+	}
+	if inter == 0 {
+		return 0
+	}
+	union := len(ta) + len(tb) - inter
+	score := float64(inter) / float64(union)
+	if inter >= 2 && inter == minInt(len(ta), len(tb)) {
+		score = maxFloat(score, 0.75)
+	}
+	for _, t := range shared {
+		if len(t) >= 6 && !featureGenericTokens[t] {
+			score = maxFloat(score, 0.5)
+		}
+	}
+	return score
+}
+
+func featureTokens(s string) map[string]bool {
+	out := map[string]bool{}
+	for _, t := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if len(t) >= 3 && !featureStopwords[t] {
+			out[t] = true
+		}
+	}
+	return out
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// BackfillCommandFeatures stores the features a command implements when an
+// older workflow has no explicit link yet. It uses the requirements the
+// command covers; a command that already has a link is left untouched.
+func BackfillCommandFeatures(p *Project) {
+	if p == nil || p.Workflow == nil {
+		return
+	}
+	for i := range p.Workflow.Commands {
+		c := &p.Workflow.Commands[i]
+		if len(c.FeatureIDs) > 0 || len(c.SubFeatureIDs) > 0 {
+			continue
+		}
+		c.FeatureIDs = ResolveCommandFeatureIDs(*c, p.Features)
+	}
 }
 
 func uniqueSlug(used map[string]bool, id, name, prefix string) string {
