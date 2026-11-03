@@ -522,7 +522,7 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			r = &p.UI.Request
 		default:
 			if p.Workflow == nil {
-				p.Workflow = &core.Workflow{Status: core.CommandDraft}
+				p.Workflow = &core.Workflow{ID: "WF-001", Status: core.CommandDraft}
 			}
 			r = &p.Workflow.Request
 		}

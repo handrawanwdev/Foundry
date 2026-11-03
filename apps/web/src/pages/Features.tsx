@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
+import { featureProgressOf, ROLLUP_CLASS, ROLLUP_LABEL, rollupBits, subFeatureProgressOf } from "../blueprint";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Elapsed } from "../components/Elapsed";
 import { PromptBar } from "../components/PromptBar";
@@ -9,7 +10,7 @@ import {
 } from "../features";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
-import type { FeatureMap, FeatureNode } from "../types";
+import type { FeatureMap, FeatureNode, FeatureProgress, ProgressSnapshot, SubFeatureProgress } from "../types";
 
 type NodeForm = { name: string; description: string; purpose: string; benefit: string; outcome: string };
 
@@ -22,6 +23,16 @@ export function FeaturesPage() {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<NodeForm>(emptyForm());
   const [confirm, setConfirm] = useState<"generate" | "delete" | null>(null);
+  const [progress, setProgress] = useState<ProgressSnapshot | null>(null);
+
+  useEffect(() => {
+    if (!project?.dir) return;
+    let ignore = false;
+    const load = () => api.progress().then((v) => { if (!ignore) setProgress(v); }).catch(() => { if (!ignore) setProgress(null); });
+    load();
+    const t = setInterval(load, 15_000);
+    return () => { ignore = true; clearInterval(t); };
+  }, [project?.version, project?.dir]);
 
   if (!project) return null;
   if (project.stage === "TELL") {
@@ -52,6 +63,7 @@ export function FeaturesPage() {
   const canContinue = count > 0 && !working && !locked && project.stage === "DISCOVERY";
   const saving = pending === "saveFeatureMap";
   const generating = pending === "generateFeatureMap";
+  const moduleProgress = (id: string) => progress?.modules.find((m) => m.id === id);
 
   const select = (m = "", f = "") => {
     setEditing(false);
@@ -160,6 +172,9 @@ export function FeaturesPage() {
             <button key={m.id} className={`ws-item ${m.id === mod?.id ? "on" : ""}`}
               aria-current={m.id === mod?.id ? "page" : undefined} onClick={() => select(m.id)}>
               <span className="ws-item-text">{m.name}</span>
+              {moduleProgress(m.id) && (
+                <span className={`feat-pct ${ROLLUP_CLASS[moduleProgress(m.id)!.status]}`} title={`${moduleProgress(m.id)!.percent}%`}>{moduleProgress(m.id)!.percent}%</span>
+              )}
               <span className="ws-count">{featureCount({ modules: [m] })}</span>
             </button>
           ))}
@@ -188,6 +203,7 @@ export function FeaturesPage() {
       </nav>
 
       <main className="ws-main">
+        {progress && progress.overall.total > 0 && <ProjectProgress progress={progress} />}
         {empty ? (
           <div className="doc">
             <header className="doc-head">
@@ -223,11 +239,23 @@ export function FeaturesPage() {
               )}
               <h1>{node ? node.name : mod.name}</h1>
               {!node && (
-                <p className="doc-summary">
-                  {mod.features?.length
-                    ? `${featureCount({ modules: [mod] })} fitur di modul ini.`
-                    : "Modul ini belum punya fitur."}
-                </p>
+                <>
+                  <p className="doc-summary">
+                    {mod.features?.length
+                      ? `${featureCount({ modules: [mod] })} fitur di modul ini.`
+                      : "Modul ini belum punya fitur."}
+                  </p>
+                  {moduleProgress(mod.id) && (
+                    <div className="feat-progress">
+                      <div className="prog-line">
+                        <strong><span className={`state ${ROLLUP_CLASS[moduleProgress(mod.id)!.status]}`}>{ROLLUP_LABEL[moduleProgress(mod.id)!.status]}</span> {moduleProgress(mod.id)!.percent}%</strong>
+                        <span className="muted small">{moduleProgress(mod.id)!.completed}/{moduleProgress(mod.id)!.total} CMD terverifikasi · bobot {moduleProgress(mod.id)!.done_weight}/{moduleProgress(mod.id)!.weight}</span>
+                      </div>
+                      <div className="prog-bar"><i style={{ width: `${moduleProgress(mod.id)!.percent}%` }} /></div>
+                      <p className="muted small">{rollupBits(moduleProgress(mod.id)!).join(" · ") || "Belum ada CMD yang terhubung."}</p>
+                    </div>
+                  )}
+                </>
               )}
               {canEdit && !editing && (
                 <div className="doc-actions">
@@ -269,6 +297,7 @@ export function FeaturesPage() {
               <FeatureList
                 nodes={mod.features ?? []}
                 selectedId={node?.id}
+                progress={progress}
                 onOpen={(id) => id ? select(mod.id, id) : select(mod.id)}
               />
             )}
@@ -325,10 +354,11 @@ export function FeaturesPage() {
   );
 }
 
-function FeatureList({ nodes, onOpen, selectedId, nested = false }: {
+function FeatureList({ nodes, onOpen, selectedId, progress, nested = false }: {
   nodes: FeatureNode[];
   onOpen: (id: string) => void;
   selectedId?: string;
+  progress?: ProgressSnapshot | null;
   nested?: boolean;
 }) {
   if (!nodes.length) return null;
@@ -337,6 +367,7 @@ function FeatureList({ nodes, onOpen, selectedId, nested = false }: {
       {nodes.map((n) => {
         const kids = n.children?.length ?? 0;
         const on = n.id === selectedId;
+        const roll = featureProgressOf(progress, n.id) ?? subFeatureProgressOf(progress, n.id);
         return (
           <li key={n.id}>
             <button
@@ -346,11 +377,12 @@ function FeatureList({ nodes, onOpen, selectedId, nested = false }: {
               onClick={() => onOpen(on ? "" : n.id)}
             >
               <span className="feat-row-name">{n.name}</span>
+              {roll && roll.total > 0 && <span className={`feat-pct ${ROLLUP_CLASS[roll.status]}`}>{roll.percent}%</span>}
               {n.description && <span className="feat-row-desc">{n.description}</span>}
               {kids > 0 && <span className="feat-row-n">{kids}</span>}
             </button>
-            {on && <FeatureDetail node={n} />}
-            {kids > 0 && <FeatureList nodes={n.children!} onOpen={onOpen} selectedId={selectedId} nested />}
+            {on && <FeatureDetail node={n} progress={progress} />}
+            {kids > 0 && <FeatureList nodes={n.children!} onOpen={onOpen} selectedId={selectedId} progress={progress} nested />}
           </li>
         );
       })}
@@ -358,17 +390,19 @@ function FeatureList({ nodes, onOpen, selectedId, nested = false }: {
   );
 }
 
-function FeatureDetail({ node }: { node: FeatureNode }) {
+function FeatureDetail({ node, progress }: { node: FeatureNode; progress?: ProgressSnapshot | null }) {
   const facts: [string, string][] = [
     ["Tujuan", node.purpose ?? ""],
     ["Manfaat", node.benefit ?? ""],
     ["Hasil", node.outcome ?? ""],
   ];
+  const roll = featureProgressOf(progress, node.id) ?? subFeatureProgressOf(progress, node.id);
   return (
     <div className="feat-detail">
       <p className="feat-lead">
         {node.description || <span className="muted">Belum ada deskripsi.</span>}
       </p>
+      {roll && <RollupDetail roll={roll} />}
       <dl className="feat-facts">
         {facts.map(([k, v]) => (
           <div key={k}>
@@ -377,6 +411,37 @@ function FeatureDetail({ node }: { node: FeatureNode }) {
           </div>
         ))}
       </dl>
+    </div>
+  );
+}
+
+function ProjectProgress({ progress }: { progress: ProgressSnapshot }) {
+  const r = progress.overall;
+  return (
+    <div className="prog-panel">
+      <div className="prog-line">
+        <strong>Progres proyek</strong>
+        <span className="muted small">{r.completed}/{r.total} CMD terverifikasi · bobot {r.done_weight}/{r.weight}</span>
+      </div>
+      <div className="prog-bar big"><i style={{ width: `${r.percent}%` }} /></div>
+      <p className="muted small">{rollupBits(r).join(" · ") || "Belum ada laporan agen."}</p>
+    </div>
+  );
+}
+
+function RollupDetail({ roll }: { roll: FeatureProgress | SubFeatureProgress }) {
+  return (
+    <div className="feat-progress">
+      <div className="prog-line">
+        <strong><span className={`state ${ROLLUP_CLASS[roll.status]}`}>{ROLLUP_LABEL[roll.status]}</span> {roll.percent}%</strong>
+        <span className="muted small">{roll.claimed ? `${roll.claimed} diklaim selesai · ` : ""}{roll.total} CMD · bobot {roll.done_weight}/{roll.weight}</span>
+      </div>
+      <div className="prog-bar"><i style={{ width: `${roll.percent}%` }} /></div>
+      <p className="muted small">{rollupBits(roll).join(" · ") || "Belum ada CMD yang terhubung."}</p>
+      {roll.last_at && <p className="muted small">Status terakhir {roll.last_command} · {roll.last_status} · {new Date(roll.last_at).toLocaleString()}</p>}
+      {roll.commands.length > 0 && (
+        <p className="small">CMD terkait: {roll.commands.map((id) => <Link key={id} className="ref-chip" to={`/workflow?cmd=${encodeURIComponent(id)}`}>{id}</Link>)}</p>
+      )}
     </div>
   );
 }

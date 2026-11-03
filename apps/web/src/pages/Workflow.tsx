@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
-import { commandState, commandText, dependents, lines, RUN_CLASS, RUN_LABEL, runOf, STATE_LABEL, waveOf } from "../blueprint";
+import { commandState, commandText, dependents, lines, ROLLUP_CLASS, ROLLUP_LABEL, rollupBits, RUN_CLASS, RUN_LABEL, runOf, STATE_LABEL, waveOf } from "../blueprint";
 import { Elapsed } from "../components/Elapsed";
 import { Icon } from "../components/Icon";
 import { Markdown } from "../components/Markdown";
@@ -79,19 +79,19 @@ export function WorkflowPage() {
       <nav className="ws-nav" aria-label="Command">
         <div className="ws-nav-head">
           <strong>Workflow</strong>
-          <span className="muted small">v{w!.version} · {cmds.length} command</span>
+          <span className="muted small">{w!.id ? `${w!.id} · ` : ""}v{w!.version} · {cmds.length} command</span>
         </div>
-        {prog && (locked || isTracked(prog)) && prog.counts.total > 0 && (
-          <div className="prog-mini" title={`${prog.counts.verified}/${prog.counts.total} terverifikasi`}>
-            <div className="prog-bar"><i style={{ width: `${Math.round((prog.counts.verified / Math.max(prog.counts.total, 1)) * 100)}%` }} /></div>
-            <span className="muted small">{prog.counts.verified}/{prog.counts.total} terverifikasi</span>
+        {prog && prog.overall.total > 0 && (
+          <div className="prog-mini" title={`${prog.percent}% · ${prog.overall.completed}/${prog.overall.total} terverifikasi`}>
+            <div className="prog-bar"><i style={{ width: `${prog.percent}%` }} /></div>
+            <span className="muted small">{prog.percent}% · {prog.overall.completed}/{prog.overall.total} terverifikasi</span>
           </div>
         )}
         {waves.map((wave, i) => (
           <div key={i} className="ws-group">
             <div className="ws-group-label">
               {r?.waves.length ? `Gelombang ${i + 1}${wave.length > 1 ? " · paralel" : ""}` : "Urutan belum valid"}
-              {prog?.waves[i] && (locked || isTracked(prog)) && <span> · {prog.waves[i].verified}/{prog.waves[i].total}</span>}
+              {prog?.waves[i] && <span> · {prog.waves[i].verified}/{prog.waves[i].total}</span>}
             </div>
             {wave.map((cid) => {
               const c = byId.get(cid);
@@ -113,7 +113,7 @@ export function WorkflowPage() {
       </nav>
 
       <main className="ws-main">
-        {prog && (locked || isTracked(prog)) && <ProgressPanel progress={prog} onOpen={select} onReconcile={() => void run("reconcileProgress", () => api.reconcileProgress())} busy={pending === "reconcileProgress"} />}
+        {prog && <ProgressPanel progress={prog} onOpen={select} onReconcile={() => void run("reconcileProgress", () => api.reconcileProgress())} busy={pending === "reconcileProgress"} />}
         {r && r.issues.length > 0 && (
           <div className="notice bad">
             <strong>{r.issues.length} masalah workflow</strong>
@@ -153,33 +153,33 @@ export function WorkflowPage() {
   );
 }
 
-function isTracked(p: ProgressSnapshot) {
-  const c = p.counts;
-  return c.started + c.blocked + c.skipped + c.failed + c.review + c.done + c.verified + c.stale + c.unknown > 0;
-}
-
 function ProgressPanel({ progress, onOpen, onReconcile, busy }: {
   progress: ProgressSnapshot; onOpen: (id: string) => void; onReconcile: () => void; busy: boolean;
 }) {
-  const c = progress.counts;
-  const bits = [
-    c.started && `${c.started} dikerjakan`,
-    c.review && `${c.review} ditinjau`,
-    c.failed && `${c.failed} gagal`,
-    c.blocked && `${c.blocked} terhambat`,
-    c.stale && `${c.stale} kedaluwarsa`,
-    c.unknown && `${c.unknown} tidak diketahui`,
-    c.waiting && `${c.waiting} menunggu`,
-    c.unconfirmed && `${c.unconfirmed} belum terkonfirmasi`,
-  ].filter(Boolean);
+  const bits = rollupBits(progress.overall);
   const warnings = progress.warnings.filter((w) => w.kind !== "incomplete");
   const incomplete = progress.warnings.find((w) => w.kind === "incomplete");
+  const workflow = progress.workflow;
   return (
     <div className="prog-panel">
       <div className="prog-line">
-        <strong>{progress.complete ? "Workflow terverifikasi" : incomplete?.message ?? "Progres pengerjaan"}</strong>
-        <span className="muted small">{bits.join(" · ")}</span>
+        <strong>
+          {progress.complete ? "Workflow terverifikasi" : incomplete?.message ?? "Progres pengerjaan"}
+          <span className={`state ${ROLLUP_CLASS[workflow?.status ?? "no_commands"]}`}>{ROLLUP_LABEL[workflow?.status ?? "no_commands"]}</span>
+        </strong>
+        <span className="muted small">{progress.percent}% · bobot {progress.done_weight}/{progress.weight}</span>
       </div>
+      <div className="prog-bar big"><i style={{ width: `${progress.percent}%` }} /></div>
+      <p className="muted small">{bits.length ? bits.join(" · ") : "Belum ada laporan agen."}</p>
+      {workflow?.dependencies?.length > 0 && (
+        <p className="small">
+          Dependency: {workflow.dependencies.filter((d) => !d.satisfied).length === 0
+            ? "semua terpenuhi"
+            : `${workflow.dependencies.filter((d) => !d.satisfied).length} belum terpenuhi`}
+          {" "}· {workflow.dependencies.map((d) => `${d.from}→${d.to}`).slice(0, 8).join(", ")}
+          {workflow.dependencies.length > 8 ? ", …" : ""}
+        </p>
+      )}
       {progress.last_report_at && (
         <p className="muted small">Laporan terakhir {new Date(progress.last_report_at).toLocaleString()}{progress.last_source ? ` · ${progress.last_source}` : ""}</p>
       )}
@@ -244,7 +244,15 @@ function CommandDoc({ project, cmd, report, run, locked, onOpen }: {
           <span className="muted">Bergantung pada:</span>
           {cmd.depends_on?.length ? cmd.depends_on.map((d) => <button key={d} className="ref-chip" onClick={() => onOpen(d)}>{d}</button>) : <span>—</span>}
           {deps.length > 0 && <><span className="muted">· Dibutuhkan oleh:</span>{deps.map((d) => <button key={d} className="ref-chip" onClick={() => onOpen(d)}>{d}</button>)}</>}
+          {run && <span className="muted">· Bobot {run.weight}</span>}
         </div>
+        {run && (run.feature_ids?.length ?? 0) + (run.sub_feature_ids?.length ?? 0) > 0 && (
+          <div className="doc-meta small">
+            <span className="muted">Fitur:</span>
+            {(run.feature_ids ?? []).map((id) => <span key={id} className="ref-chip">{id}</span>)}
+            {(run.sub_feature_ids ?? []).map((id) => <span key={id} className="ref-chip">{id}</span>)}
+          </div>
+        )}
         <div className="doc-actions">
           <button onClick={() => void copy()}><Icon name="copy" size={14} /> {copied ? "Tersalin" : "Salin instruksi"}</button>
           {!locked && !editing && <button onClick={() => setEditing(true)}>Edit</button>}
@@ -269,6 +277,7 @@ function CommandDoc({ project, cmd, report, run, locked, onOpen }: {
             {run.source && `Sumber: ${run.source}`}
             {run.updated_at && ` · Diperbarui ${new Date(run.updated_at).toLocaleString()}`}
             {run.started_at && ` · Mulai ${new Date(run.started_at).toLocaleString()}`}
+            {run.finished_at && ` · Selesai ${new Date(run.finished_at).toLocaleString()}`}
           </p>
           {run.waiting && run.waiting.length > 0 && <p className="small">Menunggu: {run.waiting.join(", ")}</p>}
           {run.evidence && run.evidence.length > 0 && (
@@ -323,13 +332,15 @@ function CommandEditor({ project, cmd, report, onDone }: { project: Project; cmd
     inputs: (cmd.inputs ?? []).join("\n"), outputs: (cmd.expected_outputs ?? []).join("\n"),
     acceptance: (cmd.acceptance_criteria ?? []).join("\n"), constraints: (cmd.constraints ?? []).join("\n"),
     deps: cmd.depends_on ?? [], artifacts: (cmd.artifacts ?? []).map((a) => a.id), covers: cmd.covers ?? [],
+    features: cmd.feature_ids ?? [], subFeatures: cmd.sub_feature_ids ?? [],
   });
   const set = (k: keyof typeof e) => (ev: { target: { value: string } }) => setE({ ...e, [k]: ev.target.value });
-  const toggle = (k: "deps" | "artifacts" | "covers", v: string) => setE({ ...e, [k]: e[k].includes(v) ? e[k].filter((x) => x !== v) : [...e[k], v] });
+  const toggle = (k: "deps" | "artifacts" | "covers" | "features" | "subFeatures", v: string) => setE({ ...e, [k]: e[k].includes(v) ? e[k].filter((x) => x !== v) : [...e[k], v] });
   const save = async () => {
     const edit: CommandEdit = {
       name: e.name, objective: e.objective, context: e.context, instructions: e.instructions, inputs: lines(e.inputs),
-      depends_on: e.deps, artifacts: e.artifacts, covers: e.covers, expected_outputs: lines(e.outputs), acceptance_criteria: lines(e.acceptance), constraints: lines(e.constraints),
+      depends_on: e.deps, artifacts: e.artifacts, covers: e.covers, feature_ids: e.features, sub_feature_ids: e.subFeatures,
+      expected_outputs: lines(e.outputs), acceptance_criteria: lines(e.acceptance), constraints: lines(e.constraints),
     };
     if (await run("editCommand", () => api.editCommand(cmd.id, edit))) onDone();
   };
@@ -361,6 +372,23 @@ function CommandEditor({ project, cmd, report, onDone }: { project: Project; cmd
         <div className="check-grid">
           {(project.requirements ?? []).map((q) => (
             <label key={q.id} className="check" title={q.text}><input type="checkbox" checked={e.covers.includes(q.id)} onChange={() => toggle("covers", q.id)} /> {q.id} <span className="muted">{q.priority}</span></label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="field">
+        <legend>Fitur terkait</legend>
+        <div className="check-grid">
+          {(project.features ?? []).length === 0 && <span className="muted small">Belum ada fitur dari blueprint.</span>}
+          {(project.features ?? []).map((f) => (
+            <label key={f.id} className="check"><input type="checkbox" checked={e.features.includes(f.id)} onChange={() => toggle("features", f.id)} /> {f.id} <span className="muted">{f.name}</span></label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="field">
+        <legend>Subfitur terkait</legend>
+        <div className="check-grid">
+          {(project.features ?? []).flatMap((f) => f.sub_features ?? []).map((s) => (
+            <label key={s.id} className="check"><input type="checkbox" checked={e.subFeatures.includes(s.id)} onChange={() => toggle("subFeatures", s.id)} /> {s.id} <span className="muted">{s.name}</span></label>
           ))}
         </div>
       </fieldset>

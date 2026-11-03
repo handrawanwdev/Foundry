@@ -130,3 +130,25 @@ func TestCovers(t *testing.T) {
 		t.Fatalf("report = %+v", r)
 	}
 }
+
+func TestFeatureReferences(t *testing.T) {
+	feats := []core.Feature{
+		{ID: "FEAT-001", Name: "Janji", RequirementIDs: []string{"REQ-001"},
+			SubFeatures: []core.SubFeature{{ID: "FEAT-001.1", Name: "Form"}}},
+		{ID: "FEAT-002", Name: "Jadwal", RequirementIDs: []string{"REQ-002"}},
+	}
+	cmds := []core.Command{
+		{ID: "CMD-001", Covers: []string{"REQ-001"}},
+		{ID: "CMD-002", FeatureIDs: []string{"FEAT-001"}, SubFeatureIDs: []string{"FEAT-001.1"}},
+		{ID: "CMD-003", FeatureIDs: []string{"FEAT-404"}},
+		{ID: "CMD-004", FeatureIDs: []string{"FEAT-002"}, SubFeatureIDs: []string{"FEAT-001.1"}},
+	}
+	issues := ValidateFeatures(cmds, feats)
+	if len(issues) != 2 {
+		t.Fatalf("issues = %+v", issues)
+	}
+	links := FeatureCommands(cmds, feats)
+	if len(links["FEAT-001"]) != 3 || len(links["FEAT-002"]) != 1 {
+		t.Fatalf("links = %+v", links)
+	}
+}

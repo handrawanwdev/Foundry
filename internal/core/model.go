@@ -325,11 +325,19 @@ type Feature struct {
 	RequirementIDs []string     `json:"requirement_ids"`
 	Platforms      []string     `json:"platforms"`
 	SubFeatures    []SubFeature `json:"sub_features"`
+	// SourceID is the FeatureMap node this feature came from, when the
+	// discovery analysis followed the user-reviewed tree.
+	SourceID string `json:"source_id,omitempty"`
 }
 
 type SubFeature struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// FeatureID is the parent feature; SubFeatures are nested in Feature
+	// but the id stays explicit for clients that read them flat.
+	FeatureID string `json:"feature_id,omitempty"`
+	// SourceID is the FeatureMap child node this subfeature came from.
+	SourceID string `json:"source_id,omitempty"`
 }
 
 // Flow is a use case: an actor reaching a goal end to end. Role is the
@@ -490,6 +498,23 @@ func (p *Project) Feature(id string) *Feature {
 		}
 	}
 	return nil
+}
+
+// NormalizeLinks fills the parent and workflow ids that older project files
+// did not record. It never rewrites an id that is already set.
+func (p *Project) NormalizeLinks() {
+	if p == nil {
+		return
+	}
+	p.Workflow.EnsureID()
+	for i := range p.Features {
+		f := &p.Features[i]
+		for j := range f.SubFeatures {
+			if f.SubFeatures[j].FeatureID == "" {
+				f.SubFeatures[j].FeatureID = f.ID
+			}
+		}
+	}
 }
 
 // Busy reports whether a job currently owns the project.

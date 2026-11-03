@@ -494,6 +494,17 @@ button.ref-chip:not(:disabled):hover, a.ref-chip:hover { border-color: var(--acc
   padding: 0 .45rem; min-width: 1.3rem; height: 1.3rem; display: inline-flex; align-items: center; justify-content: center;
 }
 .feat-row.on .feat-row-n { background: color-mix(in srgb, var(--accent) 18%, var(--surface-2)); color: var(--accent); }
+.feat-pct {
+  grid-column: 2; grid-row: 1;
+  justify-self: end; align-self: center; font-size: 11px; font-variant-numeric: tabular-nums;
+  padding: .1rem .45rem; border-radius: 999px; background: var(--surface-2); color: var(--muted);
+}
+.feat-row:has(.feat-pct) .feat-row-n { grid-row: 2; }
+.feat-pct.st-final { background: color-mix(in srgb, var(--ok) 16%, var(--surface-2)); color: var(--ok); }
+.feat-pct.st-started { background: var(--accent-soft); color: var(--accent); }
+.feat-pct.st-review { background: color-mix(in srgb, var(--warn) 18%, var(--surface-2)); color: var(--warn); }
+.feat-progress { margin: 0 0 1rem; padding: .75rem 0 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: .4rem; }
+.prog-bar.big { height: 7px; }
 .feat-detail { padding: .2rem .75rem 1.15rem; margin: 0 0 .2rem; }
 .feat-list.nested .feat-detail { padding-left: .55rem; padding-right: .55rem; }
 .feat-lead { font-size: 15px; line-height: 1.6; margin: 0 0 .9rem; max-width: 62ch; }

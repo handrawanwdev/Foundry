@@ -179,6 +179,15 @@ func commandMarkdown(c core.Command, waves [][]string, binding string) string {
 	if len(c.Covers) > 0 {
 		fmt.Fprintf(&b, "## Mencakup requirement\n\n%s — kriteria penerimaannya di [acceptance](../%s).\n\n", strings.Join(c.Covers, ", "), artifactFile(core.ArtifactAcceptance))
 	}
+	if len(c.FeatureIDs) > 0 || len(c.SubFeatureIDs) > 0 {
+		b.WriteString("## Fitur terkait\n\n")
+		if len(c.FeatureIDs) > 0 {
+			fmt.Fprintf(&b, "Feature: %s\n\n", strings.Join(c.FeatureIDs, ", "))
+		}
+		if len(c.SubFeatureIDs) > 0 {
+			fmt.Fprintf(&b, "Subfitur: %s\n\n", strings.Join(c.SubFeatureIDs, ", "))
+		}
+	}
 	list("Input", "", c.Inputs)
 	section("Instruksi", c.Instructions)
 	list("Output yang diharapkan", "", c.Outputs)
@@ -212,13 +221,15 @@ type ManifestArtifact struct {
 }
 
 type ManifestCommand struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	File      string   `json:"file"`
-	DependsOn []string `json:"depends_on"`
-	Artifacts []string `json:"artifacts"`
-	Covers    []string `json:"covers"`
-	Wave      int      `json:"wave"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	File          string   `json:"file"`
+	DependsOn     []string `json:"depends_on"`
+	Artifacts     []string `json:"artifacts"`
+	Covers        []string `json:"covers"`
+	FeatureIDs    []string `json:"feature_ids,omitempty"`
+	SubFeatureIDs []string `json:"sub_feature_ids,omitempty"`
+	Wave          int      `json:"wave"`
 }
 
 // BuildManifest indexes the package of p.
@@ -266,7 +277,8 @@ func manifestOf(p *core.Project, docs []core.Artifact) Manifest {
 		}
 	}
 	for _, c := range w.Commands {
-		mc := ManifestCommand{ID: c.ID, Name: c.Name, File: commandFile(c.ID), DependsOn: c.DependsOn, Artifacts: []string{}, Covers: c.Covers, Wave: waveOf[c.ID]}
+		mc := ManifestCommand{ID: c.ID, Name: c.Name, File: commandFile(c.ID), DependsOn: c.DependsOn, Artifacts: []string{}, Covers: c.Covers,
+			FeatureIDs: core.ResolveCommandFeatureIDs(c, p.Features), SubFeatureIDs: core.ResolveCommandSubFeatureIDs(c, p.Features), Wave: waveOf[c.ID]}
 		if mc.Covers == nil {
 			mc.Covers = []string{}
 		}

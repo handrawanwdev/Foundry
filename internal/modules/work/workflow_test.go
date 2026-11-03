@@ -105,3 +105,15 @@ func TestApplyWorkflowEmptyChangeStillFails(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestWorkflowPromptListsFeatures(t *testing.T) {
+	p := &core.Project{Name: "Klinik", Story: "Pasien membuat janji",
+		Features: []core.Feature{{ID: "FEAT-001", Name: "Janji",
+			SubFeatures: []core.SubFeature{{ID: "FEAT-001.1", Name: "Form janji"}}}}}
+	prompt := WorkflowPrompt(p, nil)
+	for _, want := range []string{"FEAT-001 Janji", "FEAT-001.1 Form janji", `"feature_ids"`} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt lacks %q", want)
+		}
+	}
+}

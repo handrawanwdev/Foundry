@@ -8,6 +8,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
+	"github.com/handrawanwdev/foundry/internal/modules/workflow"
 )
 
 func mapped(t *testing.T) (*pipeline.Service, *core.Project) {
@@ -130,5 +131,22 @@ func TestFeatureMapGuards(t *testing.T) {
 	}
 	if err := s.ExpandFeature("tidak-ada", ""); err == nil || !strings.Contains(err.Error(), "tidak ditemukan") {
 		t.Fatalf("expand missing err = %v", err)
+	}
+}
+
+func TestCheckWorkflowReportsFeatureImpact(t *testing.T) {
+	p := &core.Project{
+		Features: []core.Feature{{ID: "FEAT-001", Name: "Janji", RequirementIDs: []string{"REQ-001"}}},
+		Workflow: &core.Workflow{ID: "WF-001", Commands: []core.Command{
+			{ID: "CMD-001", FeatureIDs: []string{"FEAT-001"}},
+			{ID: "CMD-002", Covers: []string{"REQ-001"}},
+		}},
+	}
+	r := pipeline.CheckWorkflow(p)
+	if got := r.FeatureCommands["FEAT-001"]; len(got) != 2 || got[0] != "CMD-001" || got[1] != "CMD-002" {
+		t.Fatalf("feature commands = %+v", got)
+	}
+	if issues := workflow.ValidateFeatures(p.Workflow.Commands, p.Features); len(issues) != 0 {
+		t.Fatalf("valid links reported: %+v", issues)
 	}
 }

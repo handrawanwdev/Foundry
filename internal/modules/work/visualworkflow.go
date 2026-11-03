@@ -622,7 +622,7 @@ func appendVisualVerificationCommands(p *core.Project, docs []core.Artifact) err
 
 	// Re-validate the workflow
 	hashes := workflow.Hashes(docs)
-	if err := checkCommands(p.Workflow.Commands, hashes, p.Requirements); err != nil {
+	if err := checkCommands(p.Workflow.Commands, hashes, p.Requirements, p.Features); err != nil {
 		return fmt.Errorf("visual verification commands invalid: %w", err)
 	}
 

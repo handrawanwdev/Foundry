@@ -19,18 +19,20 @@ const KindWorkflow = "workflow"
 const MaxCommands = 60
 
 type commandOut struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Objective    string   `json:"objective"`
-	Context      string   `json:"context"`
-	Inputs       []string `json:"inputs"`
-	Instructions string   `json:"instructions"`
-	DependsOn    []string `json:"depends_on"`
-	Artifacts    []string `json:"artifacts"`
-	Covers       []string `json:"covers"`
-	Outputs      []string `json:"expected_outputs"`
-	Acceptance   []string `json:"acceptance_criteria"`
-	Constraints  []string `json:"constraints"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Objective     string   `json:"objective"`
+	Context       string   `json:"context"`
+	Inputs        []string `json:"inputs"`
+	Instructions  string   `json:"instructions"`
+	DependsOn     []string `json:"depends_on"`
+	Artifacts     []string `json:"artifacts"`
+	Covers        []string `json:"covers"`
+	FeatureIDs    []string `json:"feature_ids"`
+	SubFeatureIDs []string `json:"sub_feature_ids"`
+	Outputs       []string `json:"expected_outputs"`
+	Acceptance    []string `json:"acceptance_criteria"`
+	Constraints   []string `json:"constraints"`
 }
 
 type workflowOut struct {
@@ -48,6 +50,7 @@ const commandRules = `Command rules:
 - when the blueprint has design-rules and layout-spec, every command that builds or changes screens lists both, and its instructions name the page and shell ids of layout-spec it implements; the design reaches the code only through these commands. Every page id of layout-spec must be named by at least one command that lists layout-spec.
 - an API, migration or backend command that does not build screens does not list the design artifacts; only commands that name page ids do.
 - covers lists the requirement ids (REQ-...) the command implements; every MUST requirement is covered by at least one command. The command's acceptance_criteria include the criterion ids (REQ-001-AC1) of the acceptance artifact it must prove, and add only command-specific checks.
+- feature_ids lists the feature ids (FEAT-...) this command implements; sub_feature_ids lists the specific subfeature ids (FEAT-001.1). Link every command to the feature it serves. A command that serves a whole feature may leave sub_feature_ids empty. Do not invent ids.
 - when the blueprint has threat-model, data-lifecycle, integrations, operations or migration artifacts, the commands that build the affected parts list them too, so their rules reach the code.
 - instructions are specific Markdown: what to build or change, behavior, edge cases, which artifact sections to follow. Never generic ("implement this well"). Understandable without this conversation.
 - never invent file paths, endpoints or tables of an existing codebase. When the repository structure is unknown the instruction starts with inspecting the repository.
@@ -59,7 +62,23 @@ const commandRules = `Command rules:
 `
 
 const commandShape = `{"id": "C1", "name": "", "objective": "", "context": "", "inputs": [""], "instructions": "",
- "depends_on": ["C0"], "artifacts": ["requirements"], "covers": ["REQ-001"], "expected_outputs": [""], "acceptance_criteria": [""], "constraints": [""]}`
+ "depends_on": ["C0"], "artifacts": ["requirements"], "covers": ["REQ-001"], "feature_ids": ["FEAT-001"], "sub_feature_ids": ["FEAT-001.1"], "expected_outputs": [""], "acceptance_criteria": [""], "constraints": [""]}`
+
+// writeFeatureCatalog lists the feature tree so every command can name the
+// feature and subfeature it implements instead of forcing Foundry to guess.
+func writeFeatureCatalog(b *strings.Builder, p *core.Project) {
+	if p == nil || len(p.Features) == 0 {
+		return
+	}
+	b.WriteString("FEATURES (link commands with feature_ids and sub_feature_ids):\n")
+	for _, f := range p.Features {
+		fmt.Fprintf(b, "- %s %s\n", f.ID, f.Name)
+		for _, s := range f.SubFeatures {
+			fmt.Fprintf(b, "  - %s %s\n", s.ID, s.Name)
+		}
+	}
+	b.WriteString("\n")
+}
 
 // WorkflowPrompt asks for the workflow (no commands yet) or for a revision
 // of it (the pending request). docs is the whole blueprint.
@@ -138,6 +157,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
+	writeFeatureCatalog(&b, p)
 
 	// Use artifact summaries only (not full bodies) to reduce context size
 	b.WriteString("BLUEPRINT ARTIFACTS (summaries only):\n")
@@ -153,19 +173,20 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 
 	b.WriteString(`SKETCH PHASE - Generate command skeleton only:
 - Create 3-25 commands that cover all MUST requirements
-- For each command, provide ONLY: id, name, objective, depends_on, artifacts (IDs), covers (requirement IDs)
+- For each command, provide ONLY: id, name, objective, depends_on, artifacts (IDs), covers (requirement IDs), feature_ids (FEAT ids), sub_feature_ids (FEAT-001.1 ids)
 - DO NOT provide instructions, context, inputs, outputs, or acceptance_criteria yet
 - Use ids C1, C2, C3, etc.
 - depends_on lists only commands whose result this one needs (a contract, schema, module, interface)
 - No cycles, no self dependency
 - artifacts lists the blueprint artifact IDs the command implements (from the list above)
 - covers lists the requirement IDs (REQ-...) the command implements; every MUST requirement must be covered
+- feature_ids lists the feature IDs (FEAT-...) the command implements; sub_feature_ids lists the specific subfeature IDs
 
 ` + commandRules)
 	if HasUI(p) {
 		b.WriteString(VisualVerificationRules)
 	}
-	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"name\": \"\", \"objective\": \"\", \"depends_on\": [], \"artifacts\": [\"requirements\"], \"covers\": [\"REQ-001\"]}]}")
+	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"name\": \"\", \"objective\": \"\", \"depends_on\": [], \"artifacts\": [\"requirements\"], \"covers\": [\"REQ-001\"], \"feature_ids\": [\"FEAT-001\"], \"sub_feature_ids\": [\"FEAT-001.1\"]}]}")
 	return b.String()
 }
 
@@ -178,6 +199,7 @@ Write every human-readable text in the same language as the story.
 PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
+	writeFeatureCatalog(&b, p)
 	w := p.Workflow
 	b.WriteString("CURRENT COMMANDS (skeleton):\n" + mustJSON(w.Commands) + "\n\n")
 
@@ -230,6 +252,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 - expected_outputs: what the agent hands back (code, migration, test, document, report)
 - acceptance_criteria: checkable conditions (include criterion IDs like REQ-001-AC1)
 - constraints: limits that apply (technology, compatibility, performance, security)
+- feature_ids / sub_feature_ids: keep or complete the links from the skeleton; use only existing ids
 
 ` + commandRules)
 	if HasUI(p) {
@@ -261,6 +284,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
+	writeFeatureCatalog(&b, p)
 	cut := promptBody
 	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Sync {
 		cut = 0
@@ -300,6 +324,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
+	writeFeatureCatalog(&b, p)
 	cut := promptBody
 	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Sync {
 		cut = 0
@@ -467,7 +492,7 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 	if len(cmds) > MaxCommands {
 		return fmt.Errorf("terlalu banyak command (%d, maks %d)", len(cmds), MaxCommands)
 	}
-	if err := checkCommands(cmds, hashes, p.Requirements); err != nil {
+	if err := checkCommands(cmds, hashes, p.Requirements, p.Features); err != nil {
 		return err
 	}
 	if issues := CheckUI(p, cmds); len(issues) > 0 {
@@ -483,6 +508,7 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 		p.Workflow = w
 	}
 	w.Commands, w.Status = cmds, core.CommandDraft
+	w.EnsureID()
 	w.Version++
 	pendingRequest(w, staleBefore, hashes)
 	return nil
@@ -520,7 +546,7 @@ func applyWorkflowSketchFromParsed(p *core.Project, out workflowOut, docs []core
 		return fmt.Errorf("terlalu banyak command (%d, maks %d)", len(cmds), MaxCommands)
 	}
 	// Validate sketch (structure only — no instructions required)
-	if err := checkSketchCommands(cmds, hashes, p.Requirements); err != nil {
+	if err := checkSketchCommands(cmds, hashes, p.Requirements, p.Features); err != nil {
 		return err
 	}
 	if _, uncovered := workflow.Covers(cmds, p.Requirements); len(uncovered) > 0 {
@@ -531,6 +557,7 @@ func applyWorkflowSketchFromParsed(p *core.Project, out workflowOut, docs []core
 	}
 	p.Workflow.Commands = cmds
 	p.Workflow.Status = core.CommandDraft
+	p.Workflow.EnsureID()
 	p.Workflow.Version++
 	// Set Request to trigger detail phase
 	p.Workflow.Request = &core.ChangeRequest{
@@ -571,11 +598,18 @@ func applyWorkflowDetailBatchFromParsed(p *core.Project, out workflowOut, docs [
 		cmd.Outputs = nonEmpty(d.Outputs)
 		cmd.Acceptance = nonEmpty(d.Acceptance)
 		cmd.Constraints = nonEmpty(d.Constraints)
+		if len(d.FeatureIDs) > 0 {
+			cmd.FeatureIDs = nonEmpty(d.FeatureIDs)
+		}
+		if len(d.SubFeatureIDs) > 0 {
+			cmd.SubFeatureIDs = nonEmpty(d.SubFeatureIDs)
+		}
 		updated++
 	}
 	if updated == 0 {
 		return errors.New("tidak ada command yang diupdate; pastikan id command sesuai")
 	}
+	w.EnsureID()
 	w.Version++
 	// Check if all commands now have details
 	allDone := true
@@ -587,7 +621,7 @@ func applyWorkflowDetailBatchFromParsed(p *core.Project, out workflowOut, docs [
 	}
 	// Validate based on completion status
 	if allDone {
-		if err := checkCommands(w.Commands, hashes, p.Requirements); err != nil {
+		if err := checkCommands(w.Commands, hashes, p.Requirements, p.Features); err != nil {
 			return err
 		}
 		if issues := CheckUI(p, w.Commands); len(issues) > 0 {
@@ -596,7 +630,7 @@ func applyWorkflowDetailBatchFromParsed(p *core.Project, out workflowOut, docs [
 		pendingRequest(w, nil, hashes)
 		w.Request = nil
 	} else {
-		if err := checkSketchCommands(w.Commands, hashes, p.Requirements); err != nil {
+		if err := checkSketchCommands(w.Commands, hashes, p.Requirements, p.Features); err != nil {
 			return err
 		}
 		remaining := 0
@@ -683,7 +717,8 @@ func pendingRequest(w *core.Workflow, staleBefore map[string][]string, hashes ma
 func commandFrom(o commandOut, idMap, hashes map[string]string) (core.Command, error) {
 	c := core.Command{ID: idMap[strings.TrimSpace(o.ID)], Name: strings.TrimSpace(o.Name), Objective: strings.TrimSpace(o.Objective),
 		Context: strings.TrimSpace(o.Context), Inputs: nonEmpty(o.Inputs), Instructions: strings.TrimSpace(o.Instructions),
-		Outputs: nonEmpty(o.Outputs), Acceptance: nonEmpty(o.Acceptance), Constraints: nonEmpty(o.Constraints), Status: core.CommandDraft}
+		Outputs: nonEmpty(o.Outputs), Acceptance: nonEmpty(o.Acceptance), Constraints: nonEmpty(o.Constraints), Status: core.CommandDraft,
+		FeatureIDs: nonEmpty(o.FeatureIDs), SubFeatureIDs: nonEmpty(o.SubFeatureIDs)}
 	for _, d := range o.DependsOn {
 		id, ok := idMap[strings.TrimSpace(d)]
 		if !ok {
@@ -787,10 +822,11 @@ func validateSketch(cmds []core.Command, hashes map[string]string) []workflow.Is
 }
 
 // checkSketchCommands validates sketch phase commands (no instructions required)
-func checkSketchCommands(cmds []core.Command, hashes map[string]string, reqs []core.Requirement) error {
+func checkSketchCommands(cmds []core.Command, hashes map[string]string, reqs []core.Requirement, feats []core.Feature) error {
 	issues := validateSketch(cmds, hashes)
 	unknown, _ := workflow.Covers(cmds, reqs)
 	issues = append(issues, unknown...)
+	issues = append(issues, workflow.ValidateFeatures(cmds, feats)...)
 	if len(issues) == 0 {
 		return nil
 	}
@@ -806,7 +842,7 @@ func checkSketchCommands(cmds []core.Command, hashes map[string]string, reqs []c
 }
 
 // checkCommands refuses a workflow that fails the check.
-func checkCommands(cmds []core.Command, hashes map[string]string, reqs []core.Requirement) error {
+func checkCommands(cmds []core.Command, hashes map[string]string, reqs []core.Requirement, feats []core.Feature) error {
 	exists := map[string]bool{}
 	for id := range hashes {
 		exists[id] = true
@@ -814,6 +850,7 @@ func checkCommands(cmds []core.Command, hashes map[string]string, reqs []core.Re
 	issues := workflow.Validate(cmds, exists)
 	unknown, _ := workflow.Covers(cmds, reqs)
 	issues = append(issues, unknown...)
+	issues = append(issues, workflow.ValidateFeatures(cmds, feats)...)
 	if len(issues) == 0 {
 		return nil
 	}
@@ -830,17 +867,19 @@ func checkCommands(cmds []core.Command, hashes map[string]string, reqs []core.Re
 
 // CommandEdit is a user's edit of one command.
 type CommandEdit struct {
-	Name         string   `json:"name"`
-	Objective    string   `json:"objective"`
-	Context      string   `json:"context"`
-	Inputs       []string `json:"inputs"`
-	Instructions string   `json:"instructions"`
-	DependsOn    []string `json:"depends_on"`
-	Artifacts    []string `json:"artifacts"`
-	Covers       []string `json:"covers"`
-	Outputs      []string `json:"expected_outputs"`
-	Acceptance   []string `json:"acceptance_criteria"`
-	Constraints  []string `json:"constraints"`
+	Name          string   `json:"name"`
+	Objective     string   `json:"objective"`
+	Context       string   `json:"context"`
+	Inputs        []string `json:"inputs"`
+	Instructions  string   `json:"instructions"`
+	DependsOn     []string `json:"depends_on"`
+	Artifacts     []string `json:"artifacts"`
+	Covers        []string `json:"covers"`
+	FeatureIDs    []string `json:"feature_ids"`
+	SubFeatureIDs []string `json:"sub_feature_ids"`
+	Outputs       []string `json:"expected_outputs"`
+	Acceptance    []string `json:"acceptance_criteria"`
+	Constraints   []string `json:"constraints"`
 }
 
 // EditCommand saves a user's edit. The workflow must still pass the check;
@@ -856,20 +895,22 @@ func EditCommand(p *core.Project, id string, in CommandEdit, docs []core.Artifac
 	}
 	hashes := workflow.Hashes(docs)
 	next, err := commandFrom(commandOut{ID: id, Name: in.Name, Objective: in.Objective, Context: in.Context, Inputs: in.Inputs,
-		Instructions: in.Instructions, DependsOn: in.DependsOn, Artifacts: in.Artifacts, Covers: in.Covers, Outputs: in.Outputs,
+		Instructions: in.Instructions, DependsOn: in.DependsOn, Artifacts: in.Artifacts, Covers: in.Covers,
+		FeatureIDs: in.FeatureIDs, SubFeatureIDs: in.SubFeatureIDs, Outputs: in.Outputs,
 		Acceptance: in.Acceptance, Constraints: in.Constraints}, idMap, hashes)
 	if err != nil {
 		return err
 	}
 	cmds := slices.Clone(p.Workflow.Commands)
 	cmds[slices.IndexFunc(cmds, func(x core.Command) bool { return x.ID == id })] = next
-	if err := checkCommands(cmds, hashes, p.Requirements); err != nil {
+	if err := checkCommands(cmds, hashes, p.Requirements, p.Features); err != nil {
 		return err
 	}
 	if issues := CheckUI(p, cmds); len(issues) > 0 {
 		return UIError(issues)
 	}
 	p.Workflow.Commands = cmds
+	p.Workflow.EnsureID()
 	p.Workflow.Version++
 	return nil
 }

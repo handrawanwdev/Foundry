@@ -41,6 +41,7 @@ type CommandRun struct {
 	CommandID  string     `json:"command"`
 	Status     string     `json:"status"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	Source     string     `json:"source,omitempty"`
 	Summary    string     `json:"summary,omitempty"`
@@ -61,6 +62,7 @@ type ProgressReport struct {
 	Command         string     `json:"command"`
 	Status          string     `json:"status"`
 	StartedAt       *time.Time `json:"started_at,omitempty"`
+	FinishedAt      *time.Time `json:"finished_at,omitempty"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 	ReceivedAt      time.Time  `json:"received_at"`
 	Summary         string     `json:"summary,omitempty"`

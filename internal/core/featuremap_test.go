@@ -95,4 +95,23 @@ func TestFeatureMapDuplicateIDs(t *testing.T) {
 	}
 }
 
-
+func TestLinkFeatureMapSetsSourceAndParent(t *testing.T) {
+	m := &FeatureMap{Modules: []FeatureModule{{Name: "Antrean", Features: []FeatureNode{
+		{Name: "Janji", Children: []FeatureNode{{Name: "Form janji"}}},
+	}}}}
+	m.Normalize()
+	feats := []Feature{{ID: "FEAT-001", Name: "Janji", SubFeatures: []SubFeature{{ID: "FEAT-001.1", Name: "Form janji"}}}}
+	LinkFeatureMap(m, feats)
+	if feats[0].SourceID != m.Modules[0].Features[0].ID {
+		t.Fatalf("feature source = %q", feats[0].SourceID)
+	}
+	if feats[0].SubFeatures[0].SourceID != m.Modules[0].Features[0].Children[0].ID {
+		t.Fatalf("subfeature source = %q", feats[0].SubFeatures[0].SourceID)
+	}
+	if feats[0].SubFeatures[0].FeatureID != "FEAT-001" {
+		t.Fatalf("subfeature parent = %q", feats[0].SubFeatures[0].FeatureID)
+	}
+	if parent := m.Modules[0].Features[0].Children[0].ParentID; parent != m.Modules[0].Features[0].ID {
+		t.Fatalf("node parent = %q", parent)
+	}
+}

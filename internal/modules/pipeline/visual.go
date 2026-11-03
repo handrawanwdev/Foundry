@@ -115,6 +115,7 @@ func (s *Service) CreateVisualFixes() (string, error) {
 			p.Log("system", "Blueprint dibuka kembali untuk perbaikan visual")
 		}
 		p.Workflow.Commands = cmds
+		p.Workflow.EnsureID()
 		p.Workflow.Version++
 		id = next
 		p.Log("ui", "Command perbaikan visual dibuat: "+next+" ("+strings.Join(pages, ", ")+")")

@@ -87,6 +87,43 @@ export function runOf(progress: ProgressSnapshot | null | undefined, id: string)
   return progress?.commands.find((c) => c.id === id);
 }
 
+// Human labels for the weighted roll-ups. A group without commands is
+// "belum ada CMD", never done.
+export const ROLLUP_LABEL: Record<string, string> = {
+  no_commands: "Belum ada CMD", not_started: "Belum dikerjakan", in_progress: "Sedang berjalan",
+  blocked: "Terhambat", unknown: "Tidak diketahui", done: "Selesai",
+};
+export const ROLLUP_CLASS: Record<string, string> = {
+  no_commands: "st-muted", not_started: "st-muted", in_progress: "st-started",
+  blocked: "st-review", unknown: "st-stale", done: "st-final",
+};
+
+export function featureProgressOf(progress: ProgressSnapshot | null | undefined, nodeId: string) {
+  return progress?.features.find((f) => f.feature_map_id === nodeId);
+}
+
+export function subFeatureProgressOf(progress: ProgressSnapshot | null | undefined, nodeId: string) {
+  for (const f of progress?.features ?? []) {
+    const s = f.sub_features.find((x) => x.feature_map_id === nodeId);
+    if (s) return s;
+  }
+  return undefined;
+}
+
+// A compact "3 selesai · 1 jalan · 2 belum" summary of one roll-up.
+export function rollupBits(r: { completed: number; claimed: number; in_progress: number; not_started: number; failed: number; blocked: number; skipped: number; unknown: number }) {
+  return [
+    r.completed && `${r.completed} selesai`,
+    r.claimed && `${r.claimed} diklaim selesai`,
+    r.in_progress && `${r.in_progress} dikerjakan`,
+    r.not_started && `${r.not_started} belum`,
+    r.failed && `${r.failed} gagal`,
+    r.blocked && `${r.blocked} terhambat`,
+    r.skipped && `${r.skipped} dilewati`,
+    r.unknown && `${r.unknown} tidak diketahui`,
+  ].filter(Boolean) as string[];
+}
+
 // The command as a standalone instruction for a coding agent; matches the
 // exported workflow/<id>.md.
 export function commandText(c: Command, r: WorkflowReport | null): string {
@@ -104,6 +141,11 @@ export function commandText(c: Command, r: WorkflowReport | null): string {
   section("Konteks", c.context);
   list("Acuan blueprint", c.artifacts?.map((a) => `blueprint/${a.id}.md`));
   if (c.covers?.length) out.push("## Mencakup requirement", "", `${c.covers.join(", ")} — kriteria penerimaannya di blueprint/acceptance.md.`, "");
+  if (c.feature_ids?.length || c.sub_feature_ids?.length) {
+    out.push("## Fitur terkait", "");
+    if (c.feature_ids?.length) out.push(`Feature: ${c.feature_ids.join(", ")}`, "");
+    if (c.sub_feature_ids?.length) out.push(`Subfitur: ${c.sub_feature_ids.join(", ")}`, "");
+  }
   list("Input", c.inputs);
   section("Instruksi", c.instructions);
   list("Output yang diharapkan", c.expected_outputs);

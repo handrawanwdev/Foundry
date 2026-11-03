@@ -60,14 +60,14 @@ export interface Blueprint {
 // Acceptance criterion; evidence is the proof the coding agent must hand back, never a result.
 export interface Criterion { id: string; kind: string; text: string; evidence?: string }
 export interface Requirement { id: string; text: string; priority: string; acceptance?: Criterion[]; untestable?: string }
-export interface SubFeature { id: string; name: string }
+export interface SubFeature { id: string; name: string; feature_id?: string; source_id?: string }
 export interface Feature {
   id: string; name: string; description: string; requirement_ids: string[];
-  platforms: PlatformKind[]; sub_features: SubFeature[];
+  platforms: PlatformKind[]; sub_features: SubFeature[]; source_id?: string;
 }
 // Feature Discovery tree, composed before Blueprint. Independent of Feature.
 export interface FeatureNode {
-  id: string; name: string;
+  id: string; parent_id?: string; name: string;
   description?: string; purpose?: string; benefit?: string; outcome?: string;
   children?: FeatureNode[];
 }
@@ -326,17 +326,20 @@ export interface AcceptanceEdit { requirement: string; criteria: Criterion[]; un
 export type CommandStatus = "draft" | "needs_review" | "finalized";
 export interface ArtifactRef { id: string; hash?: string }
 export interface Command {
-  id: string; name: string; objective: string; context?: string; inputs?: string[]; instructions: string;
-  depends_on?: string[]; artifacts?: ArtifactRef[]; covers?: string[]; expected_outputs?: string[]; acceptance_criteria?: string[];
+  id: string; workflow_id?: string; name: string; objective: string; context?: string; inputs?: string[]; instructions: string;
+  depends_on?: string[]; artifacts?: ArtifactRef[]; covers?: string[]; feature_ids?: string[]; sub_feature_ids?: string[];
+  expected_outputs?: string[]; acceptance_criteria?: string[];
   constraints?: string[]; status: CommandStatus; review?: string;
 }
-export interface Workflow { status: "draft" | "finalized"; commands: Command[]; request?: ChangeRequest; version: number; finalized_at?: string }
+export interface Workflow { id?: string; status: "draft" | "finalized"; commands: Command[]; request?: ChangeRequest; version: number; finalized_at?: string }
 export interface WorkflowIssue { command?: string; message: string }
 export interface WorkflowReport {
   issues: WorkflowIssue[]; waves: string[][]; stale: Record<string, string[]>; ready: boolean;
   review: Record<string, string>; docs: Record<string, { title: string; category: ArtifactCategory }>;
   // MUST requirements no command covers; shown, not blocking.
   uncovered: string[];
+  // Feature id → command ids that implement it.
+  feature_commands: Record<string, string[]>;
 }
 export interface WorkflowView { workflow: Workflow | null; report: WorkflowReport; progress?: ProgressSnapshot }
 
@@ -349,27 +352,48 @@ export interface ProgressCounts {
   failed: number; review: number; done: number; verified: number; stale: number; unknown: number;
 }
 export interface CommandProgress {
-  id: string; name: string; status: RunStatus; stored: RunStatus; wave: number; waiting?: string[];
-  started_at?: string; updated_at?: string; source?: string; summary?: string; reason?: string;
+  id: string; name: string; status: RunStatus; stored: RunStatus; wave: number; weight: number;
+  depends_on: string[]; dependents: string[]; feature_ids?: string[]; sub_feature_ids?: string[];
+  waiting?: string[]; started_at?: string; finished_at?: string; updated_at?: string; source?: string; summary?: string; reason?: string;
   evidence?: ProgressEvidence[]; tests?: ProgressTest[]; early_start?: boolean; report_id?: string; seq?: number;
+}
+export type RollupStatus = "no_commands" | "not_started" | "in_progress" | "blocked" | "unknown" | "done";
+export interface Rollup {
+  percent: number; weight: number; done_weight: number; total: number;
+  completed: number; claimed: number; in_progress: number; not_started: number;
+  failed: number; blocked: number; skipped: number; unknown: number;
+  status: RollupStatus; last_status?: string; last_command?: string; last_at?: string;
+}
+export interface DependencyProgress { from: string; to: string; satisfied: boolean; status: RunStatus }
+export interface WorkflowProgress extends Rollup { id: string; name: string; design_status: string; dependencies: DependencyProgress[] }
+export interface ModuleProgress extends Rollup { id: string; name: string; feature_ids: string[] }
+export interface FeatureProgress extends Rollup {
+  id: string; name: string; module_id: string; module_name: string; feature_map_id?: string;
+  commands: string[]; sub_features: SubFeatureProgress[];
+}
+export interface SubFeatureProgress extends Rollup {
+  id: string; name: string; feature_id: string; feature_map_id?: string; commands: string[];
 }
 export interface WaveProgress { index: number; commands: string[]; verified: number; total: number }
 export interface StatusChange { at: string; command: string; from: string; to: string; reason?: string; report_id?: string; source?: string }
 export interface ProgressSnapshot {
-  workflow_version: number; stale_after_sec: number; updated_at?: string; last_report_at?: string; last_source?: string;
+  workflow_version: number; percent: number; weight: number; done_weight: number;
+  overall: Rollup; workflow: WorkflowProgress; modules: ModuleProgress[]; features: FeatureProgress[];
+  stale_after_sec: number; updated_at?: string; last_report_at?: string; last_source?: string;
   complete: boolean; counts: ProgressCounts; waves: WaveProgress[]; commands: CommandProgress[];
   next: string[]; warnings: ProgressWarning[]; issues: string[]; history: StatusChange[];
   visual?: VisualSummary; visual_ready?: boolean;
 }
 export interface CommandEdit {
   name: string; objective: string; context: string; inputs: string[]; instructions: string; depends_on: string[];
-  artifacts: string[]; covers: string[]; expected_outputs: string[]; acceptance_criteria: string[]; constraints: string[];
+  artifacts: string[]; covers: string[]; feature_ids: string[]; sub_feature_ids: string[];
+  expected_outputs: string[]; acceptance_criteria: string[]; constraints: string[];
 }
 export interface ExportManifest {
   format: string; project: string; status: "draft" | "finalized"; finalized_at?: string; blueprint_hash: string;
   workflow_version: number; entry: string; waves: string[][];
   artifacts: { id: string; title: string; category: string; file: string; hash: string }[];
-  commands: { id: string; name: string; file: string; depends_on: string[]; artifacts: string[]; covers: string[]; wave: number }[];
+  commands: { id: string; name: string; file: string; depends_on: string[]; artifacts: string[]; covers: string[]; feature_ids?: string[]; sub_feature_ids?: string[]; wave: number }[];
   areas: AreaStatus[];
 }
 export interface ExportView { dir: string; finalized: boolean; manifest: ExportManifest; files: { path: string; size: number }[]; blockers: string[] | null }

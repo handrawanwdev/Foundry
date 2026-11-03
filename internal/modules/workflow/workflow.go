@@ -111,6 +111,65 @@ func Covers(cmds []core.Command, reqs []core.Requirement) (issues []Issue, uncov
 	return issues, uncovered
 }
 
+// ValidateFeatures checks the explicit feature and subfeature references of
+// every command. An unknown reference means the command would point at no
+// work, so it blocks finalize. Commands without a reference stay valid for
+// older workflows; progress falls back to the requirements they cover.
+func ValidateFeatures(cmds []core.Command, feats []core.Feature) []Issue {
+	var out []Issue
+	featureID := map[string]string{}
+	subParent := map[string]string{}
+	for _, f := range feats {
+		featureID[strings.ToLower(strings.TrimSpace(f.ID))] = f.ID
+		for _, s := range f.SubFeatures {
+			subParent[strings.ToLower(strings.TrimSpace(s.ID))] = f.ID
+		}
+	}
+	for _, c := range cmds {
+		for _, id := range c.FeatureIDs {
+			if featureID[strings.ToLower(strings.TrimSpace(id))] == "" {
+				out = append(out, Issue{Command: c.ID, Message: fmt.Sprintf("fitur %q tidak ada", id)})
+			}
+		}
+		declared := map[string]bool{}
+		for _, id := range c.FeatureIDs {
+			declared[strings.ToLower(strings.TrimSpace(featureID[strings.ToLower(strings.TrimSpace(id))]))] = true
+		}
+		for _, id := range c.SubFeatureIDs {
+			parent, ok := subParent[strings.ToLower(strings.TrimSpace(id))]
+			if !ok {
+				out = append(out, Issue{Command: c.ID, Message: fmt.Sprintf("subfitur %q tidak ada", id)})
+				continue
+			}
+			if len(declared) > 0 && !declared[strings.ToLower(strings.TrimSpace(parent))] {
+				out = append(out, Issue{Command: c.ID, Message: fmt.Sprintf("subfitur %q bukan bagian dari feature_ids command ini", id)})
+			}
+		}
+	}
+	return out
+}
+
+// FeatureCommands maps every feature id to the commands that implement it.
+// The list is unique and keeps command order; it is the impact a feature
+// change has on the existing workflow.
+func FeatureCommands(cmds []core.Command, feats []core.Feature) map[string][]string {
+	out := map[string][]string{}
+	for _, f := range feats {
+		out[f.ID] = []string{}
+	}
+	for _, c := range cmds {
+		for _, id := range core.ResolveCommandFeatureIDs(c, feats) {
+			if _, ok := out[id]; !ok {
+				out[id] = []string{}
+			}
+			if !slices.Contains(out[id], c.ID) {
+				out[id] = append(out[id], c.ID)
+			}
+		}
+	}
+	return out
+}
+
 // Cycle returns one dependency cycle (first id repeated at the end), or
 // nil. Unknown and self dependencies are left to Validate.
 func Cycle(cmds []core.Command) []string {
@@ -237,6 +296,9 @@ type Report struct {
 	// Uncovered are the MUST requirements no command covers; shown, not
 	// blocking.
 	Uncovered []string `json:"uncovered"`
+	// FeatureCommands maps each feature to the commands that implement it,
+	// so a feature change can name the affected workflow work.
+	FeatureCommands map[string][]string `json:"feature_commands"`
 }
 
 // DocHeader names an artifact without its body.
@@ -250,7 +312,7 @@ type DocHeader struct {
 // nothing to review.
 func Check(w *core.Workflow, docs []core.Artifact, reqs []core.Requirement) Report {
 	r := Report{Issues: []Issue{}, Waves: [][]string{}, Stale: map[string][]string{}, Review: map[string]string{}, Docs: map[string]DocHeader{},
-		Uncovered: []string{}}
+		Uncovered: []string{}, FeatureCommands: map[string][]string{}}
 	exists := map[string]bool{}
 	for _, d := range docs {
 		exists[d.ID] = true

@@ -297,7 +297,7 @@ foundry mcp --print-config --project ~/work/clinic
 | `get_workflow`     | `READ`     | Commands, dependencies, execution waves, validation issues, `needs_review` commands, execution progress |
 | `get_design`       | `READ`     | Structured design rules & layout spec with validation issues                |
 | `get_spec`         | `READ`     | Full specification (JSON + Markdown) for implementation outside Foundry     |
-| `get_progress`     | `READ`     | Execution progress of the command workflow (counts, next eligible commands, warnings) |
+| `get_progress`     | `READ`     | Weighted project/module/feature/subfeature/workflow progress, dependency state, next eligible commands, warnings |
 | `get_visual_review` | `READ`    | Measured UI quality per page: pass/partial/fail/untested, findings, criteria |
 | `record_visual_review` | `WRITE` | Submit browser snapshots + screenshot evidence for one page |
 | `create_visual_fixes` | `WRITE` | Turn open visual findings into a correction command in the workflow |
@@ -312,6 +312,12 @@ Permissions are set with `--allow` (default: `READ`). The printed config grants 
 Foundry records implementation progress from the external coding agent. It does not run the workflow.
 
 **Working today:** `report_progress` / `get_progress` (MCP) and `POST /api/v1/project/progress/reports` persist reports in `.foundry/project.json`. Duplicate ids are idempotent; older seq/timestamps do not overwrite. Done without required evidence becomes `review`, not `verified`. Skipped commands keep their reason and are not treated as done. Missing reports stay `unconfirmed`. A started command with no report inside the stale window (default 30 minutes) is shown as `stale` or `unknown` if the MCP host is disconnected — never auto-completed or auto-failed. The Workflow page updates from the existing SSE change stream plus a 15s refresh; it does not treat a successful poll as proof that work is still running. Status survives Foundry restart.
+
+**Feature → subfeature → workflow → CMD.** Commands carry `feature_ids` and `sub_feature_ids`, written by the workflow planner or set in the command editor. A command without them falls back to the features of the requirements it covers, so older projects keep working. `get_progress` returns `overall`, `modules`, `features` (with `sub_features`) and `workflow` roll-ups computed from the actual command runs. A command linked to several features is counted once per roll-up. Percent is weighted by `core.CommandWeight` (acceptance criteria, outputs, dependencies and instruction size), so a large command contributes more than a small one; only `verified` work counts as complete. Each roll-up shows completed / claimed / in progress / not started / failed / blocked / unknown counts, the last status and the related command ids. The Features page shows the same progress and links each feature to its commands in the Workflow page.
+
+**Report fields:** `command`, `status`, `summary`, `reason`, `started_at`, `finished_at`, `source`, `evidence` (`files`, `commit`, `log`, `test`, `diff`), `files`, `changes`, and `tests`. `files`/`changes` are shortcuts for evidence kinds `files`/`diff`.
+
+**Dependencies:** a command with unmet dependencies is shown as `waiting` and left out of `next` until every dependency is `verified`. The workflow roll-up also exposes every dependency edge with its current state.
 
 **Agent-side requirement:** the coding agent must actually call `report_progress` (or the HTTP equivalent) at start/finish/fail/blocked/skip/review. Foundry cannot infer progress from git, tests, or a pasted prompt. Hosts that never invoke the tool will show every command as unconfirmed.
 

@@ -35,12 +35,17 @@ type ReportIn struct {
 	Command         string          `json:"command"`
 	Status          string          `json:"status"`
 	StartedAt       *time.Time      `json:"started_at"`
+	FinishedAt      *time.Time      `json:"finished_at"`
 	UpdatedAt       *time.Time      `json:"updated_at"`
 	Summary         string          `json:"summary"`
 	Evidence        []core.Evidence `json:"evidence"`
 	Tests           []core.TestRun  `json:"tests"`
-	Reason          string          `json:"reason"`
-	Source          string          `json:"source"`
+	// Files and Changes are shortcuts for evidence kinds files and diff;
+	// they make the hand-back shape obvious to coding agents.
+	Files   []string `json:"files"`
+	Changes []string `json:"changes"`
+	Reason  string   `json:"reason"`
+	Source  string   `json:"source"`
 }
 
 // ApplyResult is what the agent learns after Foundry stored the report.
@@ -68,19 +73,28 @@ type Agent struct {
 // Snapshot is the progress the UI and agents read. Derived fields (waiting,
 // stale, unknown, next, complete) are computed; they are not stored.
 type Snapshot struct {
-	WorkflowVersion int                 `json:"workflow_version"`
-	StaleAfterSec   int                 `json:"stale_after_sec"`
-	UpdatedAt       time.Time           `json:"updated_at"`
-	LastReportAt    *time.Time          `json:"last_report_at,omitempty"`
-	LastSource      string              `json:"last_source,omitempty"`
-	Complete        bool                `json:"complete"`
-	Counts          Counts              `json:"counts"`
-	Waves           []WaveProgress      `json:"waves"`
-	Commands        []CommandProgress   `json:"commands"`
-	Next            []string            `json:"next"`
-	Warnings        []Warning           `json:"warnings"`
-	Issues          []string            `json:"issues"`
-	History         []core.StatusChange `json:"history"`
+	WorkflowVersion int `json:"workflow_version"`
+	// Percent, Weight and DoneWeight are the project roll-up of the actual
+	// command status; the same commands are never counted twice.
+	Percent       int                 `json:"percent"`
+	Weight        int                 `json:"weight"`
+	DoneWeight    int                 `json:"done_weight"`
+	Overall       Rollup              `json:"overall"`
+	Workflow      WorkflowProgress    `json:"workflow"`
+	Modules       []ModuleProgress    `json:"modules"`
+	Features      []FeatureProgress   `json:"features"`
+	StaleAfterSec int                 `json:"stale_after_sec"`
+	UpdatedAt     time.Time           `json:"updated_at"`
+	LastReportAt  *time.Time          `json:"last_report_at,omitempty"`
+	LastSource    string              `json:"last_source,omitempty"`
+	Complete      bool                `json:"complete"`
+	Counts        Counts              `json:"counts"`
+	Waves         []WaveProgress      `json:"waves"`
+	Commands      []CommandProgress   `json:"commands"`
+	Next          []string            `json:"next"`
+	Warnings      []Warning           `json:"warnings"`
+	Issues        []string            `json:"issues"`
+	History       []core.StatusChange `json:"history"`
 	// Visual is the latest measured UI quality; it never changes command
 	// status, but completion does not imply a visually verified product.
 	Visual      core.VisualSummary `json:"visual"`
@@ -110,22 +124,28 @@ type WaveProgress struct {
 }
 
 type CommandProgress struct {
-	ID         string          `json:"id"`
-	Name       string          `json:"name"`
-	Status     string          `json:"status"`
-	Stored     string          `json:"stored"`
-	Wave       int             `json:"wave"`
-	Waiting    []string        `json:"waiting,omitempty"`
-	StartedAt  *time.Time      `json:"started_at,omitempty"`
-	UpdatedAt  *time.Time      `json:"updated_at,omitempty"`
-	Source     string          `json:"source,omitempty"`
-	Summary    string          `json:"summary,omitempty"`
-	Reason     string          `json:"reason,omitempty"`
-	Evidence   []core.Evidence `json:"evidence,omitempty"`
-	Tests      []core.TestRun  `json:"tests,omitempty"`
-	EarlyStart bool            `json:"early_start,omitempty"`
-	ReportID   string          `json:"report_id,omitempty"`
-	Seq        int64           `json:"seq,omitempty"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Status        string          `json:"status"`
+	Stored        string          `json:"stored"`
+	Wave          int             `json:"wave"`
+	Weight        int             `json:"weight"`
+	DependsOn     []string        `json:"depends_on"`
+	Dependents    []string        `json:"dependents"`
+	FeatureIDs    []string        `json:"feature_ids,omitempty"`
+	SubFeatureIDs []string        `json:"sub_feature_ids,omitempty"`
+	Waiting       []string        `json:"waiting,omitempty"`
+	StartedAt     *time.Time      `json:"started_at,omitempty"`
+	FinishedAt    *time.Time      `json:"finished_at,omitempty"`
+	UpdatedAt     *time.Time      `json:"updated_at,omitempty"`
+	Source        string          `json:"source,omitempty"`
+	Summary       string          `json:"summary,omitempty"`
+	Reason        string          `json:"reason,omitempty"`
+	Evidence      []core.Evidence `json:"evidence,omitempty"`
+	Tests         []core.TestRun  `json:"tests,omitempty"`
+	EarlyStart    bool            `json:"early_start,omitempty"`
+	ReportID      string          `json:"report_id,omitempty"`
+	Seq           int64           `json:"seq,omitempty"`
 }
 
 type Warning struct {
@@ -168,6 +188,7 @@ func Reconcile(p *core.Project, now time.Time) {
 	if p.Workflow == nil {
 		return
 	}
+	p.Workflow.EnsureID()
 	pr.WorkflowVersion = p.Workflow.Version
 	live := map[string]bool{}
 	for _, c := range p.Workflow.Commands {
@@ -239,11 +260,12 @@ func Apply(p *core.Project, in ReportIn, now time.Time) (*ApplyResult, error) {
 		seq = pr.Seq
 	}
 
+	evidence := mergeEvidence(in.Evidence, in.Files, in.Changes)
 	rep := core.ProgressReport{
 		ID: id, Seq: seq, Project: in.Project, WorkflowVersion: in.WorkflowVersion,
-		Command: cmd.ID, Status: in.Status, StartedAt: utcPtr(in.StartedAt), UpdatedAt: updated,
+		Command: cmd.ID, Status: in.Status, StartedAt: utcPtr(in.StartedAt), FinishedAt: utcPtr(in.FinishedAt), UpdatedAt: updated,
 		ReceivedAt: now, Summary: strings.TrimSpace(in.Summary), Reason: strings.TrimSpace(in.Reason),
-		Evidence: slices.Clone(in.Evidence), Tests: slices.Clone(in.Tests), Source: strings.TrimSpace(in.Source),
+		Evidence: evidence, Tests: slices.Clone(in.Tests), Source: strings.TrimSpace(in.Source),
 		Outcome: "ignored",
 	}
 	out := &ApplyResult{Accepted: true, Command: cmd.ID, Status: run.Status, ReportID: id, Seq: seq}
@@ -264,6 +286,13 @@ func Apply(p *core.Project, in ReportIn, now time.Time) (*ApplyResult, error) {
 	}
 	if run.StartedAt != nil && applied.StartedAt == nil {
 		applied.StartedAt = run.StartedAt
+	}
+	if in.FinishedAt != nil {
+		applied.FinishedAt = utcPtr(in.FinishedAt)
+	} else if in.Status == core.RunStarted {
+		applied.FinishedAt = nil // a restarted command has no finish time yet
+	} else if run.FinishedAt != nil {
+		applied.FinishedAt = run.FinishedAt
 	}
 	applied.CommandID = cmd.ID
 	applied.UpdatedAt = updated
@@ -309,7 +338,7 @@ func validate(p *core.Project, in ReportIn, cmd *core.Command) error {
 func decide(cmd *core.Command, in ReportIn, prev core.CommandRun) (core.CommandRun, string) {
 	run := prev
 	run.Reason = strings.TrimSpace(in.Reason)
-	run.Evidence = compactEvidence(in.Evidence)
+	run.Evidence = mergeEvidence(in.Evidence, in.Files, in.Changes)
 	run.Tests = slices.Clone(in.Tests)
 	switch in.Status {
 	case core.RunStarted:
@@ -386,6 +415,27 @@ func compactEvidence(ev []core.Evidence) []core.Evidence {
 	return out
 }
 
+func mergeEvidence(ev []core.Evidence, files, changes []string) []core.Evidence {
+	out := compactEvidence(ev)
+	seen := map[string]bool{}
+	for _, e := range out {
+		seen[e.Kind+"\x00"+e.Ref] = true
+	}
+	add := func(kind string, refs []string) {
+		for _, ref := range refs {
+			ref = strings.TrimSpace(ref)
+			if ref == "" || seen[kind+"\x00"+ref] {
+				continue
+			}
+			seen[kind+"\x00"+ref] = true
+			out = append(out, core.Evidence{Kind: kind, Ref: ref})
+		}
+	}
+	add("files", files)
+	add("diff", changes)
+	return out
+}
+
 func hasFailedTest(tests []core.TestRun) bool {
 	for _, t := range tests {
 		if strings.EqualFold(strings.TrimSpace(t.Result), "fail") {
@@ -458,7 +508,14 @@ func View(p *core.Project, now time.Time, agent Agent) Snapshot {
 	s := Snapshot{Waves: []WaveProgress{}, Commands: []CommandProgress{}, Next: []string{},
 		Warnings: []Warning{}, Issues: []string{}, History: []core.StatusChange{},
 		StaleAfterSec: int(DefaultStaleAfter / time.Second)}
-	if p == nil || p.Workflow == nil {
+	if p == nil {
+		return s
+	}
+	if p.Workflow == nil {
+		s.Overall = rollupCommands(nil, nil)
+		s.Percent, s.Weight, s.DoneWeight = s.Overall.Percent, s.Overall.Weight, s.Overall.DoneWeight
+		s.Workflow = workflowProgress(p, nil, s.Overall)
+		s.Modules, s.Features = featureRollups(p, nil)
 		return s
 	}
 	s.WorkflowVersion = p.Workflow.Version
@@ -560,6 +617,10 @@ func View(p *core.Project, now time.Time, agent Agent) Snapshot {
 				Action:  "Kirim snapshot halaman tersebut; halaman tanpa bukti tidak dianggap lulus."})
 		}
 	}
+	s.Overall = rollupCommands(s.Commands, nil)
+	s.Percent, s.Weight, s.DoneWeight = s.Overall.Percent, s.Overall.Weight, s.Overall.DoneWeight
+	s.Workflow = workflowProgress(p, s.Commands, s.Overall)
+	s.Modules, s.Features = featureRollups(p, s.Commands)
 	return s
 }
 
@@ -577,9 +638,17 @@ func commandView(p *core.Project, c core.Command, now time.Time, window time.Dur
 	unmet := unmetDeps(p, &c)
 	status := display(run, unmet, now, window, agent)
 	cp := CommandProgress{ID: c.ID, Name: c.Name, Status: status, Stored: stored, Wave: wave,
-		Waiting: unmet, StartedAt: run.StartedAt, Source: run.Source, Summary: run.Summary,
+		Weight: core.CommandWeight(c), DependsOn: append([]string{}, c.DependsOn...), Dependents: dependentsOf(p.Workflow, c.ID),
+		FeatureIDs: core.ResolveCommandFeatureIDs(c, p.Features), SubFeatureIDs: core.ResolveCommandSubFeatureIDs(c, p.Features),
+		Waiting: unmet, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, Source: run.Source, Summary: run.Summary,
 		Reason: run.Reason, Evidence: run.Evidence, Tests: run.Tests, EarlyStart: run.EarlyStart,
 		ReportID: run.ReportID, Seq: run.Seq}
+	if cp.DependsOn == nil {
+		cp.DependsOn = []string{}
+	}
+	if cp.Dependents == nil {
+		cp.Dependents = []string{}
+	}
 	if !run.UpdatedAt.IsZero() {
 		t := run.UpdatedAt
 		cp.UpdatedAt = &t
@@ -648,4 +717,17 @@ func reasonSuffix(r string) string {
 		return ""
 	}
 	return ": " + r
+}
+
+func dependentsOf(w *core.Workflow, id string) []string {
+	if w == nil {
+		return nil
+	}
+	var out []string
+	for _, c := range w.Commands {
+		if slices.Contains(c.DependsOn, id) {
+			out = append(out, c.ID)
+		}
+	}
+	return out
 }

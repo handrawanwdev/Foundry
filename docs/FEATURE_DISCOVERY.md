@@ -11,6 +11,6 @@ Setiap fitur punya nama, deskripsi, tujuan, manfaat, dan hasil yang ingin dicapa
 Batasan yang disengaja:
 
 - Bukan requirements engineering, scoring, atau versioning.
-- Bukan workflow atau progress monitoring baru.
 - Struktur fleksibel; berlaku untuk semua jenis produk.
 - `Project.Features` tetap kontrak blueprint; Feature Map adalah pohon yang diedit di langkah Fitur.
+- Feature Map terhubung ke blueprint lewat `source_id` pada feature/subfeature; command workflow menunjuk feature dengan `feature_ids`/`sub_feature_ids`. Progress fitur dihitung dari command tersebut (fallback: requirement yang dicakup command), memakai bobot command yang sama dengan progress workflow. Foundry tetap tidak menjalankan command atau menilai implementasi.

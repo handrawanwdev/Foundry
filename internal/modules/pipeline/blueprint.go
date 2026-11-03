@@ -157,6 +157,12 @@ func (s *Service) ReviewCommand(id string, needs bool, reason string) (*core.Pro
 func CheckWorkflow(p *core.Project) workflow.Report {
 	r := workflow.Check(p.Workflow, spec.Artifacts(p), p.Requirements)
 	if p.Workflow != nil {
+		p.Workflow.EnsureID()
+		r.FeatureCommands = workflow.FeatureCommands(p.Workflow.Commands, p.Features)
+		if issues := workflow.ValidateFeatures(p.Workflow.Commands, p.Features); len(issues) > 0 {
+			r.Issues = append(r.Issues, issues...)
+			r.Ready = false
+		}
 		if issues := work.CheckUI(p, p.Workflow.Commands); len(issues) > 0 {
 			r.Issues = append(r.Issues, issues...)
 			r.Ready = false

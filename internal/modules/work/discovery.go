@@ -131,8 +131,8 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
     "coding": {"backend": [""], "frontend": [""], "api": {"style": "REST", "versioning": "/api/v1", "errors": "", "pagination": ""}}
   },
   "requirements": [{"id": "REQ-001", "text": "", "priority": "MUST|SHOULD|COULD", "acceptance": [` + criterionShape + `], "untestable": ""}],
-  "features": [{"id": "FEAT-001", "name": "", "description": "", "requirement_ids": ["REQ-001"], "platforms": ["web","backend"],
-                "sub_features": [{"id": "FEAT-001.1", "name": ""}]}],
+  "features": [{"id": "FEAT-001", "source_id": "feature map node id", "name": "", "description": "", "requirement_ids": ["REQ-001"], "platforms": ["web","backend"],
+                "sub_features": [{"id": "FEAT-001.1", "source_id": "child node id", "name": ""}]}],
   "flows": [` + useCaseShape + `],
   "platform": {"targets": [{"kind": "web", "rationale": ""}], "reason": "one short sentence for a non-technical user"},
   "artifacts": [{"id": "threat-model", "title": "", "category": "quality", "area": "security", "summary": "", "body": "Markdown", "refs": []}],
@@ -184,7 +184,7 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 		}
 		id := fmt.Sprintf("FEAT-%03d", i+1)
 		featMap[f.ID] = id
-		nf := core.Feature{ID: id, Name: f.Name, Description: f.Description}
+		nf := core.Feature{ID: id, Name: f.Name, Description: f.Description, SourceID: strings.TrimSpace(f.SourceID)}
 		for _, r := range f.RequirementIDs {
 			if m, ok := reqMap[r]; ok {
 				nf.RequirementIDs = append(nf.RequirementIDs, m)
@@ -196,7 +196,8 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 			}
 		}
 		for j, s := range f.SubFeatures {
-			nf.SubFeatures = append(nf.SubFeatures, core.SubFeature{ID: fmt.Sprintf("%s.%d", id, j+1), Name: s.Name})
+			nf.SubFeatures = append(nf.SubFeatures, core.SubFeature{ID: fmt.Sprintf("%s.%d", id, j+1), Name: s.Name,
+				FeatureID: id, SourceID: strings.TrimSpace(s.SourceID)})
 		}
 		feats = append(feats, nf)
 	}
@@ -260,6 +261,8 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	if p.FeatureMap.Empty() {
 		p.FeatureMap = core.FeatureMapFromFeatures(feats)
 	}
+	core.LinkFeatureMap(p.FeatureMap, p.Features)
+	p.NormalizeLinks()
 	p.Platform = &core.PlatformPlan{Targets: targets, Reason: out.Platform.Reason}
 	SetArtifacts(p, out.Artifacts)
 	p.UI = nil

@@ -11,7 +11,7 @@ import (
 const KindFeatureMap = "feature_map"
 
 type featureMapOut struct {
-	Summary string              `json:"summary"`
+	Summary string               `json:"summary"`
 	Modules []core.FeatureModule `json:"modules"`
 	Node    *core.FeatureNode    `json:"node"`
 }
@@ -123,11 +123,12 @@ func FeatureMapContext(p *core.Project) string {
 	}
 	var b strings.Builder
 	b.WriteString("FEATURE MAP (user-reviewed product features; use as the reference for requirements, features and flows; do not invent a different product):\n")
+	b.WriteString("Every node has a stable id in brackets. When writing features and subfeatures, copy the matching id into source_id.\n")
 	if p.FeatureMap.Summary != "" {
 		fmt.Fprintf(&b, "Summary: %s\n", p.FeatureMap.Summary)
 	}
 	for _, mod := range p.FeatureMap.Modules {
-		fmt.Fprintf(&b, "- Module: %s\n", mod.Name)
+		fmt.Fprintf(&b, "- Module [%s]: %s\n", mod.ID, mod.Name)
 		writeNodes(&b, mod.Features, 2)
 	}
 	return b.String()
@@ -136,7 +137,7 @@ func FeatureMapContext(p *core.Project) string {
 func writeNodes(b *strings.Builder, nodes []core.FeatureNode, indent int) {
 	pad := strings.Repeat("  ", indent)
 	for _, n := range nodes {
-		fmt.Fprintf(b, "%s- %s", pad, n.Name)
+		fmt.Fprintf(b, "%s- [%s] %s", pad, n.ID, n.Name)
 		if n.Description != "" {
 			fmt.Fprintf(b, ": %s", n.Description)
 		}

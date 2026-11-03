@@ -9,9 +9,9 @@ import (
 // FeatureMap is the user-editable product feature tree, composed before
 // Blueprint. It is a reference for discovery, not Project.Features.
 type FeatureMap struct {
-	Summary string              `json:"summary,omitempty"`
-	Modules []FeatureModule     `json:"modules"`
-	Request *FeatureMapRequest  `json:"request,omitempty"`
+	Summary string             `json:"summary,omitempty"`
+	Modules []FeatureModule    `json:"modules"`
+	Request *FeatureMapRequest `json:"request,omitempty"`
 }
 
 // FeatureModule is a group of related features (Trading, Identity, …).
@@ -23,7 +23,9 @@ type FeatureModule struct {
 
 // FeatureNode is a feature or subfeature. Children are subfeatures.
 type FeatureNode struct {
-	ID          string        `json:"id"`
+	ID string `json:"id"`
+	// ParentID is the module or parent feature node this item belongs to.
+	ParentID    string        `json:"parent_id,omitempty"`
 	Name        string        `json:"name"`
 	Description string        `json:"description,omitempty"`
 	Purpose     string        `json:"purpose,omitempty"`
@@ -34,8 +36,8 @@ type FeatureNode struct {
 
 // FeatureMapRequest is an AI action waiting to land on the map.
 type FeatureMapRequest struct {
-	Action   string `json:"action"`             // generate | expand | gaps
-	NodeID   string `json:"node_id,omitempty"`  // expand target
+	Action   string `json:"action"`            // generate | expand | gaps
+	NodeID   string `json:"node_id,omitempty"` // expand target
 	Text     string `json:"text,omitempty"`
 	Rejected string `json:"rejected,omitempty"`
 }
@@ -142,13 +144,13 @@ func (m *FeatureMap) Normalize() {
 			continue
 		}
 		mod.ID = uniqueSlug(used, mod.ID, mod.Name, "mod")
-		mod.Features = normalizeNodes(mod.Features, 1, used, &nleft)
+		mod.Features = normalizeNodes(mod.Features, 1, mod.ID, used, &nleft)
 		modules = append(modules, mod)
 	}
 	m.Modules = modules
 }
 
-func normalizeNodes(in []FeatureNode, depth int, used map[string]bool, nleft *int) []FeatureNode {
+func normalizeNodes(in []FeatureNode, depth int, parentID string, used map[string]bool, nleft *int) []FeatureNode {
 	if depth > MaxFeatureDepth || *nleft <= 0 {
 		return nil
 	}
@@ -166,9 +168,10 @@ func normalizeNodes(in []FeatureNode, depth int, used map[string]bool, nleft *in
 		n.Benefit = strings.TrimSpace(n.Benefit)
 		n.Outcome = strings.TrimSpace(n.Outcome)
 		n.ID = uniqueSlug(used, n.ID, n.Name, "feat")
+		n.ParentID = parentID
 		*nleft--
 		if depth < MaxFeatureDepth {
-			n.Children = normalizeNodes(n.Children, depth+1, used, nleft)
+			n.Children = normalizeNodes(n.Children, depth+1, n.ID, used, nleft)
 		} else {
 			n.Children = nil
 		}
@@ -227,7 +230,81 @@ func FeatureMapFromFeatures(feats []Feature) *FeatureMap {
 		m.Modules[0].Features = append(m.Modules[0].Features, n)
 	}
 	m.Normalize()
+	LinkFeatureMap(m, feats)
 	return m
+}
+
+// LinkFeatureMap records the feature-map node each blueprint feature and
+// subfeature came from. It matches the recorded source id first, then the
+// name inside the same parent. Nothing is invented: an unmatched item keeps
+// an empty SourceID.
+func LinkFeatureMap(m *FeatureMap, feats []Feature) {
+	if m == nil {
+		return
+	}
+	used := map[string]bool{}
+	for i := range feats {
+		f := &feats[i]
+		if f.SourceID != "" && m.Find(f.SourceID) == nil {
+			f.SourceID = ""
+		}
+		if f.SourceID == "" {
+			if n := m.findUnused(f.Name, used); n != nil {
+				f.SourceID = n.ID
+			}
+		}
+		if f.SourceID != "" {
+			used[f.SourceID] = true
+		}
+		parent := m.Find(f.SourceID)
+		for j := range f.SubFeatures {
+			s := &f.SubFeatures[j]
+			s.FeatureID = f.ID
+			if s.SourceID != "" && (parent == nil || findChildID(parent.Children, s.SourceID) == nil) {
+				s.SourceID = ""
+			}
+			if s.SourceID != "" || parent == nil {
+				continue
+			}
+			if n := findChild(parent.Children, s.Name, used); n != nil {
+				s.SourceID = n.ID
+				used[n.ID] = true
+			}
+		}
+	}
+}
+
+func findChildID(nodes []FeatureNode, id string) *FeatureNode {
+	for i := range nodes {
+		if nodes[i].ID == id {
+			return &nodes[i]
+		}
+	}
+	return nil
+}
+
+func (m *FeatureMap) findUnused(name string, used map[string]bool) *FeatureNode {
+	var found *FeatureNode
+	m.Walk(func(n *FeatureNode, _ *FeatureModule, depth int) {
+		if found != nil || depth != 1 || used[n.ID] || !equalName(n.Name, name) {
+			return
+		}
+		found = n
+	})
+	return found
+}
+
+func findChild(nodes []FeatureNode, name string, used map[string]bool) *FeatureNode {
+	for i := range nodes {
+		if !used[nodes[i].ID] && equalName(nodes[i].Name, name) {
+			return &nodes[i]
+		}
+	}
+	return nil
+}
+
+func equalName(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
 func uniqueSlug(used map[string]bool, id, name, prefix string) string {
