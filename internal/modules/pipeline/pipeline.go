@@ -321,7 +321,10 @@ func (s *Service) runWorkflow(runner *agent.Runner) {
 		s.failJob(kind, err)
 		return
 	}
-	out, err := runner.Run(s.context(), p.Dir, s.promptFor(p, kind))
+	prompt := s.promptFor(p, kind)
+	t0 := time.Now()
+	out, err := runner.Run(s.context(), p.Dir, prompt)
+	s.logAgentTiming(kind, time.Since(t0), len(prompt), len(out))
 	if err != nil {
 		s.failJob(kind, err)
 		return

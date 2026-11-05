@@ -201,7 +201,6 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
 	writeFeatureCatalog(&b, p)
 	w := p.Workflow
-	b.WriteString("CURRENT COMMANDS (skeleton):\n" + mustJSON(w.Commands) + "\n\n")
 
 	// Find commands that need details (instructions empty)
 	var needsDetails []core.Command
@@ -217,6 +216,8 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		batchSize = len(needsDetails)
 	}
 	batch := needsDetails[:batchSize]
+
+	b.WriteString("CURRENT COMMANDS (skeleton):\n" + mustJSON(skeletonCommands(w.Commands, batch)) + "\n\n")
 
 	b.WriteString(fmt.Sprintf("DETAIL PHASE - Fill in details for these %d commands:\n", len(batch)))
 	for _, cmd := range batch {
@@ -260,6 +261,28 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"]}]}")
 	return b.String()
+}
+
+// skeletonCommands is the workflow a detail batch reads: what each command
+// is and how they connect. The text of finished commands stays out, or every
+// batch would carry all the batches before it; only the outputs of the
+// commands the batch depends on stay, since its inputs come from them.
+func skeletonCommands(cmds, batch []core.Command) []core.Command {
+	deps := map[string]bool{}
+	for _, c := range batch {
+		for _, d := range c.DependsOn {
+			deps[d] = true
+		}
+	}
+	out := slices.Clone(cmds)
+	for i := range out {
+		c := &out[i]
+		c.Context, c.Instructions, c.Inputs, c.Acceptance, c.Constraints = "", "", nil, nil, nil
+		if !deps[c.ID] {
+			c.Outputs = nil
+		}
+	}
+	return out
 }
 
 // workflowFreshPrompt generates the prompt for creating a new workflow (no commands yet)

@@ -117,3 +117,25 @@ func TestWorkflowPromptListsFeatures(t *testing.T) {
 		}
 	}
 }
+
+func TestDetailPromptCarriesSkeletonOnly(t *testing.T) {
+	p := &core.Project{Workflow: &core.Workflow{Commands: []core.Command{
+		{ID: "C1", Name: "selesai", Instructions: "teks-selesai", Outputs: []string{"keluaran-c1"}},
+		{ID: "C2", Name: "lepas", Instructions: "teks-lepas", Outputs: []string{"keluaran-c2"}},
+		{ID: "C3", Name: "giliran", DependsOn: []string{"C1"}},
+	}}}
+	prompt := WorkflowPrompt(p, nil)
+	for _, want := range []string{"selesai", "lepas", "giliran", "keluaran-c1"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt tanpa %q", want)
+		}
+	}
+	for _, gone := range []string{"teks-selesai", "teks-lepas", "keluaran-c2"} {
+		if strings.Contains(prompt, gone) {
+			t.Errorf("prompt masih memuat %q", gone)
+		}
+	}
+	if p.Workflow.Commands[0].Instructions != "teks-selesai" {
+		t.Fatal("prompt mengubah command tersimpan")
+	}
+}
