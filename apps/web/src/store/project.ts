@@ -17,6 +17,11 @@ interface ProjectStore {
   clearError: () => void;
 }
 
+// Calls that arrive during a load share one follow-up load that starts after
+// them, so each caller still sees state at least as new as its own call.
+let loading: Promise<void> | null = null;
+let stale = false;
+
 // One store for the one project context. Every view reads from here; the
 // server pushes a change event whenever the state file changes (UI, agent or
 // MCP host) or the active project is opened/closed, and the store refetches.
@@ -26,14 +31,25 @@ export const useProject = create<ProjectStore>((set, get) => ({
   recent: [],
   error: null,
   pending: null,
-  load: async () => {
-    try {
-      const { current, recent } = await api.projects();
-      const project = current ? await api.project() : null;
-      set({ project, recent: recent ?? [], loaded: true });
-    } catch (e) {
-      set({ error: (e as Error).message, loaded: true });
+  load: () => {
+    if (loading) {
+      stale = true;
+      return loading;
     }
+    loading = (async () => {
+      do {
+        stale = false;
+        try {
+          const { current, recent } = await api.projects();
+          const project = current ? await api.project() : null;
+          set({ project, recent: recent ?? [], loaded: true });
+        } catch (e) {
+          set({ error: (e as Error).message, loaded: true });
+        }
+      } while (stale);
+      loading = null;
+    })();
+    return loading;
   },
   subscribe: () => {
     // The stream can stall without an error (sleeping laptop, throttled

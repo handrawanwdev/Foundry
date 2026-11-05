@@ -358,7 +358,9 @@ func writeAlternativeNotes(b *strings.Builder, a *core.StructureAlternative) {
 }
 
 // cell makes text safe inside a Markdown table cell.
-func cell(s string) string { return strings.NewReplacer("|", "\\|", "\n", " ").Replace(s) }
+var cellEscape = strings.NewReplacer("|", "\\|", "\n", " ")
+
+func cell(s string) string { return cellEscape.Replace(s) }
 
 func architectureMarkdown(p *core.Project) string {
 	bp := p.Blueprint

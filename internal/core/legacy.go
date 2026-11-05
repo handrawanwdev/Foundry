@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -73,7 +74,7 @@ var legacyPattern = map[string]string{
 // complete, never invented. Commands that referred to the old ui-design
 // artifact now refer to both new artifacts and are reported for review.
 func migrateLegacyDesign(p *Project, raw []byte) {
-	if p.UI != nil {
+	if p.UI != nil || !bytes.Contains(raw, []byte(`"design"`)) {
 		return
 	}
 	var old legacyState
@@ -221,6 +222,9 @@ func migrateArtifactIDs(p *Project) {
 // there without a platform gets it. Targets no longer carry users; roles
 // and permissions are part of the requirements and security.
 func migratePlatformAudience(p *Project, raw []byte) {
+	if p.Discovery == nil || !bytes.Contains(raw, []byte(`"audience"`)) {
+		return
+	}
 	var old struct {
 		Platform *struct {
 			Targets []struct {
@@ -229,7 +233,7 @@ func migratePlatformAudience(p *Project, raw []byte) {
 			} `json:"targets"`
 		} `json:"platform"`
 	}
-	if json.Unmarshal(raw, &old) != nil || old.Platform == nil || p.Discovery == nil {
+	if json.Unmarshal(raw, &old) != nil || old.Platform == nil {
 		return
 	}
 	n := 0

@@ -2,6 +2,7 @@ package progress
 
 import (
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -222,12 +223,13 @@ func featureRollups(p *core.Project, cmds []CommandProgress) ([]ModuleProgress, 
 	for _, c := range cmds {
 		byID[c.ID] = c
 	}
-	cmdFeature := map[string][]string{}
-	cmdSub := map[string][]string{}
+	featureOf := map[string][]string{}
+	subOf := map[string][]string{}
 	for _, c := range cmds {
-		cmdFeature[c.ID] = c.FeatureIDs
-		cmdSub[c.ID] = c.SubFeatureIDs
+		featureOf[c.ID] = c.FeatureIDs
+		subOf[c.ID] = c.SubFeatureIDs
 	}
+	cmdFeature, cmdSub := commandsByValue(featureOf), commandsByValue(subOf)
 
 	featByID := map[string]*core.Feature{}
 	featBySource := map[string]*core.Feature{}
@@ -336,11 +338,11 @@ func buildFeatureProgress(f *core.Feature, node *core.FeatureNode, cmdFeature, c
 		fp.FeatureMapID = node.ID
 	}
 	seenSub := map[string]bool{}
-	featureCmds := commandsWithFeature(cmdFeature, fp.ID)
+	featureCmds := slices.Clone(cmdFeature[fp.ID])
 	if f != nil {
 		for i := range f.SubFeatures {
 			s := &f.SubFeatures[i]
-			sp := SubFeatureProgress{ID: s.ID, Name: s.Name, FeatureID: f.ID, Commands: commandsFor(commandsWithFeature(cmdSub, s.ID), byID)}
+			sp := SubFeatureProgress{ID: s.ID, Name: s.Name, FeatureID: f.ID, Commands: commandsFor(cmdSub[s.ID], byID)}
 			if s.SourceID != "" && (node == nil || findNodeID(node.Children, s.SourceID) != nil) {
 				sp.FeatureMapID = s.SourceID
 			} else if node != nil {
@@ -351,7 +353,7 @@ func buildFeatureProgress(f *core.Feature, node *core.FeatureNode, cmdFeature, c
 			if sp.FeatureMapID != "" {
 				seenSub[sp.FeatureMapID] = true
 			}
-			sp.Rollup = rollupCommands(commandList(byID), idSet(sp.Commands))
+			sp.Rollup = rollupIDs(sp.Commands, byID)
 			fp.SubFeatures = append(fp.SubFeatures, sp)
 			featureCmds = append(featureCmds, sp.Commands...)
 		}
@@ -370,7 +372,7 @@ func buildFeatureProgress(f *core.Feature, node *core.FeatureNode, cmdFeature, c
 		}
 	}
 	fp.Commands = commandsFor(featureCmds, byID)
-	fp.Rollup = rollupCommands(commandList(byID), idSet(fp.Commands))
+	fp.Rollup = rollupIDs(fp.Commands, byID)
 	return fp, fp.Commands
 }
 
@@ -410,14 +412,17 @@ func matchChild(node *core.FeatureNode, s *core.SubFeature, bySource map[string]
 	return nil
 }
 
-// commandList keeps workflow order so a roll-up never depends on map order.
-func commandList(byID map[string]CommandProgress) []CommandProgress {
-	out := make([]CommandProgress, 0, len(byID))
-	for _, c := range byID {
-		out = append(out, c)
+// rollupIDs rolls up the given unique command ids in id order, so a roll-up
+// never depends on map order. Ids without a command are ignored.
+func rollupIDs(ids []string, byID map[string]CommandProgress) Rollup {
+	chosen := make([]CommandProgress, 0, len(ids))
+	for _, id := range ids {
+		if c, ok := byID[id]; ok {
+			chosen = append(chosen, c)
+		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	sort.Slice(chosen, func(i, j int) bool { return chosen[i].ID < chosen[j].ID })
+	return rollupCommands(chosen, nil)
 }
 
 func commandsFor(ids []string, byID map[string]CommandProgress) []string {
@@ -460,17 +465,18 @@ func normName(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
-// commandsWithFeature selects the command ids whose value list contains id.
-func commandsWithFeature(byCommand map[string][]string, id string) []string {
-	var out []string
+// commandsByValue inverts command id -> values into value -> sorted command ids.
+func commandsByValue(byCommand map[string][]string) map[string][]string {
+	out := map[string][]string{}
 	for cmd, ids := range byCommand {
-		for _, x := range ids {
-			if x == id {
-				out = append(out, cmd)
-				break
+		for i, id := range ids {
+			if !slices.Contains(ids[:i], id) {
+				out[id] = append(out[id], cmd)
 			}
 		}
 	}
-	sort.Strings(out)
+	for _, cmds := range out {
+		sort.Strings(cmds)
+	}
 	return out
 }

@@ -326,6 +326,7 @@ func MapFeatureMap(m *FeatureMap, feats []Feature) {
 	for i := range feats {
 		byID[strings.ToLower(strings.TrimSpace(feats[i].ID))] = &feats[i]
 	}
+	tokens := tokenCache{}
 	for mi := range m.Modules {
 		mod := &m.Modules[mi]
 		matched := make([]*Feature, len(mod.Features))
@@ -336,7 +337,7 @@ func MapFeatureMap(m *FeatureMap, feats []Feature) {
 				continue
 			}
 			node.FeatureID = ""
-			matched[ni] = matchNodeFeature(node, mod.Name, feats)
+			matched[ni] = matchNodeFeature(node, mod.Name, feats, tokens)
 		}
 		// A module is a group of related features. When one node maps with
 		// confidence, its siblings inherit the same blueprint feature.
@@ -348,7 +349,7 @@ func MapFeatureMap(m *FeatureMap, feats []Feature) {
 			}
 		}
 		if moduleFeature == nil {
-			moduleFeature = bestFeature("", mod.Name, feats)
+			moduleFeature = bestFeature("", mod.Name, feats, tokens)
 		}
 		for ni := range mod.Features {
 			node := &mod.Features[ni]
@@ -364,26 +365,26 @@ func MapFeatureMap(m *FeatureMap, feats []Feature) {
 				if f.SourceID == "" {
 					f.SourceID = node.ID
 				}
-				mapNodeChildren(node, f, feats)
+				mapNodeChildren(node, f, feats, tokens)
 			}
 		}
 	}
 }
 
-func mapNodeChildren(node *FeatureNode, f *Feature, feats []Feature) {
+func mapNodeChildren(node *FeatureNode, f *Feature, feats []Feature, tokens tokenCache) {
 	for ci := range node.Children {
 		child := &node.Children[ci]
 		child.FeatureID = f.ID
-		if s := matchSubFeature(child.Name+" "+child.Description, feats); s != nil && s.FeatureID == f.ID {
+		if s := matchSubFeature(child.Name+" "+child.Description, feats, tokens); s != nil && s.FeatureID == f.ID {
 			child.SubFeatureID = s.ID
 		} else {
 			child.SubFeatureID = ""
 		}
-		mapNodeChildren(child, f, feats)
+		mapNodeChildren(child, f, feats, tokens)
 	}
 }
 
-func matchNodeFeature(node *FeatureNode, module string, feats []Feature) *Feature {
+func matchNodeFeature(node *FeatureNode, module string, feats []Feature, tokens tokenCache) *Feature {
 	if node == nil {
 		return nil
 	}
@@ -393,10 +394,10 @@ func matchNodeFeature(node *FeatureNode, module string, feats []Feature) *Featur
 		}
 	}
 	text := node.Name + " " + node.Description
-	return bestFeature(text, module, feats)
+	return bestFeature(text, module, feats, tokens)
 }
 
-func bestFeature(text, module string, feats []Feature) *Feature {
+func bestFeature(text, module string, feats []Feature, tokens tokenCache) *Feature {
 	if strings.TrimSpace(text+" "+module) == "" {
 		return nil
 	}
@@ -405,12 +406,12 @@ func bestFeature(text, module string, feats []Feature) *Feature {
 	bestScore, bestName, bestModule := 0.0, 0.0, 0.0
 	for i := range feats {
 		f := &feats[i]
-		nameScore := tokenScore(candidate, f.Name)
+		nameScore := tokens.score(candidate, f.Name)
 		moduleScore := 0.0
 		if strings.TrimSpace(module) != "" {
-			moduleScore = tokenScore(module, f.Name)
+			moduleScore = tokens.score(module, f.Name)
 		}
-		score := maxFloat(nameScore, tokenScore(candidate, f.Description))
+		score := maxFloat(nameScore, tokens.score(candidate, f.Description))
 		if score > bestScore || (score == bestScore && (nameScore > bestName || nameScore == bestName && moduleScore > bestModule)) {
 			best, bestScore, bestName, bestModule = f, score, nameScore, moduleScore
 		}
@@ -421,13 +422,13 @@ func bestFeature(text, module string, feats []Feature) *Feature {
 	return best
 }
 
-func matchSubFeature(text string, feats []Feature) *SubFeature {
+func matchSubFeature(text string, feats []Feature, tokens tokenCache) *SubFeature {
 	var best *SubFeature
 	bestScore := 0.0
 	for i := range feats {
 		for j := range feats[i].SubFeatures {
 			s := &feats[i].SubFeatures[j]
-			if score := tokenScore(text, s.Name); score > bestScore {
+			if score := tokens.score(text, s.Name); score > bestScore {
 				best, bestScore = s, score
 			}
 		}
@@ -451,8 +452,21 @@ var featureGenericTokens = map[string]bool{
 	"daftar": true, "catatan": true,
 }
 
-func tokenScore(a, b string) float64 {
-	ta, tb := featureTokens(a), featureTokens(b)
+// tokenCache keeps the tokens of each text for one mapping run: every node
+// is scored against every feature, so the same texts come back constantly.
+type tokenCache map[string]map[string]bool
+
+func (c tokenCache) of(s string) map[string]bool {
+	t, ok := c[s]
+	if !ok {
+		t = featureTokens(s)
+		c[s] = t
+	}
+	return t
+}
+
+func (c tokenCache) score(a, b string) float64 {
+	ta, tb := c.of(a), c.of(b)
 	if len(ta) == 0 || len(tb) == 0 {
 		return 0
 	}

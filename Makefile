@@ -39,7 +39,11 @@ check: test build
 
 # Development: API on :8080, Vite on :5173 (proxies /api).
 dev-api:
-	go run ./cmd/foundry serve
+ifeq ($(OS),Windows_NT)
+	set FOUNDRY_DEV=1&& go run ./cmd/foundry serve
+else
+	FOUNDRY_DEV=1 go run ./cmd/foundry serve
+endif
 
 dev-web:
 	cd $(WEB) && npm run dev

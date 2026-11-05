@@ -18,6 +18,53 @@ import (
 	"github.com/handrawanwdev/foundry/internal/core"
 )
 
+func TestGuardRefusesOtherLocalOrigins(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	h := New(nil, "/bin/foundry").Handler()
+	do := func(origin, site string) int {
+		r := httptest.NewRequest("POST", "/api/v1/projects/recent/remove", strings.NewReader(`{}`))
+		r.Host, r.RemoteAddr = "127.0.0.1:8080", "127.0.0.1:50000"
+		r.Header.Set("Content-Type", "text/plain")
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		if site != "" {
+			r.Header.Set("Sec-Fetch-Site", site)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for _, c := range []struct {
+		origin, site string
+		want         int
+	}{
+		{"http://127.0.0.1:8080", "same-origin", 200},
+		{"", "", 200}, // CLI client
+		{"http://localhost:3000", "same-site", 403},
+		{"http://127.0.0.1:3000", "same-site", 403},
+		{"http://localhost:5173", "same-site", 403}, // no dev mode
+		{"null", "", 403},
+		{"", "same-site", 403},
+		{"", "cross-site", 403},
+	} {
+		if got := do(c.origin, c.site); got != c.want {
+			t.Errorf("origin %q site %q: %d, want %d", c.origin, c.site, got, c.want)
+		}
+	}
+	t.Setenv("FOUNDRY_DEV", "1")
+	for origin, want := range map[string]int{
+		"http://localhost:5173":    200,
+		"http://127.0.0.1:5173":    200,
+		"http://localhost:3000":    403,
+		"http://evil.example:5173": 403,
+	} {
+		if got := do(origin, ""); got != want {
+			t.Errorf("dev origin %q: %d, want %d", origin, got, want)
+		}
+	}
+}
+
 func TestGuardAndFlow(t *testing.T) {
 	t.Setenv("FOUNDRY_HOME", t.TempDir())
 	s := New(nil, "/bin/foundry")
@@ -66,7 +113,7 @@ func TestGuardAndFlow(t *testing.T) {
 		t.Fatalf("remote peer allowed: %d", w.Code)
 	}
 	// No AI connected → story rejected with 412.
-	if w := do("POST", "/api/v1/project/story", `{"story":"aplikasi klinik untuk pasien"}`, "http://localhost:5173", "127.0.0.1:8080"); w.Code != http.StatusPreconditionFailed {
+	if w := do("POST", "/api/v1/project/story", `{"story":"aplikasi klinik untuk pasien"}`, "http://127.0.0.1:8080", "127.0.0.1:8080"); w.Code != http.StatusPreconditionFailed {
 		t.Fatalf("story without AI: %d %s", w.Code, w.Body)
 	}
 	if w := do("GET", "/simple/tell", "", "", "localhost:8080"); w.Code != 200 {

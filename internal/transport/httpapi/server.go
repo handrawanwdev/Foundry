@@ -1068,19 +1068,25 @@ func guard(next http.Handler) http.Handler {
 		}
 		if o := r.Header.Get("Origin"); o != "" {
 			u, err := url.Parse(o)
-			// Same host, or a loopback origin (Vite dev server on another port).
-			if err != nil || (u.Host != r.Host && !isLocal(u.Hostname())) {
+			if err != nil || (u.Host != r.Host && !devOrigin(u)) {
 				respond.Fail(w, respond.CodeForbidden, "origin tidak diizinkan", http.StatusForbidden)
 				return
 			}
-		} else if r.Header.Get("Sec-Fetch-Site") == "cross-site" && strings.HasPrefix(r.URL.Path, "/api/") {
-			// Browsers send no Origin on cross-site GETs (<img>, links); the
-			// fetch metadata still names them. Pages stay reachable by link.
+		} else if site := r.Header.Get("Sec-Fetch-Site"); (site == "cross-site" || site == "same-site") && strings.HasPrefix(r.URL.Path, "/api/") {
+			// Browsers send no Origin on foreign GETs (<img>, links); the fetch
+			// metadata still names them, and every localhost port is same-site.
+			// Pages stay reachable by link.
 			respond.Fail(w, respond.CodeForbidden, "origin tidak diizinkan", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// devOrigin is the Vite dev server behind `make dev-api`. Any other local page
+// stays foreign: it is a different origin, and the API can run commands.
+func devOrigin(u *url.URL) bool {
+	return os.Getenv("FOUNDRY_DEV") == "1" && u.Port() == "5173" && isLocal(u.Hostname())
 }
 
 func isLocal(host string) bool {
