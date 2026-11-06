@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
@@ -212,6 +213,71 @@ func TestWorkflowCycleRetried(t *testing.T) {
 	if n := strings.Count(string(raw), "workflow"); n != 2 || len(p.Workflow.Commands) != 3 || p.Workflow.Request != nil {
 		t.Fatalf("runs=%d workflow=%+v", n, p.Workflow)
 	}
+}
+
+// An overloaded server is waited for: the job passes on a later attempt and
+// every attempt shows in the log.
+func TestOverloadedAgentRetried(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	s.RetryWait = []time.Duration{time.Millisecond, time.Millisecond}
+	designReady(t, s)
+	runs := filepath.Join(t.TempDir(), "runs")
+	t.Setenv("FAKE_RUNS", runs)
+	t.Setenv("FAKE_MODE", "overloaded_once")
+	if err := s.GenerateWorkflow(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindWorkflow, core.JobDone)
+	raw, _ := os.ReadFile(runs)
+	if n := strings.Count(string(raw), "attempt"); n != 2 || len(p.Workflow.Commands) != 3 {
+		t.Fatalf("attempts=%d workflow=%+v", n, p.Workflow)
+	}
+	timed, waited := 0, 0
+	for _, e := range p.Events {
+		if strings.HasPrefix(e.Message, "workflow agent ") {
+			timed++
+		}
+		if strings.Contains(e.Message, "server AI sibuk") {
+			waited++
+		}
+	}
+	if timed != 2 || waited != 1 {
+		t.Fatalf("timed=%d waited=%d", timed, waited)
+	}
+}
+
+// Attempts are bounded, also for jobs outside the workflow.
+func TestOverloadedAgentGivesUp(t *testing.T) {
+	runs := filepath.Join(t.TempDir(), "runs")
+	t.Setenv("FAKE_RUNS", runs)
+	s := newService(t, fakeAI{}, "overloaded")
+	s.RetryWait = []time.Duration{time.Millisecond, time.Millisecond}
+	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindFeatureMap, core.JobFailed)
+	raw, _ := os.ReadFile(runs)
+	if n := strings.Count(string(raw), "attempt"); n != 3 || !strings.Contains(p.Job.Error, "server AI sedang sibuk") {
+		t.Fatalf("attempts=%d error=%q", n, p.Job.Error)
+	}
+}
+
+// Shutdown does not sit out the wait.
+func TestOverloadedWaitStopsOnShutdown(t *testing.T) {
+	t.Setenv("FAKE_RUNS", filepath.Join(t.TempDir(), "runs"))
+	s := newService(t, fakeAI{}, "overloaded")
+	s.RetryWait = []time.Duration{time.Hour}
+	if _, err := s.SubmitStory("Aplikasi klinik untuk janji temu"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Shutdown(10 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	mustJob(t, load(t, s), work.KindFeatureMap, core.JobFailed)
 }
 
 // Software without screens or a server: no UI design, no web stack gate;

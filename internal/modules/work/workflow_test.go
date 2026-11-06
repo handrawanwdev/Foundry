@@ -8,6 +8,34 @@ import (
 	"github.com/handrawanwdev/foundry/internal/core"
 )
 
+func TestDetailPromptListsCoveredCriteria(t *testing.T) {
+	p := &core.Project{
+		Requirements: []core.Requirement{
+			{ID: "REQ-001", Acceptance: []core.Criterion{{ID: "REQ-001-AC1", Kind: "negative", Text: "kriteria-tercakup"}}},
+			{ID: "REQ-002", Acceptance: []core.Criterion{{ID: "REQ-002-AC1", Text: "kriteria-lain"}}},
+		},
+		Workflow: &core.Workflow{Commands: []core.Command{
+			{ID: "C1", Instructions: "selesai", Covers: []string{"REQ-002"}},
+			{ID: "C2", Covers: []string{"REQ-001"}},
+		}},
+	}
+	prompt := WorkflowPrompt(p, nil)
+	if !strings.Contains(prompt, "- REQ-001-AC1 (negative): kriteria-tercakup") {
+		t.Errorf("kriteria batch tidak ada:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "kriteria-lain") {
+		t.Error("kriteria di luar batch ikut masuk")
+	}
+
+	// The acceptance artifact already gives the batch every criterion.
+	p.Workflow.Commands[1].Artifacts = []core.ArtifactRef{{ID: core.ArtifactAcceptance}}
+	docs := []core.Artifact{{ID: core.ArtifactAcceptance, Body: "isi-acceptance"}}
+	prompt = WorkflowPrompt(p, docs)
+	if !strings.Contains(prompt, "isi-acceptance") || strings.Contains(prompt, "kriteria-tercakup") {
+		t.Errorf("kriteria digandakan:\n%s", prompt)
+	}
+}
+
 func staleProject(t *testing.T) (*core.Project, []core.Artifact) {
 	t.Helper()
 	docs := []core.Artifact{{ID: "requirements", Title: "R", Body: "v1"}}

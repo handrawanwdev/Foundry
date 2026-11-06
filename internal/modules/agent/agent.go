@@ -164,11 +164,17 @@ var ErrAgentFailed = errors.New("agent gagal")
 // cannot help until it resets.
 var ErrLimit = fmt.Errorf("%w: limit/kuota AI habis", ErrAgentFailed)
 
+// ErrOverloaded means the AI server had no room for this run; the same prompt
+// can pass once it has.
+var ErrOverloaded = fmt.Errorf("%w: server AI sedang sibuk", ErrAgentFailed)
+
 // WaitDelay bounds how long Run waits for output after the agent exited or
 // was stopped.
 const WaitDelay = 5 * time.Second
 
 var limitText = regexp.MustCompile(`(?i)(usage limit|rate[ _-]?limit|limit reached|reached (your|the) .{0,20}limit|quota (exceeded|exhausted)|insufficient[ _]quota|insufficient (account )?funds|out of (credits|quota)|exceeded your (current )?quota|resource[_ ]exhausted|too many requests|\b429\b|credit balance is too low|limit will reset)`)
+
+var overloadText = regexp.MustCompile(`(?i)\boverloaded\b`)
 
 // limitHit reports whether text reads like a quota or rate-limit message.
 func limitHit(text string) bool { return limitText.MatchString(text) }
@@ -268,6 +274,9 @@ func (r *Runner) Run(ctx context.Context, dir, prompt string) (string, error) {
 	// trusted when the run failed or produced almost nothing.
 	if limitHit(errb.String()) || ((failed || len(strings.TrimSpace(res)) < 400) && limitHit(res)) {
 		return res, fmt.Errorf("%w: %s", ErrLimit, tail(strings.TrimSpace(errb.String()+"\n"+res), 300))
+	}
+	if failed && (overloadText.MatchString(errb.String()) || (len(strings.TrimSpace(res)) < 400 && overloadText.MatchString(res))) {
+		return res, fmt.Errorf("%w: %s", ErrOverloaded, tail(strings.TrimSpace(errb.String()+"\n"+res), 300))
 	}
 	if failed {
 		return res, fmt.Errorf("%w: %v: %s", ErrAgentFailed, err, tail(errb.String(), 600))

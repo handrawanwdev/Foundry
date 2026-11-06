@@ -145,6 +145,14 @@ func fakeAgent() {
 	in, _ := io.ReadAll(os.Stdin)
 	prompt := string(in)
 	mode := os.Getenv("FAKE_MODE")
+	if strings.HasPrefix(mode, "overloaded") {
+		runs, _ := os.ReadFile(os.Getenv("FAKE_RUNS"))
+		countRun("attempt")
+		if mode == "overloaded" || len(runs) == 0 {
+			fmt.Fprintln(os.Stderr, "Error: Upstream request failed: [overloaded] the server is overloaded; retry shortly")
+			os.Exit(1)
+		}
+	}
 	switch {
 	case strings.HasPrefix(prompt, "Balas hanya"):
 		fmt.Println("OK")

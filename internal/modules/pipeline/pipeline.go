@@ -59,6 +59,10 @@ type Service struct {
 	Store *core.Store
 	AI    AI
 
+	// RetryWait is the pause before each new attempt when the AI server is
+	// overloaded; its length bounds the attempts.
+	RetryWait []time.Duration
+
 	// ctx ends with Shutdown; every job this service runs derives from it.
 	ctx  context.Context
 	stop context.CancelFunc
@@ -68,7 +72,7 @@ type Service struct {
 
 func New(store *core.Store, ai AI) *Service {
 	ctx, stop := context.WithCancel(context.Background())
-	return &Service{Store: store, AI: ai, ctx: ctx, stop: stop}
+	return &Service{Store: store, AI: ai, RetryWait: []time.Duration{time.Minute, 2 * time.Minute}, ctx: ctx, stop: stop}
 }
 
 // Snapshot loads the project for a reader. Derived state that is cheap and
@@ -279,9 +283,7 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 			s.runWorkflow(runner)
 			return
 		}
-		t0 := time.Now()
-		out, err := runner.Run(s.context(), p.Dir, prompt)
-		s.logAgentTiming(kind, time.Since(t0), len(prompt), len(out))
+		out, err := s.runAgent(runner, kind, p.Dir, prompt)
 		if err != nil {
 			s.failJob(kind, err)
 			return
@@ -303,6 +305,30 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 	return nil
 }
 
+// runAgent runs one prompt and records every attempt. An overloaded server
+// answers the same prompt once it has room, so the job waits instead of
+// failing. Any other error returns at once.
+func (s *Service) runAgent(runner *agent.Runner, kind, dir, prompt string) (string, error) {
+	for attempt := 0; ; attempt++ {
+		t0 := time.Now()
+		out, err := runner.Run(s.context(), dir, prompt)
+		s.logAgentTiming(kind, time.Since(t0), len(prompt), len(out))
+		if !errors.Is(err, agent.ErrOverloaded) || attempt == len(s.RetryWait) {
+			return out, err
+		}
+		wait := s.RetryWait[attempt]
+		s.Store.Update(func(p *core.Project) error {
+			p.Log("system", fmt.Sprintf("%s: server AI sibuk, coba lagi dalam %s (%d/%d)", kind, wait, attempt+1, len(s.RetryWait)))
+			return nil
+		})
+		select {
+		case <-time.After(wait):
+		case <-s.context().Done():
+			return out, err
+		}
+	}
+}
+
 func (s *Service) logAgentTiming(kind string, d time.Duration, promptBytes, outputBytes int) {
 	s.Store.Update(func(p *core.Project) error {
 		p.Log("system", fmt.Sprintf("%s agent %s prompt=%dB output=%dB", kind, d.Round(time.Millisecond), promptBytes, outputBytes))
@@ -321,10 +347,7 @@ func (s *Service) runWorkflow(runner *agent.Runner) {
 		s.failJob(kind, err)
 		return
 	}
-	prompt := s.promptFor(p, kind)
-	t0 := time.Now()
-	out, err := runner.Run(s.context(), p.Dir, prompt)
-	s.logAgentTiming(kind, time.Since(t0), len(prompt), len(out))
+	out, err := s.runAgent(runner, kind, p.Dir, s.promptFor(p, kind))
 	if err != nil {
 		s.failJob(kind, err)
 		return

@@ -86,6 +86,26 @@ func TestRunDetectsLimit(t *testing.T) {
 	}
 }
 
+func TestRunDetectsOverload(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh tidak ada")
+	}
+	r, _ := NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo 'Error: Upstream request failed: [overloaded] the server is overloaded; retry shortly' >&2; exit 1"}, Options{})
+	if _, err := r.Run(context.Background(), t.TempDir(), "hi"); !errors.Is(err, ErrOverloaded) || !errors.Is(err, ErrAgentFailed) {
+		t.Fatalf("err = %v", err)
+	}
+	// A run that passed is an answer, whatever its log says.
+	r, _ = NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; echo 'overloaded, retrying' >&2; echo jawaban"}, Options{})
+	if out, err := r.Run(context.Background(), t.TempDir(), "hi"); err != nil || out != "jawaban\n" {
+		t.Fatalf("out=%q err=%v", out, err)
+	}
+	// The word inside a long answer is not the server's refusal.
+	r, _ = NewRunner("custom", []string{"sh", "-c", "cat >/dev/null; printf '%0500d overloaded\n' 0; exit 1"}, Options{})
+	if _, err := r.Run(context.Background(), t.TempDir(), "hi"); errors.Is(err, ErrOverloaded) || !errors.Is(err, ErrAgentFailed) {
+		t.Fatalf("long stdout: err = %v", err)
+	}
+}
+
 func TestLimitHitFunds(t *testing.T) {
 	if !limitHit("Error: Upstream request failed: Insufficient account funds") {
 		t.Fatal("funds notice not detected")

@@ -244,6 +244,9 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		}
 	}
 	b.WriteString("\n")
+	if !neededArtifacts[core.ArtifactAcceptance] {
+		writeBatchCriteria(&b, p, batch)
+	}
 	b.WriteString(precedenceRules)
 
 	b.WriteString(`For each command in the batch, provide:
@@ -261,6 +264,34 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"]}]}")
 	return b.String()
+}
+
+// writeBatchCriteria lists the criteria of the requirements a detail batch
+// covers, for a batch that does not read the acceptance artifact. It is told
+// to cite criterion ids; without the real ones it can only make them up.
+func writeBatchCriteria(b *strings.Builder, p *core.Project, batch []core.Command) {
+	covered := map[string]bool{}
+	for _, c := range batch {
+		for _, id := range c.Covers {
+			covered[id] = true
+		}
+	}
+	wrote := false
+	for _, r := range p.Requirements {
+		if !covered[r.ID] {
+			continue
+		}
+		for _, c := range r.Acceptance {
+			if !wrote {
+				b.WriteString("ACCEPTANCE CRITERIA of the requirements this batch covers (cite these ids exactly; an id not listed here does not exist):\n")
+				wrote = true
+			}
+			fmt.Fprintf(b, "- %s (%s): %s\n", c.ID, c.Kind, c.Text)
+		}
+	}
+	if wrote {
+		b.WriteString("\n")
+	}
 }
 
 // skeletonCommands is the workflow a detail batch reads: what each command
