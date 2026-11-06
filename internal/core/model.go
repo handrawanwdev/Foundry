@@ -72,10 +72,15 @@ type Project struct {
 	Workflow *Workflow `json:"workflow,omitempty"`
 	// Progress is how far an external coding agent has taken the workflow.
 	// Nil until the first report or reconciliation.
-	Progress  *Progress `json:"progress,omitempty"`
-	Job       *Job      `json:"job,omitempty"`
-	Events    []Event   `json:"events"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Progress *Progress `json:"progress,omitempty"`
+	// BlueprintQueue is the remaining AI kinds of GenerateBlueprint
+	// (current first). BlueprintBatch is how many steps that run started
+	// with, for "2/5" in the UI. Both empty when no batch is running.
+	BlueprintQueue []string  `json:"blueprint_queue,omitempty"`
+	BlueprintBatch int       `json:"blueprint_batch,omitempty"`
+	Job            *Job      `json:"job,omitempty"`
+	Events         []Event   `json:"events"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // Survey answers. An empty answer means the user left it to Foundry: it is

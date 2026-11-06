@@ -1,7 +1,32 @@
-import type { AreaStatusKind, Artifact, ArtifactCategory, ArtifactStateKind, Command, CommandProgress, DesignIssue, ExportManifest, ProgressSnapshot, RunStatus, Workflow, WorkflowReport } from "./types";
+import type { AreaStatusKind, Artifact, ArtifactCategory, ArtifactStateKind, BlueprintView, Command, CommandProgress, DesignIssue, ExportManifest, ProgressSnapshot, Project, RunStatus, Workflow, WorkflowReport } from "./types";
 
 // The built-in artifacts of the UI design (core.ArtifactDesignRules / ArtifactLayoutSpec).
 export const DESIGN_DOCS = { rules: "design-rules", layout: "layout-spec" } as const;
+
+export const BLUEPRINT_STEP_LABEL: Record<string, string> = {
+  blueprint: "Cakupan", design: "Desain", tech: "Teknologi", structure: "Struktur", repo: "Folder",
+};
+
+const APP_KINDS = new Set(["web", "android", "ios", "desktop", "backend"]);
+const UI_KINDS = new Set(["web", "android", "ios", "desktop"]);
+
+// Whether the one-shot "Susun rancangan" still has work.
+export function blueprintGenerateNeeded(p: Project, view: BlueprintView | null): boolean {
+  if (p.stage === "READY") return false;
+  if (p.blueprint_batch) return true;
+  if (view?.areas.some((a) => a.id !== "ui" && (a.status === "missing" || a.status === "invalid"))) return true;
+  const targets = p.platform?.targets ?? [];
+  const hasUI = view?.has_ui ?? targets.some((t) => UI_KINDS.has(t.kind));
+  if (hasUI && !p.ui?.rules) return true;
+  const app = !targets.length || targets.some((t) => APP_KINDS.has(t.kind));
+  if (!app) return false;
+  if (!p.stack?.plan) return true;
+  if (p.structure && p.structure.mode !== "existing") {
+    if (!p.structure.plan) return true;
+    if (!p.structure.repo) return true;
+  }
+  return false;
+}
 
 export const isDesignDoc = (id: string) => id === DESIGN_DOCS.rules || id === DESIGN_DOCS.layout;
 

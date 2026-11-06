@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError, type ErrorDetail } from "../api";
 import {
-  AREA_CLASS, AREA_LABEL, ARTIFACT_STATE_CLASS, ARTIFACT_STATE_LABEL, CATEGORY_LABEL, DESIGN_DOCS, designIssuesOf, groupArtifacts,
+  AREA_CLASS, AREA_LABEL, ARTIFACT_STATE_CLASS, ARTIFACT_STATE_LABEL, blueprintGenerateNeeded,
+  CATEGORY_LABEL, DESIGN_DOCS, designIssuesOf, groupArtifacts,
   isDesignDoc, SCOPE_DOCS, scopeIssuesOf, usedBy,
 } from "../blueprint";
 import { DeleteDialog } from "../components/DeleteDialog";
@@ -115,6 +116,7 @@ export function BlueprintPage() {
       </nav>
 
       <main className="ws-main">
+        <BatchBar project={project} view={view} locked={locked} />
         <DecisionSyncNotice project={project} locked={locked} />
         {id === "platform" ? <PlatformStructure project={project} />
           : id === "repo" ? <RepoWorkspace project={project} />
@@ -128,7 +130,9 @@ export function BlueprintPage() {
           : <p className="muted">Pilih artefak di kiri.</p>}
       </main>
 
-      {!locked && id !== "repo" && (id === "platform" ? (
+      {!locked && !working && (id === "repo" ? (
+        <RepoPrompt project={project} working={working} />
+      ) : id === "platform" ? (
         <PlatformPrompt project={project} working={working} />
       ) : designDoc ? (
         <PromptBar
@@ -153,30 +157,65 @@ export function BlueprintPage() {
   );
 }
 
-// The one prompt of the platform page: the request goes to the technology
-// decision or, when the project has an editable structure, to the structure.
+function BatchBar({ project, view, locked }: {
+  project: Project; view: BlueprintView | null; locked: boolean;
+}) {
+  const { run, pending } = useProject();
+  const working = isWorking(project);
+  const needed = blueprintGenerateNeeded(project, view);
+  if (locked || working || !needed) return null;
+  return (
+    <div className="ws-batch">
+      <button className="primary" disabled={pending === "generateBlueprint"}
+        onClick={() => void run("generateBlueprint", api.generateBlueprint)}>
+        Susun rancangan
+      </button>
+      <span className="small muted">Cakupan, desain, teknologi, struktur, dan folder — satu proses, satu konteks.</span>
+    </div>
+  );
+}
+
+// Platform page prompt: technology only. Structure requests live on the repo page.
 function PlatformPrompt({ project, working }: { project: Project; working: boolean }) {
   const { run, pending } = useProject();
-  const [target, setTarget] = useState<"stack" | "structure">("stack");
-  const st = project.structure;
-  const hasStructure = !!st?.ir && st.mode !== "existing";
-  const kind = hasStructure ? target : "stack";
-  const cur = kind === "stack" ? project.stack : st;
+  const cur = project.stack;
   if (!cur) return null;
+  return (
+    <PromptBar
+      label="Minta perubahan teknologi…"
+      placeholder="Contoh: ganti backend ke Rust, tetap gunakan PostgreSQL, arsitektur modular monolith."
+      hint="Perubahan tampil sebagai usulan dulu; terapkan setelah melihat dampaknya."
+      disabled={working || !!cur.request || !!cur.proposal}
+      busy={pending === "stack"}
+      onSend={(text) => run("stack", () => api.requestStack(text))}
+    />
+  );
+}
+
+// Repo page prompt: the structure decision, or the folder plan once it exists.
+function RepoPrompt({ project, working }: { project: Project; working: boolean }) {
+  const { run, pending } = useProject();
+  const [target, setTarget] = useState<"structure" | "repo">("structure");
+  const st = project.structure;
+  if (!st?.ir || st.mode === "existing") return null;
+  const hasRepo = !!st.repo;
+  const kind = hasRepo ? target : "structure";
+  const structureBusy = !!st.request || !!st.proposal || !!st.plan_request;
+  const repoBusy = !!st.repo_request;
   const radio = (k: typeof kind, text: string) => (
     <label className="check small"><input type="radio" checked={kind === k} onChange={() => setTarget(k)} /> {text}</label>
   );
   return (
     <PromptBar
-      label={kind === "stack" ? "Minta perubahan teknologi…" : "Minta perubahan struktur folder…"}
-      placeholder={kind === "stack"
-        ? "Contoh: ganti backend ke Rust, tetap gunakan PostgreSQL, arsitektur modular monolith."
-        : "Contoh: reporting jangan jadi service sendiri, jadikan modul di operations; atau tiap modul pakai layer domain, application, infrastructure, presentation."}
+      label={kind === "structure" ? "Minta perubahan struktur…" : "Minta perubahan rencana folder…"}
+      placeholder={kind === "structure"
+        ? "Contoh: reporting jangan jadi service sendiri, jadikan modul di operations; atau tiap modul pakai layer domain, application, infrastructure, presentation."
+        : "Contoh: gabungkan folder identity ke dalam api/; jangan pecah packages/."}
       hint="Perubahan tampil sebagai usulan dulu; terapkan setelah melihat dampaknya."
-      extra={hasStructure && <span className="row">{radio("stack", "Teknologi")}{radio("structure", "Struktur")}</span>}
-      disabled={working || !!cur.request || !!cur.proposal}
+      extra={hasRepo ? <span className="row">{radio("structure", "Keputusan")}{radio("repo", "Folder")}</span> : undefined}
+      disabled={working || (kind === "structure" ? structureBusy : repoBusy)}
       busy={pending === kind}
-      onSend={(text) => run(kind, () => (kind === "stack" ? api.requestStack(text) : api.requestStructure(text)))}
+      onSend={(text) => run(kind, () => (kind === "structure" ? api.requestStructure(text) : api.reviseRepo(text)))}
     />
   );
 }
@@ -236,17 +275,14 @@ function ArtifactDoc({ project, doc, locked, design, view, onOpen }: {
 // No design rules or layout yet: the AI writes both from the features and
 // flows. Text and structured data only.
 function DesignEmpty({ project, locked }: { project: Project; locked: boolean }) {
-  const { run, pending } = useProject();
   const busy = project.job?.kind === "design" && isWorking(project);
   return (
     <div className="doc">
       <h1>Aturan desain & layout</h1>
       <p className="muted">Foundry menyusun aturan desain dan layout tiap halaman. Teks terstruktur, tanpa kanvas.</p>
-      {busy ? <p><span className="spinner" /> {project.job?.message}… <Elapsed started={project.job?.started} /></p> : !locked && (
-        <button className="primary" disabled={isWorking(project) || pending === "generateDesign"} onClick={() => void run("generateDesign", api.generateDesign)}>
-          Susun dengan AI
-        </button>
-      )}
+      {busy
+        ? <p><span className="spinner" /> {project.job?.message}… <Elapsed started={project.job?.started} /></p>
+        : !locked && <p className="muted">Masuk dalam <strong>Susun rancangan</strong>: aturan desain dan layout ditulis bersama cakupan, teknologi, dan struktur.</p>}
     </div>
   );
 }
@@ -428,13 +464,11 @@ function ScopePanel({ project, view, locked, onOpen }: { project: Project; view:
           Area yang relevan harus ditulis, atau dilewati dengan alasan jelas. Area yang tidak relevan untuk project ini tidak perlu apa-apa.
         </p>
         {!locked && open > 0 && (
-          <div className="doc-actions">
-            {busy ? <span><span className="spinner" /> {project.job?.message}… <Elapsed started={project.job?.started} /></span> : (
-              <button className="primary" disabled={isWorking(project) || pending === "completeScope"} onClick={() => void run("completeScope", api.completeScope)}>
-                Lengkapi {open} area dengan AI
-              </button>
-            )}
-          </div>
+          <p className="small muted">
+            {busy
+              ? <><span className="spinner" /> {project.job?.message}… <Elapsed started={project.job?.started} /></>
+              : <>{open} area belum lengkap. Tekan <strong>Susun rancangan</strong> — satu proses untuk semua rancangan blueprint.</>}
+          </p>
         )}
       </header>
       {critical.length > 0 && (
@@ -456,7 +490,7 @@ function ScopePanel({ project, view, locked, onOpen }: { project: Project; view:
             </div>
             {!locked && (
               <div className="row small">
-                {a.id === "ui" && a.status === "missing" && <button className="ghost" onClick={() => onOpen("design")}>Susun rancangan UI</button>}
+                {a.id === "ui" && a.status === "missing" && <button className="ghost" onClick={() => onOpen("design")}>Buka desain</button>}
                 {(a.id === SCOPE_DOCS.useCases || a.id === SCOPE_DOCS.acceptance) && a.status !== "skipped" && a.status !== "not_applicable" && (
                   <button className="ghost" onClick={() => onOpen(a.id)}>Edit data</button>
                 )}

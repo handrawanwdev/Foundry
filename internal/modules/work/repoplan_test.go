@@ -16,11 +16,33 @@ func repoProject() *core.Project {
 	return p
 }
 
+func TestRepoPlanPromptOmitsArtifactBodies(t *testing.T) {
+	p := repoProject()
+	p.Artifacts = []core.Artifact{{ID: "architecture", Title: "Arsitektur", Summary: "pola sistem", Body: "SECRET_BODY_MUST_NOT_APPEAR " + strings.Repeat("x", 80)}}
+	p.Requirements = []core.Requirement{{ID: "R1", Priority: "must", Text: strings.Repeat("panjang ", 40)}}
+	p.Features = []core.Feature{{ID: "F1", Name: "Login", Description: "deskripsi panjang yang tidak perlu di rencana folder", Platforms: []string{"web"}}}
+	p.Flows = []core.Flow{{ID: "U1", Name: "Masuk", Role: "petugas", Steps: []string{"buka", "isi", "kirim"}}}
+	prompt := RepoPlanPrompt(p)
+	if strings.Contains(prompt, "SECRET_BODY_MUST_NOT_APPEAR") {
+		t.Error("repo prompt dumps artifact bodies")
+	}
+	if !strings.Contains(prompt, "Arsitektur") {
+		t.Error("repo prompt should still list document titles")
+	}
+	if strings.Contains(prompt, "buka → isi → kirim") {
+		t.Error("lean snapshot still lists use-case steps")
+	}
+	if strings.Contains(prompt, "deskripsi panjang yang tidak perlu") {
+		t.Error("lean snapshot still lists feature descriptions")
+	}
+}
+
 func TestRepoPlanPromptLeavesTheApproachToTheAI(t *testing.T) {
 	prompt := RepoPlanPrompt(repoProject())
 	for _, want := range []string{"You are free to choose the organization approach", "references, not a menu", "PROJECT MODULES", "- booking: pemesanan",
 		"STRUCTURE PARTS", "service:api (default folder apps/api/)", "module:booking", "EVERY project module", "consistency", "evaluation",
-		"FOLDERS, never files", "not a second part mapping", `"role": "ui"`} {
+		"FOLDERS, never files", "not a second part mapping", `"role": "ui"`, `Never write "*", "all", "all-modules"`,
+		"will be refused"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt lacks %q", want)
 		}

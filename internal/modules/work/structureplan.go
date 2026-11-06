@@ -31,7 +31,7 @@ PROJECT: `)
 	b.WriteString(p.Story)
 	b.WriteString("\n\n")
 	writeBinding(&b, p)
-	writeSystemSnapshot(&b, p)
+	writeSystemSnapshot(&b, p, snapshotFull)
 	if domains := structure.Domains(p); len(domains) > 0 {
 		fmt.Fprintf(&b, "DOMAINS THAT MUST APPEAR IN EVERY ALTERNATIVE (exact ids): %s\n", strings.Join(domains, ", "))
 		b.WriteString("Place every id in exactly one service or module, with its responsibility. An alternative that misses one domain is invalid and will be sent back to you once with the concrete error.\n\n")
@@ -87,9 +87,16 @@ Return 2 or 3 alternatives. Paths are derived by Foundry from names, so do not i
 	return b.String()
 }
 
-// writeSystemSnapshot writes the whole system the structure must fit. It is
-// shared by the analysis and the revision prompts.
-func writeSystemSnapshot(b *strings.Builder, p *core.Project) {
+// snapshotMode is how much of the system a prompt needs.
+type snapshotMode int
+
+const (
+	snapshotFull snapshotMode = iota // structure analysis: full artifact bodies
+	snapshotLean                     // repo plan: structured facts, document titles only
+)
+
+// writeSystemSnapshot writes the system the structure or repository must fit.
+func writeSystemSnapshot(b *strings.Builder, p *core.Project, mode snapshotMode) {
 	if d := p.Discovery; d != nil {
 		fmt.Fprintf(b, "DISCOVERY SUMMARY: %s\nBUSINESS: %s\n", d.Summary, d.Business)
 		if len(d.Users) > 0 {
@@ -170,13 +177,21 @@ func writeSystemSnapshot(b *strings.Builder, p *core.Project) {
 	if len(p.Requirements) > 0 {
 		b.WriteString("REQUIREMENTS:\n")
 		for _, r := range p.Requirements {
-			fmt.Fprintf(b, "- %s [%s] %s\n", r.ID, r.Priority, r.Text)
+			text := r.Text
+			if mode == snapshotLean {
+				text = clipRunes(text, 120)
+			}
+			fmt.Fprintf(b, "- %s [%s] %s\n", r.ID, r.Priority, text)
 		}
 		b.WriteString("\n")
 	}
 	if len(p.Features) > 0 {
 		b.WriteString("FEATURES AND RELATIONSHIPS:\n")
 		for _, f := range p.Features {
+			if mode == snapshotLean {
+				fmt.Fprintf(b, "- %s %s (platforms %s)\n", f.ID, f.Name, strings.Join(f.Platforms, ", "))
+				continue
+			}
 			fmt.Fprintf(b, "- %s %s: %s (requirements %s; platforms %s)\n", f.ID, f.Name, f.Description,
 				strings.Join(f.RequirementIDs, ", "), strings.Join(f.Platforms, ", "))
 			for _, s := range f.SubFeatures {
@@ -188,18 +203,29 @@ func writeSystemSnapshot(b *strings.Builder, p *core.Project) {
 	if len(p.Flows) > 0 {
 		b.WriteString("USE CASES:\n")
 		for _, f := range p.Flows {
+			if mode == snapshotLean {
+				fmt.Fprintf(b, "- %s %s (%s)\n", f.ID, f.Name, f.Role)
+				continue
+			}
 			fmt.Fprintf(b, "- %s %s (%s): %s\n", f.ID, f.Name, f.Role, strings.Join(f.Steps, " → "))
 		}
 		b.WriteString("\n")
 	}
 	if len(p.Artifacts) > 0 {
-		b.WriteString("BLUEPRINT DOCUMENTS (domain, security, API, operations and other rules this structure must fit):\n")
-		for _, a := range p.Artifacts {
-			body := a.Body
-			if len(body) > 2000 {
-				body = strings.ToValidUTF8(body[:2000], "") + "\n…(dipotong)"
+		if mode == snapshotLean {
+			b.WriteString("BLUEPRINT DOCUMENTS (titles only; follow the structure decision and technology, not these bodies):\n")
+			for _, a := range p.Artifacts {
+				fmt.Fprintf(b, "- %s (%s) %s\n", a.ID, a.Title, a.Summary)
 			}
-			fmt.Fprintf(b, "=== %s (%s) %s\n%s\n", a.ID, a.Title, a.Summary, body)
+		} else {
+			b.WriteString("BLUEPRINT DOCUMENTS (domain, security, API, operations and other rules this structure must fit):\n")
+			for _, a := range p.Artifacts {
+				body := a.Body
+				if len(body) > 2000 {
+					body = strings.ToValidUTF8(body[:2000], "") + "\n…(dipotong)"
+				}
+				fmt.Fprintf(b, "=== %s (%s) %s\n%s\n", a.ID, a.Title, a.Summary, body)
+			}
 		}
 		b.WriteString("\n")
 	}
@@ -210,6 +236,14 @@ func writeSystemSnapshot(b *strings.Builder, p *core.Project) {
 		}
 		b.WriteString("\n")
 	}
+}
+
+func clipRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // writeStructureBrief writes an approved/current structure as source of

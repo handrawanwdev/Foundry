@@ -1,14 +1,12 @@
-import { useState } from "react";
 import { api } from "../api";
-import { isWorking, PLATFORM_LABEL } from "../flow";
-import { StructurePanel } from "../components/StructurePanel";
+import { PLATFORM_LABEL } from "../flow";
 import { TechStackPanel } from "../components/TechStack";
 import { TechWorkspace } from "../components/TechWorkspace";
 import { useProject } from "../store/project";
 import type { ExistingUI, PlatformKind, PlatformTarget, Project } from "../types";
 
-// Platform, technology and project structure: the decisions the blueprint
-// is built on.
+// Platform and technology: where the product runs and which stack it uses.
+// Structure decisions live on the repository page.
 
 const KINDS: PlatformKind[] = ["web", "android", "ios", "desktop", "backend", "cli", "embedded", "other"];
 
@@ -31,7 +29,7 @@ export function PlatformStructure({ project }: { project: Project }) {
       <header className="repo-head">
         <div>
           <h1>Platform & Teknologi</h1>
-          <p className="small muted">Di mana produk berjalan, stack yang dipilih, dan bentuk struktur project.</p>
+          <p className="small muted">Di mana produk berjalan dan stack yang dipilih.</p>
         </div>
       </header>
       <section className="plat-targets">
@@ -52,10 +50,15 @@ export function PlatformStructure({ project }: { project: Project }) {
       {project.stack?.plan ? <TechWorkspace project={project} /> : (
         <>
           <TechStackPanel project={project} />
-          <TechPlanInvite project={project} />
+          {project.stack && (
+            <section className="info-sec tp-invite">
+              <h3>Rencana teknologi</h3>
+              <p className="small muted">Belum ada. Tekan <strong>Susun rancangan</strong> di Blueprint — teknologi dirancang bersama cakupan, desain, dan struktur.</p>
+            </section>
+          )}
         </>
       )}
-      {s?.mode === "existing" ? (
+      {s?.mode === "existing" && (
         <section className="info-sec">
           <h3>Struktur project</h3>
             {(s.components ?? []).map((c, i) => (
@@ -64,29 +67,8 @@ export function PlatformStructure({ project }: { project: Project }) {
             <p className="small">{s.reason}</p>
             {s.ui && <ExistingUIInfo ui={s.ui} />}
         </section>
-      ) : s?.ir ? <StructurePanel project={project} />
-        : <section className="info-sec"><h3>Struktur project</h3><p className="muted">Belum ditentukan</p></section>}
+      )}
     </div>
-  );
-}
-
-function TechPlanInvite({ project }: { project: Project }) {
-  const { run, pending } = useProject();
-  const [text, setText] = useState("");
-  const locked = project.stage === "READY" || isWorking(project) || pending === "stack" || !!project.stack?.proposal || !!project.stack?.request;
-  if (!project.stack) return null;
-  return (
-    <section className="info-sec tp-invite">
-      <h3>Rancang teknologi dengan AI</h3>
-      <p className="small muted">AI menganalisis kebutuhan dan memilih seluruh stack — termasuk di luar katalog Foundry — beserta alasan, alternatif, dan tinjauan kompatibilitas.</p>
-      <textarea rows={2} value={text} maxLength={6000} disabled={locked}
-        placeholder="Arahan opsional, mis. “tim sudah Elixir, butuh realtime dan transaksi”"
-        onChange={(e) => setText(e.target.value)} />
-      <div className="repo-actions">
-        <button className="primary" disabled={locked} onClick={() => void run("stack", () => api.generateTechPlan(text.trim()))}>Rancang dengan AI</button>
-      </div>
-      {project.stack.plan_request?.rejected && <p className="small warn-text">Jawaban AI sebelumnya ditolak: {project.stack.plan_request.rejected}</p>}
-    </section>
   );
 }
 

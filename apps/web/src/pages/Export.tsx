@@ -148,7 +148,8 @@ function AgentPromptBox({ manifest, dir }: { manifest: ExportManifest; dir: stri
 function BlockerLink({ text }: { text: string }) {
   const to = text.includes("workflow") ? "/workflow"
     : text.includes("desain") ? "/blueprint/ui"
-    : text.includes("teknologi") || text.includes("struktur") ? "/blueprint?doc=platform"
+    : text.includes("struktur") ? "/blueprint?doc=repo"
+    : text.includes("teknologi") ? "/blueprint?doc=platform"
     : text.includes("fitur") ? "/features"
     : text.includes("prompt") ? "/simple/tell" : "";
   return to ? <Link className="small" to={to}>Buka</Link> : null;

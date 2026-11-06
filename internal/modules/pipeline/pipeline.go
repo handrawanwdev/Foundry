@@ -272,17 +272,17 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 		return err
 	}
 	status := core.JobRunning
-	msg := jobMessage(kind)
-	if isMCP {
-		status, msg = core.JobWaiting, msg+" — menunggu AI Host (MCP)"
-	}
 	p, err := s.Store.Update(func(p *core.Project) error {
 		if expect != nil {
 			if err := expect(p); err != nil {
 				return err
 			}
 		}
-		p.Job = &core.Job{Kind: kind, Status: status, Message: msg, Started: time.Now().UTC()}
+		msg := jobMessage(kind)
+		if isMCP {
+			status, msg = core.JobWaiting, msg+" — menunggu AI Host (MCP)"
+		}
+		p.Job = &core.Job{Kind: kind, Status: status, Message: batchLabel(p, msg), Started: time.Now().UTC()}
 		return nil
 	})
 	if err != nil {
@@ -563,7 +563,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 	if next != "" {
 		return s.startAI(next)
 	}
-	return nil
+	return s.advanceBlueprint(kind)
 }
 
 // noteRejection keeps why a design, workflow, blueprint or structure
@@ -702,6 +702,8 @@ func (s *Service) DismissJob() error {
 				p.Stack.PlanRequest = nil
 			}
 		}
+		p.BlueprintQueue = nil
+		p.BlueprintBatch = 0
 		p.Job = nil
 		p.Log("ui", "Pesan gagal ditutup")
 		return nil
@@ -735,6 +737,9 @@ func (s *Service) RetryJob() error {
 		if p.Structure != nil && p.Structure.RepoRequest != nil {
 			return s.startAIIf(kind, failedJob(kind))
 		}
+		if p.Structure != nil && p.Structure.IR != nil && p.Structure.Mode != core.StructureExisting {
+			return s.GenerateRepoPlan("", "")
+		}
 	case work.KindTech:
 		if p.Stack != nil && p.Stack.PlanRequest != nil {
 			return s.startAIIf(kind, failedJob(kind))
@@ -745,6 +750,9 @@ func (s *Service) RetryJob() error {
 		}
 	case work.KindWorkflow:
 		return s.startAIIf(kind, failedJob(kind))
+	}
+	if p.BlueprintBatch > 0 {
+		return s.GenerateBlueprint()
 	}
 	return ErrNothingToDo
 }

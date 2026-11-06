@@ -1,4 +1,5 @@
 import { api } from "../api";
+import { BLUEPRINT_STEP_LABEL } from "../blueprint";
 import { useProject } from "../store/project";
 import { Elapsed } from "./Elapsed";
 
@@ -21,11 +22,13 @@ export function JobBanner() {
       </div>
     );
   }
+  const rest = (project?.blueprint_queue ?? []).map((k) => BLUEPRINT_STEP_LABEL[k] ?? k);
   if (job.status === "waiting_host") {
     return (
       <div className="banner waiting">
         <span className="spinner" /> <strong>{job.message}</strong>
         <Elapsed started={job.started} />
+        {rest.length > 1 && <span className="muted small">Sisa: {rest.join(" → ")}</span>}
         <div className="muted small banner-hint">
           Di AI Host kamu, minta: <code>Lanjutkan pekerjaan Foundry (panggil next_work)</code>
         </div>
@@ -36,6 +39,7 @@ export function JobBanner() {
     <div className="banner running">
       <span className="spinner" /> <strong>{job.message}…</strong>
       <Elapsed started={job.started} />
+      {rest.length > 1 && <span className="muted small">Sisa: {rest.join(" → ")}</span>}
     </div>
   );
 }

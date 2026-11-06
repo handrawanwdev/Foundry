@@ -475,6 +475,7 @@ func (s *Server) Handler() http.Handler {
 	}))
 	// Blueprint scope: areas, use cases, acceptance criteria, decisions.
 	api("POST /api/v1/project/blueprint/complete", s.action(func(svc *pipeline.Service) error { return svc.CompleteScope() }))
+	api("POST /api/v1/project/blueprint/generate", s.action(func(svc *pipeline.Service) error { return svc.GenerateBlueprint() }))
 	api("POST /api/v1/project/blueprint/decisions/sync", s.action(func(svc *pipeline.Service) error { return svc.SyncDecisions() }))
 	api("PUT /api/v1/project/blueprint/use-cases", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {

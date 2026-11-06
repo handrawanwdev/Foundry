@@ -103,6 +103,7 @@ export const api = {
   reviewArtifact: (id: string) => call<Project>("POST", `/project/blueprint/artifacts/${encodeURIComponent(id)}/review`, {}),
   // AI writes or fixes the areas that are missing or invalid.
   completeScope: () => call("POST", "/project/blueprint/complete", {}),
+  generateBlueprint: () => call("POST", "/project/blueprint/generate", {}),
   // Saved whole; changed items are refused with ApiError.details when invalid.
   editUseCases: (use_cases: Flow[]) => call<Project>("PUT", "/project/blueprint/use-cases", { use_cases }),
   editAcceptance: (acceptance: AcceptanceEdit[], definition_of_done: string[]) =>

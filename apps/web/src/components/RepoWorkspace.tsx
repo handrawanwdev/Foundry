@@ -5,13 +5,39 @@ import {
   ancestors, baseName, buildTree, issueCounts, modulesAt, nodeKind, OWNER_LABEL, SECTION, SOURCE_AREA, STATUS_LABEL,
   usedBy, visibleRows,
 } from "../repo";
+import { structureState } from "../structure";
 import { useProject } from "../store/project";
 import type { Project, RepoNode, RepoPlan, Structure } from "../types";
 import { Elapsed } from "./Elapsed";
+import { StructurePanel } from "./StructurePanel";
 
-// Folder plan workspace: one page — tree, who owns each folder, approve or
-// ask the AI to revise. Extra architect notes sit behind "Selengkapnya".
+// Structure workspace: decide the shape, then the folder plan. One page,
+// two steps — approve the decision, then generate, revise, and approve folders.
 export function RepoWorkspace({ project }: { project: Project }) {
+  const s = project.structure as Structure;
+
+  if (s.mode === "existing") {
+    return <div className="repo"><h1>Struktur repository</h1><p className="muted">Project yang sudah ada mengikuti struktur kodenya; rencana folder hanya untuk project baru.</p></div>;
+  }
+  if (!s.ir) {
+    return <div className="repo"><h1>Struktur repository</h1><p className="muted">Keputusan struktur belum ada. Muncul setelah platform dan teknologi dipilih.</p></div>;
+  }
+
+  return (
+    <div className="repo">
+      <header className="repo-head">
+        <div>
+          <h1>Struktur repository</h1>
+          <p className="small muted">Bentuk struktur dulu, lalu rencana folder dan tanggung jawabnya.</p>
+        </div>
+      </header>
+      <StructurePanel project={project} />
+      <RepoPlan project={project} />
+    </div>
+  );
+}
+
+function RepoPlan({ project }: { project: Project }) {
   const { run, pending } = useProject();
   const [selected, setSelected] = useState("");
   const s = project.structure as Structure;
@@ -19,51 +45,40 @@ export function RepoWorkspace({ project }: { project: Project }) {
   const finalized = project.stage === "READY";
   const busy = isWorking(project) || pending === "repo" || !!s.repo_request || !!s.request || !!s.plan_request;
   const editable = !finalized && !busy && !s.proposal;
-
-  if (s.mode === "existing") {
-    return <div className="repo"><h1>Struktur repository</h1><p className="muted">Project yang sudah ada mengikuti struktur kodenya; rencana folder hanya untuk project baru.</p></div>;
-  }
-  if (!s.ir) {
-    return <div className="repo"><h1>Struktur repository</h1><p className="muted">Keputusan struktur project belum ada. Tentukan di Platform & Teknologi dulu.</p></div>;
-  }
+  const structureApproved = structureState(s) === "approved";
 
   const working = !!s.repo_request && (
-    <p className="small muted"><span className="spinner" /> {s.repo_request.action === "generate" ? "AI merancang struktur repository…" : "AI merevisi struktur repository…"} <Elapsed started={project.job?.started} /></p>
+    <p className="small muted"><span className="spinner" /> {s.repo_request.action === "generate" ? "AI merancang folder…" : "AI merevisi rencana folder…"} <Elapsed started={project.job?.started} /></p>
   );
 
   if (!plan) {
     return (
-      <div className="repo">
-        <header className="repo-head"><h1>Struktur repository</h1></header>
-        <p className="muted">AI merancang folder dan tanggung jawabnya dari kebutuhan project ini.</p>
+      <section className="info-sec">
+        <div className="tech-title"><h2>Rencana folder</h2></div>
         {working}
-        <div className="repo-actions">
-          <button className="primary" disabled={!editable || pending === "repo"} onClick={() => void run("repo", () => api.generateRepo())}>Rancang struktur repository dengan AI</button>
-        </div>
+        {structureApproved
+          ? !s.repo_request && <p className="small muted">Belum ada. Tekan <strong>Susun rancangan</strong> — folder dirancang dari keputusan struktur, dalam satu proses bersama rancangan lain.</p>
+          : <p className="small muted">Setujui keputusan struktur di atas dulu. Rencana folder merinci struktur yang disetujui.</p>}
         {s.repo_request?.rejected && <p className="small warn-text">Jawaban AI sebelumnya ditolak: {s.repo_request.rejected}</p>}
-      </div>
+      </section>
     );
   }
 
   const counts = issueCounts(plan);
   const issues = plan.analysis.issues ?? [];
-  const structureApproved = (project.structure?.status ?? (project.structure?.approved ? "approved" : "recommended")) === "approved";
   const ver = plan.history?.at(-1)?.version;
+  const staleEval = plan.evaluation.outdated && !plan.stale;
 
   return (
-    <div className="repo">
-      <header className="repo-head">
-        <div>
-          <h1>Struktur repository</h1>
-          <p className="small muted">{plan.approach} · {plan.analysis.dirs} folder, {plan.analysis.files} file</p>
-        </div>
-        <div className="repo-chips">
-          <span className={`tech-status ${plan.status}`}>{STATUS_LABEL[plan.status]}{ver ? ` · v${ver}` : ""}</span>
-          <span className="tag">Skor {plan.evaluation.score}</span>
-          {plan.stale && <span className="tag warn">Kedaluwarsa</span>}
-          {counts.errors > 0 && <span className="tag bad">{counts.errors} error</span>}
-        </div>
-      </header>
+    <section className="info-sec">
+      <div className="tech-title">
+        <h2>Rencana folder</h2>
+        <span className={`tech-status ${plan.status}`}>{STATUS_LABEL[plan.status]}{ver ? ` · v${ver}` : ""}</span>
+        <span className="tag">Skor {plan.evaluation.score}</span>
+        {plan.stale && <span className="tag warn">Kedaluwarsa</span>}
+        {counts.errors > 0 && <span className="tag bad">{counts.errors} error</span>}
+      </div>
+      <p className="small muted">{plan.approach} · {plan.analysis.dirs} folder, {plan.analysis.files} file</p>
 
       {working}
       {s.repo_request?.rejected && <p className="small warn-text">Jawaban AI ditolak, mencoba lagi: {s.repo_request.rejected}</p>}
@@ -108,22 +123,26 @@ export function RepoWorkspace({ project }: { project: Project }) {
 
       <section className="repo-foot">
         {plan.status === "approved"
-          ? <p className="ok-text small">✓ Struktur repository{ver ? ` v${ver}` : ""} disetujui dan masuk ekspor untuk coding agent.</p>
+          ? <p className="ok-text small">✓ Rencana folder{ver ? ` v${ver}` : ""} disetujui dan masuk ekspor untuk coding agent.</p>
           : (
             <div className="repo-actions">
               <button className="primary" disabled={!editable || pending === "repo" || counts.errors > 0 || plan.stale || !structureApproved}
-                title={!structureApproved ? "Setujui struktur project dulu" : plan.stale ? "Revisi bagian yang terdampak dulu" : counts.errors > 0 ? "Selesaikan error dulu" : undefined}
-                onClick={() => void run("repo", api.approveRepo)}>Setujui struktur repository</button>
-              {!structureApproved && <span className="small muted">Setujui struktur project di Platform & Teknologi lebih dulu.</span>}
+                title={!structureApproved ? "Setujui keputusan struktur di atas dulu" : plan.stale ? "Revisi bagian yang terdampak dulu" : counts.errors > 0 ? "Selesaikan error dulu" : undefined}
+                onClick={() => void run("repo", api.approveRepo)}>Setujui rencana folder</button>
+              {!structureApproved && <span className="small muted">Setujui keputusan struktur di atas dulu.</span>}
             </div>
           )}
         {plan.status === "changed" && <p className="small warn-text">Berubah setelah disetujui. Setujui lagi sebelum finalisasi.</p>}
+        {editable && staleEval && (
+          <div className="repo-actions">
+            <button disabled={pending === "repo"} onClick={() => void run("repo", () => api.reviseRepo(""))}>Evaluasi ulang</button>
+          </div>
+        )}
         {editable && <RegenDiscard />}
       </section>
 
-      {editable && <AskAI plan={plan} />}
       <More plan={plan} onOpen={setSelected} />
-    </div>
+    </section>
   );
 }
 
@@ -192,28 +211,6 @@ function NodeCard({ plan, node, onSelect }: { plan: RepoPlan; node: RepoNode; on
       {!!node.depends_on?.length && <p className="small">Bergantung pada: {node.depends_on.map((d, i) => <span key={d}>{i > 0 && ", "}{link(d)}</span>)}</p>}
       {!!used.length && <p className="small muted">Dipakai: {used.map((d, i) => <span key={d}>{i > 0 && ", "}{link(d)}</span>)}</p>}
     </article>
-  );
-}
-
-function AskAI({ plan }: { plan: RepoPlan }) {
-  const { run, pending } = useProject();
-  const [text, setText] = useState("");
-  const stale = plan.stale || plan.evaluation.outdated;
-  return (
-    <section className="repo-ask">
-      <strong>Minta AI merevisi</strong>
-      <textarea rows={2} value={text} maxLength={6000} placeholder="mis. gabungkan folder identity ke dalam api/; jangan pecah packages/"
-        onChange={(e) => setText(e.target.value)} />
-      <div className="repo-actions">
-        <button className="primary" disabled={pending === "repo" || !text.trim()}
-          onClick={async () => { if (await run("repo", () => api.reviseRepo(text.trim()))) setText(""); }}>Revisi</button>
-        {stale && (
-          <button disabled={pending === "repo"} onClick={() => void run("repo", () => api.reviseRepo(""))}>
-            {plan.stale ? "Revisi bagian terdampak" : "Evaluasi ulang"}
-          </button>
-        )}
-      </div>
-    </section>
   );
 }
 

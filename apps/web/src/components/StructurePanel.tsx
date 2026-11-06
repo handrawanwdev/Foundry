@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api";
 import { Elapsed } from "./Elapsed";
 import { isWorking } from "../flow";
 import {
   otherAlternatives, recommendedAlternative, SCORE_LABEL, STRUCTURE_TYPE, structureState, structureVersion, tree,
 } from "../structure";
-import { STATUS_LABEL as REPO_STATUS } from "../repo";
 import { changeText, TECH_STATUS } from "../tech";
 import { useProject } from "../store/project";
 import type {
@@ -19,9 +17,9 @@ const KIND: Record<string, string> = {
 };
 const SOURCE: Record<string, string> = { recommend: "rekomendasi", user: "diubah user", ai: "AI", technology: "mengikuti teknologi" };
 
-// Project structure workspace: Foundry recommends, the user edits (by hand
-// or in words), sees the impact, applies and approves. The final spec
-// carries the approved structure.
+// Structure decision: Foundry recommends a shape, the user edits (by hand
+// or in words), sees the impact, applies and approves. The folder plan
+// on this page spells out the approved shape.
 export function StructurePanel({ project }: { project: Project }) {
   const { run, pending } = useProject();
   const [types, setTypes] = useState<Template[]>([]);
@@ -39,8 +37,9 @@ export function StructurePanel({ project }: { project: Project }) {
   const plan = s.plan;
   const rec = recommendedAlternative(plan);
   const recommendation = rec?.name ?? STRUCTURE_TYPE[s.recommended ?? ""] ?? "—";
-  // The detailed folder plan owns tree, folder specs, rules and history once it exists.
+  // Folder tree, specs, rules and history live in the folder plan once it exists.
   const repo = s.repo && !s.proposal ? s.repo : undefined;
+  const compact = !s.proposal && state === "approved";
 
   return (
     <section className="info-sec">
@@ -49,26 +48,34 @@ export function StructurePanel({ project }: { project: Project }) {
         <span className={`tech-status ${state}`}>{TECH_STATUS[state]}{structureVersion(s) ? ` · v${structureVersion(s)}` : ""}</span>
       </div>
       <p className="small muted">
-        Rekomendasi: <strong className="fg">{recommendation}</strong>
-        {s.reason && <> — {s.reason}</>}. Kamu yang memutuskan; yang disetujui masuk spesifikasi final.
+        Rekomendasi: <strong>{recommendation}</strong>
+        {!compact && s.reason && <> — {s.reason}</>}
+        {!compact && ". Kamu yang memutuskan; yang disetujui masuk spesifikasi final."}
       </p>
-      <p className="small muted">
-        Keputusan ini memilih bentuk struktur secara garis besar, diturunkan dari arsitektur aplikasi dan struktur repository
-        di Teknologi, lalu diperiksa AI terhadap seluruh blueprint. Deployment diputuskan sendiri dan tidak mengubah ini.
-      </p>
+      {!compact && (
+        <p className="small muted">
+          Bentuk struktur secara garis besar, diturunkan dari arsitektur di Teknologi, lalu diperiksa AI terhadap
+          seluruh blueprint. Rencana folder di bawah merinci folder dan tanggung jawabnya.
+        </p>
+      )}
 
       {!finalized && s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}” <Elapsed started={project.job?.started} /></p>}
       {!finalized && s.plan_request && <p className="small muted"><span className="spinner" /> AI menganalisis sistem dan membandingkan alternatif struktur… <Elapsed started={project.job?.started} /></p>}
 
+      {compact && plan?.stale && (
+        <p className="small warn-text">
+          Artefak sumber berubah setelah analisis ini. Analisis ulang dulu, atau buka analisis di bawah.
+        </p>
+      )}
       {s.proposal && <Proposal p={s.proposal} disabled={busy || finalized} />}
-      {!s.proposal && <StructureAnalysis plan={plan} editable={editable} busy={busy} finalized={finalized} hideRules={!!repo} />}
+      {!s.proposal && <StructureAnalysis plan={plan} editable={editable} busy={busy} finalized={finalized} hideRules={!!repo || compact} compact={compact} />}
 
       <div className="tech-list">
         <TypeRow s={s} type={shown.type} types={types} editable={editable && !s.proposal} open={typeOpen}
-          onToggle={() => setTypeOpen(!typeOpen)} onDone={() => setTypeOpen(false)} />
+          compact={compact} onToggle={() => setTypeOpen(!typeOpen)} onDone={() => setTypeOpen(false)} />
       </div>
 
-      {repo ? <RepoPointer repo={repo} /> : <>
+      {!repo && !compact && <>
         <p className="small muted">{s.proposal ? "Preview usulan (belum diterapkan):" : "Preview:"}</p>
         <pre className="code small">{tree(shown)}</pre>
         <Parts ir={shown} />
@@ -77,7 +84,7 @@ export function StructurePanel({ project }: { project: Project }) {
 
       {editable && (editing
         ? <StructureEdit ir={shown} onDone={() => setEditing(false)} />
-        : <button className="ghost small" onClick={() => setEditing(true)}>✎ Edit Structure</button>)}
+        : <button className="ghost small" onClick={() => setEditing(true)}>Edit struktur</button>)}
 
       {!s.proposal && <Issues issues={s.issues} />}
 
@@ -86,42 +93,20 @@ export function StructurePanel({ project }: { project: Project }) {
           : !finalized && (
             <button className="primary" disabled={!editable || !!s.proposal || errors.length > 0}
               title={s.proposal ? "Terapkan atau batalkan perubahan dulu" : errors.length ? "Selesaikan masalah di atas dulu" : undefined}
-              onClick={() => void run("structure", api.approveStructure)}>Approve Structure</button>
+              onClick={() => void run("structure", api.approveStructure)}>Setujui struktur</button>
           )}
       </div>
-      {state === "changed" && <p className="small warn-text">Struktur berubah setelah disetujui. Setujui lagi sebelum rancangan disetujui.</p>}
+      {state === "changed" && <p className="small warn-text">Struktur berubah setelah disetujui. Setujui lagi sebelum merancang folder.</p>}
 
-      {!repo && <History s={s} />}
+      {!repo && !compact && <History s={s} />}
     </section>
-  );
-}
-
-// Folder tree, folder specs, dependency rules and history live in the
-// repository plan; this decision only points there.
-function RepoPointer({ repo }: { repo: NonNullable<Structure["repo"]> }) {
-  const issues = repo.analysis?.issues ?? [];
-  const errors = issues.filter((i) => i.level === "error").length;
-  return (
-    <div className="plan-card">
-      <div className="tech-title">
-        <strong>Struktur repository</strong>
-        <span className={`tech-status ${repo.status}`}>{REPO_STATUS[repo.status]}</span>
-        {repo.stale && <span className="tech-tag">kedaluwarsa</span>}
-      </div>
-      <p className="small">{repo.approach}</p>
-      <p className="small muted">
-        {repo.analysis?.dirs ?? 0} folder · {repo.analysis?.files ?? 0} file{errors ? ` · ${errors} masalah` : ""}.
-        Pohon folder dan tanggung jawab tiap folder ada di rencana repository.
-      </p>
-      <Link className="ghost small" to="/blueprint?doc=repo">Buka struktur repository →</Link>
-    </div>
   );
 }
 
 // The AI analysis: system summary, the recommendation, 1-2 other
 // alternatives with their trade-offs, and the actions the user asked for.
-function StructureAnalysis({ plan, editable, busy, finalized, hideRules }: {
-  plan?: StructurePlan; editable: boolean; busy: boolean; finalized: boolean; hideRules?: boolean;
+function StructureAnalysis({ plan, editable, busy, finalized, hideRules, compact }: {
+  plan?: StructurePlan; editable: boolean; busy: boolean; finalized: boolean; hideRules?: boolean; compact?: boolean;
 }) {
   const { run, pending } = useProject();
   const [revision, setRevision] = useState("");
@@ -130,14 +115,9 @@ function StructureAnalysis({ plan, editable, busy, finalized, hideRules }: {
       <div className="plan-card">
         <div className="tech-title"><strong>Analisis AI</strong><span className="tech-tag">belum ada</span></div>
         <p className="small muted">
-          Rekomendasi di atas baru diturunkan dari keputusan teknologi. Minta AI membaca seluruh blueprint, fitur,
-          domain, arsitektur, data, keamanan, dan operasional, lalu membandingkan 2–3 alternatif struktur.
+          Rekomendasi di atas baru diturunkan dari keputusan teknologi. Tekan <strong>Susun rancangan</strong> —
+          AI membaca seluruh blueprint lalu membandingkan 2–3 alternatif struktur, dalam satu proses bersama rancangan lain.
         </p>
-        {!finalized && editable && (
-          <button className="primary" disabled={busy || pending === "structure"} onClick={() => void run("structure", () => api.analyzeStructure(""))}>
-            Analisis struktur dengan AI
-          </button>
-        )}
       </div>
     );
   }
@@ -145,13 +125,15 @@ function StructureAnalysis({ plan, editable, busy, finalized, hideRules }: {
   const others = otherAlternatives(plan);
   const stale = !!plan.stale;
   const canUse = editable && !busy && !stale;
-  return (
-    <div className="plan-card">
-      <div className="tech-title">
-        <strong>Analisis AI</strong>
-        {plan.selected && <span className="tech-tag">dipilih {plan.alternatives.find((a) => a.id === plan.selected)?.name}</span>}
-        {stale && <span className="tech-tag">kedaluwarsa</span>}
-      </div>
+  const title = (
+    <div className="tech-title">
+      <strong>Analisis AI</strong>
+      {plan.selected && <span className="tech-tag">dipilih {plan.alternatives.find((a) => a.id === plan.selected)?.name}</span>}
+      {stale && <span className="tech-tag">kedaluwarsa</span>}
+    </div>
+  );
+  const body = (
+    <>
       {plan.summary && <p className="small">{plan.summary}</p>}
       {!!plan.drivers?.length && (
         <p className="small muted">Yang menentukan struktur: {plan.drivers.join(" · ")}</p>
@@ -168,7 +150,7 @@ function StructureAnalysis({ plan, editable, busy, finalized, hideRules }: {
         </p>
       )}
       {rec && (
-        <AlternativeCard a={rec} plan={plan} primary canUse={canUse} busy={busy} finalized={finalized} open />
+        <AlternativeCard a={rec} plan={plan} primary canUse={canUse} busy={busy} finalized={finalized} open={!compact} />
       )}
       {others.map((a) => (
         <AlternativeCard key={a.id} a={a} plan={plan} canUse={canUse} busy={busy} finalized={finalized} />
@@ -194,6 +176,20 @@ function StructureAnalysis({ plan, editable, busy, finalized, hideRules }: {
           </button>
         </div>
       )}
+    </>
+  );
+  if (compact) {
+    return (
+      <details className="plan-card">
+        <summary>{title}</summary>
+        {body}
+      </details>
+    );
+  }
+  return (
+    <div className="plan-card">
+      {title}
+      {body}
     </div>
   );
 }
@@ -245,8 +241,8 @@ function Scores({ e }: { e: StructureEvaluation }) {
 
 // The structure type, changed like a technology decision: keep the
 // recommendation or pick another type, then see the impact.
-function TypeRow({ s, type, types, editable, open, onToggle, onDone }: {
-  s: Structure; type: string; types: Template[]; editable: boolean; open: boolean; onToggle: () => void; onDone: () => void;
+function TypeRow({ s, type, types, editable, open, compact, onToggle, onDone }: {
+  s: Structure; type: string; types: Template[]; editable: boolean; open: boolean; compact?: boolean; onToggle: () => void; onDone: () => void;
 }) {
   const recommended = s.recommended ?? "";
   const label = (id: string) => types.find((t) => t.id === id)?.name ?? STRUCTURE_TYPE[id] ?? id;
@@ -258,9 +254,11 @@ function TypeRow({ s, type, types, editable, open, onToggle, onDone }: {
         {recommended && type !== recommended && <span className="tech-tag">pilihan kamu</span>}
         {editable && <button className="ghost small" onClick={onToggle}>Ubah</button>}
       </div>
-      <div className="small muted">
-        {recommended && type !== recommended ? <>Rekomendasi: {label(recommended)}{s.reason && <> — {s.reason}</>}</> : <>Alasan: {s.reason || "—"}</>}
-      </div>
+      {!compact && (
+        <div className="small muted">
+          {recommended && type !== recommended ? <>Rekomendasi: {label(recommended)}{s.reason && <> — {s.reason}</>}</> : <>Alasan: {s.reason || "—"}</>}
+        </div>
+      )}
       {open && <TypeEdit type={type} recommended={recommended} types={types} label={label} onDone={onDone} />}
     </div>
   );

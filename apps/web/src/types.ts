@@ -356,6 +356,8 @@ export interface Project {
   decisions?: Decision[]; area_skips?: AreaSkip[]; definition_of_done?: string[];
   // Decisions changed since the artifacts and commands were brought in line.
   decision_sync?: string[];
+  blueprint_queue?: string[];
+  blueprint_batch?: number;
   job?: Job; events: Event[] | null; updated_at: string;
 }
 

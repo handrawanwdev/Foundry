@@ -329,6 +329,8 @@ button.connect-row:not(:disabled):hover { background: var(--hover); }
 .ws-nav { border-right: 1px solid var(--line); overflow: auto; padding: .9rem .6rem 6rem; display: flex; flex-direction: column; gap: .9rem; }
 .ws-nav-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; padding: 0 .5rem; }
 .ws-nav-head strong { color: var(--heading); }
+.ws-batch { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem .85rem; padding: .7rem 1rem; margin: 0 0 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--accent-soft); }
+.ws-main > .ws-batch { position: sticky; top: 0; z-index: 4; }
 .ws-group { display: flex; flex-direction: column; gap: 1px; }
 .ws-group-label { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); padding: 0 .5rem .3rem; }
 .ws-item { display: flex; align-items: center; gap: .5rem; width: 100%; border: none; background: none; text-align: left; padding: .42rem .5rem; border-radius: 8px; font-size: 13px; color: var(--text); text-decoration: none; }
@@ -716,7 +718,12 @@ button.link:hover { text-decoration: underline; background: none; }
 .plat .info-sec { margin-top: 1.5rem; }
 .plat .info-sec > p { max-width: 68ch; }
 .tp > .repo-head h2,
-.plat .tech-title h2 { font-size: 1.15rem; color: var(--heading); margin: 0 0 .15rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.plat .tech-title h2,
+.repo .tech-title h2 { font-size: 1.15rem; color: var(--heading); margin: 0 0 .15rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.plan-card > summary { cursor: pointer; }
+.plan-card > summary .tech-title { display: inline-flex; }
+.repo .info-sec { margin-top: .25rem; }
+.repo .info-sec:last-of-type { border-bottom: none; padding-bottom: 4.5rem; }
 
 /* ---- Technology plan workspace ---- */
 .tp-invite textarea { width: 100%; margin: .4rem 0; }

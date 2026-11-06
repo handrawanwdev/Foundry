@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { agentPrompt, DESIGN_DOCS, designIssuesOf, isDesignDoc, SCOPE_DOCS, scopeIssuesOf } from "./blueprint";
-import type { ExportManifest } from "./types";
+import { agentPrompt, blueprintGenerateNeeded, DESIGN_DOCS, designIssuesOf, isDesignDoc, SCOPE_DOCS, scopeIssuesOf } from "./blueprint";
+import type { BlueprintView, ExportManifest, Project } from "./types";
 
 const manifest = {
   waves: [["CMD-001"], ["CMD-002", "CMD-003"]],
@@ -44,6 +44,18 @@ describe("design artifacts", () => {
     expect(designIssuesOf(issues, DESIGN_DOCS.rules).map((i) => i.message)).toEqual(["principles belum diisi"]);
     expect(designIssuesOf(issues, DESIGN_DOCS.layout)).toHaveLength(2);
     expect(isDesignDoc("layout-spec") && isDesignDoc("design-rules") && !isDesignDoc("ui-design")).toBe(true);
+  });
+});
+
+describe("blueprintGenerateNeeded", () => {
+  const base = { stage: "DESIGN", platform: { targets: [{ kind: "web" }] }, stack: {}, structure: { mode: "new" } } as Project;
+  it("asks for a run when tech, structure or repo is missing", () => {
+    expect(blueprintGenerateNeeded(base, null)).toBe(true);
+    expect(blueprintGenerateNeeded({ ...base, ui: { rules: {} }, stack: { plan: {} }, structure: { mode: "new", plan: {}, repo: {} } } as Project, null)).toBe(false);
+  });
+  it("asks for a run when an area is missing", () => {
+    const view = { areas: [{ id: "data", status: "missing" }], artifacts: [], has_ui: false } as unknown as BlueprintView;
+    expect(blueprintGenerateNeeded({ ...base, stack: { plan: {} }, structure: { mode: "existing" } } as Project, view)).toBe(true);
   });
 });
 
