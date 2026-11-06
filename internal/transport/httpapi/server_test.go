@@ -641,3 +641,33 @@ func TestProgressRoutes(t *testing.T) {
 		t.Fatalf("unknown command: %d %s", w.Code, w.Body)
 	}
 }
+
+// The repository plan routes exist and refuse a project that cannot have one
+// as the wrong stage, not as an unknown route; an edit needs a reason.
+func TestRepoPlanRoutes(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	s := New(nil, "/bin/foundry")
+	if _, err := s.Open(t.TempDir(), "demo", false); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr, r.Host = "127.0.0.1:50000", "127.0.0.1:8080"
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if w := do("PUT", "/api/v1/project/repo", `{"ops":[{"op":"add_rule","text":"x"}],"reason":""}`); w.Code != http.StatusBadRequest && w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "alasan") {
+		t.Fatalf("edit without reason: %d %s", w.Code, w.Body)
+	}
+	for _, c := range []struct{ method, path string }{
+		{"POST", "/api/v1/project/repo/generate"}, {"POST", "/api/v1/project/repo/revise"},
+		{"POST", "/api/v1/project/repo/approve"}, {"POST", "/api/v1/project/repo/discard"},
+	} {
+		if w := do(c.method, c.path, `{}`); w.Code == http.StatusNotFound && strings.Contains(w.Body.String(), "not found") {
+			t.Fatalf("%s %s is not routed", c.method, c.path)
+		}
+	}
+}

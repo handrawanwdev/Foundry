@@ -12,6 +12,7 @@ import { PromptBar } from "../components/PromptBar";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
 import type { AcceptanceEdit, Artifact, ArtifactCategory, ArtifactState, BlueprintView, Decision, DesignIssue, DesignView, Flow, Project } from "../types";
+import { RepoWorkspace } from "../components/RepoWorkspace";
 import { PlatformStructure } from "./Platform";
 
 // Blueprint workspace: the artifact list on the left, one document at a time.
@@ -103,12 +104,20 @@ export function BlueprintPage() {
           <button className={`ws-item ${id === "platform" ? "on" : ""}`} onClick={() => select("platform")}>
             <span className="ws-item-text">Platform & Teknologi</span>
           </button>
+          {project.structure?.ir && project.structure.mode !== "existing" && (
+            <button className={`ws-item ${id === "repo" ? "on" : ""}`} aria-current={id === "repo" ? "page" : undefined} onClick={() => select("repo")}>
+              <span className="ws-item-text">Struktur repository</span>
+              {project.structure.repo?.stale && <span className="ws-count" title="Sumber berubah; perlu ditinjau">!</span>}
+              {!project.structure.repo && <span className="muted small">belum ada</span>}
+            </button>
+          )}
         </div>
       </nav>
 
       <main className="ws-main">
         <DecisionSyncNotice project={project} locked={locked} />
         {id === "platform" ? <PlatformStructure project={project} />
+          : id === "repo" ? <RepoWorkspace project={project} />
           : !view ? <p className="muted"><span className="spinner" /> Memuat blueprint… <Elapsed /></p>
           : id === "scope" ? <ScopePanel project={project} view={view} locked={locked} onOpen={select} />
           : id === "design" && designing ? <DesignEmpty project={project} locked={locked} />
@@ -119,7 +128,7 @@ export function BlueprintPage() {
           : <p className="muted">Pilih artefak di kiri.</p>}
       </main>
 
-      {!locked && (id === "platform" ? (
+      {!locked && id !== "repo" && (id === "platform" ? (
         <PlatformPrompt project={project} working={working} />
       ) : designDoc ? (
         <PromptBar

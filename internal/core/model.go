@@ -419,6 +419,11 @@ type Structure struct {
 	Plan *StructurePlan `json:"plan,omitempty"`
 	// PlanRequest is a structure analysis or revision waiting for the AI.
 	PlanRequest *StructurePlanRequest `json:"plan_request,omitempty"`
+	// Repo is the detailed repository plan: folders and files with their
+	// responsibilities, module mapping and dependency rules. RepoRequest is
+	// a design or revision of it waiting for the AI.
+	Repo        *RepoPlan    `json:"repo,omitempty"`
+	RepoRequest *RepoRequest `json:"repo_request,omitempty"`
 	// Request is a natural-language change waiting for the AI.
 	Request string             `json:"request,omitempty"`
 	History []StructureVersion `json:"history,omitempty"`

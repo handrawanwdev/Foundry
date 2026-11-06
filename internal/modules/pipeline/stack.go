@@ -12,6 +12,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/stack"
+	"github.com/handrawanwdev/foundry/internal/modules/techplan"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 	"github.com/handrawanwdev/foundry/internal/modules/workflow"
 )
@@ -206,6 +207,9 @@ func (s *Service) ApproveStack() (*core.Project, error) {
 		if err := stackEditable(p); err != nil {
 			return err
 		}
+		if err := techplan.Gate(p); err != nil {
+			return err
+		}
 		if err := stack.Approve(p.Stack); err != nil {
 			return err
 		}
@@ -222,6 +226,9 @@ func (s *Service) RecommendStack() (*core.Project, error) {
 		}
 		if p.Stack.Proposal != nil {
 			return stack.ErrPending
+		}
+		if p.Stack.Plan != nil {
+			return errors.New("teknologi diputuskan oleh rencana teknologi AI; minta revisi rencananya untuk menganalisis ulang")
 		}
 		decideStack(p, "Analisa ulang kebutuhan")
 		p.Log("ui", "Rekomendasi teknologi diperbarui")
@@ -263,6 +270,9 @@ func stackReady(p *core.Project) error {
 	if st.State() != core.TechApproved {
 		return ErrStackNotApproved
 	}
+	if err := techplan.Gate(p); err != nil {
+		return err
+	}
 	if len(p.TechReview()) > 0 {
 		return ErrTechReview
 	}
@@ -274,6 +284,15 @@ func stackReady(p *core.Project) error {
 // derives a new project's structure from it. why names the trigger.
 func decideStack(p *core.Project, why string) {
 	old := p.Stack
+	if old != nil && old.Plan != nil {
+		// The AI's technology plan decides; Foundry's recommender never
+		// replaces its decisions. The plan notices the changed requirement or
+		// platform through its source hashes.
+		stack.Resync(p, old)
+		work.CompleteBlueprint(p)
+		syncStructure(p, why)
+		return
+	}
 	next := stack.Recommend(p)
 	stack.Carry(old, next)
 	stack.Refresh(next)

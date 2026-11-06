@@ -18,8 +18,10 @@ import (
 	"github.com/handrawanwdev/foundry/internal/config"
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/agent"
+	"github.com/handrawanwdev/foundry/internal/modules/repoplan"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/structure"
+	"github.com/handrawanwdev/foundry/internal/modules/techplan"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
@@ -85,6 +87,10 @@ func (s *Service) Snapshot() (*core.Project, error) {
 	}
 	if p.Structure != nil {
 		structure.RefreshPlan(p.Structure, p)
+		repoplan.Refresh(p, p.Structure.Repo)
+	}
+	if p.Stack != nil && p.Stack.Plan != nil {
+		techplan.Refresh(p, p.Stack.Plan)
 	}
 	return p, nil
 }
@@ -234,6 +240,16 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 			return work.StructurePlanPrompt(p)
 		}
 		return work.StructurePrompt(p)
+	case work.KindRepo:
+		if r := p.Structure.RepoRequest; r != nil && r.Action == core.RepoRevise && p.Structure.Repo != nil {
+			return work.RepoRevisePrompt(p)
+		}
+		return work.RepoPlanPrompt(p)
+	case work.KindTech:
+		if r := p.Stack.PlanRequest; r != nil && r.Action == core.TechPlanRevise && p.Stack.Plan != nil {
+			return work.TechRevisePrompt(p)
+		}
+		return work.TechPlanPrompt(p)
 	case work.KindArtifacts:
 		return work.ArtifactsPrompt(p, spec.Artifacts(p))
 	case work.KindWorkflow:
@@ -297,6 +313,14 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 				// The retry was refused too: close the analysis with the
 				// concrete reason and let the user analyze again.
 				s.dropStructureRequest(err)
+				return
+			}
+			if kind == work.KindRepo && s.repoPending() {
+				s.dropRepoRequest(err)
+				return
+			}
+			if kind == work.KindTech && s.techPending() {
+				s.dropTechRequest(err)
 				return
 			}
 			s.failJob(kind, err)
@@ -385,6 +409,10 @@ func jobMessage(kind string) string {
 		return "Memahami permintaan perubahan teknologi"
 	case work.KindStructure:
 		return "Memproses struktur project"
+	case work.KindRepo:
+		return "Merancang struktur repository"
+	case work.KindTech:
+		return "Merancang teknologi"
 	case work.KindArtifacts:
 		return "Merevisi blueprint"
 	case work.KindWorkflow:
@@ -456,6 +484,32 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			if err := work.ApplyStructureChange(p, raw); err != nil {
 				return err
 			}
+		case work.KindRepo:
+			if p.Structure == nil || p.Structure.RepoRequest == nil {
+				return errors.New("tidak ada permintaan struktur repository")
+			}
+			apply := work.ApplyRepoPlan
+			if p.Structure.RepoRequest.Action == core.RepoRevise {
+				apply = work.ApplyRepoRevision
+			}
+			if err := apply(p, raw); err != nil {
+				return err
+			}
+			defer stampRefs(p)
+		case work.KindTech:
+			if p.Stack == nil || p.Stack.PlanRequest == nil {
+				return errors.New("tidak ada permintaan rencana teknologi")
+			}
+			apply := work.ApplyTechPlan
+			if p.Stack.PlanRequest.Action == core.TechPlanRevise {
+				apply = work.ApplyTechRevision
+			}
+			v, err := apply(p, raw)
+			if err != nil {
+				return err
+			}
+			landTech(p, v)
+			defer stampRefs(p)
 		case work.KindArtifacts:
 			if err := work.ApplyArtifacts(p, raw); err != nil {
 				return err
@@ -487,6 +541,22 @@ func (s *Service) applyAI(kind, raw, source string) error {
 		}
 		return s.dropStructureRequest(err)
 	}
+	if kind == work.KindRepo && err != nil {
+		// Like a structure analysis, a refused answer keeps its request so
+		// the retry prompt carries the concrete refusal.
+		if s.repoPending() {
+			return err
+		}
+		return s.dropRepoRequest(err)
+	}
+	if kind == work.KindTech && err != nil {
+		// A refused answer keeps its request so the retry prompt carries the
+		// concrete refusal.
+		if s.techPending() {
+			return err
+		}
+		return s.dropTechRequest(err)
+	}
 	if err != nil {
 		return err
 	}
@@ -511,6 +581,32 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			}
 			retry = p.Structure.PlanRequest.Rejected == ""
 			p.Structure.PlanRequest.Rejected = err.Error()
+			p.Log("system", err.Error())
+			return nil
+		})
+		return retry
+	}
+	if kind == work.KindRepo {
+		retry := false
+		s.Store.Update(func(p *core.Project) error {
+			if p.Structure == nil || p.Structure.RepoRequest == nil {
+				return nil
+			}
+			retry = p.Structure.RepoRequest.Rejected == ""
+			p.Structure.RepoRequest.Rejected = err.Error()
+			p.Log("system", err.Error())
+			return nil
+		})
+		return retry
+	}
+	if kind == work.KindTech {
+		retry := false
+		s.Store.Update(func(p *core.Project) error {
+			if p.Stack == nil || p.Stack.PlanRequest == nil {
+				return nil
+			}
+			retry = p.Stack.PlanRequest.Rejected == ""
+			p.Stack.PlanRequest.Rejected = err.Error()
 			p.Log("system", err.Error())
 			return nil
 		})
@@ -597,6 +693,14 @@ func (s *Service) DismissJob() error {
 				p.Structure.PlanRequest = nil
 				p.Structure.Request = ""
 			}
+		case work.KindRepo:
+			if p.Structure != nil {
+				p.Structure.RepoRequest = nil
+			}
+		case work.KindTech:
+			if p.Stack != nil {
+				p.Stack.PlanRequest = nil
+			}
 		}
 		p.Job = nil
 		p.Log("ui", "Pesan gagal ditutup")
@@ -625,6 +729,14 @@ func (s *Service) RetryJob() error {
 		}
 	case work.KindStructure:
 		if p.Structure != nil && (p.Structure.Request != "" || p.Structure.PlanRequest != nil) {
+			return s.startAIIf(kind, failedJob(kind))
+		}
+	case work.KindRepo:
+		if p.Structure != nil && p.Structure.RepoRequest != nil {
+			return s.startAIIf(kind, failedJob(kind))
+		}
+	case work.KindTech:
+		if p.Stack != nil && p.Stack.PlanRequest != nil {
 			return s.startAIIf(kind, failedJob(kind))
 		}
 	case work.KindArtifacts:

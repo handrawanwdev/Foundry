@@ -8,6 +8,29 @@ import (
 	"github.com/handrawanwdev/foundry/internal/core"
 )
 
+func TestPromptsCarryTechPlanExtras(t *testing.T) {
+	p := &core.Project{
+		Name: "demo", Story: "s",
+		Stack: &core.TechStack{
+			Decisions: []core.TechDecision{{Area: core.TechBackend, Recommended: "Elixir + Phoenix", Reason: "realtime"}},
+			Plan: &core.TechPlan{Items: []core.TechItem{
+				{Area: core.TechBackend, Technology: "Elixir + Phoenix"},
+				{Area: "orm", Technology: "Ecto", Language: "Elixir", Purpose: "persistence"},
+				{Area: "authentication", Technology: "Phoenix.Session", Purpose: "login"},
+			}},
+		},
+	}
+	docs := []core.Artifact{{ID: "requirements", Title: "R", Body: "b"}}
+	for name, got := range map[string]string{
+		"blueprint": ArtifactsPrompt(p, docs),
+		"workflow":  WorkflowPrompt(p, docs),
+	} {
+		if !strings.Contains(got, "orm: Ecto") || !strings.Contains(got, "authentication: Phoenix.Session") {
+			t.Errorf("%s prompt missing plan extras:\n%s", name, got[:min(len(got), 800)])
+		}
+	}
+}
+
 func TestApplyArtifacts(t *testing.T) {
 	p := &core.Project{}
 	SetArtifacts(p, []core.Artifact{{Title: "Model Domain", Body: "x"}, {ID: "model-domain", Title: "Lagi", Body: "y"},

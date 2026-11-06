@@ -1,4 +1,4 @@
-import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
+import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
 
 // details lists what an invalid request broke (field = where).
 export interface ErrorDetail { field?: string; message: string }
@@ -60,6 +60,12 @@ export const api = {
   recommendStructure: () => call<Project>("POST", "/project/structure/recommend", {}),
   // AI analyzes the whole system and compares 2-3 alternatives; text revises it.
   analyzeStructure: (text = "") => call("POST", "/project/structure/analyze", { text }),
+  // Repository plan: the AI designs folders and files; revise in words or edit by hand, each with a reason.
+  generateRepo: (text = "", reason = "") => call("POST", "/project/repo/generate", { text, reason }),
+  reviseRepo: (text = "", reason = "") => call("POST", "/project/repo/revise", { text, reason }),
+  editRepo: (ops: RepoOp[], reason: string) => call<Project>("PUT", "/project/repo", { ops, reason }),
+  approveRepo: () => call<Project>("POST", "/project/repo/approve", {}),
+  discardRepo: () => call<Project>("POST", "/project/repo/discard", {}),
   // Adopt one alternative (empty = the AI recommendation) and approve it.
   useStructureAlternative: (alternative = "") => call<Project>("POST", "/project/structure/use", { alternative }),
   // value "" returns the area to Foundry's recommendation.
@@ -73,6 +79,9 @@ export const api = {
   confirmStackReview: (area: TechArea) => call<Project>("POST", "/project/stack/review", { area }),
   reviewedDesignTech: () => call<Project>("POST", "/project/stack/review-design", {}),
   recommendStack: () => call<Project>("POST", "/project/stack/recommend", {}),
+  generateTechPlan: (text = "", reason = "") => call("POST", "/project/stack/plan/generate", { text, reason }),
+  reviseTechPlan: (text = "", reason = "") => call("POST", "/project/stack/plan/revise", { text, reason }),
+  discardTechPlan: () => call<Project>("POST", "/project/stack/plan/discard", {}),
   stackCatalog: () => call<StackCatalog>("GET", "/stack/catalog"),
   // UI design: design rules + layout spec, blueprint artifacts edited as data.
   design: () => call<DesignView>("GET", "/project/design"),

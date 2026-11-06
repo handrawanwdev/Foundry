@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { Elapsed } from "./Elapsed";
 import { isWorking } from "../flow";
 import {
   otherAlternatives, recommendedAlternative, SCORE_LABEL, STRUCTURE_TYPE, structureState, structureVersion, tree,
 } from "../structure";
+import { STATUS_LABEL as REPO_STATUS } from "../repo";
 import { changeText, TECH_STATUS } from "../tech";
 import { useProject } from "../store/project";
 import type {
@@ -37,11 +39,13 @@ export function StructurePanel({ project }: { project: Project }) {
   const plan = s.plan;
   const rec = recommendedAlternative(plan);
   const recommendation = rec?.name ?? STRUCTURE_TYPE[s.recommended ?? ""] ?? "—";
+  // The detailed folder plan owns tree, folder specs, rules and history once it exists.
+  const repo = s.repo && !s.proposal ? s.repo : undefined;
 
   return (
     <section className="info-sec">
       <div className="tech-title">
-        <h3>Struktur folder</h3>
+        <h2>Keputusan struktur</h2>
         <span className={`tech-status ${state}`}>{TECH_STATUS[state]}{structureVersion(s) ? ` · v${structureVersion(s)}` : ""}</span>
       </div>
       <p className="small muted">
@@ -49,25 +53,27 @@ export function StructurePanel({ project }: { project: Project }) {
         {s.reason && <> — {s.reason}</>}. Kamu yang memutuskan; yang disetujui masuk spesifikasi final.
       </p>
       <p className="small muted">
-        Layout folder diturunkan dari arsitektur aplikasi dan struktur repository di Teknologi, lalu diperiksa AI terhadap
-        seluruh blueprint. Deployment diputuskan sendiri dan tidak mengubah layout ini.
+        Keputusan ini memilih bentuk struktur secara garis besar, diturunkan dari arsitektur aplikasi dan struktur repository
+        di Teknologi, lalu diperiksa AI terhadap seluruh blueprint. Deployment diputuskan sendiri dan tidak mengubah ini.
       </p>
 
       {!finalized && s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}” <Elapsed started={project.job?.started} /></p>}
       {!finalized && s.plan_request && <p className="small muted"><span className="spinner" /> AI menganalisis sistem dan membandingkan alternatif struktur… <Elapsed started={project.job?.started} /></p>}
 
       {s.proposal && <Proposal p={s.proposal} disabled={busy || finalized} />}
-      {!s.proposal && <StructureAnalysis plan={plan} editable={editable} busy={busy} finalized={finalized} />}
+      {!s.proposal && <StructureAnalysis plan={plan} editable={editable} busy={busy} finalized={finalized} hideRules={!!repo} />}
 
       <div className="tech-list">
         <TypeRow s={s} type={shown.type} types={types} editable={editable && !s.proposal} open={typeOpen}
           onToggle={() => setTypeOpen(!typeOpen)} onDone={() => setTypeOpen(false)} />
       </div>
 
-      <p className="small muted">{s.proposal ? "Preview usulan (belum diterapkan):" : "Preview:"}</p>
-      <pre className="code small">{tree(shown)}</pre>
-      <Parts ir={shown} />
-      <Rules rules={shown.rules ?? []} editable={editable} />
+      {repo ? <RepoPointer repo={repo} /> : <>
+        <p className="small muted">{s.proposal ? "Preview usulan (belum diterapkan):" : "Preview:"}</p>
+        <pre className="code small">{tree(shown)}</pre>
+        <Parts ir={shown} />
+        <Rules rules={shown.rules ?? []} editable={editable} />
+      </>}
 
       {editable && (editing
         ? <StructureEdit ir={shown} onDone={() => setEditing(false)} />
@@ -85,15 +91,37 @@ export function StructurePanel({ project }: { project: Project }) {
       </div>
       {state === "changed" && <p className="small warn-text">Struktur berubah setelah disetujui. Setujui lagi sebelum rancangan disetujui.</p>}
 
-      <History s={s} />
+      {!repo && <History s={s} />}
     </section>
+  );
+}
+
+// Folder tree, folder specs, dependency rules and history live in the
+// repository plan; this decision only points there.
+function RepoPointer({ repo }: { repo: NonNullable<Structure["repo"]> }) {
+  const issues = repo.analysis?.issues ?? [];
+  const errors = issues.filter((i) => i.level === "error").length;
+  return (
+    <div className="plan-card">
+      <div className="tech-title">
+        <strong>Struktur repository</strong>
+        <span className={`tech-status ${repo.status}`}>{REPO_STATUS[repo.status]}</span>
+        {repo.stale && <span className="tech-tag">kedaluwarsa</span>}
+      </div>
+      <p className="small">{repo.approach}</p>
+      <p className="small muted">
+        {repo.analysis?.dirs ?? 0} folder · {repo.analysis?.files ?? 0} file{errors ? ` · ${errors} masalah` : ""}.
+        Pohon folder dan tanggung jawab tiap folder ada di rencana repository.
+      </p>
+      <Link className="ghost small" to="/blueprint?doc=repo">Buka struktur repository →</Link>
+    </div>
   );
 }
 
 // The AI analysis: system summary, the recommendation, 1-2 other
 // alternatives with their trade-offs, and the actions the user asked for.
-function StructureAnalysis({ plan, editable, busy, finalized }: {
-  plan?: StructurePlan; editable: boolean; busy: boolean; finalized: boolean;
+function StructureAnalysis({ plan, editable, busy, finalized, hideRules }: {
+  plan?: StructurePlan; editable: boolean; busy: boolean; finalized: boolean; hideRules?: boolean;
 }) {
   const { run, pending } = useProject();
   const [revision, setRevision] = useState("");
@@ -145,7 +173,7 @@ function StructureAnalysis({ plan, editable, busy, finalized }: {
       {others.map((a) => (
         <AlternativeCard key={a.id} a={a} plan={plan} canUse={canUse} busy={busy} finalized={finalized} />
       ))}
-      {!!plan.dependency_rules?.length && (
+      {!hideRules && !!plan.dependency_rules?.length && (
         <details className="small">
           <summary>Aturan dependency antarbagian</summary>
           <ul>{plan.dependency_rules.map((r) => <li key={r}>{r}</li>)}</ul>

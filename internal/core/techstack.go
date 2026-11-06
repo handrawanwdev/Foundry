@@ -121,6 +121,12 @@ type TechStack struct {
 	// Request is a natural-language change waiting for the AI.
 	Request string        `json:"request,omitempty"`
 	History []TechVersion `json:"history,omitempty"`
+	// Plan is the AI's technology plan: the reasoning, alternatives,
+	// compatibility and evaluation behind the decisions. Once it exists it
+	// governs the decisions (Foundry's own recommender no longer replaces
+	// them); PlanRequest is an AI job for it that waits for an answer.
+	Plan        *TechPlan        `json:"plan,omitempty"`
+	PlanRequest *TechPlanRequest `json:"plan_request,omitempty"`
 }
 
 // TechChange is one area moving from one technology to another.
@@ -169,6 +175,9 @@ type TechProposal struct {
 	// Previous is the status to return to when the proposal is cancelled.
 	Previous TechStatus `json:"previous"`
 	At       time.Time  `json:"at"`
+	// Plan is the technology plan that becomes the stack's plan when the
+	// proposal is applied.
+	Plan *TechPlan `json:"plan,omitempty"`
 }
 
 // TechAffected is what a technology change reaches in the blueprint and
@@ -436,6 +445,9 @@ func (s *TechStack) Brief() string {
 		}
 		fmt.Fprintf(&b, " [%s]", s.DecisionState(d))
 		b.WriteString("\n")
+	}
+	if x := s.Plan.Brief(); x != "" {
+		b.WriteString("Other technology decisions of the plan (same rule: use exactly these):\n" + x)
 	}
 	return b.String()
 }

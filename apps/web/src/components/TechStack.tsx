@@ -94,7 +94,7 @@ export function TechStackPanel({ project }: { project: Project }) {
       {!s.proposal && <Issues issues={s.issues} />}
 
       <div className="tech-foot">
-        {editable && !s.proposal && <button className="ghost small" onClick={() => void run("stack", api.recommendStack)}>↻ Analisa ulang</button>}
+        {editable && !s.proposal && !s.plan && <button className="ghost small" onClick={() => void run("stack", api.recommendStack)}>↻ Analisa ulang</button>}
         {!approval ? <span className="ok-text small">✓ Semua teknologi dibaca dari kode yang ada</span>
           : state === "approved" ? <span className="ok-text small">✓ Teknologi v{techVersion(s)} disetujui{finalized ? " dan masuk spesifikasi final" : ""}</span>
             : !finalized && (
@@ -111,7 +111,7 @@ export function TechStackPanel({ project }: { project: Project }) {
   );
 }
 
-function TechRow({ s, d, editable, open, options, onToggle, onDone }: {
+export function TechRow({ s, d, editable, open, options, onToggle, onDone }: {
   s: TechStack; d: TechDecision; editable: boolean; open: boolean; options: TechOption[]; onToggle: () => void; onDone: () => void;
 }) {
   const { run, pending } = useProject();
@@ -218,7 +218,7 @@ function TechEdit({ s, d, options, onDone }: { s: TechStack; d: TechDecision; op
 
 // The waiting change: what the user asked, what follows from it, the
 // choices to review, validation, and what it reaches in the blueprint.
-function Proposal({ p, disabled }: { p: TechProposal; disabled: boolean }) {
+export function Proposal({ p, disabled }: { p: TechProposal; disabled: boolean }) {
   const { run, pending } = useProject();
   const design = (p.impact ?? []).some((i) => i.design);
   const own = p.changes.filter((c) => !c.follow), follow = p.changes.filter((c) => c.follow);
@@ -238,7 +238,7 @@ function Proposal({ p, disabled }: { p: TechProposal; disabled: boolean }) {
       {!!p.review?.length && (
         <>
           <span className="small warn-text">Pilihanmu yang perlu ditinjau setelah diterapkan (tidak diubah otomatis):</span>
-          <ul className="small">{p.review.map((i, k) => <li key={k}>{i.area && <strong>{TECH_AREA[i.area] ?? i.area}: </strong>}{i.message}</li>)}</ul>
+          <ul className="small">{p.review.map((i, k) => <li key={k}>{i.area && <strong>{(TECH_AREA as Record<string, string>)[i.area] ?? i.area}: </strong>}{i.message}</li>)}</ul>
         </>
       )}
       <Issues issues={p.issues} ok="Kombinasi teknologi ini kompatibel dengan pilihan lain dan kebutuhan project." />
@@ -269,7 +269,7 @@ function Issues({ issues, ok }: { issues?: TechIssue[]; ok?: string }) {
     <ul className="tech-issues small">
       {issues.map((i, k) => (
         <li key={k} className={i.level}>
-          {i.level === "error" ? "✕" : "!"} {i.area && <strong>{TECH_AREA[i.area] ?? i.area}: </strong>}{i.message}
+          {i.level === "error" ? "✕" : "!"} {i.area && <strong>{(TECH_AREA as Record<string, string>)[i.area] ?? i.area}: </strong>}{i.message}
         </li>
       ))}
     </ul>

@@ -9,7 +9,7 @@ import (
 
 // WorkItem is what an MCP host must do next.
 type WorkItem struct {
-	Kind   string `json:"kind"` // feature_map | discovery | design | stack | structure | blueprint | workflow | none
+	Kind   string `json:"kind"` // feature_map | discovery | design | stack | tech | structure | repo | blueprint | workflow | none
 	Prompt string `json:"prompt"`
 	Submit string `json:"submit"` // how to hand the result back
 }
@@ -24,7 +24,7 @@ func (s *Service) NextWork() (*WorkItem, error) {
 		return &WorkItem{Kind: "none", Prompt: nothingMessage(p)}, nil
 	}
 	switch p.Job.Kind {
-	case work.KindFeatureMap, work.KindDiscovery, work.KindDesign, work.KindStack, work.KindStructure, work.KindArtifacts, work.KindWorkflow:
+	case work.KindFeatureMap, work.KindDiscovery, work.KindDesign, work.KindStack, work.KindTech, work.KindStructure, work.KindRepo, work.KindArtifacts, work.KindWorkflow:
 		return &WorkItem{Kind: p.Job.Kind, Prompt: s.promptFor(p, p.Job.Kind),
 			Submit: fmt.Sprintf(`submit_work {"kind": %q, "result": "<the JSON object>"}`, p.Job.Kind)}, nil
 	}

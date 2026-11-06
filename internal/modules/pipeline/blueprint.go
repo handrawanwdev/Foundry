@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/repoplan"
+	"github.com/handrawanwdev/foundry/internal/modules/techplan"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/stack"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
@@ -189,8 +191,14 @@ func Blockers(p *core.Project) []string {
 		case len(p.TechReview()) > 0:
 			out = append(out, "rancangan UI belum ditinjau terhadap perubahan teknologi")
 		}
+		if err := techplan.Gate(p); err != nil {
+			out = append(out, err.Error())
+		}
 		if st := p.Structure; st == nil || st.Mode != core.StructureExisting && st.State() != core.TechApproved {
 			out = append(out, "struktur project belum disetujui")
+		}
+		if err := repoplan.Ready(p); err != nil {
+			out = append(out, err.Error())
 		}
 	}
 	return append(out, workflowBlockers(p)...)
@@ -243,6 +251,9 @@ func (s *Service) Finalize() error {
 				return errors.New("struktur project belum ada")
 			}
 			if err := structureReady(p); err != nil {
+				return err
+			}
+			if err := repoplan.Ready(p); err != nil {
 				return err
 			}
 		}

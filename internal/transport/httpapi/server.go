@@ -300,6 +300,53 @@ func (s *Server) Handler() http.Handler {
 		}
 		return svc.UseStructureAlternative(in.Alternative)
 	}))
+	// Repository plan: the AI designs folders, files, module mapping and
+	// dependency rules; the user revises in words or by hand (each with a
+	// reason) and approves.
+	api("POST /api/v1/project/repo/generate", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Text, Reason string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.GenerateRepoPlan(in.Text, in.Reason))
+	}))
+	api("POST /api/v1/project/repo/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Text, Reason string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.ReviseRepoPlan(in.Text, in.Reason))
+	}))
+	api("PUT /api/v1/project/repo", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			Ops    []core.RepoOp
+			Reason string
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return svc.EditRepoPlan(in.Ops, in.Reason)
+	}))
+	api("POST /api/v1/project/repo/approve", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.ApproveRepoPlan() }))
+	api("POST /api/v1/project/repo/discard", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.DiscardRepoPlan() }))
+	// Technology plan: the AI analyzes what the system needs and designs its
+	// technology with reasoning, alternatives and compatibility; the user
+	// revises in words or changes a decision by hand (PUT stack) and approves.
+	api("POST /api/v1/project/stack/plan/generate", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Text, Reason string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.GenerateTechPlan(in.Text, in.Reason))
+	}))
+	api("POST /api/v1/project/stack/plan/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Text, Reason string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		return ok(svc.ReviseTechPlan(in.Text, in.Reason))
+	}))
+	api("POST /api/v1/project/stack/plan/discard", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.DiscardTechPlan() }))
 	// Technology changes become a proposal; apply/discard decide it.
 	api("PUT /api/v1/project/stack", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct{ Changes []stack.Change }

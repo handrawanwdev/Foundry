@@ -408,12 +408,8 @@ func Layout(ir *core.StructureIR) []string {
 	}
 	for _, p := range ir.Services {
 		out = append(out, p.Path)
-		infix := ""
-		if generic(p.Name) {
-			infix = "modules/"
-		}
 		for _, m := range p.Modules {
-			out = append(out, p.Path+infix+m+"/")
+			out = append(out, ModulePath(p, m))
 		}
 	}
 	for _, ps := range [][]core.StructurePart{ir.Workers, ir.Packages} {
@@ -459,6 +455,15 @@ func Tree(ir *core.StructureIR) string {
 		walk(k, "")
 	}
 	return b.String()
+}
+
+// ModulePath is the folder of module m inside service svc.
+func ModulePath(svc core.StructurePart, m string) string {
+	infix := ""
+	if generic(svc.Name) {
+		infix = "modules/"
+	}
+	return svc.Path + infix + m + "/"
 }
 
 // generic services hold modules but are not a domain themselves.

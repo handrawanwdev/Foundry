@@ -1156,6 +1156,43 @@ func languageOf(value string) string {
 	return ""
 }
 
+// Resync brings the needs and platform of a stack that a technology plan
+// governs up to date with the project, without touching its decisions: the
+// plan, not Foundry's recommender, decides them. The plan notices the change
+// through its source hashes.
+func Resync(p *core.Project, s *core.TechStack) {
+	plat := platformOf(p)
+	if s.Mode == core.StructureExisting {
+		o := s.Platform
+		plat.Web, plat.Mobile, plat.Desktop = plat.Web || o.Web, plat.Mobile || o.Mobile, plat.Desktop || o.Desktop
+		plat.Backend, plat.CLI = plat.Backend || o.Backend, plat.CLI || o.CLI
+	}
+	s.Needs, s.Platform = Analyze(p), plat
+	Refresh(s)
+}
+
+// Known reports whether Foundry's catalog lists value for area. The catalog
+// is reference knowledge: a technology it does not list is as valid in a
+// technology plan, only its compatibility cannot be checked from the catalog.
+func Known(area, value string) bool {
+	if none(value) {
+		return false
+	}
+	for _, v := range parts(area, value) {
+		if option(area, v) == nil {
+			return false
+		}
+	}
+	return true
+}
+
+// LanguageOf is the language of a technology, guessed from its name; ""
+// when unknown.
+func LanguageOf(area, value string) string {
+	l, _ := describe(area, value)
+	return l
+}
+
 func values(area string) []string {
 	var v []string
 	for _, o := range Catalog[area] {

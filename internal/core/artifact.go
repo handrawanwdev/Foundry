@@ -51,7 +51,7 @@ var ArtifactCategories = []string{ArtifactRequirements, ArtifactDomain, Artifact
 var BuiltinArtifacts = map[string]bool{
 	"requirements": true, "architecture": true, "technology": true, ArtifactDesignRules: true, ArtifactLayoutSpec: true,
 	ArtifactUseCases: true, ArtifactAcceptance: true, ArtifactDecisions: true, ArtifactSurvey: true,
-	ArtifactSystemOverview: true,
+	ArtifactSystemOverview: true, ArtifactRepoStructure: true, ArtifactTechPlan: true,
 }
 
 // Built-in artifacts besides requirements, architecture and technology.
@@ -67,6 +67,14 @@ const (
 	// ArtifactSystemOverview is the plain-language explanation of the
 	// product, rendered from the current blueprint.
 	ArtifactSystemOverview = "system-overview"
+	// ArtifactRepoStructure is the repository plan: folders, files,
+	// responsibilities, module mapping and dependency rules. It exists once
+	// the plan does.
+	ArtifactRepoStructure = "repository-structure"
+	// ArtifactTechPlan is the technology plan: decisions with their
+	// reasoning, alternatives, compatibility and evaluation. It exists once
+	// the plan does.
+	ArtifactTechPlan = "technology-plan"
 )
 
 // Hash identifies the artifact's content; a command records it to notice

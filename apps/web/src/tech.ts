@@ -1,3 +1,4 @@
+import { planGate } from "./techplan";
 import type { DecisionState, Project, TechArea, TechChange, TechDecision, TechSource, TechStack, TechStatus } from "./types";
 
 export const TECH_AREA: Record<TechArea, string> = {
@@ -14,7 +15,7 @@ export const DECISION_STATE: Record<DecisionState, string> = {
 
 export const TECH_SOURCE: Record<TechSource, string> = {
   existing: "kode yang ada", preference: "preferensi stack kamu", need: "kebutuhan teknis", profile: "kebijakan profil",
-  default: "default", dependency: "mengikuti keputusan lain",
+  default: "default", dependency: "mengikuti keputusan lain", ai: "rencana AI",
 };
 
 export const TECH_STATUS: Record<TechStatus, string> = {
@@ -91,6 +92,8 @@ export function techGate(p: Project): string | null {
   if (!s) return "Keputusan teknologi belum ada";
   if (!needsApproval(s)) return null;
   if (techState(s) !== "approved") return "Setujui keputusan teknologi dulu";
+  const plan = planGate(p);
+  if (plan) return plan;
   if (techReview(p).length) return "Teknologi berubah setelah rancangan UI dibuat; periksa dampaknya dulu";
   return null;
 }

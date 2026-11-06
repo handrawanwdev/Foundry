@@ -156,6 +156,14 @@ func fakeAgent() {
 	switch {
 	case strings.HasPrefix(prompt, "Balas hanya"):
 		fmt.Println("OK")
+	case strings.Contains(prompt, "technology architect of Foundry"):
+		countRun("tech")
+		refused := strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED")
+		fmt.Println(fakeTechAnswer(prompt, (mode == "tech_invalid_once" && !refused) || mode == "tech_invalid"))
+	case strings.Contains(prompt, "repository architect of Foundry"):
+		countRun("repo")
+		refused := strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED")
+		fmt.Println(fakeRepoAnswer(prompt, mode == "repo_invalid_once" && !refused))
 	case strings.Contains(prompt, "feature mapper"):
 		countRun("feature_map")
 		if mode == "bad_json" && strings.Contains(prompt, "ACTION: generate") && strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED") {

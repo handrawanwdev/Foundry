@@ -33,6 +33,13 @@ describe("tech", () => {
     expect(techGate(project(stack({ mode: "existing" })))).toBeNull();
   });
 
+  it("blocks approval when the technology plan is stale or has errors", () => {
+    const approved = stack({ status: "approved", approved: true });
+    expect(techGate(project(approved))).toBeNull();
+    const stale = stack({ status: "approved", approved: true, plan: { approach: "A", summary: "S", context: {}, items: [], evaluation: { criteria: [], findings: [], score: 0 }, analysis: { items: 0, outside_catalog: 0, unverified: 0 }, stale: true } as never });
+    expect(techGate(project(stale))).toMatch(/Sumber rencana/);
+  });
+
   it("asks an existing project to approve only what its code does not already use", () => {
     const code = { area: "backend" as const, recommended: "Go + Gin", reason: "Sudah dipakai di kode", source: "existing" as const };
     expect(needsApproval(stack({ mode: "existing", decisions: [code] }))).toBe(false);

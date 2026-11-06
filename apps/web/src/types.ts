@@ -134,6 +134,58 @@ export interface Structure {
   ir?: StructureIR; recommended?: StructureType; status?: TechStatus; issues?: TechIssue[];
   proposal?: StructureProposal; plan?: StructurePlan; plan_request?: StructurePlanRequest;
   request?: string; history?: StructureVersion[];
+  // The detailed repository plan the AI designs, and the design or revision waiting for it.
+  repo?: RepoPlan; repo_request?: RepoRequest;
+}
+
+// ---- Repository plan: folders and files with their responsibility, module mapping, dependency rules ----
+export interface RepoNode {
+  path: string; name?: string; type: "dir" | "file"; role?: string; responsibility: string;
+  // A project module id, "shared" or "platform".
+  owner: string; depends_on?: string[]; reason: string;
+  // A part of the structure decision: app:web, service:api, module:booking, ...
+  part?: string; shared_by?: string[]; allowed?: string[]; forbidden?: string[];
+  relations?: string; boundary?: string; implied?: boolean;
+}
+export interface RepoLocation { path: string; role?: string }
+export interface RepoModuleMap { module: string; locations?: RepoLocation[]; frontend: boolean; backend: boolean; note?: string }
+export interface RepoDepRule { from: string; to: string; via?: string; mode?: "sync" | "event"; reason?: string }
+export interface RepoInterface { module: string; path: string; reason?: string }
+export interface RepoDependency {
+  direction: string; allowed?: RepoDepRule[]; forbidden?: RepoDepRule[]; communication?: RepoDepRule[];
+  interfaces?: RepoInterface[]; shared_rules?: string[]; cycle_guard?: string;
+}
+export interface RepoCriterion { name: string; score: number; reason: string }
+export interface RepoFinding { category: string; severity: "info" | "warning" | "error"; path?: string; message: string; resolution?: string; source?: "ai" | "computed" }
+export interface RepoEvaluation { summary?: string; criteria: RepoCriterion[]; findings: RepoFinding[]; score: number; outdated?: boolean }
+export interface RepoCheck { area: string; status: "consistent" | "resolved" | "conflict"; note?: string; source?: "ai" | "computed" }
+export interface RepoDecision { title: string; choice: string; reason: string; alternatives?: string[]; tradeoff?: string }
+export interface RepoEdge { from: string; to: string; kind: "derived" | "allowed" | "forbidden" | "communication"; mode?: string }
+export interface RepoUnit { name: string; nodes: number; fan_out: number; fan_in: number }
+// area: folders | modules | structure | dependency | evaluation | consistency | sources
+export interface RepoIssue { level: "error" | "warning"; area?: string; message: string }
+export interface RepoAnalysis {
+  issues?: RepoIssue[]; findings?: RepoFinding[]; checks?: RepoCheck[]; units?: RepoUnit[]; edges?: RepoEdge[];
+  dirs: number; files: number; max_depth: number; stale_areas?: string[]; affected?: string[];
+}
+export interface RepoVersion {
+  version: number; at: string; source: "generate" | "ai" | "user"; request?: string; reason?: string; changes?: string[];
+  status: TechStatus; nodes: number; score: number;
+}
+export interface RepoRequest { action: "generate" | "revise"; text?: string; reason?: string; areas?: string[]; rejected?: string }
+export interface RepoPlan {
+  approach: string; topology: string; summary: string; rationale?: string;
+  nodes: RepoNode[]; modules: RepoModuleMap[]; dependency: RepoDependency; rules?: string[];
+  evaluation: RepoEvaluation; consistency?: RepoCheck[]; decisions?: RepoDecision[];
+  status: TechStatus; history?: RepoVersion[]; generated_at?: string; stale?: boolean; analysis: RepoAnalysis;
+}
+// One revision of the plan; the server documents every op.
+export interface RepoOp {
+  op: "set_node" | "remove_node" | "move_node" | "set_module" | "remove_module" | "add_rule" | "remove_rule"
+    | "add_dependency" | "remove_dependency" | "set_interface" | "remove_interface" | "set_meta";
+  path?: string; to?: string; node?: Partial<RepoNode>; module?: Partial<RepoModuleMap>; text?: string;
+  kind?: "allowed" | "forbidden" | "communication"; dep?: Partial<RepoDepRule>; interface?: Partial<RepoInterface>;
+  approach?: string; topology?: string; summary?: string;
 }
 // The frontend an existing project already has, read from its code.
 export interface ExistingUI {
@@ -146,7 +198,7 @@ export type TechArea = "frontend" | "ui" | "mobile" | "desktop" | "cli" | "backe
   | "workers" | "storage" | "search" | "architecture" | "repository" | "deployment" | "observability" | "testing" | "quality";
 export interface TechOverride { value: string; language?: string; runtime?: string; reason?: string }
 // Where a recommendation came from (core.Source*); "" in older stacks.
-export type TechSource = "existing" | "preference" | "need" | "profile" | "default" | "dependency";
+export type TechSource = "existing" | "preference" | "need" | "profile" | "default" | "dependency" | "ai";
 export interface TechDecision {
   area: TechArea; recommended: string; language?: string; runtime?: string; reason: string; source?: TechSource;
   evidence?: string[]; alternatives?: string[]; override?: TechOverride; review?: string;
@@ -156,22 +208,56 @@ export type DecisionState = "recommended" | "existing" | "selected" | "approved"
 // Lifecycle of the technology decision (internal/core/techstack.go).
 export type TechStatus = "recommended" | "review" | "impact_checked" | "approved" | "changed";
 export interface TechChange { area: TechArea; from: string; to: string; language?: string; reason?: string; follow?: boolean }
-export interface TechIssue { level: "error" | "warning"; area?: TechArea; message: string }
+export interface TechIssue { level: "error" | "warning"; area?: string; message: string }
 export interface TechImpact { area: TechArea; affects: string[]; design?: boolean }
 export interface TechProposal {
   source: "user" | "ai"; request?: string; note?: string; changes: TechChange[]; issues?: TechIssue[]; impact?: TechImpact[];
   review?: TechIssue[]; affected?: { artifacts?: string[]; commands?: string[] }; decisions?: TechDecision[];
-  previous: TechStatus; at: string;
+  previous: TechStatus; at: string; plan?: TechPlan;
 }
 export interface TechVersion {
   version: number; at: string; source: "recommend" | "user" | "ai" | "structure"; request?: string; changes?: TechChange[];
   impact?: TechImpact[]; design?: boolean; status: TechStatus; decisions: TechDecision[];
 }
+export interface TechFact { category: string; statement: string; source?: string }
+export interface TechContext { summary?: string; facts?: TechFact[]; unknowns?: string[]; assumptions?: string[] }
+export interface TechAlternative {
+  technology: string; why: string; difference: string; pros?: string[]; cons?: string[];
+  architecture_impact?: string; maintenance_impact?: string; cost_impact?: string;
+}
+export interface TechItem {
+  area: string; group?: string; technology: string; version?: string; version_verified?: boolean;
+  language?: string; runtime?: string; purpose: string; fulfills?: string[]; driver: string; reasoning: string;
+  pros?: string[]; cons?: string[]; tradeoffs?: string[]; depends_on?: string[]; integration?: string; operational?: string;
+  alternatives?: TechAlternative[]; confidence: string; assumptions?: string[]; in_catalog?: boolean; user_chosen?: string;
+}
+export interface TechConstraint { areas: string[]; rule: string; reason?: string }
+export interface TechCompat { area: string; status: string; between?: string[]; note?: string; basis?: string; source?: string }
+export interface TechCriterion { name: string; score: number; reason: string; evidence?: string[] }
+export interface TechFinding { category: string; severity: "info" | "warning" | "error"; area?: string; message: string; resolution?: string; source?: string }
+export interface TechEvaluation { summary?: string; criteria: TechCriterion[]; findings: TechFinding[]; score: number; outdated?: boolean }
+export interface TechCheck { area: string; status: string; note?: string; source?: string }
+export interface TechCoverage { ref: string; areas: string[] }
+export interface TechAnalysis {
+  issues?: TechIssue[]; findings?: TechFinding[]; checks?: TechCheck[]; compat?: TechCompat[];
+  items: number; outside_catalog: number; unverified: number; coverage?: TechCoverage[];
+  diverged?: string[]; stale_areas?: string[]; affected?: string[];
+}
+export interface TechPlanVersion {
+  version: number; at: string; source: string; request?: string; reason?: string; changes?: string[];
+  status: TechStatus; items: number; score: number;
+}
+export interface TechPlanRequest { action: string; text?: string; reason?: string; areas?: string[]; source_hash?: string; rejected?: string }
+export interface TechPlan {
+  approach: string; summary: string; rationale?: string; context: TechContext; items: TechItem[];
+  constraints?: TechConstraint[]; compatibility?: TechCompat[]; evaluation: TechEvaluation; consistency?: TechCheck[];
+  history?: TechPlanVersion[]; sources?: Record<string, string>; generated_at?: string; stale?: boolean; analysis: TechAnalysis;
+}
 export interface TechStack {
   mode: "existing" | "new"; profile?: string; needs?: string[];
   platform: { web: boolean; mobile: boolean; android?: boolean; ios?: boolean; desktop: boolean; backend: boolean; cli?: boolean };
   decisions: TechDecision[]; approved: boolean; status?: TechStatus; issues?: TechIssue[]; proposal?: TechProposal;
-  request?: string; history?: TechVersion[];
+  request?: string; history?: TechVersion[]; plan?: TechPlan; plan_request?: TechPlanRequest;
 }
 export interface TechOption {
   value: string; language?: string; runtime?: string; fit: string; tradeoff?: string; ops?: string; needs?: string[];

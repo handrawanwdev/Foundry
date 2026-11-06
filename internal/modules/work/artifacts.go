@@ -52,7 +52,9 @@ Write every human-readable text in the same language as the story.
 
 PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	writeBinding(&b, p)
+	writeStackBrief(&b, p)
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies; keep every artifact consistent with it)")
+	writeRepoBrief(&b, p)
 	cut := promptBody
 	if len(p.DecisionSync) > 0 {
 		cut = 0 // the AI must see the full text to find what still contradicts the decisions
@@ -123,6 +125,12 @@ func scopeIssues(p *core.Project) []core.Issue {
 
 // writeBinding puts the decided decisions at the top of every agent prompt
 // so no document is read as if it stood alone.
+func writeStackBrief(b *strings.Builder, p *core.Project) {
+	if brief := p.Stack.Brief(); brief != "" {
+		b.WriteString(brief + "\n")
+	}
+}
+
 func writeBinding(b *strings.Builder, p *core.Project) {
 	text := core.BindingText(p.Decisions)
 	if text == "" {

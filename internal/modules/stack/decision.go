@@ -134,6 +134,9 @@ func Apply(s *core.TechStack) (*core.TechVersion, error) {
 		}
 	}
 	s.Proposal = nil
+	if pr.Plan != nil {
+		s.Plan = pr.Plan
+	}
 	st := core.TechImpactChecked
 	if pr.Previous == core.TechApproved || pr.Previous == core.TechChanged {
 		st = core.TechChanged
@@ -149,6 +152,48 @@ func Apply(s *core.TechStack) (*core.TechVersion, error) {
 		}
 	}
 	return v, nil
+}
+
+// ProposeDecisions records a proposal whose decisions are given whole (the
+// AI's technology plan decides every area itself) instead of being built
+// from single changes. Nothing changes until Apply; the plan becomes the
+// stack's plan then.
+func ProposeDecisions(s *core.TechStack, next []core.TechDecision, plan *core.TechPlan, source, request, note string) error {
+	if s == nil {
+		return errors.New("teknologi belum direkomendasikan")
+	}
+	if s.Proposal != nil {
+		return ErrPending
+	}
+	cand := &core.TechStack{Mode: s.Mode, Profile: s.Profile, Needs: s.Needs, Platform: s.Platform, Decisions: core.CloneDecisions(next), Plan: plan}
+	diff := Diff(s.Decisions, cand.Decisions)
+	if len(diff) == 0 {
+		return ErrNoChange
+	}
+	var review []core.TechIssue
+	for _, d := range cand.Decisions {
+		if old := s.Decision(d.Area); d.Review != "" && (old == nil || old.Review != d.Review) {
+			review = append(review, core.TechIssue{Level: "warning", Area: d.Area, Message: d.Review})
+		}
+	}
+	s.Proposal = &core.TechProposal{Source: source, Request: request, Note: note, Changes: diff, Review: review,
+		Issues: Validate(cand), Impact: Impact(cand, diff), Decisions: cand.Decisions, Previous: s.State(), At: time.Now().UTC(), Plan: plan}
+	s.Status, s.Approved = core.TechReview, false
+	return nil
+}
+
+// ApplyDecisions makes next the decision at once and saves a new version,
+// for a plan that replaces a recommendation nobody chose or approved. A
+// stack the user already approved or changed goes through ProposeDecisions.
+func ApplyDecisions(s *core.TechStack, next []core.TechDecision, plan *core.TechPlan, source, request string) *core.TechVersion {
+	before := core.CloneDecisions(s.Decisions)
+	s.Decisions = core.CloneDecisions(next)
+	s.Plan = plan
+	Refresh(s)
+	if s.State() == "" {
+		s.SetStatus(core.TechRecommended)
+	}
+	return Record(s, before, source, request)
 }
 
 // ConfirmReview keeps area's choice after a decision it depends on
@@ -339,7 +384,9 @@ func Validate(s *core.TechStack) []core.TechIssue {
 			continue
 		}
 		for _, v := range parts(d.Area, d.Choice()) {
-			if !none(v) && option(d.Area, v) == nil {
+			// A plan's own choice is checked by the plan's compatibility review;
+			// only the user's choice outside the catalog is flagged here.
+			if !none(v) && option(d.Area, v) == nil && (s.Plan == nil || d.Override != nil) {
 				add("warning", d.Area, "%s belum dikenal Foundry; kecocokannya dengan pilihan lain tidak diperiksa otomatis.", v)
 			}
 		}

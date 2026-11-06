@@ -156,7 +156,9 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
+	writeStackBrief(&b, p)
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
+	writeRepoBrief(&b, p)
 	writeFeatureCatalog(&b, p)
 
 	// Use artifact summaries only (not full bodies) to reduce context size
@@ -198,7 +200,10 @@ Write every human-readable text in the same language as the story.
 
 PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 
+	writeBinding(&b, p)
+	writeStackBrief(&b, p)
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
+	writeRepoBrief(&b, p)
 	writeFeatureCatalog(&b, p)
 	w := p.Workflow
 
@@ -337,7 +342,9 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
+	writeStackBrief(&b, p)
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
+	writeRepoBrief(&b, p)
 	writeFeatureCatalog(&b, p)
 	cut := promptBody
 	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Sync {
@@ -377,7 +384,9 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
+	writeStackBrief(&b, p)
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
+	writeRepoBrief(&b, p)
 	writeFeatureCatalog(&b, p)
 	cut := promptBody
 	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Sync {

@@ -252,14 +252,23 @@ func techMarkdown(p *core.Project) string {
 			}
 			b.WriteString("\n\n")
 			writeStructurePlan(&b, s.Plan)
-			b.WriteString("### Folder tree\n\n```text\n")
-			b.WriteString(structure.Tree(s.IR))
-			b.WriteString("```\n\n")
-			for _, ps := range [][]core.StructurePart{s.IR.Apps, s.IR.Services, s.IR.Workers, s.IR.Packages} {
-				for _, x := range ps {
-					fmt.Fprintf(&b, "- `%s` %s\n", x.Path, x.Reason)
-					for _, m := range x.Modules {
-						fmt.Fprintf(&b, "  - `%s%s/` %s\n", x.Path, m, x.ModuleReasons[m])
+			if plan := repoPlanOf(p); plan != nil {
+				// The repository plan details the structure decision and is
+				// the source of truth for the exact folders.
+				fmt.Fprintf(&b, "### Folder tree\n\nRencana repository terperinci (%s, v%d); spesifikasi tiap folder dan file ada di dokumen `%s`.\n\n```text\n",
+					plan.Approach, plan.Version(), core.ArtifactRepoStructure)
+				b.WriteString(repoTree(plan))
+				b.WriteString("```\n\n")
+			} else {
+				b.WriteString("### Folder tree\n\n```text\n")
+				b.WriteString(structure.Tree(s.IR))
+				b.WriteString("```\n\n")
+				for _, ps := range [][]core.StructurePart{s.IR.Apps, s.IR.Services, s.IR.Workers, s.IR.Packages} {
+					for _, x := range ps {
+						fmt.Fprintf(&b, "- `%s` %s\n", x.Path, x.Reason)
+						for _, m := range x.Modules {
+							fmt.Fprintf(&b, "  - `%s%s/` %s\n", x.Path, m, x.ModuleReasons[m])
+						}
 					}
 				}
 			}
@@ -507,7 +516,11 @@ func architectureMarkdown(p *core.Project) string {
 		b.WriteString("### Struktur project dan dependency\n\n")
 		fmt.Fprintf(&b, "Tipe **%s**; folder dan batas domain di bawah ini adalah sumber kebenaran untuk implementasi.\n\n", s.IR.Type)
 		b.WriteString("```text\n")
-		b.WriteString(structure.Tree(s.IR))
+		if plan := repoPlanOf(p); plan != nil {
+			b.WriteString(repoTree(plan))
+		} else {
+			b.WriteString(structure.Tree(s.IR))
+		}
 		b.WriteString("```\n\n")
 		if len(s.IR.Rules) > 0 {
 			b.WriteString("Aturan dependency dan struktur:\n")
@@ -604,6 +617,17 @@ func adrStack(p *core.Project) string {
 			}
 			b.WriteString("\n")
 		}
+	}
+	if plan := techPlanOf(p); plan != nil && len(plan.Extras()) > 0 {
+		fmt.Fprintf(&b, "## Keputusan lain dari rencana teknologi\n\nDetail alasan, alternatif dan kompatibilitas ada di dokumen `%s`.\n\n", core.ArtifactTechPlan)
+		for _, it := range plan.Extras() {
+			fmt.Fprintf(&b, "- **%s**: %s", it.Area, it.Technology)
+			if it.Version != "" {
+				fmt.Fprintf(&b, " %s", it.Version)
+			}
+			fmt.Fprintf(&b, " — %s\n", orDash(it.Purpose))
+		}
+		b.WriteString("\n")
 	}
 	if len(st.Issues) > 0 {
 		b.WriteString("## Temuan validasi\n\n")

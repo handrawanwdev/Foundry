@@ -45,6 +45,10 @@ func Artifacts(p *core.Project) []core.Artifact {
 		"Pola arsitektur, modul, data, keamanan, dan aturan teknis.", strings.ReplaceAll("\n"+arch, "\n### ", "\n## ")[1:])
 	add("technology", "Teknologi & Struktur", core.ArtifactPlatform,
 		"Keputusan teknologi dan struktur project.", techMarkdown(p))
+	add(core.ArtifactRepoStructure, "Struktur Repository", core.ArtifactArchitecture,
+		"Folder dan file beserta tanggung jawabnya, pemetaan modul, aturan dependency, dan evaluasi struktur repository.", repoMarkdown(p))
+	add(core.ArtifactTechPlan, "Rencana Teknologi", core.ArtifactPlatform,
+		"Keputusan teknologi dengan alasan, kebutuhan yang dipenuhi, alternatif, kompatibilitas, dan evaluasi stack.", techPlanMarkdown(p))
 	add(core.ArtifactDesignRules, "Aturan Desain", core.ArtifactUI,
 		"Prinsip, panduan UX, design tokens, komponen, aksesibilitas, responsif, interaksi, dan aturan platform.", designRulesMarkdown(p))
 	add(core.ArtifactLayoutSpec, "Spesifikasi Layout", core.ArtifactUI,
@@ -331,6 +335,12 @@ func filesOf(p *core.Project, m Manifest, docs []core.Artifact) map[string]strin
 	}
 	if p.Stack != nil && len(p.Stack.Decisions) > 0 {
 		out["adr/0001-stack.md"] = adrStack(p)
+	}
+	if plan := repoPlanOf(p); plan != nil {
+		out["structure/repository.json"] = jsonFile(plan)
+	}
+	if plan := techPlanOf(p); plan != nil {
+		out["technology/plan.json"] = jsonFile(plan)
 	}
 	if len(p.Requirements) > 0 {
 		out["traceability.md"] = traceabilityMarkdown(p)
