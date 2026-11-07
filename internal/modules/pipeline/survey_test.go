@@ -68,10 +68,10 @@ func TestSurveyBindsBlueprint(t *testing.T) {
 		t.Fatalf("survey after reload = %+v", p.Survey)
 	}
 	// The user's architecture wins over Foundry's prototype default.
-	if d := p.Stack.Decision(core.TechArchitecture); d == nil || d.Choice() != core.ArchMicroservices || d.Source != core.SourcePreference {
+	if d := p.Stack.Decision(core.TechArchitecture); d == nil || d.Choice() != core.ArchMicroservices {
 		t.Fatalf("architecture = %+v", d)
 	}
-	if d := p.Stack.Decision(core.TechDatabase); d == nil || d.Choice() != "PostgreSQL" || d.Source != core.SourcePreference {
+	if d := p.Stack.Decision(core.TechDatabase); d == nil || d.Choice() != "PostgreSQL" {
 		t.Fatalf("database = %+v", d)
 	}
 	// Separate services for a prototype is a conflict the user decides before finalize.

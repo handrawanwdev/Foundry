@@ -23,16 +23,40 @@ func TestUnifiedPlanPromptGreenfield(t *testing.T) {
 	got := UnifiedPlanPrompt(p)
 	for _, want := range []string{
 		"unified blueprint architect",
-		"SECTIONS TO PRODUCE: technology, architecture, repository",
-		`"technology"`, `"architecture"`, `"repository"`,
+		"SECTIONS TO PRODUCE: technology\n",
+		`"technology"`, "sequential rounds", "This round: technology only",
 		"booking", "TARGET PLATFORM",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("prompt misses %q", want)
 		}
 	}
+	if strings.Contains(got, `"architecture": {`) || strings.Contains(got, `"repository": {`) {
+		t.Fatal("first round asked for later sections")
+	}
 	if strings.Contains(got, "technology architect of Foundry") || strings.Contains(got, "repository architect of Foundry") {
 		t.Fatal("unified prompt still looks like a standalone architect job")
+	}
+}
+
+func TestUnifiedPlanPromptRoundsInOrder(t *testing.T) {
+	p := unifiedProject()
+	p.Stack.PlanRequest = nil
+	p.Stack.Plan = &core.TechPlan{Approach: "Landed", Items: []core.TechItem{{Area: core.TechBackend, Technology: "Go"}}}
+	got := UnifiedPlanPrompt(p)
+	for _, want := range []string{"SECTIONS TO PRODUCE: architecture\n", "FROZEN TECHNOLOGY", `"architecture": {`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("architecture round misses %q", want)
+		}
+	}
+	if strings.Contains(got, `"repository": {`) || strings.Contains(got, `"technology": {`) {
+		t.Fatal("architecture round carries other sections")
+	}
+	p.Structure.PlanRequest = nil
+	p.Structure.Plan = &core.StructurePlan{}
+	got = UnifiedPlanPrompt(p)
+	if !strings.Contains(got, "SECTIONS TO PRODUCE: repository\n") || strings.Contains(got, "sequential rounds") {
+		t.Fatal("last round must ask repository only")
 	}
 }
 

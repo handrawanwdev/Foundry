@@ -68,6 +68,30 @@ func TestGenerateBlueprintSkipsDone(t *testing.T) {
 	}
 }
 
+// answerPlanRounds answers the sequential plan rounds, one section each.
+func answerPlanRounds(t *testing.T, s *pipeline.Service, w *pipeline.WorkItem, rounds int) {
+	t.Helper()
+	for i := 0; i < rounds; i++ {
+		if w.Kind != work.KindPlan {
+			t.Fatalf("round %d: work = %+v", i, w)
+		}
+		if got := strings.Count(w.Prompt, "SECTIONS TO PRODUCE:"); got != 1 {
+			t.Fatalf("round %d: prompt lists sections %d times", i, got)
+		}
+		if err := s.SubmitWork(work.KindPlan, fakeUnifiedAnswer(w.Prompt, false)); err != nil {
+			t.Fatalf("round %d: %v", i, err)
+		}
+		if i == rounds-1 {
+			return
+		}
+		next, err := s.NextWork()
+		if err != nil {
+			t.Fatal(err)
+		}
+		w = next
+	}
+}
+
 func TestGenerateBlueprintMCP(t *testing.T) {
 	s := newService(t, fakeAI{mcp: true}, "")
 	designReadyMCP(t, s)
@@ -88,9 +112,7 @@ func TestGenerateBlueprintMCP(t *testing.T) {
 	if len(p.Job.Steps) != 0 {
 		t.Fatalf("unified job must not list sub-steps: %+v", p.Job.Steps)
 	}
-	if err := s.SubmitWork(work.KindPlan, fakeUnifiedAnswer(w.Prompt, false)); err != nil {
-		t.Fatal(err)
-	}
+	answerPlanRounds(t, s, w, 3)
 	p = load(t, s)
 	if p.BlueprintBatch != 0 || p.Structure == nil || p.Structure.Repo == nil || p.Stack == nil || p.Stack.Plan == nil {
 		t.Fatalf("batch=%d repo=%v plan=%v job=%+v", p.BlueprintBatch, p.Structure.Repo, p.Stack.Plan, p.Job)
@@ -115,6 +137,10 @@ func TestGenerateBlueprintRepairsJSON(t *testing.T) {
 	if err := s.SubmitWork(work.KindPlan, broken); err != nil {
 		t.Fatal(err)
 	}
+	if w, err = s.NextWork(); err != nil {
+		t.Fatal(err)
+	}
+	answerPlanRounds(t, s, w, 2)
 	p := load(t, s)
 	if p.Stack == nil || p.Stack.Plan == nil || p.Structure == nil || p.Structure.Repo == nil {
 		t.Fatalf("repaired JSON did not land: job=%+v", p.Job)
@@ -159,8 +185,8 @@ func TestGenerateBlueprintOneAICall(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(raw)
-	if strings.Count(text, "plan\n") != 1 {
-		t.Fatalf("want one unified plan call, got %q", text)
+	if strings.Count(text, "plan\n") != 3 {
+		t.Fatalf("want one plan call per section (tech, architecture, repository), got %q", text)
 	}
 	for _, old := range []string{"tech\n", "structure\n", "repo\n"} {
 		if strings.Contains(text, old) {

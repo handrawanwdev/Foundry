@@ -205,6 +205,8 @@ func writeTechAnchors(b *strings.Builder, p *core.Project) {
 		switch {
 		case d.Override != nil:
 			chosen = append(chosen, line+" — "+orNo(d.Override.Reason, "chosen by the user"))
+		case d.Source == core.SourcePreference:
+			chosen = append(chosen, line+" — "+orNo(d.Reason, "chosen by the user"))
 		case d.Source == core.SourceExisting || d.Source == "" && s.Mode == core.StructureExisting:
 			existing = append(existing, line+" — "+d.Reason)
 		case s.Plan == nil:

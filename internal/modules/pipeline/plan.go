@@ -132,21 +132,27 @@ func clearPlanRequests(p *core.Project) {
 	}
 }
 
+// stampPlanRejection records the refusal on the section being designed; later
+// sections have not been answered yet and keep their own retry.
 func stampPlanRejection(p *core.Project, msg string) bool {
-	retry := false
-	if p.Stack != nil && p.Stack.PlanRequest != nil {
-		retry = retry || p.Stack.PlanRequest.Rejected == ""
-		p.Stack.PlanRequest.Rejected = msg
+	switch work.CurrentPlanPart(p) {
+	case work.KindTech:
+		r := p.Stack.PlanRequest
+		retry := r.Rejected == ""
+		r.Rejected = msg
+		return retry
+	case work.KindStructure:
+		r := p.Structure.PlanRequest
+		retry := r.Rejected == ""
+		r.Rejected = msg
+		return retry
+	case work.KindRepo:
+		r := p.Structure.RepoRequest
+		retry := r.Rejected == ""
+		r.Rejected = msg
+		return retry
 	}
-	if p.Structure != nil && p.Structure.PlanRequest != nil {
-		retry = retry || p.Structure.PlanRequest.Rejected == ""
-		p.Structure.PlanRequest.Rejected = msg
-	}
-	if p.Structure != nil && p.Structure.RepoRequest != nil {
-		retry = retry || p.Structure.RepoRequest.Rejected == ""
-		p.Structure.RepoRequest.Rejected = msg
-	}
-	return retry
+	return false
 }
 
 func (s *Service) dropPlanRequest(cause error) error {
@@ -188,11 +194,13 @@ func planRepairing(p *core.Project) bool {
 	if p == nil || !planRequestsOpen(p) {
 		return false
 	}
-	if p.Stack != nil && p.Stack.PlanRequest != nil && p.Stack.PlanRequest.Rejected != "" {
-		return true
+	switch work.CurrentPlanPart(p) {
+	case work.KindTech:
+		return p.Stack.PlanRequest.Rejected != ""
+	case work.KindStructure:
+		return p.Structure.PlanRequest.Rejected != ""
+	case work.KindRepo:
+		return p.Structure.RepoRequest.Rejected != ""
 	}
-	if p.Structure != nil && p.Structure.PlanRequest != nil && p.Structure.PlanRequest.Rejected != "" {
-		return true
-	}
-	return p.Structure != nil && p.Structure.RepoRequest != nil && p.Structure.RepoRequest.Rejected != ""
+	return false
 }

@@ -34,6 +34,16 @@ func PlanParts(p *core.Project) []string {
 	return parts
 }
 
+// CurrentPlanPart is the section the next AI round designs. Sections run one
+// per round (technology, architecture, repository) so every answer stays
+// small and parseable; each round sees the landed sections as frozen context.
+func CurrentPlanPart(p *core.Project) string {
+	if parts := PlanParts(p); len(parts) > 0 {
+		return parts[0]
+	}
+	return ""
+}
+
 func hasPlanPart(parts []string, kind string) bool {
 	for _, p := range parts {
 		if p == kind {
@@ -50,7 +60,11 @@ func UnifiedPlanPrompt(p *core.Project) string {
 	if raw := lastPlanOutput(p); raw != "" && planRejection(p) != "" {
 		return unifiedRepairPrompt(p, raw)
 	}
-	parts := PlanParts(p)
+	open := PlanParts(p)
+	parts := open
+	if len(open) > 1 {
+		parts = open[:1]
+	}
 	var b strings.Builder
 	b.WriteString(`You are the unified blueprint architect of Foundry. Foundry designs software and writes instructions for an external coding agent; it never implements and you must not write application code or touch files.
 Design TECHNOLOGY, ARCHITECTURE and REPOSITORY STRUCTURE as ONE consistent decision. Analyze the system once. Do not repeat the analysis per section. Every technology choice must fit the architecture; every folder must implement that architecture and those technologies. If a choice in one section forces a change in another, resolve it in this answer.
@@ -85,8 +99,11 @@ PROJECT: `)
 			b.WriteString("If you recommend a different architecture alternative, the repository must implement THAT alternative's parts, not the current heuristic folders. Every part of the recommended alternative maps to exactly one folder.\n\n")
 		}
 	}
-	writeUnifiedFrozen(&b, p, parts)
+	writeUnifiedFrozen(&b, p, open)
 	writeUnifiedRefusal(&b, p)
+	if len(open) > 1 {
+		fmt.Fprintf(&b, "This blueprint is designed in %d sequential rounds (%s). This round: %s only. Decisions already landed are FROZEN above; later sections are designed next with your answer as input. Do not produce later sections.\n\n", len(open), strings.Join(sectionLabels(open), ", "), sectionLabels(parts)[0])
+	}
 	fmt.Fprintf(&b, "SECTIONS TO PRODUCE: %s\n\n", strings.Join(sectionLabels(parts), ", "))
 	if hasPlanPart(parts, KindTech) {
 		b.WriteString("TECHNOLOGY RULES:\n")
@@ -102,7 +119,7 @@ PROJECT: `)
 	if hasPlanPart(parts, KindRepo) {
 		b.WriteString(unifiedRepoRules)
 	}
-	b.WriteString("Reply with ONLY JSON in ```json fences. No prose before or after. No trailing commas. Omit a top-level key you were not asked to produce. Do not invent JSON keys. One technology item per area the system actually needs; omit unused areas. Keep each string to one sentence.\n")
+	b.WriteString("Reply with ONLY JSON in ```json fences. No prose before or after. No trailing commas. Omit a top-level key you were not asked to produce. Do not invent JSON keys. One technology item per area the system actually needs; omit unused areas. Keep each string to one sentence, no line breaks inside strings, escape quotes. Keep the answer compact: no filler nodes, no duplicated text.\n")
 	b.WriteString("Preferred: one object with those keys. Also accepted: one complete json block per section, in order, each the inner object (not wrapped in the key name).\n")
 	b.WriteString("{\n")
 	needComma := false
@@ -182,17 +199,15 @@ func writeUnifiedRefusal(b *strings.Builder, p *core.Project) {
 }
 
 func planRejection(p *core.Project) string {
-	var reasons []string
-	if p.Stack != nil && p.Stack.PlanRequest != nil && p.Stack.PlanRequest.Rejected != "" {
-		reasons = append(reasons, p.Stack.PlanRequest.Rejected)
+	switch CurrentPlanPart(p) {
+	case KindTech:
+		return p.Stack.PlanRequest.Rejected
+	case KindStructure:
+		return p.Structure.PlanRequest.Rejected
+	case KindRepo:
+		return p.Structure.RepoRequest.Rejected
 	}
-	if p.Structure != nil && p.Structure.PlanRequest != nil && p.Structure.PlanRequest.Rejected != "" {
-		reasons = append(reasons, p.Structure.PlanRequest.Rejected)
-	}
-	if p.Structure != nil && p.Structure.RepoRequest != nil && p.Structure.RepoRequest.Rejected != "" {
-		reasons = append(reasons, p.Structure.RepoRequest.Rejected)
-	}
-	return strings.Join(reasons, "; ")
+	return ""
 }
 
 func lastPlanOutput(p *core.Project) string {
@@ -212,7 +227,7 @@ func unifiedRepairPrompt(p *core.Project, raw string) string {
 Error: `)
 	b.WriteString(planRejection(p))
 	b.WriteString("\nSECTIONS TO PRODUCE: ")
-	b.WriteString(strings.Join(sectionLabels(PlanParts(p)), ", "))
+	b.WriteString(strings.Join(sectionLabels(PlanParts(p)[:1]), ", "))
 	b.WriteString("\nReply with ONLY the complete repaired JSON in one ```json fence. No prose.\n\nPREVIOUS OUTPUT:\n")
 	b.WriteString(raw)
 	return b.String()
