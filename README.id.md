@@ -284,7 +284,9 @@ foundry mcp --print-config --project ~/kerja/klinik
 | `get_visual_review` | `READ`  | Kualitas UI terukur per halaman: lulus/sebagian/gagal/belum diuji, temuan, kriteria |
 | `record_visual_review` | `WRITE` | Kirim snapshot browser + bukti screenshot untuk satu halaman |
 | `create_visual_fixes` | `WRITE` | Ubah temuan visual terbuka menjadi command koreksi di workflow |
-| `report_progress`  | `WRITE`  | Laporan agen untuk satu command: started / done / failed / blocked / skipped / review |
+| `next_command`     | `WRITE`  | Command berikutnya beserta instruksi dan hasil dependency; `claim` menandainya mulai untuk satu session |
+| `get_command`      | `READ`   | Satu command lengkap, atau dengan `history` laporan, perubahan status, dan revisinya |
+| `report_progress`  | `WRITE`  | Laporan agen untuk satu command: started / progress / done / failed / blocked / skipped / review |
 | `next_work`        | `MODIFY` | Ambil pekerjaan rancangan berikutnya yang dibutuhkan Foundry           |
 | `submit_work`      | `WRITE`  | Serahkan hasil kerja; Foundry yang memvalidasi                         |
 
@@ -295,6 +297,23 @@ Izin diatur dengan `--allow` (default: `READ`). Config hasil cetak memberi `READ
 Foundry mencatat progres implementasi dari coding agent eksternal. Foundry tidak menjalankan workflow.
 
 **Sudah berjalan:** `report_progress` / `get_progress` (MCP) dan `POST /api/v1/project/progress/reports` menyimpan laporan di `.foundry/project.json`. Id duplikat idempotent; seq/waktu lama tidak menimpa status. Laporan `done` tanpa bukti wajib menjadi `review`, bukan `verified`. Command dilewati tetap tercatat dengan alasan dan tidak dianggap selesai. Tanpa laporan, status tetap `unconfirmed`. Command yang sudah `started` tanpa laporan dalam jendela kedaluwarsa (baku 30 menit) ditampilkan `stale`, atau `unknown` jika host MCP terputus — tidak otomatis selesai atau gagal. Halaman Workflow mengikuti SSE perubahan plus penyegaran 15 dtk; polling sukses bukan bukti pekerjaan masih berjalan. Status tetap ada setelah Foundry di-restart.
+
+**Alur agen.** Agen mengambil pekerjaan, melapor selama bekerja, dan menyerahkan bukti, berdasarkan id command, lewat kanal yang tersedia:
+
+| Kanal | Ambil pekerjaan | Lapor |
+| --- | --- | --- |
+| MCP | `next_command` (`claim: true`) | `report_progress` |
+| CLI | `foundry command next --claim` | `foundry command progress CMD-001 -m "..." --percent 40`, lalu `done`, `fail`, `block`, `review`, atau `skip` |
+| HTTP | `POST /api/v1/project/workflow/next` | `POST /api/v1/project/progress/reports` |
+| File (cadangan) | tidak ada | satu laporan JSON per file di `.foundry/inbox/`; yang diterima pindah ke `done/`, yang ditolak ke `rejected/` beserta alasannya |
+
+CLI bekerja langsung pada `.foundry/project.json`, jadi tidak butuh server, dan UI yang terbuka tetap ikut berubah. Laporan boleh membawa `session`; klaim bersifat atomik di bawah kunci state, jadi dua agen tidak mendapat command yang sama, dan satu session mendapat kembali command yang sedang dipegangnya. Command dengan dependency belum terpenuhi tidak pernah diberikan, dan `foundry command start` menolaknya; laporan `started` yang tetap dikirim disimpan dan ditandai, karena laporan mencatat kejadian nyata. Command gagal, terhambat, dan ditinjau tidak diberikan lagi otomatis: menunggu orang atau mulai berdasarkan id.
+
+**Lifecycle.** Setiap command punya `phase` turunan: `created` (dependency belum terpenuhi), `ready`, `in_progress`, `updating` (laporan progres dalam 5 menit terakhir), `review`, `completed`, `blocked`, `failed`, `revision_required`, `skipped`, `stale`. Laporan progres tidak pernah dihitung selesai: hanya `verified` yang menggerakkan persentase.
+
+**Revisi.** Perubahan workflow dicatat sebagai delta (ditambah, diubah, dihapus, dipakai ulang) di `workflow.changes`, beserta teks lama setiap command yang berubah. Command yang berubah naik `revision`; pekerjaan selesai pada revisi lama, atau pada command yang artefak blueprint-nya berubah, tampil `revision_required`, berhenti dihitung selesai, dan menahan dependent-nya sampai agen melapor lagi. Command yang tidak berubah mempertahankan progresnya. Id yang dihapus tidak dipakai ulang. Webhook tidak diimplementasikan; `GET /api/v1/events` adalah kanal push.
+
+**Kualitas.** Laporan workflow memuat saran per command (tanpa acceptance criteria, tanpa output, kriteria tak terukur, terlalu besar, terlalu singkat, hampir sama dengan command lain) dan fitur yang belum punya command. Keduanya tidak menghalangi finalisasi.
 
 **Feature → subfitur → workflow → CMD.** Command membawa `feature_ids` dan `sub_feature_ids` yang ditulis planner atau diatur di editor command. Tanpa itu, Foundry memakai fitur dari requirement yang dicakup command, jadi project lama tetap jalan. Node Feature Discovery dihubungkan ke fitur blueprint lewat `source_id`, lalu nama persis, lalu pencocokan teks/modul yang konservatif; node yang tidak yakin tetap kosong dan ditandai. Saat load, project lama juga mengisi `feature_ids` command yang kosong dari `covers`. `get_progress` mengembalikan roll-up `overall`, `modules`, `features` (dengan `sub_features`) dan `workflow` dari status command aktual. Command yang terhubung ke beberapa fitur dihitung sekali per roll-up. Persentase memakai bobot `core.CommandWeight` (acceptance criteria, output, dependency, panjang instruksi); hanya status `verified` yang dihitung selesai. Setiap roll-up menampilkan jumlah selesai / diklaim selesai / dikerjakan / belum / gagal / terhambat / tidak diketahui, status terakhir, dan daftar CMD terkait. Halaman Fitur menampilkan progress yang sama dan menautkan setiap fitur ke command di halaman Workflow.
 
@@ -352,7 +371,7 @@ make clean
 ### Struktur repository
 
 ```text
-cmd/foundry/          Entry point CLI (serve · mcp · version)
+cmd/foundry/          Entry point CLI (serve · mcp · command · version)
 apps/web/             UI — React 19 + TypeScript + Vite, di-embed ke binary
 internal/
 ├── core/             Model proyek, store, blueprint, workflow, survey

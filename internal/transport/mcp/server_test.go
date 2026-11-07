@@ -195,3 +195,52 @@ func TestParseAllow(t *testing.T) {
 		t.Fatal("ALL incomplete")
 	}
 }
+
+func TestCommandTools(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	st, _ := core.NewStore(t.TempDir())
+	st.Init("Klinik")
+	st.Update(func(p *core.Project) error {
+		p.Workflow = &core.Workflow{Version: 1, Commands: []core.Command{
+			{ID: "CMD-001", Name: "Skema", Objective: "o", Instructions: "buat skema", Acceptance: []string{"ok"}},
+			{ID: "CMD-002", Name: "API", Objective: "o", Instructions: "buat API", DependsOn: []string{"CMD-001"}},
+		}}
+		return nil
+	})
+	perms, _ := ParseAllow("READ,WRITE")
+	s := &Server{Svc: pipeline.New(st, hostAI{}), Allow: perms, Version: "test"}
+	lines := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"next_command","arguments":{"session":"s1","claim":true}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"next_command","arguments":{"session":"s2"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"report_progress","arguments":{"command":"CMD-001","status":"progress","summary":"tabel","percent":30,"session":"s1"}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_command","arguments":{"id":"CMD-001","history":true}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_command","arguments":{"id":"CMD-002"}}}`,
+	}
+	var out strings.Builder
+	if err := s.Serve(strings.NewReader(strings.Join(lines, "\n")), &out); err != nil {
+		t.Fatal(err)
+	}
+	var res []map[string]any
+	sc := bufio.NewScanner(strings.NewReader(out.String()))
+	sc.Buffer(nil, 1<<20)
+	for sc.Scan() {
+		var m map[string]any
+		json.Unmarshal(sc.Bytes(), &m)
+		res = append(res, m)
+	}
+	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"command": "CMD-001"`) || !strings.Contains(txt, "buat skema") {
+		t.Fatalf("claim = %s", txt)
+	}
+	if txt, isErr := text(res[1]); isErr || !strings.Contains(txt, "dikerjakan session lain") {
+		t.Fatalf("second session = %s", txt)
+	}
+	if txt, isErr := text(res[2]); isErr || !strings.Contains(txt, `"status": "started"`) {
+		t.Fatalf("progress = %s", txt)
+	}
+	if txt, isErr := text(res[3]); isErr || !strings.Contains(txt, `"summary": "tabel"`) {
+		t.Fatalf("history = %s", txt)
+	}
+	if txt, isErr := text(res[4]); isErr || !strings.Contains(txt, "buat API") {
+		t.Fatalf("command = %s", txt)
+	}
+}

@@ -17,10 +17,30 @@ const (
 	RunVerified    = "verified" // Foundry accepted evidence against the command
 	RunStale       = "stale"    // view only: last report older than the configured window
 	RunUnknown     = "unknown"  // view only: agent disconnected; last status kept
+	RunRevision    = "revision" // view only: work done before the command or its blueprint changed
+	// RunProgress is a report, not a status: the agent says it is still
+	// working and what on. The command stays started.
+	RunProgress = "progress"
 )
 
 // AgentReportStatuses are the values an external agent may send.
-var AgentReportStatuses = []string{RunStarted, RunDone, RunFailed, RunBlocked, RunReview, RunSkipped}
+var AgentReportStatuses = []string{RunStarted, RunProgress, RunDone, RunFailed, RunBlocked, RunReview, RunSkipped}
+
+// Lifecycle of a command as people and agents read it. Derived from the run;
+// never stored, so it cannot drift from the reports it comes from.
+const (
+	PhaseCreated    = "created"           // dependencies not met yet
+	PhaseReady      = "ready"             // may be started, no report yet
+	PhaseInProgress = "in_progress"       // started
+	PhaseUpdating   = "updating"          // started, agent reported work moments ago
+	PhaseReview     = "review"            // waits for a person: no evidence, failed tests, or agent asked
+	PhaseCompleted  = "completed"         // verified
+	PhaseBlocked    = "blocked"           // agent reported a blocker
+	PhaseFailed     = "failed"            // agent reported failure
+	PhaseRevision   = "revision_required" // must be redone
+	PhaseSkipped    = "skipped"           // left out, with a reason
+	PhaseStale      = "stale"             // no fresh report; state unknown
+)
 
 // Progress is the persistent execution record of the command workflow.
 // Foundry stores and validates it; it never runs the commands.
@@ -51,6 +71,15 @@ type CommandRun struct {
 	Seq        int64      `json:"seq"`
 	ReportID   string     `json:"report_id,omitempty"`
 	EarlyStart bool       `json:"early_start,omitempty"`
+	// Session is the agent session that holds or last touched the command.
+	Session string `json:"session,omitempty"`
+	// Revision is the command revision the work was started on.
+	Revision int `json:"revision,omitempty"`
+	// Activity, Percent and ActivityAt come from the latest progress report.
+	// Percent is the agent's own estimate; it never moves the status.
+	Activity   string     `json:"activity,omitempty"`
+	Percent    *int       `json:"percent,omitempty"`
+	ActivityAt *time.Time `json:"activity_at,omitempty"`
 }
 
 // ProgressReport is one agent report, kept for idempotency and audit.
@@ -70,6 +99,8 @@ type ProgressReport struct {
 	Evidence        []Evidence `json:"evidence,omitempty"`
 	Tests           []TestRun  `json:"tests,omitempty"`
 	Source          string     `json:"source,omitempty"`
+	Session         string     `json:"session,omitempty"`
+	Percent         *int       `json:"percent,omitempty"`
 	Outcome         string     `json:"outcome"` // applied | duplicate | ignored
 	AppliedStatus   string     `json:"applied_status,omitempty"`
 }

@@ -44,10 +44,35 @@ type Server struct {
 
 	mu  sync.RWMutex
 	svc *pipeline.Service
+
+	inboxOnce sync.Once
+	stopInbox sync.Once
+	stop      chan struct{}
 }
 
 func New(ui fs.FS, binary string) *Server {
-	return &Server{UI: ui, Binary: binary}
+	return &Server{UI: ui, Binary: binary, stop: make(chan struct{})}
+}
+
+// inboxEvery is how often report files dropped by an agent are picked up.
+const inboxEvery = 2 * time.Second
+
+// watchInbox applies the report files of whichever project is open.
+func (s *Server) watchInbox() {
+	t := time.NewTicker(inboxEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.stop:
+			return
+		case <-t.C:
+			if svc, err := s.service(); err == nil {
+				if _, _, err := svc.IngestInbox(); err != nil {
+					log.Printf("inbox: %v", err)
+				}
+			}
+		}
+	}
 }
 
 var errNoProject = errors.New("belum ada project yang dibuka")
@@ -102,6 +127,7 @@ func (s *Server) Close() error {
 
 // Shutdown stops the jobs of the open project and waits up to timeout.
 func (s *Server) Shutdown(timeout time.Duration) error {
+	s.stopInbox.Do(func() { close(s.stop) })
 	svc, err := s.service()
 	if err != nil {
 		return nil
@@ -141,6 +167,7 @@ func expandHome(dir string) string {
 }
 
 func (s *Server) Handler() http.Handler {
+	s.inboxOnce.Do(func() { go s.watchInbox() })
 	mux := http.NewServeMux()
 	api := func(pattern string, h func(r *http.Request) (any, error)) {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
@@ -600,6 +627,28 @@ func (s *Server) Handler() http.Handler {
 	// records and validates; it never runs the commands.
 	api("GET /api/v1/project/progress", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		return svc.ProgressView()
+	}))
+	// What a coding agent needs: the next command, one command in full, its
+	// recorded history. claim marks the command started for the session.
+	api("POST /api/v1/project/workflow/next", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct {
+			Session string `json:"session"`
+			Source  string `json:"source"`
+			Claim   bool   `json:"claim"`
+		}
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		if in.Claim {
+			return svc.ClaimCommand("", in.Session, in.Source)
+		}
+		return svc.NextCommand(in.Session)
+	}))
+	api("GET /api/v1/project/workflow/commands/{id}", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		return svc.Command(r.PathValue("id"))
+	}))
+	api("GET /api/v1/project/workflow/commands/{id}/history", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		return svc.CommandDetail(r.PathValue("id"))
 	}))
 	api("POST /api/v1/project/progress/reports", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in progress.ReportIn
@@ -1087,6 +1136,8 @@ func statusFor(err error) int {
 	case errors.As(err, &he):
 		return he.code
 	case errors.Is(err, pipeline.ErrBusy), errors.Is(err, pipeline.ErrFinalized):
+		return http.StatusConflict
+	case errors.Is(err, progress.ErrDepsUnmet), errors.Is(err, progress.ErrClaimed):
 		return http.StatusConflict
 	case errors.Is(err, pipeline.ErrWrongStage), errors.Is(err, pipeline.ErrNothingToDo), errors.Is(err, pipeline.ErrIncomplete):
 		return http.StatusConflict

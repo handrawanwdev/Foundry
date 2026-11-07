@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/handrawanwdev/foundry/internal/core"
 )
@@ -299,6 +300,11 @@ type Report struct {
 	// FeatureCommands maps each feature to the commands that implement it,
 	// so a feature change can name the affected workflow work.
 	FeatureCommands map[string][]string `json:"feature_commands"`
+	// UncoveredFeatures are the features no command implements; shown, not
+	// blocking.
+	UncoveredFeatures []string `json:"uncovered_features"`
+	// Quality are the advice of Quality; shown, not blocking.
+	Quality []Issue `json:"quality"`
 }
 
 // DocHeader names an artifact without its body.
@@ -312,7 +318,7 @@ type DocHeader struct {
 // nothing to review.
 func Check(w *core.Workflow, docs []core.Artifact, reqs []core.Requirement) Report {
 	r := Report{Issues: []Issue{}, Waves: [][]string{}, Stale: map[string][]string{}, Review: map[string]string{}, Docs: map[string]DocHeader{},
-		Uncovered: []string{}, FeatureCommands: map[string][]string{}}
+		Uncovered: []string{}, FeatureCommands: map[string][]string{}, UncoveredFeatures: []string{}, Quality: []Issue{}}
 	exists := map[string]bool{}
 	for _, d := range docs {
 		exists[d.ID] = true
@@ -339,6 +345,92 @@ func Check(w *core.Workflow, docs []core.Artifact, reqs []core.Requirement) Repo
 			r.Review[c.ID] = "artefak berubah: " + strings.Join(r.Stale[c.ID], ", ")
 		}
 	}
+	r.Quality = Quality(w.Commands)
 	r.Ready = len(w.Commands) > 0 && len(r.Issues) == 0 && len(r.Review) == 0
 	return r
+}
+
+// Limits of one command; past them it does more than one thing or it is
+// not worth a command of its own.
+const (
+	maxAcceptance   = 10
+	maxInstructions = 8000
+	minInstructions = 40
+	similarCommand  = 0.8
+)
+
+// Vague acceptance criteria name no observable result.
+var vagueCriteria = []string{"dengan baik", "dengan benar", "berjalan lancar", "sesuai kebutuhan", "sesuai harapan", "works well", "work correctly", "works correctly", "as expected", "properly"}
+
+// Quality lists what makes a command hard to carry out or to verify. These
+// are judgments, so they advise and never block: a workflow written before
+// the checks existed stays valid. Commands still without instructions are
+// skeletons and are left out.
+func Quality(cmds []core.Command) []Issue {
+	out := []Issue{}
+	add := func(id, format string, a ...any) {
+		out = append(out, Issue{Command: id, Message: fmt.Sprintf(format, a...)})
+	}
+	type words struct {
+		id  string
+		set map[string]bool
+	}
+	var seen []words
+	for _, c := range cmds {
+		text := strings.TrimSpace(c.Instructions)
+		if text == "" {
+			continue
+		}
+		if len(c.Acceptance) == 0 {
+			add(c.ID, "belum punya acceptance criteria; selesai tidak bisa dibuktikan")
+		}
+		if len(c.Outputs) == 0 {
+			add(c.ID, "belum menyebut output yang diharapkan")
+		}
+		if len(c.Acceptance) > maxAcceptance || len(text) > maxInstructions {
+			add(c.ID, "terlalu besar untuk satu command; pecah jadi beberapa command")
+		}
+		if len(text) < minInstructions {
+			add(c.ID, "instruksi terlalu singkat untuk dikerjakan tanpa konteks tambahan")
+		}
+		for _, a := range c.Acceptance {
+			low := strings.ToLower(a)
+			if slices.ContainsFunc(vagueCriteria, func(v string) bool { return strings.Contains(low, v) }) {
+				add(c.ID, "acceptance criteria tidak terukur: %q", a)
+				break
+			}
+		}
+		set := wordSet(text)
+		for _, w := range seen {
+			if similarity(set, w.set) >= similarCommand {
+				add(c.ID, "instruksinya hampir sama dengan %s; gabungkan atau bedakan tujuannya", w.id)
+				break
+			}
+		}
+		seen = append(seen, words{c.ID, set})
+	}
+	return out
+}
+
+func wordSet(s string) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		out[w] = true
+	}
+	return out
+}
+
+// similarity is the Jaccard index of two word sets.
+func similarity(a, b map[string]bool) float64 {
+	both := 0
+	for w := range a {
+		if b[w] {
+			both++
+		}
+	}
+	all := len(a) + len(b) - both
+	if all == 0 {
+		return 0
+	}
+	return float64(both) / float64(all)
 }

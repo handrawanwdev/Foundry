@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allChecks, allCompat, allFindings, groupItems, issueCounts, itemsOf, planGate, planSummary } from "./techplan";
+import { allCompat, allFindings, groupItems, isCoreGroup, issueCounts, planGate, planNotes } from "./techplan";
 import type { Project, TechItem, TechPlan } from "./types";
 
 const item = (area: string, group: string, extra: Partial<TechItem> = {}): TechItem => ({
@@ -28,22 +28,30 @@ const plan = (extra: Partial<TechPlan> = {}): TechPlan => ({
 });
 
 describe("techplan helpers", () => {
-  it("groups items and lists them per workspace tab", () => {
-    const p = plan();
-    const groups = groupItems(p);
+  it("groups items and keeps only the core groups always visible", () => {
+    const groups = groupItems(plan());
     expect(groups.map((g) => g.id)).toEqual(["stack", "data", "app_infra", "architecture", "operations", "standards"]);
-    expect(itemsOf(p, "stack").map((i) => i.area)).toEqual(["backend"]);
-    expect(itemsOf(p, "infra").map((i) => i.area)).toEqual(["authentication", "deployment"]);
-    expect(itemsOf(p, "data").map((i) => i.area)).toEqual(["database"]);
+    expect(groups.filter((g) => isCoreGroup(g.id)).map((g) => g.id)).toEqual(["stack", "data", "architecture"]);
   });
 
   it("counts issues, findings, checks and computed compatibility", () => {
     const p = plan();
     expect(issueCounts(p)).toEqual({ errors: 1, warnings: 1 });
     expect(allFindings(p).map((f) => f.message)).toEqual(["ai", "computed"]);
-    expect(allChecks(p).map((c) => c.source)).toEqual(["computed"]);
     expect(allCompat(p).some((c) => c.source === "computed")).toBe(true);
-    expect(planSummary(p)).toEqual({ items: 6, outside: 3, unverified: 1, score: 66 });
+  });
+
+  it("lists only what needs attention, errors first", () => {
+    const p = plan({
+      evaluation: { criteria: [], score: 66, findings: [
+        { category: "other", severity: "info", message: "hidden" },
+        { category: "other", severity: "warning", message: "w" },
+        { category: "other", severity: "warning", message: "risk", resolution: "fix" },
+        { category: "other", severity: "error", message: "e" },
+      ] },
+      analysis: { items: 6, outside_catalog: 3, unverified: 1, diverged: ["data_migration"], issues: [{ level: "warning", message: "w" }, { level: "error", message: "e" }] },
+    });
+    expect(planNotes(p).map((n) => n.text)).toEqual(["e", "w", "risk Solusi: fix", "Evaluasi belum mencerminkan pilihan user: data migration."]);
   });
 
   it("gates approval on a missing, stale or conflicting plan", () => {

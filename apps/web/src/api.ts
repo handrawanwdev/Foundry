@@ -1,4 +1,4 @@
-import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
+import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, CommandHistory, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
 
 // details lists what an invalid request broke (field = where).
 export interface ErrorDetail { field?: string; message: string }
@@ -125,6 +125,7 @@ export const api = {
   // needs true marks it for review; false records it as reviewed.
   reviewCommand: (id: string, needs: boolean, reason = "") =>
     call<Project>("POST", `/project/workflow/commands/${encodeURIComponent(id)}/review`, { needs_review: needs, reason }),
+  commandHistory: (id: string) => call<CommandHistory>("GET", `/project/workflow/commands/${encodeURIComponent(id)}/history`),
   progress: () => call<ProgressSnapshot>("GET", "/project/progress"),
   reconcileProgress: (stale_after_sec = 0) => call<ProgressSnapshot>("POST", "/project/progress/reconcile", { stale_after_sec }),
 

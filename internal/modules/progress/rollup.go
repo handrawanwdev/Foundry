@@ -36,7 +36,8 @@ type Rollup struct {
 	Failed      int        `json:"failed"`
 	Blocked     int        `json:"blocked"`
 	Skipped     int        `json:"skipped"`
-	Unknown     int        `json:"unknown"` // stale or disconnected
+	Unknown     int        `json:"unknown"`  // stale or disconnected
+	Revision    int        `json:"revision"` // has to be redone
 	Status      string     `json:"status"`
 	LastStatus  string     `json:"last_status,omitempty"`
 	LastCommand string     `json:"last_command,omitempty"`
@@ -128,6 +129,8 @@ func rollupCommands(cmds []CommandProgress, only map[string]bool) Rollup {
 			r.Skipped++
 		case core.RunStale, core.RunUnknown:
 			r.Unknown++
+		case core.RunRevision:
+			r.Revision++
 		default:
 			r.NotStarted++
 		}
@@ -149,7 +152,7 @@ func rollupStatus(r Rollup) string {
 		return RollupDone
 	case r.Failed+r.Blocked > 0:
 		return RollupBlocked
-	case r.Completed+r.Claimed+r.InProgress > 0:
+	case r.Completed+r.Claimed+r.InProgress+r.Revision > 0:
 		return RollupRunning
 	case r.Unknown >= r.Total:
 		return RollupUnknown

@@ -3,9 +3,11 @@ package pipeline
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/progress"
 	"github.com/handrawanwdev/foundry/internal/modules/repoplan"
 	"github.com/handrawanwdev/foundry/internal/modules/techplan"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
@@ -126,9 +128,11 @@ func (s *Service) EditCommand(id string, in work.CommandEdit) (*core.Project, er
 		if err := blueprintEditable(p); err != nil {
 			return err
 		}
+		before := slices.Clone(p.Workflow.Commands)
 		if err := work.EditCommand(p, id, in, spec.Artifacts(p)); err != nil {
 			return err
 		}
+		progress.Track(p, before, "edit", "Diedit user", "ui", time.Now().UTC())
 		p.Log("ui", "Command diedit: "+id)
 		return nil
 	})
@@ -146,6 +150,7 @@ func (s *Service) ReviewCommand(id string, needs bool, reason string) (*core.Pro
 		if err := work.ReviewCommand(p, id, needs, reason, spec.Artifacts(p)); err != nil {
 			return err
 		}
+		progress.Reconcile(p, time.Now().UTC())
 		msg := "Command ditinjau: "
 		if needs {
 			msg = "Command perlu ditinjau: "
@@ -161,6 +166,13 @@ func CheckWorkflow(p *core.Project) workflow.Report {
 	if p.Workflow != nil {
 		p.Workflow.EnsureID()
 		r.FeatureCommands = workflow.FeatureCommands(p.Workflow.Commands, p.Features)
+		if len(p.Workflow.Commands) > 0 {
+			for _, f := range p.Features {
+				if len(r.FeatureCommands[f.ID]) == 0 {
+					r.UncoveredFeatures = append(r.UncoveredFeatures, f.ID)
+				}
+			}
+		}
 		if issues := workflow.ValidateFeatures(p.Workflow.Commands, p.Features); len(issues) > 0 {
 			r.Issues = append(r.Issues, issues...)
 			r.Ready = false

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/progress"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 	"github.com/handrawanwdev/foundry/internal/modules/workflow"
@@ -196,8 +198,10 @@ func releaseCommands(p *core.Project, im *Impact) {
 	if len(im.Commands) == 0 {
 		return
 	}
+	before := w.Commands
 	w.Commands = kept
 	w.Version++
+	progress.Track(p, before, "remove", reason, "ui", time.Now().UTC())
 }
 
 func areaStates(p *core.Project, docs []core.Artifact) map[string]string {

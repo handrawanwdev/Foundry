@@ -1,4 +1,4 @@
-import type { AreaStatusKind, Artifact, ArtifactCategory, ArtifactStateKind, BlueprintView, Command, CommandProgress, DesignIssue, ExportManifest, ProgressSnapshot, Project, RunStatus, Workflow, WorkflowReport } from "./types";
+import type { AreaStatusKind, Artifact, ArtifactCategory, ArtifactStateKind, BlueprintView, Command, CommandLevel, CommandPhase, CommandProgress, DesignIssue, ExportManifest, ProgressOverview, ProgressSnapshot, Project, RunStatus, Workflow, WorkflowReport } from "./types";
 
 // The built-in artifacts of the UI design (core.ArtifactDesignRules / ArtifactLayoutSpec).
 export const DESIGN_DOCS = { rules: "design-rules", layout: "layout-spec" } as const;
@@ -103,11 +103,62 @@ export const RUN_LABEL: Record<RunStatus, string> = {
   unconfirmed: "Belum terkonfirmasi", waiting: "Menunggu prasyarat", started: "Sedang dikerjakan",
   blocked: "Terhambat", skipped: "Dilewati", failed: "Gagal", review: "Perlu ditinjau",
   done: "Selesai (laporan agen)", verified: "Terverifikasi", stale: "Kedaluwarsa", unknown: "Tidak diketahui",
+  revision: "Perlu dikerjakan ulang",
 };
 export const RUN_CLASS: Record<RunStatus, string> = {
   unconfirmed: "", waiting: "", started: "st-started", blocked: "st-review", skipped: "",
   failed: "st-issue", review: "st-review", done: "st-final", verified: "st-final", stale: "st-stale", unknown: "st-stale",
+  revision: "st-review",
 };
+
+// The lifecycle of a command as the execution dashboard shows it.
+export const PHASE_LABEL: Record<CommandPhase, string> = {
+  created: "Menunggu dependency", ready: "Siap", in_progress: "Dikerjakan", updating: "Melapor", review: "Perlu ditinjau",
+  completed: "Selesai", blocked: "Terhambat", failed: "Gagal", revision_required: "Perlu revisi", skipped: "Dilewati", stale: "Tanpa kabar",
+};
+export const PHASE_CLASS: Record<CommandPhase, string> = {
+  created: "st-muted", ready: "", in_progress: "st-started", updating: "st-started", review: "st-review", completed: "st-final",
+  blocked: "st-review", failed: "st-issue", revision_required: "st-review", skipped: "st-muted", stale: "st-stale",
+};
+
+export const LEVEL_LABEL: Record<CommandLevel, string> = { high: "Tinggi", medium: "Sedang", low: "Rendah" };
+
+// The dashboard tiles: always the main six, the rest only when they hold something.
+export function overviewTiles(o: ProgressOverview): { label: string; value: number; tone?: string }[] {
+  const tiles: { label: string; value: number; tone?: string }[] = [
+    { label: "Total", value: o.total },
+    { label: "Selesai", value: o.completed, tone: "ok" },
+    { label: "Dikerjakan", value: o.in_progress, tone: "accent" },
+    { label: "Belum mulai", value: o.pending },
+    { label: "Terhambat", value: o.blocked, tone: "warn" },
+    { label: "Gagal", value: o.failed, tone: "bad" },
+  ];
+  if (o.revision) tiles.push({ label: "Perlu revisi", value: o.revision, tone: "warn" });
+  if (o.review) tiles.push({ label: "Perlu ditinjau", value: o.review, tone: "warn" });
+  if (o.stale) tiles.push({ label: "Tanpa kabar", value: o.stale });
+  if (o.skipped) tiles.push({ label: "Dilewati", value: o.skipped });
+  return tiles;
+}
+
+export const REPORT_LABEL: Record<string, string> = {
+  started: "Mulai", progress: "Progres", done: "Selesai", failed: "Gagal", blocked: "Terhambat", review: "Minta ditinjau", skipped: "Dilewati",
+};
+
+// What a revision of the workflow did, in plain words.
+export function changeSummary(c: { added?: string[]; modified?: unknown[]; removed?: unknown[]; reused: number }): string {
+  return [
+    c.added?.length && `${c.added.length} ditambah`,
+    c.modified?.length && `${c.modified.length} diubah`,
+    c.removed?.length && `${c.removed.length} dihapus`,
+    c.reused && `${c.reused} dipakai ulang`,
+  ].filter(Boolean).join(" · ");
+}
+
+// The request behind "Buat command tambahan": only what is missing.
+export function coverageRequest(requirements: string[], features: string[]): string {
+  const parts = [features.length && `fitur ${features.join(", ")}`, requirements.length && `requirement MUST ${requirements.join(", ")}`].filter(Boolean);
+  return `Tambahkan command untuk ${parts.join(" dan ")} yang belum dicakup workflow. Biarkan command lain apa adanya, kecuali dependency yang memang perlu.`;
+}
 
 export function runOf(progress: ProgressSnapshot | null | undefined, id: string): CommandProgress | undefined {
   return progress?.commands.find((c) => c.id === id);
@@ -137,7 +188,7 @@ export function subFeatureProgressOf(progress: ProgressSnapshot | null | undefin
 }
 
 // A compact "3 selesai · 1 jalan · 2 belum" summary of one roll-up.
-export function rollupBits(r: { completed: number; claimed: number; in_progress: number; not_started: number; failed: number; blocked: number; skipped: number; unknown: number }) {
+export function rollupBits(r: { completed: number; claimed: number; in_progress: number; not_started: number; failed: number; blocked: number; skipped: number; unknown: number; revision?: number }) {
   return [
     r.completed && `${r.completed} selesai`,
     r.claimed && `${r.claimed} diklaim selesai`,
@@ -147,6 +198,7 @@ export function rollupBits(r: { completed: number; claimed: number; in_progress:
     r.blocked && `${r.blocked} terhambat`,
     r.skipped && `${r.skipped} dilewati`,
     r.unknown && `${r.unknown} tidak diketahui`,
+    r.revision && `${r.revision} perlu revisi`,
   ].filter(Boolean) as string[];
 }
 
@@ -158,6 +210,9 @@ export function commandText(c: Command, r: WorkflowReport | null): string {
   const wave = waveOf(r, c.id);
   if (wave) meta.push(`Gelombang ${wave}`);
   meta.push(c.depends_on?.length ? `Bergantung pada: ${c.depends_on.join(", ")}` : "Tanpa dependency");
+  if (c.priority) meta.push(`Prioritas: ${c.priority}`);
+  if (c.complexity) meta.push(`Kompleksitas: ${c.complexity}`);
+  if ((c.revision ?? 0) > 1) meta.push(`Revisi ${c.revision}`);
   out.push(meta.join(" · "), "");
   const section = (title: string, text?: string) => { if (text?.trim()) out.push(`## ${title}`, "", text.trim(), ""); };
   const list = (title: string, items?: string[], mark = "") => {
@@ -172,6 +227,7 @@ export function commandText(c: Command, r: WorkflowReport | null): string {
     if (c.feature_ids?.length) out.push(`Feature: ${c.feature_ids.join(", ")}`, "");
     if (c.sub_feature_ids?.length) out.push(`Subfitur: ${c.sub_feature_ids.join(", ")}`, "");
   }
+  list("File dan modul terkait", c.files);
   list("Input", c.inputs);
   section("Instruksi", c.instructions);
   list("Output yang diharapkan", c.expected_outputs);
@@ -201,9 +257,9 @@ export function agentPrompt(m: ExportManifest, dir: string, wave = 0): string {
     "Untuk tiap command:",
     "1. Baca file command dan artefak blueprint yang dirujuknya.",
     "2. Periksa repository dulu; pakai struktur dan konvensi yang ada, jangan mengarang path atau API.",
-    "3. Panggil report_progress (status started) sebelum mengubah kode. Jangan mulai sebelum get_progress menandai command ini siap.",
-    "4. Implementasikan, lalu buktikan setiap acceptance criteria (test atau perintah beserta hasilnya).",
-    "5. Panggil report_progress lagi: done (dengan evidence.ref ke file/commit/test), failed, blocked, skipped (wajib reason), atau review. Sertakan id laporan yang stabil agar pengiriman ulang aman.",
+    "3. Ambil dengan next_command (claim: true), atau jalankan `foundry command next --claim`, sebelum mengubah kode. Command yang dependency-nya belum terverifikasi tidak diberikan.",
+    "4. Implementasikan, lalu buktikan setiap acceptance criteria (test atau perintah beserta hasilnya). Selama bekerja kirim report_progress status progress (ringkasan, percent, files) atau `foundry command progress`.",
+    "5. Panggil report_progress lagi atau `foundry command done|fail|block|skip|review`: done (dengan evidence.ref ke file/commit/test), failed, blocked, skipped (wajib reason), atau review. Sertakan id laporan yang stabil agar pengiriman ulang aman.",
     "Foundry tidak menganggap command selesai hanya karena instruksi sudah dikirim atau laporan done tanpa bukti.",
     "",
     "Jika blueprint bertentangan dengan repository atau dengan command lain, berhenti, report_progress blocked, dan tanya saya.",

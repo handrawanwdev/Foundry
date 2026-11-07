@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentPrompt, BLUEPRINT_STEP_LABEL, blueprintGenerateNeeded, DESIGN_DOCS, designIssuesOf, isDesignDoc, SCOPE_DOCS, scopeIssuesOf } from "./blueprint";
+import { agentPrompt, BLUEPRINT_STEP_LABEL, blueprintGenerateNeeded, changeSummary, commandText, coverageRequest, DESIGN_DOCS, designIssuesOf, isDesignDoc, overviewTiles, SCOPE_DOCS, scopeIssuesOf } from "./blueprint";
 import type { BlueprintView, ExportManifest, Project } from "./types";
 
 const manifest = {
@@ -77,5 +77,31 @@ describe("scopeIssuesOf", () => {
     expect(scopeIssuesOf(issues, SCOPE_DOCS.useCases).map((i) => i.where)).toEqual(["FLOW-001"]);
     expect(scopeIssuesOf(issues, SCOPE_DOCS.acceptance).map((i) => i.where)).toEqual(["REQ-002", "acceptance"]);
     expect(scopeIssuesOf(issues, SCOPE_DOCS.decisions).map((i) => i.where)).toEqual(["DEC-001"]);
+  });
+});
+
+describe("execution dashboard", () => {
+  const overview = { total: 6, completed: 1, in_progress: 1, pending: 2, blocked: 1, failed: 1, review: 0, revision: 0, skipped: 0, stale: 0, percent: 16 };
+
+  it("always shows the six main numbers and adds the rest only when they hold something", () => {
+    expect(overviewTiles(overview).map((t) => t.label)).toEqual(["Total", "Selesai", "Dikerjakan", "Belum mulai", "Terhambat", "Gagal"]);
+    expect(overviewTiles({ ...overview, revision: 2 }).at(-1)).toMatchObject({ label: "Perlu revisi", value: 2 });
+  });
+
+  it("says what a revision did as a delta", () => {
+    expect(changeSummary({ added: ["CMD-004"], modified: [{}, {}], reused: 3 })).toBe("1 ditambah · 2 diubah · 3 dipakai ulang");
+  });
+
+  it("asks only for what is not covered", () => {
+    const text = coverageRequest(["REQ-002"], ["FEAT-003"]);
+    expect(text).toContain("fitur FEAT-003");
+    expect(text).toContain("requirement MUST REQ-002");
+    expect(coverageRequest([], ["FEAT-003"])).not.toContain("requirement");
+  });
+
+  it("keeps the copied instruction in line with the exported one", () => {
+    const text = commandText({ id: "CMD-001", name: "n", objective: "o", instructions: "i", status: "draft", priority: "high", complexity: "low", revision: 2, files: ["api/"] }, null);
+    expect(text).toContain("Prioritas: high · Kompleksitas: low · Revisi 2");
+    expect(text).toContain("## File dan modul terkait\n\n- api/");
   });
 });

@@ -19,6 +19,10 @@ const (
 	DefaultStaleAfter = 30 * time.Minute
 	maxReports        = 500
 	maxHistory        = 400
+	maxChanges        = 100
+	maxActivity       = 40
+	// updatingFor is how long a progress report shows as live work.
+	updatingFor = 5 * time.Minute
 )
 
 var (
@@ -46,6 +50,10 @@ type ReportIn struct {
 	Changes []string `json:"changes"`
 	Reason  string   `json:"reason"`
 	Source  string   `json:"source"`
+	// Session names the agent session; it ties reports of one run together.
+	Session string `json:"session"`
+	// Percent is the agent's own estimate, 0 to 100, for status progress.
+	Percent *int `json:"percent"`
 }
 
 // ApplyResult is what the agent learns after Foundry stored the report.
@@ -59,6 +67,8 @@ type ApplyResult struct {
 	AppliedStatus string `json:"applied_status,omitempty"`
 	ReportID      string `json:"report_id"`
 	Seq           int64  `json:"seq"`
+	// Warning tells the agent the report was stored but something is off.
+	Warning string `json:"warning,omitempty"`
 }
 
 // Agent is the optional live connection of an MCP host. Empty means Foundry
@@ -76,25 +86,30 @@ type Snapshot struct {
 	WorkflowVersion int `json:"workflow_version"`
 	// Percent, Weight and DoneWeight are the project roll-up of the actual
 	// command status; the same commands are never counted twice.
-	Percent       int                 `json:"percent"`
-	Weight        int                 `json:"weight"`
-	DoneWeight    int                 `json:"done_weight"`
-	Overall       Rollup              `json:"overall"`
-	Workflow      WorkflowProgress    `json:"workflow"`
-	Modules       []ModuleProgress    `json:"modules"`
-	Features      []FeatureProgress   `json:"features"`
-	StaleAfterSec int                 `json:"stale_after_sec"`
-	UpdatedAt     time.Time           `json:"updated_at"`
-	LastReportAt  *time.Time          `json:"last_report_at,omitempty"`
-	LastSource    string              `json:"last_source,omitempty"`
-	Complete      bool                `json:"complete"`
-	Counts        Counts              `json:"counts"`
-	Waves         []WaveProgress      `json:"waves"`
-	Commands      []CommandProgress   `json:"commands"`
-	Next          []string            `json:"next"`
-	Warnings      []Warning           `json:"warnings"`
-	Issues        []string            `json:"issues"`
-	History       []core.StatusChange `json:"history"`
+	Percent       int               `json:"percent"`
+	Weight        int               `json:"weight"`
+	DoneWeight    int               `json:"done_weight"`
+	Overall       Rollup            `json:"overall"`
+	Workflow      WorkflowProgress  `json:"workflow"`
+	Modules       []ModuleProgress  `json:"modules"`
+	Features      []FeatureProgress `json:"features"`
+	StaleAfterSec int               `json:"stale_after_sec"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+	LastReportAt  *time.Time        `json:"last_report_at,omitempty"`
+	LastSource    string            `json:"last_source,omitempty"`
+	Complete      bool              `json:"complete"`
+	Counts        Counts            `json:"counts"`
+	Overview      Overview          `json:"overview"`
+	// Activity is what agents reported lately, newest first.
+	Activity []Activity `json:"activity"`
+	// Sessions are the agent sessions seen in the kept reports, latest first.
+	Sessions []Session           `json:"sessions"`
+	Waves    []WaveProgress      `json:"waves"`
+	Commands []CommandProgress   `json:"commands"`
+	Next     []string            `json:"next"`
+	Warnings []Warning           `json:"warnings"`
+	Issues   []string            `json:"issues"`
+	History  []core.StatusChange `json:"history"`
 	// Visual is the latest measured UI quality; it never changes command
 	// status, but completion does not imply a visually verified product.
 	Visual      core.VisualSummary `json:"visual"`
@@ -114,6 +129,48 @@ type Counts struct {
 	Verified    int `json:"verified"`
 	Stale       int `json:"stale"`
 	Unknown     int `json:"unknown"`
+	Revision    int `json:"revision"`
+}
+
+// Overview is the execution dashboard. Each command is in exactly one bucket,
+// so the buckets add up to Total.
+type Overview struct {
+	Total      int `json:"total"`
+	Completed  int `json:"completed"`
+	InProgress int `json:"in_progress"`
+	Pending    int `json:"pending"`
+	Blocked    int `json:"blocked"`
+	Failed     int `json:"failed"`
+	Review     int `json:"review"`
+	Revision   int `json:"revision"`
+	Skipped    int `json:"skipped"`
+	Stale      int `json:"stale"`
+	Percent    int `json:"percent"`
+}
+
+// Activity is one report as the timeline shows it.
+type Activity struct {
+	At      time.Time `json:"at"`
+	Command string    `json:"command"`
+	Name    string    `json:"name,omitempty"`
+	Status  string    `json:"status"`
+	Applied string    `json:"applied,omitempty"`
+	Outcome string    `json:"outcome"`
+	Summary string    `json:"summary,omitempty"`
+	Reason  string    `json:"reason,omitempty"`
+	Files   []string  `json:"files,omitempty"`
+	Percent *int      `json:"percent,omitempty"`
+	Source  string    `json:"source,omitempty"`
+	Session string    `json:"session,omitempty"`
+}
+
+// Session is one agent session and the command it touched last.
+type Session struct {
+	ID      string    `json:"id"`
+	Source  string    `json:"source,omitempty"`
+	Command string    `json:"command"`
+	LastAt  time.Time `json:"last_at"`
+	Active  bool      `json:"active"`
 }
 
 type WaveProgress struct {
@@ -124,28 +181,45 @@ type WaveProgress struct {
 }
 
 type CommandProgress struct {
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	Status        string          `json:"status"`
-	Stored        string          `json:"stored"`
-	Wave          int             `json:"wave"`
-	Weight        int             `json:"weight"`
-	DependsOn     []string        `json:"depends_on"`
-	Dependents    []string        `json:"dependents"`
-	FeatureIDs    []string        `json:"feature_ids,omitempty"`
-	SubFeatureIDs []string        `json:"sub_feature_ids,omitempty"`
-	Waiting       []string        `json:"waiting,omitempty"`
-	StartedAt     *time.Time      `json:"started_at,omitempty"`
-	FinishedAt    *time.Time      `json:"finished_at,omitempty"`
-	UpdatedAt     *time.Time      `json:"updated_at,omitempty"`
-	Source        string          `json:"source,omitempty"`
-	Summary       string          `json:"summary,omitempty"`
-	Reason        string          `json:"reason,omitempty"`
-	Evidence      []core.Evidence `json:"evidence,omitempty"`
-	Tests         []core.TestRun  `json:"tests,omitempty"`
-	EarlyStart    bool            `json:"early_start,omitempty"`
-	ReportID      string          `json:"report_id,omitempty"`
-	Seq           int64           `json:"seq,omitempty"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Status        string   `json:"status"`
+	Phase         string   `json:"phase"`
+	Stored        string   `json:"stored"`
+	Revision      int      `json:"revision"`
+	RunRevision   int      `json:"run_revision,omitempty"`
+	Priority      string   `json:"priority,omitempty"`
+	Complexity    string   `json:"complexity"`
+	Files         []string `json:"files,omitempty"`
+	Wave          int      `json:"wave"`
+	Weight        int      `json:"weight"`
+	DependsOn     []string `json:"depends_on"`
+	Dependents    []string `json:"dependents"`
+	FeatureIDs    []string `json:"feature_ids,omitempty"`
+	SubFeatureIDs []string `json:"sub_feature_ids,omitempty"`
+	Waiting       []string `json:"waiting,omitempty"`
+	// Impact are the commands held back while this one is failed, blocked or
+	// has to be redone: every direct and indirect dependent.
+	Impact []string `json:"impact,omitempty"`
+	// RevisionWhy says what changed since the work was done.
+	RevisionWhy string `json:"revision_why,omitempty"`
+	// StaleDocs are referenced artifacts that changed; the instruction may
+	// no longer match the blueprint.
+	StaleDocs  []string        `json:"stale_docs,omitempty"`
+	Activity   string          `json:"activity,omitempty"`
+	Percent    *int            `json:"percent,omitempty"`
+	Session    string          `json:"session,omitempty"`
+	StartedAt  *time.Time      `json:"started_at,omitempty"`
+	FinishedAt *time.Time      `json:"finished_at,omitempty"`
+	UpdatedAt  *time.Time      `json:"updated_at,omitempty"`
+	Source     string          `json:"source,omitempty"`
+	Summary    string          `json:"summary,omitempty"`
+	Reason     string          `json:"reason,omitempty"`
+	Evidence   []core.Evidence `json:"evidence,omitempty"`
+	Tests      []core.TestRun  `json:"tests,omitempty"`
+	EarlyStart bool            `json:"early_start,omitempty"`
+	ReportID   string          `json:"report_id,omitempty"`
+	Seq        int64           `json:"seq,omitempty"`
 }
 
 type Warning struct {
@@ -266,7 +340,7 @@ func Apply(p *core.Project, in ReportIn, now time.Time) (*ApplyResult, error) {
 		Command: cmd.ID, Status: in.Status, StartedAt: utcPtr(in.StartedAt), FinishedAt: utcPtr(in.FinishedAt), UpdatedAt: updated,
 		ReceivedAt: now, Summary: strings.TrimSpace(in.Summary), Reason: strings.TrimSpace(in.Reason),
 		Evidence: evidence, Tests: slices.Clone(in.Tests), Source: strings.TrimSpace(in.Source),
-		Outcome: "ignored",
+		Session: strings.TrimSpace(in.Session), Percent: in.Percent, Outcome: "ignored",
 	}
 	out := &ApplyResult{Accepted: true, Command: cmd.ID, Status: run.Status, ReportID: id, Seq: seq}
 	if late {
@@ -277,31 +351,47 @@ func Apply(p *core.Project, in ReportIn, now time.Time) (*ApplyResult, error) {
 		return out, nil
 	}
 
-	applied, why := decide(cmd, in, run)
+	applied, why := decide(cmd, in, run, now)
+	if in.Status == core.RunStarted && restarted(run.Status) {
+		applied.StartedAt, applied.Revision = nil, 0 // another attempt, timed on its own
+	}
 	if in.StartedAt != nil {
 		applied.StartedAt = utcPtr(in.StartedAt)
 	} else if applied.Status == core.RunStarted && applied.StartedAt == nil {
 		t := now
 		applied.StartedAt = &t
 	}
-	if run.StartedAt != nil && applied.StartedAt == nil {
-		applied.StartedAt = run.StartedAt
-	}
 	if in.FinishedAt != nil {
 		applied.FinishedAt = utcPtr(in.FinishedAt)
-	} else if in.Status == core.RunStarted {
+	} else if applied.Status == core.RunStarted {
 		applied.FinishedAt = nil // a restarted command has no finish time yet
-	} else if run.FinishedAt != nil {
-		applied.FinishedAt = run.FinishedAt
+	} else if finished(applied.Status) && (applied.FinishedAt == nil || in.Status != core.RunProgress) {
+		t := now
+		applied.FinishedAt = &t
 	}
 	applied.CommandID = cmd.ID
 	applied.UpdatedAt = updated
 	applied.Source = strings.TrimSpace(in.Source)
-	applied.Summary = strings.TrimSpace(in.Summary)
+	if sum := strings.TrimSpace(in.Summary); sum != "" || in.Status != core.RunProgress {
+		applied.Summary = sum
+	}
+	if s := strings.TrimSpace(in.Session); s != "" {
+		applied.Session = s
+	}
 	applied.Seq = seq
 	applied.ReportID = id
-	if run.EarlyStart || (len(unmetDeps(p, cmd)) > 0 && (in.Status == core.RunStarted || in.Status == core.RunDone || in.Status == core.RunReview)) {
+	if applied.Revision == 0 {
+		applied.Revision = core.CommandRevision(*cmd) // the revision this attempt works on
+	}
+	unmet := unmetDeps(p, cmd)
+	if run.EarlyStart || (len(unmet) > 0 && (in.Status == core.RunStarted || in.Status == core.RunProgress || in.Status == core.RunDone || in.Status == core.RunReview)) {
 		applied.EarlyStart = true
+	}
+	switch {
+	case applied.Revision < core.CommandRevision(*cmd):
+		out.Warning = fmt.Sprintf("%s sudah direvisi ke r%d; laporan ini berlaku untuk r%d. Baca ulang instruksi dan kerjakan ulang.", cmd.ID, core.CommandRevision(*cmd), applied.Revision)
+	case len(unmet) > 0 && in.Status != core.RunFailed && in.Status != core.RunBlocked && in.Status != core.RunSkipped:
+		out.Warning = cmd.ID + " dikerjakan sebelum dependency terverifikasi: " + strings.Join(unmet, ", ")
 	}
 
 	rep.Outcome, rep.AppliedStatus = "applied", applied.Status
@@ -326,6 +416,9 @@ func validate(p *core.Project, in ReportIn, cmd *core.Command) error {
 	if !slices.Contains(core.AgentReportStatuses, in.Status) {
 		return fmt.Errorf("%w: status %q tidak dikenal", ErrInvalid, in.Status)
 	}
+	if in.Percent != nil && (*in.Percent < 0 || *in.Percent > 100) {
+		return fmt.Errorf("%w: percent harus 0 sampai 100", ErrInvalid)
+	}
 	if in.Status == core.RunSkipped && strings.TrimSpace(in.Reason) == "" {
 		return fmt.Errorf("%w: command dilewati wajib menyertakan alasan", ErrInvalid)
 	}
@@ -335,15 +428,23 @@ func validate(p *core.Project, in ReportIn, cmd *core.Command) error {
 	return nil
 }
 
-func decide(cmd *core.Command, in ReportIn, prev core.CommandRun) (core.CommandRun, string) {
+func decide(cmd *core.Command, in ReportIn, prev core.CommandRun, now time.Time) (core.CommandRun, string) {
 	run := prev
 	run.Reason = strings.TrimSpace(in.Reason)
-	run.Evidence = mergeEvidence(in.Evidence, in.Files, in.Changes)
-	run.Tests = slices.Clone(in.Tests)
+	// One attempt collects evidence report by report; a new attempt starts
+	// clean, so old evidence cannot verify work done again.
+	if in.Status == core.RunStarted && restarted(prev.Status) {
+		run.Evidence, run.Tests, run.Activity, run.Percent, run.ActivityAt = nil, nil, "", nil, nil
+	}
+	run.Evidence = mergeEvidence(append(slices.Clone(run.Evidence), in.Evidence...), in.Files, in.Changes)
+	run.Tests = append(slices.Clone(run.Tests), in.Tests...)
 	switch in.Status {
 	case core.RunStarted:
 		run.Status = core.RunStarted
+		run.Reason = ""
 		return run, ""
+	case core.RunProgress:
+		return reportActivity(run, prev, in, now)
 	case core.RunFailed:
 		run.Status = core.RunFailed
 		if run.Reason == "" {
@@ -370,6 +471,40 @@ func decide(cmd *core.Command, in ReportIn, prev core.CommandRun) (core.CommandR
 	}
 	run.Status = in.Status
 	return run, ""
+}
+
+// reportActivity keeps the note of a progress report. Work reported on an
+// open command means it runs, whatever was said before; a finished command
+// keeps its result, a late note does not reopen it.
+func reportActivity(run, prev core.CommandRun, in ReportIn, now time.Time) (core.CommandRun, string) {
+	if text := strings.TrimSpace(in.Summary); text != "" {
+		run.Activity = text
+	}
+	if in.Percent != nil {
+		pct := *in.Percent
+		run.Percent = &pct
+	}
+	at := now
+	run.ActivityAt = &at
+	if finished(prev.Status) {
+		run.Reason, run.Evidence, run.Tests = prev.Reason, prev.Evidence, prev.Tests
+		return run, ""
+	}
+	run.Status, run.Reason = core.RunStarted, ""
+	return run, ""
+}
+
+// restarted holds for a status a started report begins a new attempt from.
+func restarted(st string) bool {
+	return finished(st) || st == core.RunReview
+}
+
+func finished(st string) bool {
+	switch st {
+	case core.RunDone, core.RunVerified, core.RunFailed, core.RunSkipped:
+		return true
+	}
+	return false
 }
 
 func decideDone(cmd *core.Command, run core.CommandRun) (core.CommandRun, string) {
@@ -450,16 +585,23 @@ func unmetDeps(p *core.Project, cmd *core.Command) []string {
 	pr := p.Progress
 	for _, d := range cmd.DependsOn {
 		st := core.RunUnconfirmed
+		var run core.CommandRun
 		if pr != nil {
-			if run, ok := pr.Commands[d]; ok && run.Status != "" {
-				st = run.Status
+			if r, ok := pr.Commands[d]; ok && r.Status != "" {
+				run, st = r, r.Status
 			}
 		}
-		if st != core.RunVerified {
+		dep := p.Workflow.Command(d)
+		if st != core.RunVerified || (dep != nil && outdated(run, *dep)) {
 			out = append(out, d)
 		}
 	}
 	return out
+}
+
+// outdated holds for a run done on an older revision of the command.
+func outdated(run core.CommandRun, c core.Command) bool {
+	return max(run.Revision, 1) < core.CommandRevision(c)
 }
 
 func findReport(pr *core.Progress, id string) *core.ProgressReport {
@@ -504,9 +646,16 @@ func first(a, b string) string {
 // not write. Missing reports stay unconfirmed; time alone never marks done
 // or failed.
 func View(p *core.Project, now time.Time, agent Agent) Snapshot {
+	return ViewStale(p, now, agent, nil)
+}
+
+// ViewStale is View knowing which commands have changed blueprint artifacts
+// (workflow.Stale): finished work on those has to be looked at again.
+func ViewStale(p *core.Project, now time.Time, agent Agent, stale map[string][]string) Snapshot {
 	now = now.UTC()
 	s := Snapshot{Waves: []WaveProgress{}, Commands: []CommandProgress{}, Next: []string{},
 		Warnings: []Warning{}, Issues: []string{}, History: []core.StatusChange{},
+		Activity: []Activity{}, Sessions: []Session{},
 		StaleAfterSec: int(DefaultStaleAfter / time.Second)}
 	if p == nil {
 		return s
@@ -532,6 +681,7 @@ func View(p *core.Project, now time.Time, agent Agent) Snapshot {
 			t := last.ReceivedAt
 			s.LastReportAt, s.LastSource = &t, last.Source
 		}
+		s.Activity, s.Sessions = activityOf(p, staleAfter(pr), now)
 		if pr.WorkflowVersion != 0 && pr.WorkflowVersion != p.Workflow.Version {
 			s.Issues = append(s.Issues, fmt.Sprintf("versi workflow tersimpan v%d, definisi sekarang v%d; status lama dipertahankan, command baru belum terkonfirmasi",
 				pr.WorkflowVersion, p.Workflow.Version))
@@ -552,10 +702,11 @@ func View(p *core.Project, now time.Time, agent Agent) Snapshot {
 	window := staleAfter(pr)
 	byID := map[string]CommandProgress{}
 	for _, c := range p.Workflow.Commands {
-		cp := commandView(p, c, now, window, agent, waveOf[c.ID])
+		cp := commandView(p, c, now, window, agent, waveOf[c.ID], stale[c.ID])
 		s.Commands = append(s.Commands, cp)
 		byID[c.ID] = cp
 		addCount(&s.Counts, cp.Status)
+		addOverview(&s.Overview, cp.Phase)
 		s.Counts.Total++
 		switch cp.Status {
 		case core.RunStale:
@@ -570,6 +721,15 @@ func View(p *core.Project, now time.Time, agent Agent) Snapshot {
 			s.Warnings = append(s.Warnings, Warning{Command: c.ID, Kind: "skipped",
 				Message: c.ID + " dilewati" + reasonSuffix(cp.Reason) + ". Tidak dihitung selesai.",
 				Action:  "Kerjakan command ini atau biarkan terlewat dengan alasan yang sudah dicatat."})
+		case core.RunRevision:
+			s.Warnings = append(s.Warnings, Warning{Command: c.ID, Kind: "revision",
+				Message: "Perlu dikerjakan ulang: " + cp.RevisionWhy + ".",
+				Action:  "Minta agen membaca ulang instruksi dan melaporkan hasil baru."})
+		}
+		if run := p.Progress; run != nil && cp.Stored == core.RunStarted && outdated(run.Commands[c.ID], c) {
+			s.Warnings = append(s.Warnings, Warning{Command: c.ID, Kind: "revised",
+				Message: fmt.Sprintf("%s direvisi ke r%d saat sedang dikerjakan pada r%d.", c.ID, cp.Revision, cp.RunRevision),
+				Action:  "Minta agen membaca ulang instruksi sebelum melanjutkan."})
 		}
 		if cp.EarlyStart && len(cp.Waiting) > 0 {
 			s.Warnings = append(s.Warnings, Warning{Command: c.ID, Kind: "early",
@@ -580,6 +740,17 @@ func View(p *core.Project, now time.Time, agent Agent) Snapshot {
 			s.Next = append(s.Next, c.ID)
 		}
 	}
+	impacts(s.Commands)
+	for i := range s.Commands {
+		c := &s.Commands[i]
+		byID[c.ID] = *c
+		if len(c.Impact) > 0 && c.Status != core.RunRevision {
+			s.Warnings = append(s.Warnings, Warning{Command: c.ID, Kind: "impact",
+				Message: fmt.Sprintf("Menahan %d command: %s.", len(c.Impact), idList(c.Impact)),
+				Action:  "Selesaikan penyebabnya; command itu belum bisa dimulai."})
+		}
+	}
+	sortNext(s.Next, byID)
 	for i, w := range waves {
 		wp := WaveProgress{Index: i + 1, Commands: w, Total: len(w)}
 		for _, id := range w {
@@ -619,12 +790,160 @@ func View(p *core.Project, now time.Time, agent Agent) Snapshot {
 	}
 	s.Overall = rollupCommands(s.Commands, nil)
 	s.Percent, s.Weight, s.DoneWeight = s.Overall.Percent, s.Overall.Weight, s.Overall.DoneWeight
+	s.Overview.Percent = s.Percent
 	s.Workflow = workflowProgress(p, s.Commands, s.Overall)
 	s.Modules, s.Features = featureRollups(p, s.Commands)
 	return s
 }
 
-func commandView(p *core.Project, c core.Command, now time.Time, window time.Duration, agent Agent, wave int) CommandProgress {
+func addOverview(o *Overview, phase string) {
+	o.Total++
+	switch phase {
+	case core.PhaseCompleted:
+		o.Completed++
+	case core.PhaseInProgress, core.PhaseUpdating:
+		o.InProgress++
+	case core.PhaseBlocked:
+		o.Blocked++
+	case core.PhaseFailed:
+		o.Failed++
+	case core.PhaseReview:
+		o.Review++
+	case core.PhaseRevision:
+		o.Revision++
+	case core.PhaseSkipped:
+		o.Skipped++
+	case core.PhaseStale:
+		o.Stale++
+	default:
+		o.Pending++
+	}
+}
+
+// phaseOf is the lifecycle step of a command from its displayed status.
+func phaseOf(status string, run core.CommandRun, now time.Time) string {
+	switch status {
+	case core.RunWaiting:
+		return core.PhaseCreated
+	case core.RunUnconfirmed:
+		return core.PhaseReady
+	case core.RunStarted:
+		if run.ActivityAt != nil && now.Sub(*run.ActivityAt) <= updatingFor {
+			return core.PhaseUpdating
+		}
+		return core.PhaseInProgress
+	case core.RunVerified:
+		return core.PhaseCompleted
+	case core.RunDone, core.RunReview:
+		return core.PhaseReview
+	case core.RunBlocked:
+		return core.PhaseBlocked
+	case core.RunFailed:
+		return core.PhaseFailed
+	case core.RunRevision:
+		return core.PhaseRevision
+	case core.RunSkipped:
+		return core.PhaseSkipped
+	}
+	return core.PhaseStale
+}
+
+// impacts names, on each command that holds work back, every command that
+// cannot go on because of it.
+func impacts(cmds []CommandProgress) {
+	byID := make(map[string]CommandProgress, len(cmds))
+	for _, c := range cmds {
+		byID[c.ID] = c
+	}
+	for i := range cmds {
+		c := &cmds[i]
+		if c.Status != core.RunFailed && c.Status != core.RunBlocked && c.Status != core.RunRevision {
+			continue
+		}
+		seen := map[string]bool{}
+		var walk func(ids []string)
+		walk = func(ids []string) {
+			for _, id := range ids {
+				if !seen[id] {
+					seen[id] = true
+					walk(byID[id].Dependents)
+				}
+			}
+		}
+		walk(c.Dependents)
+		for _, other := range cmds { // keep workflow order
+			if seen[other.ID] {
+				c.Impact = append(c.Impact, other.ID)
+			}
+		}
+	}
+}
+
+// sortNext orders the commands that may go on: what an agent may take by
+// itself first, then by priority; the workflow order stays otherwise.
+func sortNext(ids []string, byID map[string]CommandProgress) {
+	rank := func(id string) [2]int {
+		c := byID[id]
+		first := 1
+		if claimable(c) {
+			first = 0
+		}
+		return [2]int{first, priorityRank(c.Priority)}
+	}
+	slices.SortStableFunc(ids, func(a, b string) int {
+		x, y := rank(a), rank(b)
+		for i := range x {
+			if x[i] != y[i] {
+				return x[i] - y[i]
+			}
+		}
+		return 0
+	})
+}
+
+func priorityRank(p string) int {
+	switch p {
+	case core.LevelHigh:
+		return 0
+	case core.LevelLow:
+		return 2
+	}
+	return 1 // medium, or a command written before priorities existed
+}
+
+// activityOf is the recent reports, newest first, and the sessions they name.
+func activityOf(p *core.Project, window time.Duration, now time.Time) ([]Activity, []Session) {
+	acts, sessions := []Activity{}, []Session{}
+	seen := map[string]bool{}
+	reports := p.Progress.Reports
+	for i := len(reports) - 1; i >= 0; i-- {
+		r := reports[i]
+		if id := r.Session; id != "" && !seen[id] {
+			seen[id] = true
+			sessions = append(sessions, Session{ID: id, Source: r.Source, Command: r.Command, LastAt: r.ReceivedAt, Active: now.Sub(r.ReceivedAt) <= window})
+		}
+		if len(acts) < maxActivity {
+			acts = append(acts, activityFrom(p, r))
+		}
+	}
+	return acts, sessions
+}
+
+func activityFrom(p *core.Project, r core.ProgressReport) Activity {
+	a := Activity{At: r.ReceivedAt, Command: r.Command, Status: r.Status, Applied: r.AppliedStatus, Outcome: r.Outcome,
+		Summary: r.Summary, Reason: r.Reason, Percent: r.Percent, Source: r.Source, Session: r.Session}
+	if c := p.Workflow.Command(r.Command); c != nil {
+		a.Name = c.Name
+	}
+	for _, e := range r.Evidence {
+		if e.Kind == "files" {
+			a.Files = append(a.Files, e.Ref)
+		}
+	}
+	return a
+}
+
+func commandView(p *core.Project, c core.Command, now time.Time, window time.Duration, agent Agent, wave int, staleDocs []string) CommandProgress {
 	run := core.CommandRun{CommandID: c.ID, Status: core.RunUnconfirmed}
 	if p.Progress != nil {
 		if stored, ok := p.Progress.Commands[c.ID]; ok {
@@ -637,7 +956,18 @@ func commandView(p *core.Project, c core.Command, now time.Time, window time.Dur
 	}
 	unmet := unmetDeps(p, &c)
 	status := display(run, unmet, now, window, agent)
-	cp := CommandProgress{ID: c.ID, Name: c.Name, Status: status, Stored: stored, Wave: wave,
+	why := ""
+	if run.Status == core.RunVerified || run.Status == core.RunDone {
+		switch {
+		case outdated(run, c):
+			status, why = core.RunRevision, fmt.Sprintf("instruksi berubah dari r%d ke r%d", max(run.Revision, 1), core.CommandRevision(c))
+		case len(staleDocs) > 0:
+			status, why = core.RunRevision, "artefak blueprint berubah: "+strings.Join(staleDocs, ", ")
+		}
+	}
+	cp := CommandProgress{ID: c.ID, Name: c.Name, Status: status, Phase: phaseOf(status, run, now), Stored: stored, Wave: wave,
+		Revision: core.CommandRevision(c), RunRevision: run.Revision, Priority: c.Priority, Complexity: core.CommandComplexity(c),
+		Files: c.Files, RevisionWhy: why, StaleDocs: staleDocs, Activity: run.Activity, Percent: run.Percent, Session: run.Session,
 		Weight: core.CommandWeight(c), DependsOn: append([]string{}, c.DependsOn...), Dependents: dependentsOf(p.Workflow, c.ID),
 		FeatureIDs: core.ResolveCommandFeatureIDs(c, p.Features), SubFeatureIDs: core.ResolveCommandSubFeatureIDs(c, p.Features),
 		Waiting: unmet, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, Source: run.Source, Summary: run.Summary,
@@ -664,7 +994,9 @@ func display(run core.CommandRun, unmet []string, now time.Time, window time.Dur
 		}
 		return core.RunUnconfirmed
 	}
-	if st == core.RunStarted && agent.Tracked && !agent.Alive {
+	// The heartbeat is the MCP host's: it says nothing of an agent that
+	// reports another way (CLI, API, file).
+	if st == core.RunStarted && agent.Tracked && !agent.Alive && run.Source == agent.Source {
 		return core.RunUnknown
 	}
 	if open(st) && !run.UpdatedAt.IsZero() && now.Sub(run.UpdatedAt) > window {
@@ -679,7 +1011,7 @@ func open(st string) bool {
 
 func eligible(st string) bool {
 	switch st {
-	case core.RunUnconfirmed, core.RunWaiting, core.RunFailed, core.RunBlocked, core.RunReview, core.RunStale, core.RunUnknown, core.RunDone:
+	case core.RunUnconfirmed, core.RunWaiting, core.RunFailed, core.RunBlocked, core.RunReview, core.RunStale, core.RunUnknown, core.RunDone, core.RunRevision:
 		return true
 	}
 	return false
@@ -709,7 +1041,18 @@ func addCount(c *Counts, st string) {
 		c.Stale++
 	case core.RunUnknown:
 		c.Unknown++
+	case core.RunRevision:
+		c.Revision++
 	}
+}
+
+// idList names a few commands; the rest of a long list only counts.
+func idList(ids []string) string {
+	const shown = 5
+	if len(ids) <= shown {
+		return strings.Join(ids, ", ")
+	}
+	return fmt.Sprintf("%s dan %d lagi", strings.Join(ids[:shown], ", "), len(ids)-shown)
 }
 
 func reasonSuffix(r string) string {

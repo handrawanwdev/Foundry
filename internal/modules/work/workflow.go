@@ -33,6 +33,9 @@ type commandOut struct {
 	Outputs       []string `json:"expected_outputs"`
 	Acceptance    []string `json:"acceptance_criteria"`
 	Constraints   []string `json:"constraints"`
+	Files         []string `json:"files"`
+	Priority      string   `json:"priority"`
+	Complexity    string   `json:"complexity"`
 }
 
 type workflowOut struct {
@@ -57,12 +60,16 @@ const commandRules = `Command rules:
 - tests and verification are part of the instructions and acceptance criteria (or own commands when they span several commands). Foundry never runs them; the agent does.
 - expected_outputs: what the agent hands back (code, migration, test, document, report). acceptance_criteria: checkable conditions.
 - constraints: limits that apply (technology given by the user, compatibility, performance, security).
+- every command has one main goal and does not repeat the instructions of another command; shared work gets its own command that the others depend on. A command with more than about 8 acceptance criteria is split into logical commands; work too small to verify on its own is merged into the command it belongs to.
+- acceptance_criteria are measurable: name the observable result, not "works well".
+- files lists the files, folders or modules the command touches, taken only from the project structure and repository plan above; leave it empty when they are unknown.
+- priority is high (others wait for it, or a core MUST flow), medium or low. complexity is the estimated effort: low, medium or high.
 - decided decisions override every artifact and command. An instruction, constraint or acceptance criterion that contradicts a decided decision is wrong; follow the decision and rewrite the command.
 - the project structure and its rules are the source of truth for folders, module boundaries and dependencies. Every command creates or changes code only in those folders, follows the dependency rules, and never invents a different layout or a new top-level folder.
 `
 
 const commandShape = `{"id": "C1", "name": "", "objective": "", "context": "", "inputs": [""], "instructions": "",
- "depends_on": ["C0"], "artifacts": ["requirements"], "covers": ["REQ-001"], "feature_ids": ["FEAT-001"], "sub_feature_ids": ["FEAT-001.1"], "expected_outputs": [""], "acceptance_criteria": [""], "constraints": [""]}`
+ "depends_on": ["C0"], "artifacts": ["requirements"], "covers": ["REQ-001"], "feature_ids": ["FEAT-001"], "sub_feature_ids": ["FEAT-001.1"], "expected_outputs": [""], "acceptance_criteria": [""], "constraints": [""], "files": [""], "priority": "high", "complexity": "medium"}`
 
 // writeFeatureCatalog lists the feature tree so every command can name the
 // feature and subfeature it implements instead of forcing Foundry to guess.
@@ -171,7 +178,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 
 	b.WriteString(`SKETCH PHASE - Generate command skeleton only:
 - Create 3-25 commands that cover all MUST requirements
-- For each command, provide ONLY: id, name, objective, depends_on, artifacts (IDs), covers (requirement IDs), feature_ids (FEAT ids), sub_feature_ids (FEAT-001.1 ids)
+- For each command, provide ONLY: id, name, objective, depends_on, artifacts (IDs), covers (requirement IDs), feature_ids (FEAT ids), sub_feature_ids (FEAT-001.1 ids), priority, complexity
 - DO NOT provide instructions, context, inputs, outputs, or acceptance_criteria yet
 - Use ids C1, C2, C3, etc.
 - depends_on lists only commands whose result this one needs (a contract, schema, module, interface)
@@ -184,7 +191,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	if HasUI(p) {
 		b.WriteString(VisualVerificationRules)
 	}
-	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"name\": \"\", \"objective\": \"\", \"depends_on\": [], \"artifacts\": [\"requirements\"], \"covers\": [\"REQ-001\"], \"feature_ids\": [\"FEAT-001\"], \"sub_feature_ids\": [\"FEAT-001.1\"]}]}")
+	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"name\": \"\", \"objective\": \"\", \"depends_on\": [], \"artifacts\": [\"requirements\"], \"covers\": [\"REQ-001\"], \"feature_ids\": [\"FEAT-001\"], \"sub_feature_ids\": [\"FEAT-001.1\"], \"priority\": \"high\", \"complexity\": \"medium\"}]}")
 	return b.String()
 }
 
@@ -257,13 +264,14 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 - expected_outputs: what the agent hands back (code, migration, test, document, report)
 - acceptance_criteria: checkable conditions (include criterion IDs like REQ-001-AC1)
 - constraints: limits that apply (technology, compatibility, performance, security)
+- files: files, folders or modules the command touches, only from the project structure; empty when unknown
 - feature_ids / sub_feature_ids: keep or complete the links from the skeleton; use only existing ids
 
 ` + commandRules)
 	if HasUI(p) {
 		b.WriteString(VisualVerificationRules)
 	}
-	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"]}]}")
+	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"], \"files\": [\"\"]}]}")
 	return b.String()
 }
 
@@ -383,6 +391,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	writeDocs(&b, docs, cut)
 	w := p.Workflow
 	b.WriteString("CURRENT COMMANDS:\n" + mustJSON(w.Commands) + "\n\n")
+	writeExecutionState(&b, p)
 	stale := workflow.Stale(w.Commands, workflow.Hashes(docs))
 	if len(stale) > 0 {
 		b.WriteString("Commands whose artifacts changed since they were written:\n")
@@ -411,10 +420,28 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 - when the request asks to follow changed blueprint artifacts, return every command whose artifacts changed even if its text stays valid; that records the new artifact versions.
 - remove lists the ids of commands to delete; commands that depended on them must be returned with fixed depends_on.
 - commands not returned stay as they are. A long answer may be cut short; Foundry asks again for the commands you did not return yet.
+- a changed command has to be done again by the coding agent, so leave commands the agent already finished as they are unless the request or the blueprint really requires a change. Add what is missing as new commands instead.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block:
 {"commands": [` + commandShape + `], "remove": ["CMD-003"]}`)
 	return b.String()
+}
+
+// writeExecutionState tells a revision how far the agent got, so it does not
+// rewrite finished work without a reason.
+func writeExecutionState(b *strings.Builder, p *core.Project) {
+	if p.Progress == nil || p.Workflow == nil {
+		return
+	}
+	var lines []string
+	for _, c := range p.Workflow.Commands {
+		if run, ok := p.Progress.Commands[c.ID]; ok && run.Status != "" && run.Status != core.RunUnconfirmed {
+			lines = append(lines, "- "+c.ID+": "+run.Status)
+		}
+	}
+	if len(lines) > 0 {
+		b.WriteString("EXECUTION STATE reported by the coding agent:\n" + strings.Join(lines, "\n") + "\n\n")
+	}
 }
 
 // ApplyWorkflow lands the AI's workflow or revision. The result must pass
@@ -510,14 +537,10 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 	}
 	// New commands get the next free numbers; AI ids map to them.
 	idMap := map[string]string{}
-	next := 1
 	for _, c := range cmds {
-		var n int
-		if _, err := fmt.Sscanf(c.ID, "CMD-%d", &n); err == nil && n >= next {
-			next = n + 1
-		}
 		idMap[c.ID] = c.ID
 	}
+	next := nextCommandNumber(p, cmds)
 	for _, o := range out.Commands {
 		id := strings.TrimSpace(o.ID)
 		if _, kept := idMap[id]; kept && !fresh {
@@ -563,6 +586,34 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 	w.Version++
 	pendingRequest(w, staleBefore, hashes)
 	return nil
+}
+
+// nextCommandNumber is the first number never used: not by a command, nor by
+// one removed earlier, whose id still names its run and its history.
+func nextCommandNumber(p *core.Project, cmds []core.Command) int {
+	next := 1
+	use := func(id string) {
+		var n int
+		if _, err := fmt.Sscanf(id, "CMD-%d", &n); err == nil && n >= next {
+			next = n + 1
+		}
+	}
+	for _, c := range cmds {
+		use(c.ID)
+	}
+	if p.Progress != nil {
+		for id := range p.Progress.Retired {
+			use(id)
+		}
+	}
+	if p.Workflow != nil {
+		for _, ch := range p.Workflow.Changes {
+			for _, r := range ch.Removed {
+				use(r.ID)
+			}
+		}
+	}
+	return next
 }
 
 // applyWorkflowSketchFromParsed applies a command skeleton (no instructions yet)
@@ -649,6 +700,13 @@ func applyWorkflowDetailBatchFromParsed(p *core.Project, out workflowOut, docs [
 		cmd.Outputs = nonEmpty(d.Outputs)
 		cmd.Acceptance = nonEmpty(d.Acceptance)
 		cmd.Constraints = nonEmpty(d.Constraints)
+		cmd.Files = nonEmpty(d.Files)
+		if lv := level(d.Priority); lv != "" {
+			cmd.Priority = lv
+		}
+		if lv := level(d.Complexity); lv != "" {
+			cmd.Complexity = lv
+		}
 		if len(d.FeatureIDs) > 0 {
 			cmd.FeatureIDs = nonEmpty(d.FeatureIDs)
 		}
@@ -769,7 +827,8 @@ func commandFrom(o commandOut, idMap, hashes map[string]string) (core.Command, e
 	c := core.Command{ID: idMap[strings.TrimSpace(o.ID)], Name: strings.TrimSpace(o.Name), Objective: strings.TrimSpace(o.Objective),
 		Context: strings.TrimSpace(o.Context), Inputs: nonEmpty(o.Inputs), Instructions: strings.TrimSpace(o.Instructions),
 		Outputs: nonEmpty(o.Outputs), Acceptance: nonEmpty(o.Acceptance), Constraints: nonEmpty(o.Constraints), Status: core.CommandDraft,
-		FeatureIDs: nonEmpty(o.FeatureIDs), SubFeatureIDs: nonEmpty(o.SubFeatureIDs)}
+		FeatureIDs: nonEmpty(o.FeatureIDs), SubFeatureIDs: nonEmpty(o.SubFeatureIDs),
+		Files: nonEmpty(o.Files), Priority: level(o.Priority), Complexity: level(o.Complexity)}
 	for _, d := range o.DependsOn {
 		id, ok := idMap[strings.TrimSpace(d)]
 		if !ok {
@@ -790,6 +849,19 @@ func commandFrom(o commandOut, idMap, hashes map[string]string) (core.Command, e
 		}
 	}
 	return c, nil
+}
+
+// level normalizes a priority or complexity; anything else is left unset.
+func level(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case core.LevelHigh, "tinggi":
+		return core.LevelHigh
+	case core.LevelMedium, "sedang":
+		return core.LevelMedium
+	case core.LevelLow, "rendah":
+		return core.LevelLow
+	}
+	return ""
 }
 
 // artifactRefs resolves artifact ids with their current hashes.
@@ -931,6 +1003,9 @@ type CommandEdit struct {
 	Outputs       []string `json:"expected_outputs"`
 	Acceptance    []string `json:"acceptance_criteria"`
 	Constraints   []string `json:"constraints"`
+	Files         []string `json:"files"`
+	Priority      string   `json:"priority"`
+	Complexity    string   `json:"complexity"`
 }
 
 // EditCommand saves a user's edit. The workflow must still pass the check;
@@ -948,7 +1023,8 @@ func EditCommand(p *core.Project, id string, in CommandEdit, docs []core.Artifac
 	next, err := commandFrom(commandOut{ID: id, Name: in.Name, Objective: in.Objective, Context: in.Context, Inputs: in.Inputs,
 		Instructions: in.Instructions, DependsOn: in.DependsOn, Artifacts: in.Artifacts, Covers: in.Covers,
 		FeatureIDs: in.FeatureIDs, SubFeatureIDs: in.SubFeatureIDs, Outputs: in.Outputs,
-		Acceptance: in.Acceptance, Constraints: in.Constraints}, idMap, hashes)
+		Acceptance: in.Acceptance, Constraints: in.Constraints, Files: in.Files,
+		Priority: in.Priority, Complexity: in.Complexity}, idMap, hashes)
 	if err != nil {
 		return err
 	}

@@ -152,3 +152,44 @@ func TestFeatureReferences(t *testing.T) {
 		t.Fatalf("links = %+v", links)
 	}
 }
+
+func TestQualityAdvises(t *testing.T) {
+	long := strings.Repeat("kata ", 2000)
+	base := "bangun endpoint janji dengan validasi tanggal dan kuota harian dokter"
+	cmds := []core.Command{
+		{ID: "A", Instructions: base, Acceptance: []string{"POST /janji 201"}, Outputs: []string{"handler"}},
+		{ID: "B", Instructions: base + " klinik", Acceptance: []string{"POST /janji 201"}, Outputs: []string{"handler"}},
+		{ID: "C", Instructions: "singkat", Acceptance: []string{"berjalan dengan baik"}},
+		{ID: "D", Instructions: long, Outputs: []string{"x"}},
+		{ID: "E", Instructions: ""},
+	}
+	got := map[string]string{}
+	for _, i := range Quality(cmds) {
+		got[i.Command] += i.Message + ";"
+	}
+	if _, ok := got["A"]; ok {
+		t.Fatalf("a good command flagged: %v", got["A"])
+	}
+	if !strings.Contains(got["B"], "hampir sama dengan A") {
+		t.Fatalf("B = %q", got["B"])
+	}
+	for _, want := range []string{"output", "terlalu singkat", "tidak terukur"} {
+		if !strings.Contains(got["C"], want) {
+			t.Fatalf("C = %q, want %q", got["C"], want)
+		}
+	}
+	if !strings.Contains(got["D"], "terlalu besar") || !strings.Contains(got["D"], "acceptance") {
+		t.Fatalf("D = %q", got["D"])
+	}
+	if _, ok := got["E"]; ok {
+		t.Fatalf("a skeleton has nothing to judge: %q", got["E"])
+	}
+}
+
+func TestQualityDoesNotBlock(t *testing.T) {
+	cmds := []core.Command{{ID: "A", Name: "n", Objective: "o", Instructions: "singkat", Artifacts: []core.ArtifactRef{{ID: "requirements", Hash: core.Artifact{ID: "requirements"}.Hash()}}}}
+	r := Check(&core.Workflow{Commands: cmds}, []core.Artifact{{ID: "requirements"}}, nil)
+	if len(r.Quality) == 0 || !r.Ready {
+		t.Fatalf("report = %+v", r)
+	}
+}

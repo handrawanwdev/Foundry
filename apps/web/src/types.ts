@@ -521,9 +521,20 @@ export interface Command {
   id: string; workflow_id?: string; name: string; objective: string; context?: string; inputs?: string[]; instructions: string;
   depends_on?: string[]; artifacts?: ArtifactRef[]; covers?: string[]; feature_ids?: string[]; sub_feature_ids?: string[];
   expected_outputs?: string[]; acceptance_criteria?: string[];
-  constraints?: string[]; status: CommandStatus; review?: string;
+  constraints?: string[]; files?: string[]; priority?: CommandLevel; complexity?: CommandLevel; revision?: number;
+  status: CommandStatus; review?: string;
 }
-export interface Workflow { id?: string; status: "draft" | "finalized"; commands: Command[]; request?: ChangeRequest; version: number; finalized_at?: string }
+export type CommandLevel = "high" | "medium" | "low";
+export interface CommandChange { id: string; revision?: number; fields?: string[]; before: Command }
+// One revision of the workflow as a delta; commands not named were reused.
+export interface WorkflowChange {
+  version: number; at: string; kind: string; reason?: string; source?: string;
+  added?: string[]; modified?: CommandChange[]; removed?: CommandChange[]; reused: number;
+}
+export interface Workflow {
+  id?: string; status: "draft" | "finalized"; commands: Command[]; request?: ChangeRequest; version: number; finalized_at?: string;
+  changes?: WorkflowChange[];
+}
 export interface WorkflowIssue { command?: string; message: string }
 export interface WorkflowReport {
   issues: WorkflowIssue[]; waves: string[][]; stale: Record<string, string[]>; ready: boolean;
@@ -532,19 +543,43 @@ export interface WorkflowReport {
   uncovered: string[];
   // Feature id → command ids that implement it.
   feature_commands: Record<string, string[]>;
+  // Features no command implements, and advice on the commands; neither blocks.
+  uncovered_features: string[];
+  quality: WorkflowIssue[];
 }
 export interface WorkflowView { workflow: Workflow | null; report: WorkflowReport; progress?: ProgressSnapshot }
 
-export type RunStatus = "unconfirmed" | "waiting" | "started" | "blocked" | "skipped" | "failed" | "review" | "done" | "verified" | "stale" | "unknown";
+export type RunStatus = "unconfirmed" | "waiting" | "started" | "blocked" | "skipped" | "failed" | "review" | "done" | "verified" | "stale" | "unknown" | "revision";
+// Lifecycle of a command, derived by the backend from the reports.
+export type CommandPhase = "created" | "ready" | "in_progress" | "updating" | "review" | "completed" | "blocked" | "failed" | "revision_required" | "skipped" | "stale";
 export interface ProgressEvidence { kind?: string; ref: string }
 export interface ProgressTest { name: string; result: string; detail?: string }
 export interface ProgressWarning { command?: string; kind: string; message: string; action?: string }
 export interface ProgressCounts {
   total: number; unconfirmed: number; waiting: number; started: number; blocked: number; skipped: number;
-  failed: number; review: number; done: number; verified: number; stale: number; unknown: number;
+  failed: number; review: number; done: number; verified: number; stale: number; unknown: number; revision: number;
+}
+export interface ProgressOverview {
+  total: number; completed: number; in_progress: number; pending: number; blocked: number; failed: number;
+  review: number; revision: number; skipped: number; stale: number; percent: number;
+}
+export interface ProgressActivity {
+  at: string; command: string; name?: string; status: string; applied?: string; outcome: string; summary?: string; reason?: string;
+  files?: string[]; percent?: number; source?: string; session?: string;
+}
+export interface AgentSession { id: string; source?: string; command: string; last_at: string; active: boolean }
+export interface CommandRevisionEntry {
+  version: number; at: string; kind: string; reason?: string; source?: string; action: "add" | "modify"; revision: number;
+  fields?: string[]; before?: Command;
+}
+export interface CommandHistory {
+  command: string; reports: ProgressActivity[]; history: StatusChange[]; changes: CommandRevisionEntry[];
+  evidence: ProgressEvidence[]; tests: ProgressTest[];
 }
 export interface CommandProgress {
-  id: string; name: string; status: RunStatus; stored: RunStatus; wave: number; weight: number;
+  id: string; name: string; status: RunStatus; phase: CommandPhase; stored: RunStatus; wave: number; weight: number;
+  revision: number; run_revision?: number; priority?: CommandLevel; complexity: CommandLevel; files?: string[];
+  impact?: string[]; revision_why?: string; stale_docs?: string[]; activity?: string; percent?: number; session?: string;
   depends_on: string[]; dependents: string[]; feature_ids?: string[]; sub_feature_ids?: string[];
   waiting?: string[]; started_at?: string; finished_at?: string; updated_at?: string; source?: string; summary?: string; reason?: string;
   evidence?: ProgressEvidence[]; tests?: ProgressTest[]; early_start?: boolean; report_id?: string; seq?: number;
@@ -553,7 +588,7 @@ export type RollupStatus = "no_commands" | "not_started" | "in_progress" | "bloc
 export interface Rollup {
   percent: number; weight: number; done_weight: number; total: number;
   completed: number; claimed: number; in_progress: number; not_started: number;
-  failed: number; blocked: number; skipped: number; unknown: number;
+  failed: number; blocked: number; skipped: number; unknown: number; revision: number;
   status: RollupStatus; last_status?: string; last_command?: string; last_at?: string;
 }
 export interface DependencyProgress { from: string; to: string; satisfied: boolean; status: RunStatus }
@@ -572,7 +607,8 @@ export interface ProgressSnapshot {
   workflow_version: number; percent: number; weight: number; done_weight: number;
   overall: Rollup; workflow: WorkflowProgress; modules: ModuleProgress[]; features: FeatureProgress[];
   stale_after_sec: number; updated_at?: string; last_report_at?: string; last_source?: string;
-  complete: boolean; counts: ProgressCounts; waves: WaveProgress[]; commands: CommandProgress[];
+  complete: boolean; counts: ProgressCounts; overview: ProgressOverview; activity: ProgressActivity[]; sessions: AgentSession[];
+  waves: WaveProgress[]; commands: CommandProgress[];
   next: string[]; warnings: ProgressWarning[]; issues: string[]; history: StatusChange[];
   visual?: VisualSummary; visual_ready?: boolean;
 }
@@ -580,12 +616,13 @@ export interface CommandEdit {
   name: string; objective: string; context: string; inputs: string[]; instructions: string; depends_on: string[];
   artifacts: string[]; covers: string[]; feature_ids: string[]; sub_feature_ids: string[];
   expected_outputs: string[]; acceptance_criteria: string[]; constraints: string[];
+  files: string[]; priority: string; complexity: string;
 }
 export interface ExportManifest {
   format: string; project: string; status: "draft" | "finalized"; finalized_at?: string; blueprint_hash: string;
   workflow_version: number; entry: string; waves: string[][];
   artifacts: { id: string; title: string; category: string; file: string; hash: string }[];
-  commands: { id: string; name: string; file: string; depends_on: string[]; artifacts: string[]; covers: string[]; feature_ids?: string[]; sub_feature_ids?: string[]; wave: number }[];
+  commands: { id: string; name: string; file: string; depends_on: string[]; artifacts: string[]; covers: string[]; feature_ids?: string[]; sub_feature_ids?: string[]; wave: number; files?: string[]; priority?: string; complexity?: string; revision?: number }[];
   areas: AreaStatus[];
 }
 export interface ExportView { dir: string; finalized: boolean; manifest: ExportManifest; files: { path: string; size: number }[]; blockers: string[] | null }

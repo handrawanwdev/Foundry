@@ -301,7 +301,9 @@ foundry mcp --print-config --project ~/work/clinic
 | `get_visual_review` | `READ`    | Measured UI quality per page: pass/partial/fail/untested, findings, criteria |
 | `record_visual_review` | `WRITE` | Submit browser snapshots + screenshot evidence for one page |
 | `create_visual_fixes` | `WRITE` | Turn open visual findings into a correction command in the workflow |
-| `report_progress`  | `WRITE`    | Agent report for one command: started / done / failed / blocked / skipped / review |
+| `next_command`     | `WRITE`    | The command to do next with instructions and dependency results; `claim` marks it started for a session |
+| `get_command`      | `READ`     | One command in full, or with `history` its reports, status changes and earlier revisions |
+| `report_progress`  | `WRITE`    | Agent report for one command: started / progress / done / failed / blocked / skipped / review |
 | `next_work`        | `MODIFY`   | Fetch the next piece of design work Foundry needs                           |
 | `submit_work`      | `WRITE`    | Hand back a result; Foundry validates it                                    |
 
@@ -312,6 +314,23 @@ Permissions are set with `--allow` (default: `READ`). The printed config grants 
 Foundry records implementation progress from the external coding agent. It does not run the workflow.
 
 **Working today:** `report_progress` / `get_progress` (MCP) and `POST /api/v1/project/progress/reports` persist reports in `.foundry/project.json`. Duplicate ids are idempotent; older seq/timestamps do not overwrite. Done without required evidence becomes `review`, not `verified`. Skipped commands keep their reason and are not treated as done. Missing reports stay `unconfirmed`. A started command with no report inside the stale window (default 30 minutes) is shown as `stale` or `unknown` if the MCP host is disconnected — never auto-completed or auto-failed. The Workflow page updates from the existing SSE change stream plus a 15s refresh; it does not treat a successful poll as proof that work is still running. Status survives Foundry restart.
+
+**Agent loop.** An agent takes work, reports while it works, and hands back evidence, by command id, through whichever channel it has:
+
+| Channel | Take work | Report |
+| --- | --- | --- |
+| MCP | `next_command` (`claim: true`) | `report_progress` |
+| CLI | `foundry command next --claim` | `foundry command progress CMD-001 -m "..." --percent 40`, then `done`, `fail`, `block`, `review` or `skip` |
+| HTTP | `POST /api/v1/project/workflow/next` | `POST /api/v1/project/progress/reports` |
+| File (fallback) | none | one JSON report per file in `.foundry/inbox/`; applied files move to `done/`, refused ones to `rejected/` with the reason beside them |
+
+The CLI works on `.foundry/project.json` directly, so it needs no running server, and an open UI still updates. Reports carry an optional `session`; a claim is atomic under the state lock, so two agents never get the same command, and a session gets back the command it already holds. Commands with unmet dependencies are never handed out, and `foundry command start` refuses them; a `started` report sent anyway is stored and flagged, because a report records what really happened. Failed, blocked and review commands are not handed out again by themselves: they wait for a person or a start by id.
+
+**Lifecycle.** Each command has a derived `phase`: `created` (dependencies unmet), `ready`, `in_progress`, `updating` (a progress report in the last 5 minutes), `review`, `completed`, `blocked`, `failed`, `revision_required`, `skipped`, `stale`. A progress report never counts as done: only `verified` work moves the percentage.
+
+**Revisions.** A workflow change is recorded as a delta (added, modified, removed, reused) in `workflow.changes`, with the earlier text of every changed command. A changed command gets the next `revision`; finished work on an older revision, or on a command whose blueprint artifact changed, shows as `revision_required`, stops counting as complete, and holds its dependents until the agent reports it again. Commands that did not change keep their progress. Removed ids are never reused. Webhooks are not implemented; `GET /api/v1/events` is the push channel.
+
+**Quality.** The workflow report lists advice per command (no acceptance criteria, no expected output, unmeasurable criteria, too large, too short, nearly identical to another command) plus features no command implements. Neither blocks finalize.
 
 **Feature → subfeature → workflow → CMD.** Commands carry `feature_ids` and `sub_feature_ids`, written by the workflow planner or set in the command editor. A command without them falls back to the features of the requirements it covers, so older projects keep working. Feature Discovery nodes are linked to blueprint features by `source_id`, then exact name, then a conservative text/module match; an unmatched node stays empty and says so. On load, older projects also get their empty command `feature_ids` backfilled from `covers`. `get_progress` returns `overall`, `modules`, `features` (with `sub_features`) and `workflow` roll-ups computed from the actual command runs. A command linked to several features is counted once per roll-up. Percent is weighted by `core.CommandWeight` (acceptance criteria, outputs, dependencies and instruction size), so a large command contributes more than a small one; only `verified` work counts as complete. Each roll-up shows completed / claimed / in progress / not started / failed / blocked / unknown counts, the last status and the related command ids. The Features page shows the same progress and links each feature to its commands in the Workflow page.
 
@@ -365,7 +384,7 @@ make clean
 ### Repository layout
 
 ```text
-cmd/foundry/          CLI entry point (serve · mcp · version)
+cmd/foundry/          CLI entry point (serve · mcp · command · version)
 apps/web/             UI — React 19 + TypeScript + Vite, embedded into the binary
 internal/
 ├── core/             Project model, store, blueprint, workflow, survey

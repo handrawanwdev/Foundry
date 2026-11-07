@@ -219,14 +219,20 @@ var tools = []tool{
 		})},
 	}, "page", "snapshots")},
 	{Name: "create_visual_fixes", perm: PermWrite, Description: "Turn the open visual findings into one concrete correction command in the existing workflow and reopen a finalized project for that revision. Use after get_visual_review shows findings; then implement the command wave and resubmit snapshots.", InputSchema: obj(nil)},
-	{Name: "report_progress", perm: PermWrite, Description: "Report execution progress for one command. Send when you start, finish, fail, get blocked, skip (reason required), or hand work for review. Include a stable id for retries. Done without required evidence is stored as review, not verified. Duplicate ids are idempotent.",
+	{Name: "next_command", perm: PermWrite, Description: "Get the command to work on next: instructions, dependencies and what they left, affected files, acceptance criteria. Commands with unmet dependencies are never handed out. With claim true the command is marked started for your session, so another agent does not get it; the session gets back the command it already holds. Failed, blocked and review commands are listed under attention and only move on by name.",
+		InputSchema: obj(map[string]any{"session": str, "claim": map[string]any{"type": "boolean"}})},
+	{Name: "get_command", perm: PermRead, Description: "One command in full with its execution state, or with history true its reports, status changes and earlier revisions.",
+		InputSchema: obj(map[string]any{"id": str, "history": map[string]any{"type": "boolean"}}, "id")},
+	{Name: "report_progress", perm: PermWrite, Description: "Report execution progress for one command, by its id. Send started when you begin, progress while working (summary, percent, files), then done, failed, blocked, skipped (reason required) or review. Include a stable id for retries and your session. Done without required evidence is stored as review, not verified. Duplicate ids are idempotent. A warning in the answer means the report was stored but something is off, such as a revised command.",
 		InputSchema: obj(map[string]any{
 			"id":               str,
 			"seq":              map[string]any{"type": "integer"},
 			"project":          str,
 			"workflow_version": map[string]any{"type": "integer"},
 			"command":          str,
-			"status":           map[string]any{"type": "string", "enum": []string{"started", "done", "failed", "blocked", "review", "skipped"}},
+			"status":           map[string]any{"type": "string", "enum": core.AgentReportStatuses},
+			"session":          str,
+			"percent":          map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
 			"started_at":       str,
 			"finished_at":      str,
 			"updated_at":       str,
@@ -256,8 +262,12 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("izin %s belum diberikan. Jalankan `foundry mcp --allow %s`", t.perm, t.perm)
 	}
 	var args struct {
-		Kind   string          `json:"kind"`
-		Result json.RawMessage `json:"result"`
+		Kind    string          `json:"kind"`
+		Result  json.RawMessage `json:"result"`
+		ID      string          `json:"id"`
+		Session string          `json:"session"`
+		Claim   bool            `json:"claim"`
+		History bool            `json:"history"`
 	}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &args); err != nil {
@@ -303,6 +313,16 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		return s.Svc.NextWork()
 	case "get_progress":
 		return s.Svc.ProgressOf(p), nil
+	case "next_command":
+		if args.Claim {
+			return s.Svc.ClaimCommand("", args.Session, s.source())
+		}
+		return s.Svc.NextCommand(args.Session)
+	case "get_command":
+		if args.History {
+			return s.Svc.CommandDetail(args.ID)
+		}
+		return s.Svc.Command(args.ID)
 	case "get_visual_review":
 		summary, audit, err := s.Svc.VisualReport()
 		if err != nil {
@@ -317,10 +337,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 			}
 		}
 		if in.Source == "" {
-			in.Source = s.client
-			if in.Source == "" {
-				in.Source = "mcp"
-			}
+			in.Source = s.source()
 		}
 		return s.Svc.RecordVisualReview(in, "mcp")
 	case "create_visual_fixes":
@@ -337,10 +354,7 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 			}
 		}
 		if in.Source == "" {
-			in.Source = s.client
-			if in.Source == "" {
-				in.Source = "mcp"
-			}
+			in.Source = s.source()
 		}
 		return s.Svc.ReportProgress(in, "mcp")
 	case "submit_work":
@@ -357,6 +371,14 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		return map[string]any{"accepted": true, "stage": np.Stage, "job": np.Job, "next": "Panggil next_work untuk pekerjaan berikutnya."}, nil
 	}
 	return nil, fmt.Errorf("tool %q tidak ada", name)
+}
+
+// source names the connected host for reports that do not name themselves.
+func (s *Server) source() string {
+	if s.client != "" {
+		return s.client
+	}
+	return "mcp"
 }
 
 // ClientConfig is the JSON snippet an AI host needs to launch this server.

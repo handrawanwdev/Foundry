@@ -1,6 +1,8 @@
 package core
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"slices"
 	"strings"
 	"time"
@@ -21,7 +23,40 @@ type Workflow struct {
 	// Version counts the changes; the export names it.
 	Version     int        `json:"version"`
 	FinalizedAt *time.Time `json:"finalized_at,omitempty"`
+	// Changes is the delta log of the workflow, newest last. Revising a
+	// command never loses its earlier text: Before keeps it.
+	Changes []WorkflowChange `json:"changes,omitempty"`
 }
+
+// WorkflowChange is one revision of the workflow as a delta: what was added,
+// modified and removed; every other command was reused as it was.
+type WorkflowChange struct {
+	Version  int             `json:"version"`
+	At       time.Time       `json:"at"`
+	Kind     string          `json:"kind"` // generate | revise | edit | remove | visual
+	Reason   string          `json:"reason,omitempty"`
+	Source   string          `json:"source,omitempty"`
+	Added    []string        `json:"added,omitempty"`
+	Modified []CommandChange `json:"modified,omitempty"`
+	Removed  []CommandChange `json:"removed,omitempty"`
+	Reused   int             `json:"reused"`
+}
+
+// CommandChange is one command as it was before the change.
+type CommandChange struct {
+	ID string `json:"id"`
+	// Revision is the revision after the change; 0 for a removed command.
+	Revision int      `json:"revision,omitempty"`
+	Fields   []string `json:"fields,omitempty"`
+	Before   Command  `json:"before"`
+}
+
+// Command priority and complexity levels.
+const (
+	LevelHigh   = "high"
+	LevelMedium = "medium"
+	LevelLow    = "low"
+)
 
 // Workflow and command statuses: design states only, never execution.
 const (
@@ -56,7 +91,17 @@ type Command struct {
 	Outputs       []string `json:"expected_outputs,omitempty"`
 	Acceptance    []string `json:"acceptance_criteria,omitempty"`
 	Constraints   []string `json:"constraints,omitempty"`
-	Status        string   `json:"status"`
+	// Files are the files, folders or modules the command touches, taken
+	// from the project structure; empty when the repository is unknown.
+	Files []string `json:"files,omitempty"`
+	// Priority orders commands that are ready at the same time; Complexity
+	// is the planner's estimate. Both are high | medium | low.
+	Priority   string `json:"priority,omitempty"`
+	Complexity string `json:"complexity,omitempty"`
+	// Revision counts the changes of the definition; 0 and 1 both mean the
+	// first version. Work done on an older revision has to be redone.
+	Revision int    `json:"revision,omitempty"`
+	Status   string `json:"status"`
 	// Review is why the command was marked for review.
 	Review string `json:"review,omitempty"`
 }
@@ -93,6 +138,61 @@ func (w *Workflow) EnsureID() {
 			w.Commands[i].WorkflowID = w.ID
 		}
 	}
+}
+
+// CommandRevision is the revision of the definition, at least 1.
+func CommandRevision(c Command) int { return max(c.Revision, 1) }
+
+// CommandComplexity is the planner's estimate, or for commands written
+// without one a level derived from the command's deterministic weight.
+func CommandComplexity(c Command) string {
+	if c.Complexity != "" {
+		return c.Complexity
+	}
+	switch w := CommandWeight(c); {
+	case w >= 9:
+		return LevelHigh
+	case w >= 5:
+		return LevelMedium
+	}
+	return LevelLow
+}
+
+// CommandFields names what an agent is told by the command, one fingerprint
+// per field. Design state (status, review, revision) and artifact hashes are
+// left out: accepting a blueprint change leaves the instruction as it was.
+func CommandFields(c Command) map[string]string {
+	refs := make([]string, len(c.Artifacts))
+	for i, r := range c.Artifacts {
+		refs[i] = r.ID
+	}
+	join := func(items []string) string { return strings.Join(items, "\x00") }
+	out := map[string]string{}
+	for name, text := range map[string]string{
+		"name": c.Name, "objective": c.Objective, "context": c.Context, "inputs": join(c.Inputs),
+		"instructions": c.Instructions, "depends_on": join(c.DependsOn), "artifacts": join(refs), "covers": join(c.Covers),
+		"feature_ids": join(c.FeatureIDs), "sub_feature_ids": join(c.SubFeatureIDs), "expected_outputs": join(c.Outputs),
+		"acceptance_criteria": join(c.Acceptance), "constraints": join(c.Constraints), "files": join(c.Files),
+		"priority": c.Priority, "complexity": c.Complexity,
+	} {
+		h := sha256.Sum256([]byte(text))
+		out[name] = hex.EncodeToString(h[:6])
+	}
+	return out
+}
+
+// CommandDiff lists the fields that differ between two versions of a command,
+// sorted so the result is stable.
+func CommandDiff(a, b Command) []string {
+	x, y := CommandFields(a), CommandFields(b)
+	var out []string
+	for name, h := range x {
+		if y[name] != h {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // CommandWeight is the execution weight of one command. It is deterministic

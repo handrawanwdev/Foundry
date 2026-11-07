@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/progress"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/uicheck"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
@@ -114,9 +115,11 @@ func (s *Service) CreateVisualFixes() (string, error) {
 			p.Stage = core.StageDesign
 			p.Log("system", "Blueprint dibuka kembali untuk perbaikan visual")
 		}
+		before := p.Workflow.Commands
 		p.Workflow.Commands = cmds
 		p.Workflow.EnsureID()
 		p.Workflow.Version++
+		progress.Track(p, before, "visual", "Perbaikan temuan visual: "+strings.Join(pages, ", "), "ui", time.Now().UTC())
 		id = next
 		p.Log("ui", "Command perbaikan visual dibuat: "+next+" ("+strings.Join(pages, ", ")+")")
 		return nil

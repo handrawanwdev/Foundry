@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
-import { commandState, commandText, dependents, lines, ROLLUP_CLASS, ROLLUP_LABEL, rollupBits, RUN_CLASS, RUN_LABEL, runOf, STATE_LABEL, waveOf } from "../blueprint";
+import { commandState, commandText, coverageRequest, dependents, LEVEL_LABEL, lines, PHASE_CLASS, PHASE_LABEL, runOf, STATE_LABEL, waveOf } from "../blueprint";
+import { CommandReport, ExecutionOverview, ExecutionTimeline, WorkflowChanges } from "../components/CommandDashboard";
 import { Elapsed } from "../components/Elapsed";
 import { Icon } from "../components/Icon";
 import { Markdown } from "../components/Markdown";
 import { PromptBar } from "../components/PromptBar";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
-import type { Command, CommandEdit, CommandProgress, ProgressSnapshot, Project, RunStatus, WorkflowReport, WorkflowView } from "../types";
+import type { Command, CommandEdit, CommandProgress, Project, WorkflowReport, WorkflowView } from "../types";
 
-// Workflow workspace: commands by wave on the left, one command in full.
-// Foundry writes and checks the instructions; an external coding agent
-// carries them out.
+// Workflow workspace: commands by wave on the left; the main pane is the
+// execution dashboard or one command in full. Foundry writes and checks the
+// instructions; an external coding agent carries them out and reports back.
 export function WorkflowPage() {
   const { project, run, pending } = useProject();
   const [view, setView] = useState<WorkflowView | null>(null);
@@ -66,9 +67,12 @@ export function WorkflowPage() {
     );
   }
 
-  const id = params.get("cmd") ?? cmds[0].id;
-  const cmd = cmds.find((c) => c.id === id) ?? cmds[0];
+  const id = params.get("cmd");
+  const cmd = cmds.find((c) => c.id === id) ?? null;
   const select = (next: string) => setParams({ cmd: next }, { replace: true });
+  const quality = r?.quality ?? [];
+  const uncoveredFeatures = r?.uncovered_features ?? [];
+  const uncovered = r?.uncovered ?? [];
   const reviewIds = Object.keys(r?.review ?? {});
   const staleIds = Object.keys(r?.stale ?? {}).filter((k) => (r?.stale[k]?.length ?? 0) > 0);
   const byId = new Map(cmds.map((c) => [c.id, c]));
@@ -98,13 +102,13 @@ export function WorkflowPage() {
               if (!c) return null;
               const st = commandState(c, r);
               const run = runOf(prog, cid);
-              const runClass = run ? RUN_CLASS[run.status] : "";
+              const reported = run && run.status !== "unconfirmed" && run.status !== "waiting";
               return (
-                <button key={cid} className={`ws-item cmd ${cid === cmd.id ? "on" : ""}`} aria-current={cid === cmd.id ? "page" : undefined} onClick={() => select(cid)}>
+                <button key={cid} className={`ws-item cmd ${cid === cmd?.id ? "on" : ""}`} aria-current={cid === cmd?.id ? "page" : undefined} onClick={() => select(cid)}>
                   <span className="cmd-id">{cid}</span>
                   <span className="ws-item-text">{c.name}</span>
-                  {run && run.status !== "unconfirmed" && <span className={`cmd-dot ${runClass || "st-muted"}`} title={RUN_LABEL[run.status]} />}
-                  {st !== "draft" && !(run && run.status !== "unconfirmed") && <span className={`cmd-dot st-${st}`} title={STATE_LABEL[st]} />}
+                  {reported && <span className={`cmd-dot ${PHASE_CLASS[run.phase] || "st-muted"}`} title={PHASE_LABEL[run.phase]} />}
+                  {st !== "draft" && !reported && <span className={`cmd-dot st-${st}`} title={STATE_LABEL[st]} />}
                 </button>
               );
             })}
@@ -113,17 +117,32 @@ export function WorkflowPage() {
       </nav>
 
       <main className="ws-main">
-        {prog && <ProgressPanel progress={prog} onOpen={select} onReconcile={() => void run("reconcileProgress", () => api.reconcileProgress())} busy={pending === "reconcileProgress"} />}
+        {prog && <ExecutionOverview progress={prog} onOpen={select} onReconcile={() => void run("reconcileProgress", () => api.reconcileProgress())} busy={pending === "reconcileProgress"} />}
         {r && r.issues.length > 0 && (
           <div className="notice bad">
             <strong>{r.issues.length} masalah workflow</strong>
             <ul>{r.issues.slice(0, 6).map((is, i) => <li key={i}>{is.command && <button className="link" onClick={() => select(is.command!)}>{is.command}</button>} {is.message}</li>)}</ul>
           </div>
         )}
-        {r && r.uncovered.length > 0 && !locked && (
+        {(uncovered.length > 0 || uncoveredFeatures.length > 0) && !locked && (
           <div className="notice warn">
-            <span><strong>Requirement MUST belum dicakup command:</strong> {r.uncovered.join(", ")}. Isi “Mencakup requirement” di command terkait.</span>
+            <span>
+              <strong>Belum dicakup command:</strong> {[...uncoveredFeatures, ...uncovered].join(", ")}.
+            </span>
+            <button disabled={working || pending === "reviseWorkflow"} onClick={() => void run("reviseWorkflow", () => api.reviseWorkflow(coverageRequest(uncovered, uncoveredFeatures)))}>
+              ✦ Buat command tambahan
+            </button>
           </div>
+        )}
+        {quality.length > 0 && !locked && (
+          <details className="notice wf-quality">
+            <summary><strong>{quality.length} saran kualitas command</strong></summary>
+            <ul>{quality.slice(0, 12).map((q, i) => <li key={i}>{q.command && <button className="link" onClick={() => select(q.command!)}>{q.command}</button>} {q.message}</li>)}</ul>
+            <button disabled={working || pending === "reviseWorkflow"} onClick={() => void run("reviseWorkflow",
+              () => api.reviseWorkflow(`Perbaiki kualitas command berikut, ubah hanya yang perlu:\n${quality.map((q) => `- ${q.command}: ${q.message}`).join("\n")}`, [...new Set(quality.flatMap((q) => (q.command ? [q.command] : [])))]))}>
+              ✦ Perbaiki dengan AI
+            </button>
+          </details>
         )}
         {reviewIds.length > 0 && !locked && (
           <div className="notice warn">
@@ -136,70 +155,28 @@ export function WorkflowPage() {
             )}
           </div>
         )}
-        <CommandDoc key={cmd.id + w!.version} project={project} cmd={cmd} report={r} run={runOf(prog, cmd.id)} locked={locked} onOpen={select} />
+        {cmd ? (
+          <>
+            <div className="wf-back"><button className="link" onClick={() => setParams({}, { replace: true })}>← Timeline</button></div>
+            <CommandDoc key={cmd.id + w!.version} project={project} cmd={cmd} report={r} run={runOf(prog, cmd.id)} locked={locked} onOpen={select} />
+          </>
+        ) : (
+          <>
+            {prog && <ExecutionTimeline progress={prog} onOpen={select} />}
+            <WorkflowChanges changes={w!.changes ?? []} onOpen={select} />
+          </>
+        )}
       </main>
 
       {!locked && (
         <PromptBar
-          label={`Minta perubahan workflow (sedang melihat: ${cmd.id})…`}
+          label={cmd ? `Minta perubahan workflow (sedang melihat: ${cmd.id})…` : "Minta perubahan workflow…"}
           placeholder="Contoh: pecah CMD-003 jadi backend dan frontend; tambahkan command migrasi data sebelum CMD-004."
           hint="AI mengubah command yang terdampak saja; dependency divalidasi."
           disabled={working}
           busy={pending === "reviseWorkflow"}
-          onSend={(text) => run("reviseWorkflow", () => api.reviseWorkflow(text, [cmd.id]))}
+          onSend={(text) => run("reviseWorkflow", () => api.reviseWorkflow(text, cmd ? [cmd.id] : []))}
         />
-      )}
-    </div>
-  );
-}
-
-function ProgressPanel({ progress, onOpen, onReconcile, busy }: {
-  progress: ProgressSnapshot; onOpen: (id: string) => void; onReconcile: () => void; busy: boolean;
-}) {
-  const bits = rollupBits(progress.overall);
-  const warnings = progress.warnings.filter((w) => w.kind !== "incomplete");
-  const incomplete = progress.warnings.find((w) => w.kind === "incomplete");
-  const workflow = progress.workflow;
-  return (
-    <div className="prog-panel">
-      <div className="prog-line">
-        <strong>
-          {progress.complete ? "Workflow terverifikasi" : incomplete?.message ?? "Progres pengerjaan"}
-          <span className={`state ${ROLLUP_CLASS[workflow?.status ?? "no_commands"]}`}>{ROLLUP_LABEL[workflow?.status ?? "no_commands"]}</span>
-        </strong>
-        <span className="muted small">{progress.percent}% · bobot {progress.done_weight}/{progress.weight}</span>
-      </div>
-      <div className="prog-bar big"><i style={{ width: `${progress.percent}%` }} /></div>
-      <p className="muted small">{bits.length ? bits.join(" · ") : "Belum ada laporan agen."}</p>
-      {workflow?.dependencies?.length > 0 && (
-        <p className="small">
-          Dependency: {workflow.dependencies.filter((d) => !d.satisfied).length === 0
-            ? "semua terpenuhi"
-            : `${workflow.dependencies.filter((d) => !d.satisfied).length} belum terpenuhi`}
-          {" "}· {workflow.dependencies.map((d) => `${d.from}→${d.to}`).slice(0, 8).join(", ")}
-          {workflow.dependencies.length > 8 ? ", …" : ""}
-        </p>
-      )}
-      {progress.last_report_at && (
-        <p className="muted small">Laporan terakhir {new Date(progress.last_report_at).toLocaleString()}{progress.last_source ? ` · ${progress.last_source}` : ""}</p>
-      )}
-      {progress.next.length > 0 && !progress.complete && (
-        <p className="small">Siap dikerjakan: {progress.next.map((id) => <button key={id} className="ref-chip" onClick={() => onOpen(id)}>{id}</button>)}</p>
-      )}
-      {progress.issues.length > 0 && (
-        <div className="notice warn">
-          <strong>Status tidak sinkron</strong>
-          <ul>{progress.issues.map((m, i) => <li key={i}>{m}</li>)}</ul>
-          <button disabled={busy} onClick={onReconcile}>Samakan dengan workflow</button>
-        </div>
-      )}
-      {warnings.length > 0 && (
-        <div className="notice warn">
-          <strong>{warnings.length} peringatan pelacakan</strong>
-          <ul>{warnings.slice(0, 6).map((w, i) => (
-            <li key={i}>{w.command && <button className="link" onClick={() => onOpen(w.command!)}>{w.command}</button>} {w.message} {w.action && <span className="muted">{w.action}</span>}</li>
-          ))}</ul>
-        </div>
       )}
     </div>
   );
@@ -235,8 +212,9 @@ function CommandDoc({ project, cmd, report, run, locked, onOpen }: {
         <div className="doc-kicker">
           <span className="cmd-id big">{cmd.id}</span>
           <span className={`state st-${st}`}>{STATE_LABEL[st]}</span>
-          {run && <span className={`state ${RUN_CLASS[run.status as RunStatus]}`}>{RUN_LABEL[run.status]}</span>}
+          {run && <span className={`state ${PHASE_CLASS[run.phase]}`}>{PHASE_LABEL[run.phase]}</span>}
           {wave > 0 && <span className="muted small">Gelombang {wave}</span>}
+          {(cmd.revision ?? 0) > 1 && <span className="muted small">Revisi {cmd.revision}</span>}
         </div>
         <h1>{cmd.name}</h1>
         <p className="doc-summary">{cmd.objective}</p>
@@ -244,7 +222,8 @@ function CommandDoc({ project, cmd, report, run, locked, onOpen }: {
           <span className="muted">Bergantung pada:</span>
           {cmd.depends_on?.length ? cmd.depends_on.map((d) => <button key={d} className="ref-chip" onClick={() => onOpen(d)}>{d}</button>) : <span>—</span>}
           {deps.length > 0 && <><span className="muted">· Dibutuhkan oleh:</span>{deps.map((d) => <button key={d} className="ref-chip" onClick={() => onOpen(d)}>{d}</button>)}</>}
-          {run && <span className="muted">· Bobot {run.weight}</span>}
+          {cmd.priority && <span className="muted">· Prioritas {LEVEL_LABEL[cmd.priority]}</span>}
+          {run && <span className="muted">· Kompleksitas {LEVEL_LABEL[run.complexity]}</span>}
         </div>
         {run && (run.feature_ids?.length ?? 0) + (run.sub_feature_ids?.length ?? 0) > 0 && (
           <div className="doc-meta small">
@@ -269,25 +248,7 @@ function CommandDoc({ project, cmd, report, run, locked, onOpen }: {
         </div>
       )}
 
-      {run && run.status !== "unconfirmed" && (
-        <section className="doc-sec">
-          <h2>Progres pengerjaan</h2>
-          <p className="small">{run.summary || RUN_LABEL[run.status]}{run.reason ? ` — ${run.reason}` : ""}</p>
-          <p className="muted small">
-            {run.source && `Sumber: ${run.source}`}
-            {run.updated_at && ` · Diperbarui ${new Date(run.updated_at).toLocaleString()}`}
-            {run.started_at && ` · Mulai ${new Date(run.started_at).toLocaleString()}`}
-            {run.finished_at && ` · Selesai ${new Date(run.finished_at).toLocaleString()}`}
-          </p>
-          {run.waiting && run.waiting.length > 0 && <p className="small">Menunggu: {run.waiting.join(", ")}</p>}
-          {run.evidence && run.evidence.length > 0 && (
-            <ul>{run.evidence.map((e, i) => <li key={i}><code>{e.ref}</code>{e.kind ? ` · ${e.kind}` : ""}</li>)}</ul>
-          )}
-          {run.tests && run.tests.length > 0 && (
-            <ul>{run.tests.map((t, i) => <li key={i}>{t.name}: {t.result}{t.detail ? ` — ${t.detail}` : ""}</li>)}</ul>
-          )}
-        </section>
-      )}
+      {run && <CommandReport key={cmd.id} id={cmd.id} run={run} version={project.version} onOpen={onOpen} />}
       {editing ? <CommandEditor project={project} cmd={cmd} report={report} onDone={() => setEditing(false)} /> : (
         <>
           {cmd.context && <section className="doc-sec"><h2>Konteks</h2><Markdown text={cmd.context} /></section>}
@@ -312,6 +273,7 @@ function CommandDoc({ project, cmd, report, run, locked, onOpen }: {
               </div>
             </section>
           )}
+          {list("File dan modul terkait", cmd.files)}
           {list("Input", cmd.inputs)}
           <section className="doc-sec"><h2>Instruksi</h2><Markdown text={cmd.instructions} /></section>
           {list("Output yang diharapkan", cmd.expected_outputs)}
@@ -333,14 +295,17 @@ function CommandEditor({ project, cmd, report, onDone }: { project: Project; cmd
     acceptance: (cmd.acceptance_criteria ?? []).join("\n"), constraints: (cmd.constraints ?? []).join("\n"),
     deps: cmd.depends_on ?? [], artifacts: (cmd.artifacts ?? []).map((a) => a.id), covers: cmd.covers ?? [],
     features: cmd.feature_ids ?? [], subFeatures: cmd.sub_feature_ids ?? [],
+    files: (cmd.files ?? []).join("\n"), priority: cmd.priority ?? "", complexity: cmd.complexity ?? "",
   });
   const set = (k: keyof typeof e) => (ev: { target: { value: string } }) => setE({ ...e, [k]: ev.target.value });
+  const levels = (["high", "medium", "low"] as const).map((l) => <option key={l} value={l}>{LEVEL_LABEL[l]}</option>);
   const toggle = (k: "deps" | "artifacts" | "covers" | "features" | "subFeatures", v: string) => setE({ ...e, [k]: e[k].includes(v) ? e[k].filter((x) => x !== v) : [...e[k], v] });
   const save = async () => {
     const edit: CommandEdit = {
       name: e.name, objective: e.objective, context: e.context, instructions: e.instructions, inputs: lines(e.inputs),
       depends_on: e.deps, artifacts: e.artifacts, covers: e.covers, feature_ids: e.features, sub_feature_ids: e.subFeatures,
       expected_outputs: lines(e.outputs), acceptance_criteria: lines(e.acceptance), constraints: lines(e.constraints),
+      files: lines(e.files), priority: e.priority, complexity: e.complexity,
     };
     if (await run("editCommand", () => api.editCommand(cmd.id, edit))) onDone();
   };
@@ -392,6 +357,11 @@ function CommandEditor({ project, cmd, report, onDone }: { project: Project; cmd
           ))}
         </div>
       </fieldset>
+      <div className="row">
+        <label className="field">Prioritas<select value={e.priority} onChange={set("priority")}><option value="">Belum ditentukan</option>{levels}</select></label>
+        <label className="field">Kompleksitas<select value={e.complexity} onChange={set("complexity")}><option value="">Hitung otomatis</option>{levels}</select></label>
+      </div>
+      <label className="field">File dan modul terkait <span className="muted small">(satu per baris)</span><textarea rows={3} value={e.files} onChange={set("files")} /></label>
       <label className="field">Input <span className="muted small">(satu per baris)</span><textarea rows={3} value={e.inputs} onChange={set("inputs")} /></label>
       <label className="field">Output yang diharapkan <span className="muted small">(satu per baris)</span><textarea rows={3} value={e.outputs} onChange={set("outputs")} /></label>
       <label className="field">Acceptance criteria <span className="muted small">(satu per baris)</span><textarea rows={4} value={e.acceptance} onChange={set("acceptance")} /></label>

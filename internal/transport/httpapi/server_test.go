@@ -640,6 +640,21 @@ func TestProgressRoutes(t *testing.T) {
 	if w := do("POST", "/api/v1/project/progress/reports", `{"command":"CMD-009","status":"started"}`); w.Code != 400 {
 		t.Fatalf("unknown command: %d %s", w.Code, w.Body)
 	}
+	if w := do("POST", "/api/v1/project/workflow/next", `{"session":"s1"}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"command":"CMD-002"`) {
+		t.Fatalf("next: %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/api/v1/project/workflow/commands/CMD-002", ""); w.Code != 200 || strings.Contains(w.Body.String(), `"phase":"in_progress"`) {
+		t.Fatalf("next without claim started the command: %d %s", w.Code, w.Body)
+	}
+	if w := do("POST", "/api/v1/project/workflow/next", `{"session":"s1","claim":true}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"phase":"in_progress"`) {
+		t.Fatalf("claim: %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/api/v1/project/workflow/commands/CMD-001/history", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"reports"`) {
+		t.Fatalf("history: %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/api/v1/project/workflow/commands/CMD-009", ""); w.Code != 400 {
+		t.Fatalf("unknown command: %d %s", w.Code, w.Body)
+	}
 }
 
 // The repository plan routes exist and refuse a project that cannot have one

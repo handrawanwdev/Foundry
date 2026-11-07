@@ -157,6 +157,15 @@ func commandMarkdown(c core.Command, waves [][]string, binding string) string {
 	} else {
 		meta = append(meta, "Tanpa dependency")
 	}
+	if c.Priority != "" {
+		meta = append(meta, "Prioritas: "+c.Priority)
+	}
+	if c.Complexity != "" {
+		meta = append(meta, "Kompleksitas: "+c.Complexity)
+	}
+	if r := core.CommandRevision(c); r > 1 {
+		meta = append(meta, fmt.Sprintf("Revisi %d", r))
+	}
 	b.WriteString(strings.Join(meta, " · ") + "\n\n")
 	if binding != "" {
 		b.WriteString(bindBanner(binding, "../blueprint/decisions.md"))
@@ -197,6 +206,7 @@ func commandMarkdown(c core.Command, waves [][]string, binding string) string {
 			fmt.Fprintf(&b, "Subfitur: %s\n\n", strings.Join(c.SubFeatureIDs, ", "))
 		}
 	}
+	list("File dan modul terkait", "", c.Files)
 	list("Input", "", c.Inputs)
 	section("Instruksi", c.Instructions)
 	list("Output yang diharapkan", "", c.Outputs)
@@ -239,6 +249,10 @@ type ManifestCommand struct {
 	FeatureIDs    []string `json:"feature_ids,omitempty"`
 	SubFeatureIDs []string `json:"sub_feature_ids,omitempty"`
 	Wave          int      `json:"wave"`
+	Files         []string `json:"files,omitempty"`
+	Priority      string   `json:"priority,omitempty"`
+	Complexity    string   `json:"complexity,omitempty"`
+	Revision      int      `json:"revision,omitempty"`
 }
 
 // BuildManifest indexes the package of p.
@@ -287,7 +301,8 @@ func manifestOf(p *core.Project, docs []core.Artifact) Manifest {
 	}
 	for _, c := range w.Commands {
 		mc := ManifestCommand{ID: c.ID, Name: c.Name, File: commandFile(c.ID), DependsOn: c.DependsOn, Artifacts: []string{}, Covers: c.Covers,
-			FeatureIDs: core.ResolveCommandFeatureIDs(c, p.Features), SubFeatureIDs: core.ResolveCommandSubFeatureIDs(c, p.Features), Wave: waveOf[c.ID]}
+			FeatureIDs: core.ResolveCommandFeatureIDs(c, p.Features), SubFeatureIDs: core.ResolveCommandSubFeatureIDs(c, p.Features), Wave: waveOf[c.ID],
+			Files: c.Files, Priority: c.Priority, Complexity: core.CommandComplexity(c), Revision: core.CommandRevision(c)}
 		if mc.Covers == nil {
 			mc.Covers = []string{}
 		}

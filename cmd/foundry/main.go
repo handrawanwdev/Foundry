@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,7 @@ import (
 	web "github.com/handrawanwdev/foundry/apps/web"
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
+	"github.com/handrawanwdev/foundry/internal/modules/progress"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 	"github.com/handrawanwdev/foundry/internal/transport/httpapi"
 	"github.com/handrawanwdev/foundry/internal/transport/mcp"
@@ -36,6 +38,10 @@ const usage = `Foundry — dari prompt ke rancangan aplikasi dan spesifikasi fin
   foundry version
       Cetak versi Foundry
 
+  foundry command <next|show|start|progress|done|fail|block|review|skip|status|ingest> [flag]
+      Untuk coding agent: ambil command, baca instruksi, dan laporkan progres.
+      Jalankan "foundry command help" untuk rinciannya.
+
   foundry visual-verify [--addr 127.0.0.1:8080] [folder-project]
       Tambahkan visual verification commands ke workflow dan jalankan.
       Otomatis capture screenshots dan submit visual reviews untuk semua halaman.
@@ -51,6 +57,8 @@ func main() {
 		serve(os.Args[2:])
 	case "mcp":
 		runMCP(os.Args[2:])
+	case "command":
+		os.Exit(runCommand(os.Args[2:], os.Stdout, os.Stderr))
 	case "visual-verify":
 		visualVerify(os.Args[2:])
 	case "version":
@@ -136,7 +144,7 @@ func visualVerify(args []string) {
 	fs := flag.NewFlagSet("visual-verify", flag.ExitOnError)
 	dir := fs.String("project", "", "folder project (default: folder saat ini)")
 	fs.Parse(args)
-	
+
 	if *dir == "" {
 		*dir, _ = os.Getwd()
 	}
@@ -174,10 +182,12 @@ func visualVerify(args []string) {
 	} else {
 		// Add visual verification commands using Update
 		_, err := st.Update(func(p *core.Project) error {
+			before := slices.Clone(p.Workflow.Commands)
 			count, err := work.AddVisualVerificationCommands(p, nil)
 			if err != nil {
 				return fmt.Errorf("gagal menambah visual commands: %w", err)
 			}
+			progress.Track(p, before, "visual", "Verifikasi visual ditambahkan", "cli", time.Now().UTC())
 			fmt.Printf("✓ Berhasil menambah %d visual verification commands\n", count)
 			return nil
 		})
@@ -207,7 +217,7 @@ func visualVerify(args []string) {
 	}
 
 	totalPages := len(p.UI.Layout.Pages)
-	
+
 	fmt.Printf("\n📊 Visual Verification Status:\n")
 	fmt.Printf("  Total pages: %d\n", totalPages)
 	fmt.Printf("  Verified: %d\n", verified)

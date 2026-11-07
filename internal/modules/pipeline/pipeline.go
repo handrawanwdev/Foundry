@@ -612,7 +612,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 				next = work.KindWorkflow // the cleanup of a deleted document continues with its commands
 			}
 		case work.KindWorkflow:
-			if err := work.ApplyWorkflow(p, raw, spec.Artifacts(p)); err != nil {
+			if err := applyWorkflowDelta(p, raw); err != nil {
 				return err
 			}
 		default:

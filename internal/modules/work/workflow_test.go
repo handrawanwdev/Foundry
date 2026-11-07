@@ -167,3 +167,19 @@ func TestDetailPromptCarriesSkeletonOnly(t *testing.T) {
 		t.Fatal("prompt mengubah command tersimpan")
 	}
 }
+
+func TestRemovedCommandIDIsNotReused(t *testing.T) {
+	p := &core.Project{Workflow: &core.Workflow{Version: 1, Commands: []core.Command{
+		{ID: "CMD-001", Name: "a", Objective: "o", Instructions: "i", Artifacts: []core.ArtifactRef{{ID: "requirements", Hash: "h"}}},
+		{ID: "CMD-002", Name: "b", Objective: "o", Instructions: "i", Artifacts: []core.ArtifactRef{{ID: "requirements", Hash: "h"}}},
+	}, Request: &core.ChangeRequest{Text: "ganti"}}}
+	p.Progress = &core.Progress{Retired: map[string]core.CommandRun{"CMD-007": {CommandID: "CMD-007", Status: core.RunVerified}}}
+	raw := `{"remove":["CMD-002"],"commands":[{"id":"NEW1","name":"c","objective":"o","instructions":"i","artifacts":["requirements"],"priority":"Tinggi","complexity":"bogus"}]}`
+	if err := ApplyWorkflow(p, raw, []core.Artifact{{ID: "requirements"}}); err != nil {
+		t.Fatal(err)
+	}
+	c := p.Workflow.Commands[1]
+	if c.ID != "CMD-008" || c.Priority != core.LevelHigh || c.Complexity != "" {
+		t.Fatalf("command = %+v; a new command must not inherit a removed one's run", c)
+	}
+}
