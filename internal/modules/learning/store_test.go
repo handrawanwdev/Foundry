@@ -3,6 +3,7 @@ package learning
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -281,5 +282,43 @@ func TestGenerateRecommendedRules(t *testing.T) {
 	}
 	if !foundSpacing {
 		t.Error("Expected spacing rule to be generated")
+	}
+}
+
+func TestRecordKeepsCorruptFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, learningFileName)
+	bad := []byte(`[{"project_id": "x", trunc`)
+	if err := os.WriteFile(path, bad, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := NewStore(dir).Record("p", "web", []core.VisualFinding{{Criterion: "contrast", Severity: "high", Message: "m"}})
+	if err == nil {
+		t.Fatal("Record must fail on a corrupt file")
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != string(bad) {
+		t.Fatalf("corrupt file was overwritten: %q", got)
+	}
+}
+
+func TestRecordConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	const n = 20
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// separate Store values stand in for separate processes
+			if err := NewStore(dir).Record("p", "web", []core.VisualFinding{{Criterion: "c", Severity: "low", Message: "m"}}); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	recs, err := NewStore(dir).loadAll()
+	if err != nil || len(recs) != n {
+		t.Fatalf("records = %d, err = %v, want %d", len(recs), err, n)
 	}
 }

@@ -74,6 +74,9 @@ func WriteFile(path string, data []byte, perm os.FileMode) error {
 	if err == nil {
 		err = f.Chmod(perm)
 	}
+	if err == nil {
+		err = f.Sync() // data on disk before the rename can expose the file
+	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -82,8 +85,10 @@ func WriteFile(path string, data []byte, perm os.FileMode) error {
 	}
 	if err != nil {
 		os.Remove(tmp)
+		return err
 	}
-	return err
+	syncDir(filepath.Dir(path)) // best effort: persist the rename itself
+	return nil
 }
 
 // ReadFile reads path like os.ReadFile, riding out a concurrent WriteFile.

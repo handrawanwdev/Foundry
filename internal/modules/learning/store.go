@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/safefile"
 )
 
 // readCache keeps the last loaded learnings.json so GetPatterns and
@@ -57,17 +58,24 @@ func (s *Store) Record(projectID string, productType string, findings []core.Vis
 		Findings:    learningFindings,
 	}
 
-	// Load existing records
+	if err := os.MkdirAll(s.basePath, 0755); err != nil {
+		return err
+	}
+	// Cross-process lock: the read-modify-write must not interleave with
+	// another Record from the HTTP server or the MCP process.
+	l, err := safefile.Acquire(filepath.Join(s.basePath, "learnings.lock"), 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("learnings terkunci: %w", err)
+	}
+	defer l.Unlock()
+
+	// A load error (corrupt file) must not be turned into an empty history
+	// that then overwrites the file.
 	records, err := s.loadAll()
 	if err != nil {
-		records = []core.LearningRecord{}
+		return err
 	}
-
-	// Append new record
-	records = append(records, record)
-
-	// Save back
-	return s.saveAll(records)
+	return s.saveAll(append(records, record))
 }
 
 // GetPatterns retrieves design patterns learned from all projects.
@@ -207,7 +215,7 @@ func (s *Store) saveAll(records []core.LearningRecord) error {
 		return err
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := safefile.WriteFile(path, data, 0644); err != nil {
 		return err
 	}
 	st, _ := os.Stat(path)
