@@ -394,26 +394,56 @@ export interface Job {
 }
 export interface Event { at: string; source: string; message: string }
 
-export type BlueprintSectionStatus = "pending" | "in_progress" | "completed" | "failed" | "retrying" | "skipped";
-export type BlueprintTaskStatus = "running" | "completed" | "failed";
+export type BlueprintSectionStatus =
+  | "pending" | "in_progress" | "validating" | "repairing" | "retrying"
+  | "completed" | "failed" | "blocked" | "skipped";
+export type BlueprintRunStatus = "running" | "completed" | "incomplete" | "failed" | "stopped";
+export type BlueprintSkipKind = "not_applicable" | "not_required" | "already_satisfied" | "deferred";
+export interface BlueprintTask {
+  id: string; kind: "generate" | "retry" | "repair" | "validate"; title: string;
+  status: "pending" | "running" | "completed" | "failed" | "canceled";
+  attempt: number; execution_id?: string; depends_on?: string[]; error?: string;
+  started_at?: string; ended_at?: string;
+}
+export interface BlueprintExecution {
+  id: string; task_id: string; attempt: number;
+  trigger: "initial" | "continuation" | "repair" | "retry" | "busy_retry";
+  status: "running" | "succeeded" | "rejected" | "failed" | "canceled";
+  cause?: string; error?: string; failure_kind?: string;
+  started_at: string; ended_at?: string; duration_ms?: number;
+}
 export interface BlueprintSection {
   id: string; name: string; kind?: string;
   status: BlueprintSectionStatus;
-  activity?: string; error?: string;
+  depends_on?: string[]; activity?: string;
+  skip_kind?: BlueprintSkipKind; reason?: string;
+  error?: string; failure_kind?: string; attempt?: number;
+  validation?: "running" | "passed" | "failed"; validation_issues?: string[];
   started_at?: string; ended_at?: string;
+  tasks?: BlueprintTask[]; executions?: BlueprintExecution[];
 }
-export interface BlueprintActivity { seq: number; at: string; section_id?: string; text: string }
+export interface BlueprintSummary {
+  total: number; applicable: number; completed: number; active: number;
+  pending: number; blocked: number; failed: number; skipped: number; percent: number;
+  tasks_total: number; tasks_completed: number; tasks_active: number; tasks_failed: number;
+  executions: number; retries: number;
+}
+export interface BlueprintETA { remaining_ms: number; samples: number; unknown_sections?: number }
+export interface BlueprintPlanChange { version: number; from: number; to: number; reason: string; at: string }
 export interface BlueprintEvent {
-  seq: number; taskId: string; event: string;
-  sectionId?: string; sectionName?: string; activity?: string;
-  status?: string; error?: string;
-  completedSections: number; totalSections: number; timestamp: string;
+  event_id: string; run_id: string;
+  section_id?: string; section_name?: string; task_id?: string; execution_id?: string;
+  sequence_number: number; timestamp: string; activity_type: string;
+  status?: string; attempt_number?: number; message?: string; detail?: string;
 }
 export interface BlueprintProgress {
-  task_id: string; status: BlueprintTaskStatus; activity?: string;
-  started_at: string; ended_at?: string; seq: number; last_event?: string; error?: string;
-  sections: BlueprintSection[]; activities?: BlueprintActivity[]; events?: BlueprintEvent[];
+  run_id: string; status: BlueprintRunStatus; activity?: string;
+  started_at: string; ended_at?: string; seq: number; error?: string;
+  parallel?: number; plan_version: number; plan_changes?: BlueprintPlanChange[];
+  summary: BlueprintSummary; eta?: BlueprintETA; sections: BlueprintSection[];
 }
+// One push of the run: authoritative state plus the timeline after the cursor.
+export interface ProgressFrame { progress: BlueprintProgress | null; events: BlueprintEvent[] | null }
 
 export interface RecentProject { dir: string; name: string }
 

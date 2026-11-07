@@ -7,7 +7,7 @@ import {
   isDesignDoc, SCOPE_DOCS, scopeIssuesOf, usedBy,
 } from "../blueprint";
 import { DeleteDialog } from "../components/DeleteDialog";
-import { BlueprintProgress, buildingInitialBlueprint } from "../components/BlueprintProgress";
+import { BlueprintProgress, buildingInitialBlueprint, runBanner } from "../components/BlueprintProgress";
 import { Elapsed } from "../components/Elapsed";
 import { Markdown } from "../components/Markdown";
 import { PromptBar } from "../components/PromptBar";
@@ -36,7 +36,7 @@ export function BlueprintPage() {
       <div className="dw-empty"><BlueprintProgress project={project} /></div>
     );
   }
-  const doneRun = project.blueprint_progress?.status === "completed";
+  const runNote = runBanner(project.blueprint_progress);
   if (!project.discovery) {
     const toFeatures = project.stage === "DISCOVERY";
     return (
@@ -121,10 +121,8 @@ export function BlueprintPage() {
       </nav>
 
       <main className="ws-main">
-        {doneRun && project.blueprint_progress && (
-          <div className="bp-done-banner" role="status">
-            Blueprint selesai · {project.blueprint_progress.sections.filter((s) => s.status === "completed").length}/{project.blueprint_progress.sections.filter((s) => s.status !== "skipped").length} bagian
-          </div>
+        {runNote && (
+          <div className={`bp-done-banner ${project.blueprint_progress?.status}`} role="status">{runNote}</div>
         )}
         <BatchBar project={project} view={view} locked={locked} />
         <DecisionSyncNotice project={project} locked={locked} />

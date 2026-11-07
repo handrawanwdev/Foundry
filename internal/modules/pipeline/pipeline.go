@@ -66,6 +66,10 @@ type Service struct {
 	// overloaded; its length bounds the attempts.
 	RetryWait []time.Duration
 
+	// AreaParallel bounds the blueprint areas an agent writes at once.
+	// 0 uses the default, 1 runs them one after another.
+	AreaParallel int
+
 	// ctx ends with Shutdown; every job this service runs derives from it.
 	ctx  context.Context
 	stop context.CancelFunc
@@ -95,6 +99,10 @@ func (s *Service) Snapshot() (*core.Project, error) {
 	}
 	if p.Stack != nil && p.Stack.Plan != nil {
 		techplan.Refresh(p, p.Stack.Plan)
+	}
+	withETA(p)
+	if p.BlueprintProgress != nil {
+		p.BlueprintProgress.Events = nil // the timeline has its own endpoint and stream
 	}
 	return p, nil
 }
@@ -133,8 +141,9 @@ func (s *Service) RecoverStale() error {
 	_, err := s.Store.Update(func(p *core.Project) error {
 		if p.Job != nil && p.Job.Status == core.JobRunning {
 			p.Job.Status, p.Job.Error = core.JobFailed, "Proses terhenti sebelum selesai. Jalankan ulang."
-			trackFail(p, p.Job.Kind, errors.New(p.Job.Error))
+			trackFail(p, p.Job.Kind, fmt.Errorf("%w: %s", context.Canceled, p.Job.Error))
 		}
+		recoverRun(p)
 		return nil
 	})
 	return err
@@ -389,6 +398,11 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 // answers the same prompt once it has room, so the job waits instead of
 // failing. Any other error returns at once.
 func (s *Service) runAgent(runner *agent.Runner, kind, dir, prompt string) (string, error) {
+	return s.runAgentFor(runner, kind, "", dir, prompt)
+}
+
+// runAgentFor is runAgent for a named section; "" means the job's section.
+func (s *Service) runAgentFor(runner *agent.Runner, kind, section, dir, prompt string) (string, error) {
 	for attempt := 0; ; attempt++ {
 		t0 := time.Now()
 		out, err := runner.Run(s.context(), dir, prompt)
@@ -401,9 +415,10 @@ func (s *Service) runAgent(runner *agent.Runner, kind, dir, prompt string) (stri
 			p.Log("system", fmt.Sprintf("%s: server AI sibuk, coba lagi dalam %s (%d/%d)", kind, wait, attempt+1, len(s.RetryWait)))
 			return nil
 		})
-		s.markBusyWait(kind)
+		s.markBusyWait(kind, section, wait, attempt+1, len(s.RetryWait))
 		select {
 		case <-time.After(wait):
+			s.markBusyRerun(kind, section)
 		case <-s.context().Done():
 			return out, err
 		}
@@ -500,12 +515,13 @@ func (s *Service) failJobIf(kind string, err error, expect func(*core.Project) e
 
 // applyAI lands an AI answer in the project and chains the next step.
 func (s *Service) applyAI(kind, raw, source string) error {
-	s.markValidating(kind)
+	s.markValidating(kind, "")
 	var next string
 	_, err := s.Store.Update(func(p *core.Project) error {
 		if p.Job == nil || p.Job.Kind != kind || p.Job.Status == core.JobDone {
 			return fmt.Errorf("%w: tidak ada job %s yang aktif", ErrWrongStage, kind)
 		}
+		own := sectionForJob(p, kind)
 		switch kind {
 		case work.KindFeatureMap:
 			if err := work.ApplyFeatureMap(p, raw); err != nil {
@@ -581,10 +597,17 @@ func (s *Service) applyAI(kind, raw, source string) error {
 				next = work.KindPlan
 			}
 		case work.KindArtifacts:
+			area := ""
+			if p.ArtifactRequest != nil {
+				area = p.ArtifactRequest.Area
+			}
 			if err := work.ApplyArtifacts(p, raw); err != nil {
 				return err
 			}
 			stampRefs(p)
+			if err := checkAreaAnswered(p, area); err != nil {
+				return err
+			}
 			if w := p.Workflow; w != nil && w.Request != nil && w.Request.Cascade {
 				next = work.KindWorkflow // the cleanup of a deleted document continues with its commands
 			}
@@ -608,7 +631,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 		p.Job = &core.Job{Kind: kind, Status: core.JobDone, Message: doneMsg + " selesai", Started: started, Steps: finishJobSteps(p.Job, doneAt)}
 		p.Log(source, doneMsg+" selesai")
 		clearAIRaw(p.Dir, kind)
-		syncCompleted(p)
+		syncCompleted(p, own)
 		return nil
 	})
 	if kind == work.KindStack && err != nil {
@@ -673,7 +696,7 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			retry = p.Structure.PlanRequest.Rejected == ""
 			p.Structure.PlanRequest.Rejected = err.Error()
 			p.Log("system", err.Error())
-			trackRetry(p, kind)
+			trackRejection(p, kind, err)
 			return nil
 		})
 		return retry
@@ -687,7 +710,7 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			retry = p.Structure.RepoRequest.Rejected == ""
 			p.Structure.RepoRequest.Rejected = err.Error()
 			p.Log("system", err.Error())
-			trackRetry(p, kind)
+			trackRejection(p, kind, err)
 			return nil
 		})
 		return retry
@@ -701,7 +724,7 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			retry = p.Stack.PlanRequest.Rejected == ""
 			p.Stack.PlanRequest.Rejected = err.Error()
 			p.Log("system", err.Error())
-			trackRetry(p, kind)
+			trackRejection(p, kind, err)
 			return nil
 		})
 		return retry
@@ -711,7 +734,7 @@ func (s *Service) noteRejection(kind string, err error) bool {
 		s.Store.Update(func(p *core.Project) error {
 			retry = stampPlanRejection(p, err.Error())
 			p.Log("system", err.Error())
-			trackRetry(p, kind)
+			trackRejection(p, kind, err)
 			return nil
 		})
 		return retry
@@ -733,6 +756,10 @@ func (s *Service) noteRejection(kind string, err error) bool {
 		return retry
 	}
 	if kind != work.KindWorkflow && kind != work.KindArtifacts && kind != work.KindDesign {
+		s.Store.Update(func(p *core.Project) error { // no request to retry on, but the refusal is real
+			trackRejection(p, kind, err)
+			return nil
+		})
 		return false
 	}
 	retry := false
@@ -758,7 +785,7 @@ func (s *Service) noteRejection(kind string, err error) bool {
 		retry = (*r).Rejected == ""
 		(*r).Rejected = err.Error()
 		p.Log("system", err.Error())
-		trackRetry(p, kind)
+		trackRejection(p, kind, err)
 		return nil
 	})
 	return retry
@@ -812,6 +839,7 @@ func (s *Service) DismissJob() error {
 		p.BlueprintQueue = nil
 		p.BlueprintBatch = 0
 		p.Job = nil
+		stopRun(p)
 		p.Log("ui", "Pesan gagal ditutup")
 		return nil
 	})

@@ -443,3 +443,26 @@ func TestPeekName(t *testing.T) {
 		t.Fatalf("saved name: %q", got)
 	}
 }
+
+func TestLoadDropsProgressFromBeforeRunIDs(t *testing.T) {
+	st, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Init("test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Update(func(p *Project) error {
+		p.BlueprintProgress = &BlueprintProgress{Status: BPRunRunning}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := st.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.BlueprintProgress != nil {
+		t.Fatalf("kept %+v", p.BlueprintProgress)
+	}
+}

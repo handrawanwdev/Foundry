@@ -746,27 +746,54 @@ button.link:hover { text-decoration: underline; background: none; }
 .bp-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .25s ease; }
 .bp-stages { list-style: none; margin: 1.25rem 0 0; padding: 0; display: grid; gap: .5rem; }
 .bp-stage { display: flex; gap: .6rem; align-items: baseline; opacity: .55; transition: opacity .2s ease, background .2s ease; border-radius: 8px; padding: .15rem .2rem; }
-.bp-stage.running, .bp-stage.done, .bp-stage.retrying, .bp-stage.failed { opacity: 1; }
-.bp-stage.done { animation: bp-done .28s ease; }
-.bp-stage.done .bp-mark { color: var(--ok); }
-.bp-stage.failed .bp-mark { color: var(--bad); }
-.bp-stage.retrying .bp-mark { color: var(--warn); }
-.bp-stage.running { background: var(--accent-soft); }
+.bp-stage.in_progress, .bp-stage.validating, .bp-stage.completed, .bp-stage.retrying, .bp-stage.repairing, .bp-stage.failed { opacity: 1; }
+.bp-stage.completed { animation: bp-done .28s ease; }
+.bp-stage.completed .bp-stage.failed .bp-mark, .bp-stage.blocked .bp-mark { color: var(--bad); }
+.bp-stage.retrying .bp-mark, .bp-stage.repairing .bp-mark { color: var(--warn); }
+.bp-stage.in_progress, .bp-stage.validating { background: var(--accent-soft); }
+.bp-mark { color: var(--ok); }
 .bp-mark { width: 1.1rem; text-align: center; flex-shrink: 0; }
-.bp-text { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.bp-text { display: flex; flex-direction: column; gap: .1rem; min-width: 0; flex: 1; }
+.bp-text summary { cursor: pointer; }
+.bp-meta { margin: .35rem 0 0; }
+.bp-meta .elapsed { color: inherit; font-weight: inherit; }
+.bp-meta .elapsed::before { content: none; }
+.bp-tag { display: inline-block; margin-left: .4rem; padding: 0 .4rem; border-radius: 99px; background: var(--surface-2); color: var(--muted); font-size: .8rem; }
+.bp-tag.passed { background: var(--ok-soft); color: var(--ok); }
+.bp-tag.failed { background: var(--bad-soft); color: var(--bad); }
+.bp-tag.running { background: var(--accent-soft); color: var(--accent); }
+.bp-detail { margin: .35rem 0 .5rem; padding-left: .75rem; border-left: 2px solid var(--line); display: grid; gap: .3rem; }
+.bp-detail h4 { margin: .25rem 0 0; font-size: .8rem; color: var(--muted); font-weight: 600; }
+.bp-detail ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .2rem; }
+.bp-issues li { color: var(--bad); overflow-wrap: anywhere; }
+.bp-tasks li { display: flex; gap: .5rem; align-items: baseline; }
+.bp-task-state { flex: 0 0 5.5rem; color: var(--muted); }
+.bp-tasks li.completed .bp-task-state { color: var(--ok); }
+.bp-tasks li.failed .bp-task-state { color: var(--bad); }
+.bp-tasks li.running .bp-task-state { color: var(--accent); }
+.bp-execs li { display: flex; flex-direction: column; gap: .05rem; overflow-wrap: anywhere; }
+.bp-execs code { color: var(--muted); font-size: .75rem; }
 .bp-sub { display: block; margin-left: .1rem; }
 .bp-err { color: var(--bad); }
 .bp-log { margin-top: 1.25rem; }
 .bp-log summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
-.bp-log ol { margin: .5rem 0 0; padding: 0 0 0 1.1rem; display: grid; gap: .3rem; color: var(--muted); font-size: .9rem; max-height: 12rem; overflow: auto; }
+.bp-log ol { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .3rem; color: var(--muted); font-size: .9rem; max-height: 16rem; overflow: auto; }
+.bp-log ol li { display: flex; gap: .6rem; align-items: baseline; }
+.bp-log time { flex-shrink: 0; font-variant-numeric: tabular-nums; font-size: .8rem; }
+.bp-log li.validation-failed, .bp-log li.section-failed, .bp-log li.run-failed { color: var(--bad); }
+.bp-log li.section-repairing, .bp-log li.section-retrying, .bp-log li.section-waiting { color: var(--warn); }
+.bp-filter { display: flex; gap: .35rem; align-items: center; margin-top: .4rem; color: var(--muted); }
+.bp-skips { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .35rem; }
+.bp-actions { display: flex; gap: .5rem; }
 .bp-reconnect { color: var(--warn); margin: 0 0 .75rem; }
 .bp-fail { margin-top: 1.25rem; display: grid; gap: .75rem; justify-items: start; }
 .bp-done-banner { margin: 0 0 1rem; padding: .65rem .9rem; border-radius: 10px; background: var(--ok-soft); color: var(--heading); }
+.bp-done-banner.incomplete, .bp-done-banner.stopped { background: var(--warn-soft); }
 @keyframes bp-done {
   from { background: var(--ok-soft); }
   to { background: transparent; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .bp-stage.done { animation: none; }
+  .bp-stage.completed { animation: none; }
   .bp-bar > span { transition: none; }
 }

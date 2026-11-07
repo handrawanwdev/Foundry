@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api } from "../api";
-import { foldProgressEvent } from "../bp-event";
-import type { BlueprintEvent, Project, RecentProject } from "../types";
+import { mergeTimeline, timelineOf } from "../bp-event";
+import type { BlueprintEvent, ProgressFrame, Project, RecentProject } from "../types";
 
 interface ProjectStore {
   loaded: boolean;
@@ -10,8 +10,9 @@ interface ProjectStore {
   error: string | null;
   pending: string | null; // action in flight
   stream: "open" | "reconnecting" | "offline";
+  timeline: BlueprintEvent[]; // the run's activity, in sequence order
   load: () => Promise<void>;
-  applyProgress: (ev: BlueprintEvent) => void;
+  applyProgress: (frame: ProgressFrame) => void;
   subscribe: () => () => void;
   run: (name: string, fn: () => Promise<unknown>) => Promise<boolean>;
   open: (dir: string, create?: boolean, name?: string) => Promise<boolean>;
@@ -35,6 +36,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
   error: null,
   pending: null,
   stream: "reconnecting",
+  timeline: [],
   load: () => {
     if (loading) {
       stale = true;
@@ -47,11 +49,13 @@ export const useProject = create<ProjectStore>((set, get) => ({
           const { current, recent } = await api.projects();
           const project = current ? await api.project() : null;
           const prev = get().project;
-          if (project && prev?.blueprint_progress && project.blueprint_progress
+          if (project && prev?.dir === project.dir && prev.blueprint_progress && project.blueprint_progress
             && project.blueprint_progress.seq < prev.blueprint_progress.seq) {
-            project.blueprint_progress = prev.blueprint_progress;
+            project.blueprint_progress = prev.blueprint_progress; // a slower response than the stream
           }
-          set({ project, recent: recent ?? [], loaded: true });
+          // Only another run's events go: the stream can land before this load.
+          const timeline = timelineOf(get().timeline, project?.blueprint_progress?.run_id);
+          set({ project, recent: recent ?? [], loaded: true, timeline });
         } catch (e) {
           set({ error: (e as Error).message, loaded: true });
         }
@@ -60,12 +64,17 @@ export const useProject = create<ProjectStore>((set, get) => ({
     })();
     return loading;
   },
-  applyProgress: (ev) => {
+  // The frame is the backend's state: replace, never derive. seq only grows,
+  // so a late or replayed frame cannot overwrite a newer status.
+  applyProgress: ({ progress, events }) => {
+    if (!progress) return;
+    const timeline = mergeTimeline(get().timeline, progress.run_id, events ?? []);
     const project = get().project;
-    if (!project || ev.seq <= (project.blueprint_progress?.seq ?? 0)) return;
-    set({
-      project: { ...project, blueprint_progress: foldProgressEvent(project.blueprint_progress, ev) },
-    });
+    if (!project || progress.seq < (project.blueprint_progress?.seq ?? 0)) {
+      set({ timeline });
+      return;
+    }
+    set({ timeline, project: { ...project, blueprint_progress: progress } });
   },
   subscribe: () => {
     // The stream can stall without an error (sleeping laptop, throttled
@@ -78,13 +87,13 @@ export const useProject = create<ProjectStore>((set, get) => ({
       es?.close();
       lastSeen = Date.now();
       set({ stream: "reconnecting" });
-      const after = get().project?.blueprint_progress?.seq ?? 0;
+      const after = get().timeline.at(-1)?.sequence_number ?? 0;
       es = new EventSource(`/api/v1/events?after=${after}`);
       es.addEventListener("change", () => { lastSeen = Date.now(); void get().load(); });
       es.addEventListener("progress", (e: MessageEvent) => {
         lastSeen = Date.now();
         try {
-          get().applyProgress(JSON.parse(e.data) as BlueprintEvent);
+          get().applyProgress(JSON.parse(e.data) as ProgressFrame);
         } catch { /* ignore a truncated frame */ }
       });
       es.addEventListener("ping", () => { lastSeen = Date.now(); });

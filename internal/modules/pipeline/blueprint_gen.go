@@ -122,6 +122,11 @@ func (s *Service) startBlueprintQueue(steps []string, total int) error {
 				return s.failBlueprintAdopt(err)
 			}
 		}
+		if steps[0] == work.KindArtifacts {
+			if started, err := s.startAreaWave(steps, total); started || err != nil {
+				return err
+			}
+		}
 		kind := steps[0]
 		err := s.startAIIf(kind, func(p *core.Project) error {
 			if err := blueprintEditable(p); err != nil {
@@ -130,16 +135,7 @@ func (s *Service) startBlueprintQueue(steps []string, total int) error {
 			if err := prepareBlueprintStep(p, kind); err != nil {
 				return err
 			}
-			p.BlueprintQueue = steps
-			if total > 0 && !continuesDiscovery(p) {
-				now := time.Now().UTC()
-				p.BlueprintStarted = &now
-			}
-			if total > 0 {
-				p.BlueprintBatch = total
-			} else if p.BlueprintBatch == 0 {
-				p.BlueprintBatch = len(steps)
-			}
+			markBlueprintQueue(p, steps, total)
 			p.Log("ui", "Susun rancangan blueprint: "+kind)
 			return nil
 		})
@@ -154,6 +150,19 @@ func (s *Service) startBlueprintQueue(steps []string, total int) error {
 	return s.clearBlueprintBatch()
 }
 
+func markBlueprintQueue(p *core.Project, steps []string, total int) {
+	p.BlueprintQueue = steps
+	if total > 0 && !continuesDiscovery(p) {
+		now := time.Now().UTC()
+		p.BlueprintStarted = &now
+	}
+	if total > 0 {
+		p.BlueprintBatch = total
+	} else if p.BlueprintBatch == 0 {
+		p.BlueprintBatch = len(steps)
+	}
+}
+
 func prepareBlueprintStep(p *core.Project, kind string) error {
 	switch kind {
 	case work.KindArtifacts:
@@ -161,7 +170,7 @@ func prepareBlueprintStep(p *core.Project, kind string) error {
 		if len(areas) == 0 {
 			return ErrNothingToDo
 		}
-		p.ArtifactRequest = &core.ChangeRequest{Text: texts[0], Area: areas[0]}
+		p.ArtifactRequest = &core.ChangeRequest{Text: texts[0], Area: areas[0], Rejected: rejectionOf(p, areas[0])}
 		return nil
 	case work.KindDesign:
 		if err := designEditable(p); err != nil {
@@ -271,8 +280,14 @@ func refreshPlanningScan(p *core.Project) {
 // chain) leaves the queue alone.
 func (s *Service) advanceBlueprint(kind string) error {
 	p, err := s.Store.Load()
-	if err != nil || p.BlueprintBatch == 0 {
+	if err != nil {
 		return err
+	}
+	if p.BlueprintBatch == 0 {
+		if liveRun(p) == nil {
+			return nil
+		}
+		return s.clearBlueprintBatch() // a run's single job ended without a queue
 	}
 	q := p.BlueprintQueue
 	if len(q) == 0 || q[0] != kind {
@@ -289,7 +304,7 @@ func (s *Service) clearBlueprintBatch() error {
 	_, err := s.Store.Update(func(p *core.Project) error {
 		p.BlueprintQueue = nil
 		p.BlueprintBatch = 0
-		finishTaskIfDone(p)
+		finishRunIfDone(p)
 		return nil
 	})
 	return err

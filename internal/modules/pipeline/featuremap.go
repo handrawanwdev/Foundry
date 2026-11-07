@@ -93,6 +93,7 @@ func (s *Service) StartBlueprint() error {
 		}
 		now := time.Now().UTC()
 		p.BlueprintStarted = &now
+		startRun(p, now)
 		return nil
 	})
 }

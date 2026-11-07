@@ -8,9 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/agent"
@@ -189,6 +192,10 @@ func fakeAgent() {
 			fmt.Println("maaf, saya tidak bisa")
 			return
 		}
+		if strings.HasPrefix(mode, "area") {
+			fmt.Println(openAreasDiscovery())
+			return
+		}
 		if mode == "embedded" {
 			fmt.Println(embeddedDiscoveryJSON)
 			return
@@ -237,6 +244,17 @@ func fakeAgent() {
 		fmt.Println(fakeStructurePlan(prompt, mode == "structure_invalid_once" && !refused))
 	case strings.Contains(prompt, "blueprint editor"):
 		countRun("blueprint")
+		if ms, _ := strconv.Atoi(os.Getenv("FAKE_AREA_MS")); ms > 0 {
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+		}
+		if mode == "area_data_fail" && strings.Contains(prompt, "tulis area data") {
+			fmt.Fprintln(os.Stderr, "agent mati")
+			os.Exit(1)
+		}
+		if mode == "area_empty_once" && strings.Contains(prompt, "Lengkapi blueprint: tulis area") && !strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED") {
+			fmt.Println(`{"artifacts": [{"id": "catatan-lain", "title": "Catatan", "category": "other", "body": "## Catatan\n\nTidak terkait."}]}`)
+			return
+		}
 		if strings.Contains(prompt, "Sesuaikan blueprint dengan keputusan") {
 			if strings.Contains(prompt, "DECISIONS CHANGED") && strings.Contains(prompt, "→ Keputusan: WhatsApp lewat penyedia resmi") {
 				countRun("blueprint-sync")
@@ -254,6 +272,10 @@ func fakeAgent() {
 		}
 		if strings.Contains(prompt, "Lengkapi blueprint: tulis area data") {
 			fmt.Println(`{"artifacts": [{"id": "data-lifecycle", "title": "Siklus Data", "category": "data", "body": "## Retensi\n\nAsumsi: 5 tahun."}]}`)
+			return
+		}
+		if m := requestedArea.FindStringSubmatch(prompt); m != nil {
+			fmt.Printf(`{"artifacts": [{"id": "isi-%s", "title": "Isi %s", "category": "quality", "area": %q, "body": "## Isi\n\nAsumsi: 5 tahun."}]}`+"\n", m[1], m[1], m[1])
 			return
 		}
 		fmt.Println(artifactsJSON)
@@ -564,6 +586,25 @@ const embeddedDiscoveryJSON = `{"name": "Sensor Suhu",
                {"id": "integrations", "title": "Integrasi MQTT", "category": "platform", "body": "## Broker\n\nPerlu verifikasi: alamat broker."}]}`
 
 // countRun appends label to $FAKE_RUNS, so a test can count agent runs.
+// requestedArea is the area a "complete the blueprint" request asks for.
+var requestedArea = regexp.MustCompile(`USER REQUEST:\nLengkapi blueprint: tulis area (\S+) \(`)
+
+// openAreasDiscovery leaves data, security and operations for their own jobs.
+func openAreasDiscovery() string {
+	s := discoveryJSON
+	for _, cut := range []string{
+		`{"id": "threat-model", "title": "Threat Model", "category": "quality", "body": "## Aset\n\n- Data pasien", "refs": ["requirements"]},`,
+		`{"id": "siklus-data", "title": "Siklus Data", "category": "data", "area": "data", "body": "## Retensi\n\n- Rekam janji 5 tahun"}`,
+		`{"area": "operations", "reason": "Prototipe lokal tanpa server produksi"}, `,
+	} {
+		if !strings.Contains(s, cut) {
+			panic("fixture changed: " + cut)
+		}
+		s = strings.Replace(s, cut, "", 1)
+	}
+	return s
+}
+
 func countRun(label string) {
 	path := os.Getenv("FAKE_RUNS")
 	if path == "" {
@@ -641,6 +682,20 @@ func designReady(t *testing.T, s *pipeline.Service) *core.Project {
 		t.Fatalf("design not ready: stage=%s ui=%v job=%+v", p.Stage, p.UI, p.Job)
 	}
 	return p
+}
+
+// designReadyKeepPlan drives the whole first blueprint run and keeps it.
+func designReadyKeepPlan(t *testing.T, s *pipeline.Service) *core.Project {
+	t.Helper()
+	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	if err := s.StartBlueprint(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	return load(t, s)
 }
 
 // clearLandedPlan drops the auto-chained unified plan so tests that

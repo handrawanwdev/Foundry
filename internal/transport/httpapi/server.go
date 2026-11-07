@@ -609,10 +609,6 @@ func (s *Server) Handler() http.Handler {
 		return svc.ReportProgress(in, "agent")
 	}))
 	api("GET /api/v1/project/blueprint-progress", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
-		p, err := svc.Snapshot()
-		if err != nil {
-			return nil, err
-		}
 		after := int64(0)
 		if v := r.URL.Query().Get("after"); v != "" {
 			n, err := strconv.ParseInt(v, 10, 64)
@@ -621,8 +617,11 @@ func (s *Server) Handler() http.Handler {
 			}
 			after = n
 		}
-		bp := p.BlueprintProgress
-		return map[string]any{"progress": bp, "events": bp.After(after)}, nil
+		bp, events, err := svc.BlueprintProgress(after)
+		if err != nil {
+			return nil, err
+		}
+		return progressFrame{Progress: bp, Events: events}, nil
 	}))
 	api("POST /api/v1/project/progress/reconcile", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {
@@ -988,16 +987,13 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			svc, mt, dir = v, v.Store.ModTime(), v.Store.Dir
 		}
 		if !mt.Equal(last) || dir != lastDir {
+			if dir != lastDir && lastDir != "\x00" {
+				lastSeq = 0 // another project: its seq has nothing to do with this cursor
+			}
 			last, lastDir = mt, dir
 			fmt.Fprintf(w, "event: change\ndata: %d\n\n", mt.UnixNano())
 			if svc != nil {
-				if p, err := svc.Store.Load(); err == nil {
-					evs := p.BlueprintProgress.After(lastSeq)
-					writeProgressSSE(w, evs)
-					if n := len(evs); n > 0 {
-						lastSeq = evs[n-1].Seq
-					}
-				}
+				lastSeq = writeProgressSSE(w, svc, lastSeq)
 			}
 			fl.Flush()
 		}
@@ -1012,14 +1008,26 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func writeProgressSSE(w http.ResponseWriter, events []core.BlueprintEvent) {
-	for _, ev := range events {
-		b, err := json.Marshal(ev)
-		if err != nil {
-			continue
-		}
-		fmt.Fprintf(w, "id: %d\nevent: progress\ndata: %s\n\n", ev.Seq, b)
+// progressFrame is one push of the run: the authoritative state plus the
+// timeline since the reader's cursor. The page replaces its state with it and
+// derives nothing, so a replayed or late frame cannot corrupt a status.
+type progressFrame struct {
+	Progress *core.BlueprintProgress `json:"progress"`
+	Events   []core.BlueprintEvent   `json:"events"`
+}
+
+// writeProgressSSE sends what is new after cursor and returns the new cursor.
+func writeProgressSSE(w http.ResponseWriter, svc *pipeline.Service, cursor int64) int64 {
+	bp, events, err := svc.BlueprintProgress(cursor)
+	if err != nil || bp == nil || bp.Seq <= cursor {
+		return cursor
 	}
+	b, err := json.Marshal(progressFrame{Progress: bp, Events: events})
+	if err != nil {
+		return cursor
+	}
+	fmt.Fprintf(w, "id: %d\nevent: progress\ndata: %s\n\n", bp.Seq, b)
+	return bp.Seq
 }
 
 // ---------- SPA ----------

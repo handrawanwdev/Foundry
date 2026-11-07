@@ -1,4 +1,4 @@
-import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintEvent, BlueprintProgress, BlueprintView, Browse, CommandEdit, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
+import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
 
 // details lists what an invalid request broke (field = where).
 export interface ErrorDetail { field?: string; message: string }
@@ -126,9 +126,6 @@ export const api = {
   reviewCommand: (id: string, needs: boolean, reason = "") =>
     call<Project>("POST", `/project/workflow/commands/${encodeURIComponent(id)}/review`, { needs_review: needs, reason }),
   progress: () => call<ProgressSnapshot>("GET", "/project/progress"),
-  blueprintProgress: (after = 0) =>
-    call<{ progress: BlueprintProgress | null; events: BlueprintEvent[] }>(
-      "GET", `/project/blueprint-progress${after ? `?after=${after}` : ""}`),
   reconcileProgress: (stale_after_sec = 0) => call<ProgressSnapshot>("POST", "/project/progress/reconcile", { stale_after_sec }),
 
   // Finalize approves blueprint + workflow and writes the export package.

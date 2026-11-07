@@ -292,6 +292,7 @@ func (s *Service) dropStructureRequest(cause error) error {
 			msg := fmt.Sprintf("Analisis struktur “%s” gagal: %v. Struktur tidak diubah; analisis sebelumnya (bila ada) tetap dipakai sampai kamu menganalisis ulang.", req, cause)
 			p.Job = &core.Job{Kind: work.KindStructure, Status: core.JobFailed, Message: "Analisis struktur", Error: msg, Started: time.Now().UTC()}
 			p.Log("system", msg)
+			trackFail(p, work.KindStructure, cause)
 			return nil
 		}
 		req := ""

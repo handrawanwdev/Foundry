@@ -57,5 +57,11 @@ func (s *Service) SubmitWork(kind, result string) error {
 	saveAIRaw(p.Dir, kind, result)
 	err = s.applyAI(kind, result, "mcp")
 	s.noteRejection(kind, err) // the host gets the error; next_work shows it too
+	if err != nil {
+		s.Store.Update(func(p *core.Project) error {
+			trackHostRepair(p, kind)
+			return nil
+		})
+	}
 	return err
 }

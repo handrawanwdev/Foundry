@@ -146,6 +146,7 @@ func (s *Service) dropTechRequest(cause error) error {
 		msg := fmt.Sprintf("%s gagal: %v. Rencana dan keputusan teknologi tidak diubah; tulis permintaan yang lebih spesifik atau coba lagi.", what, cause)
 		p.Job = &core.Job{Kind: work.KindTech, Status: core.JobFailed, Message: what, Error: msg, Started: time.Now().UTC()}
 		p.Log("system", msg)
+		trackFail(p, work.KindTech, cause)
 		return nil
 	})
 	return err
