@@ -163,6 +163,7 @@ func (s *Service) dropPlanRequest(cause error) error {
 		msg := fmt.Sprintf("Perancangan Blueprint gagal: %v. Keputusan sebelumnya tidak diubah; tekan Coba lagi.", cause)
 		p.Job = &core.Job{Kind: work.KindPlan, Status: core.JobFailed, Message: "Merancang Blueprint", Error: msg, Started: time.Now().UTC()}
 		p.Log("system", msg)
+		trackFail(p, work.KindPlan, cause)
 		return nil
 	})
 	return err

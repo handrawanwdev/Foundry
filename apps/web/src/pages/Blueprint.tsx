@@ -36,6 +36,7 @@ export function BlueprintPage() {
       <div className="dw-empty"><BlueprintProgress project={project} /></div>
     );
   }
+  const doneRun = project.blueprint_progress?.status === "completed";
   if (!project.discovery) {
     const toFeatures = project.stage === "DISCOVERY";
     return (
@@ -120,6 +121,11 @@ export function BlueprintPage() {
       </nav>
 
       <main className="ws-main">
+        {doneRun && project.blueprint_progress && (
+          <div className="bp-done-banner" role="status">
+            Blueprint selesai · {project.blueprint_progress.sections.filter((s) => s.status === "completed").length}/{project.blueprint_progress.sections.filter((s) => s.status !== "skipped").length} bagian
+          </div>
+        )}
         <BatchBar project={project} view={view} locked={locked} />
         <DecisionSyncNotice project={project} locked={locked} />
         {id === "platform" ? <PlatformStructure project={project} />

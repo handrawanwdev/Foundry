@@ -133,6 +133,7 @@ func (s *Service) RecoverStale() error {
 	_, err := s.Store.Update(func(p *core.Project) error {
 		if p.Job != nil && p.Job.Status == core.JobRunning {
 			p.Job.Status, p.Job.Error = core.JobFailed, "Proses terhenti sebelum selesai. Jalankan ulang."
+			trackFail(p, p.Job.Kind, errors.New(p.Job.Error))
 		}
 		return nil
 	})
@@ -332,6 +333,7 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 			Kind: kind, Status: status, Message: planRoundLabel(p, kind, batchLabel(p, msg)), Started: now,
 			ETAMS: core.EstimateJobMS(p.JobHistory, kind),
 		}
+		trackJobStart(p, kind, isMCP)
 		return nil
 	})
 	if err != nil {
@@ -399,6 +401,7 @@ func (s *Service) runAgent(runner *agent.Runner, kind, dir, prompt string) (stri
 			p.Log("system", fmt.Sprintf("%s: server AI sibuk, coba lagi dalam %s (%d/%d)", kind, wait, attempt+1, len(s.RetryWait)))
 			return nil
 		})
+		s.markBusyWait(kind)
 		select {
 		case <-time.After(wait):
 		case <-s.context().Done():
@@ -490,12 +493,14 @@ func (s *Service) failJobIf(kind string, err error, expect func(*core.Project) e
 		}
 		p.Job = &core.Job{Kind: kind, Status: core.JobFailed, Message: jobMessage(kind), Error: err.Error(), Started: time.Now().UTC()}
 		p.Log("system", fmt.Sprintf("%s gagal: %v", kind, err))
+		trackFail(p, kind, err)
 		return nil
 	})
 }
 
 // applyAI lands an AI answer in the project and chains the next step.
 func (s *Service) applyAI(kind, raw, source string) error {
+	s.markValidating(kind)
 	var next string
 	_, err := s.Store.Update(func(p *core.Project) error {
 		if p.Job == nil || p.Job.Kind != kind || p.Job.Status == core.JobDone {
@@ -603,6 +608,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 		p.Job = &core.Job{Kind: kind, Status: core.JobDone, Message: doneMsg + " selesai", Started: started, Steps: finishJobSteps(p.Job, doneAt)}
 		p.Log(source, doneMsg+" selesai")
 		clearAIRaw(p.Dir, kind)
+		syncCompleted(p)
 		return nil
 	})
 	if kind == work.KindStack && err != nil {
@@ -667,6 +673,7 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			retry = p.Structure.PlanRequest.Rejected == ""
 			p.Structure.PlanRequest.Rejected = err.Error()
 			p.Log("system", err.Error())
+			trackRetry(p, kind)
 			return nil
 		})
 		return retry
@@ -680,6 +687,7 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			retry = p.Structure.RepoRequest.Rejected == ""
 			p.Structure.RepoRequest.Rejected = err.Error()
 			p.Log("system", err.Error())
+			trackRetry(p, kind)
 			return nil
 		})
 		return retry
@@ -693,6 +701,7 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			retry = p.Stack.PlanRequest.Rejected == ""
 			p.Stack.PlanRequest.Rejected = err.Error()
 			p.Log("system", err.Error())
+			trackRetry(p, kind)
 			return nil
 		})
 		return retry
@@ -702,6 +711,7 @@ func (s *Service) noteRejection(kind string, err error) bool {
 		s.Store.Update(func(p *core.Project) error {
 			retry = stampPlanRejection(p, err.Error())
 			p.Log("system", err.Error())
+			trackRetry(p, kind)
 			return nil
 		})
 		return retry
@@ -748,6 +758,7 @@ func (s *Service) noteRejection(kind string, err error) bool {
 		retry = (*r).Rejected == ""
 		(*r).Rejected = err.Error()
 		p.Log("system", err.Error())
+		trackRetry(p, kind)
 		return nil
 	})
 	return retry

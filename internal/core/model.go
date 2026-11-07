@@ -87,6 +87,9 @@ type Project struct {
 	// BlueprintStarted is when the first blueprint build began (discovery),
 	// so the UI can show one clock for the whole run, not one per AI job.
 	BlueprintStarted *time.Time `json:"blueprint_started,omitempty"`
+	// BlueprintProgress is the live section tracker of the current
+	// generation run. Written at real pipeline transitions.
+	BlueprintProgress *BlueprintProgress `json:"blueprint_progress,omitempty"`
 	// JobHistory is the last completed AI job durations, newest last.
 	// ETA is the median of matching kinds when at least two samples exist.
 	JobHistory []JobTiming `json:"job_history,omitempty"`

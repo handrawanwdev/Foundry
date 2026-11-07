@@ -739,8 +739,34 @@ button.link:hover { text-decoration: underline; background: none; }
 .tp-badges { display: flex; flex-wrap: wrap; gap: .25rem; }
 .tp-edit { margin-top: 1rem; padding-top: .8rem; border-top: 1px dashed var(--line); }
 
+.bp-progress { max-width: 36rem; text-align: left; }
+.bp-head h1 { display: flex; align-items: center; gap: .55rem; }
+.bp-activity-now { margin: 0 0 .35rem; color: var(--heading); }
+.bp-bar { height: 4px; background: var(--dot); border-radius: 99px; overflow: hidden; margin: .65rem 0 0; }
+.bp-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .25s ease; }
 .bp-stages { list-style: none; margin: 1.25rem 0 0; padding: 0; display: grid; gap: .5rem; }
-.bp-stage { display: flex; gap: .6rem; align-items: baseline; opacity: .55; }
-.bp-stage.running, .bp-stage.done { opacity: 1; }
-.bp-stage.done .bp-mark { color: var(--accent); }
+.bp-stage { display: flex; gap: .6rem; align-items: baseline; opacity: .55; transition: opacity .2s ease, background .2s ease; border-radius: 8px; padding: .15rem .2rem; }
+.bp-stage.running, .bp-stage.done, .bp-stage.retrying, .bp-stage.failed { opacity: 1; }
+.bp-stage.done { animation: bp-done .28s ease; }
+.bp-stage.done .bp-mark { color: var(--ok); }
+.bp-stage.failed .bp-mark { color: var(--bad); }
+.bp-stage.retrying .bp-mark { color: var(--warn); }
+.bp-stage.running { background: var(--accent-soft); }
 .bp-mark { width: 1.1rem; text-align: center; flex-shrink: 0; }
+.bp-text { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.bp-sub { display: block; margin-left: .1rem; }
+.bp-err { color: var(--bad); }
+.bp-log { margin-top: 1.25rem; }
+.bp-log summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+.bp-log ol { margin: .5rem 0 0; padding: 0 0 0 1.1rem; display: grid; gap: .3rem; color: var(--muted); font-size: .9rem; max-height: 12rem; overflow: auto; }
+.bp-reconnect { color: var(--warn); margin: 0 0 .75rem; }
+.bp-fail { margin-top: 1.25rem; display: grid; gap: .75rem; justify-items: start; }
+.bp-done-banner { margin: 0 0 1rem; padding: .65rem .9rem; border-radius: 10px; background: var(--ok-soft); color: var(--heading); }
+@keyframes bp-done {
+  from { background: var(--ok-soft); }
+  to { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bp-stage.done { animation: none; }
+  .bp-bar > span { transition: none; }
+}

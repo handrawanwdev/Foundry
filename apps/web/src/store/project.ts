@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "../api";
-import type { Project, RecentProject } from "../types";
+import { foldProgressEvent } from "../bp-event";
+import type { BlueprintEvent, Project, RecentProject } from "../types";
 
 interface ProjectStore {
   loaded: boolean;
@@ -8,7 +9,9 @@ interface ProjectStore {
   recent: RecentProject[];
   error: string | null;
   pending: string | null; // action in flight
+  stream: "open" | "reconnecting" | "offline";
   load: () => Promise<void>;
+  applyProgress: (ev: BlueprintEvent) => void;
   subscribe: () => () => void;
   run: (name: string, fn: () => Promise<unknown>) => Promise<boolean>;
   open: (dir: string, create?: boolean, name?: string) => Promise<boolean>;
@@ -31,6 +34,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
   recent: [],
   error: null,
   pending: null,
+  stream: "reconnecting",
   load: () => {
     if (loading) {
       stale = true;
@@ -42,6 +46,11 @@ export const useProject = create<ProjectStore>((set, get) => ({
         try {
           const { current, recent } = await api.projects();
           const project = current ? await api.project() : null;
+          const prev = get().project;
+          if (project && prev?.blueprint_progress && project.blueprint_progress
+            && project.blueprint_progress.seq < prev.blueprint_progress.seq) {
+            project.blueprint_progress = prev.blueprint_progress;
+          }
           set({ project, recent: recent ?? [], loaded: true });
         } catch (e) {
           set({ error: (e as Error).message, loaded: true });
@@ -50,6 +59,13 @@ export const useProject = create<ProjectStore>((set, get) => ({
       loading = null;
     })();
     return loading;
+  },
+  applyProgress: (ev) => {
+    const project = get().project;
+    if (!project || ev.seq <= (project.blueprint_progress?.seq ?? 0)) return;
+    set({
+      project: { ...project, blueprint_progress: foldProgressEvent(project.blueprint_progress, ev) },
+    });
   },
   subscribe: () => {
     // The stream can stall without an error (sleeping laptop, throttled
@@ -61,10 +77,19 @@ export const useProject = create<ProjectStore>((set, get) => ({
     const open = () => {
       es?.close();
       lastSeen = Date.now();
-      es = new EventSource("/api/v1/events");
+      set({ stream: "reconnecting" });
+      const after = get().project?.blueprint_progress?.seq ?? 0;
+      es = new EventSource(`/api/v1/events?after=${after}`);
       es.addEventListener("change", () => { lastSeen = Date.now(); void get().load(); });
+      es.addEventListener("progress", (e: MessageEvent) => {
+        lastSeen = Date.now();
+        try {
+          get().applyProgress(JSON.parse(e.data) as BlueprintEvent);
+        } catch { /* ignore a truncated frame */ }
+      });
       es.addEventListener("ping", () => { lastSeen = Date.now(); });
-      es.addEventListener("open", () => void get().load());
+      es.addEventListener("open", () => { set({ stream: "open" }); void get().load(); });
+      es.onerror = () => set({ stream: "reconnecting" });
     };
     const refresh = () => {
       if (document.visibilityState === "hidden") return;

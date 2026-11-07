@@ -289,6 +289,7 @@ func (s *Service) clearBlueprintBatch() error {
 	_, err := s.Store.Update(func(p *core.Project) error {
 		p.BlueprintQueue = nil
 		p.BlueprintBatch = 0
+		finishTaskIfDone(p)
 		return nil
 	})
 	return err
@@ -326,6 +327,7 @@ func (s *Service) failBlueprintAdopt(cause error) error {
 		msg := fmt.Sprintf("Rekomendasi struktur belum bisa diterapkan: %v. Perbaiki di Struktur repository, lalu tekan Susun rancangan lagi.", cause)
 		p.Job = &core.Job{Kind: work.KindStructure, Status: core.JobFailed, Message: "Menerapkan rekomendasi struktur", Error: msg, Started: time.Now().UTC()}
 		p.Log("system", msg)
+		trackFail(p, work.KindStructure, cause)
 		return nil
 	})
 	if err != nil {

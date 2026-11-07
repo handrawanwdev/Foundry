@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -607,6 +608,22 @@ func (s *Server) Handler() http.Handler {
 		}
 		return svc.ReportProgress(in, "agent")
 	}))
+	api("GET /api/v1/project/blueprint-progress", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		p, err := svc.Snapshot()
+		if err != nil {
+			return nil, err
+		}
+		after := int64(0)
+		if v := r.URL.Query().Get("after"); v != "" {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return nil, badRequest("after tidak valid")
+			}
+			after = n
+		}
+		bp := p.BlueprintProgress
+		return map[string]any{"progress": bp, "events": bp.After(after)}, nil
+	}))
 	api("POST /api/v1/project/progress/reconcile", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {
 			StaleAfterSec int `json:"stale_after_sec"`
@@ -946,6 +963,17 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	lastSeq := int64(0)
+	if id := r.Header.Get("Last-Event-ID"); id != "" {
+		if n, err := strconv.ParseInt(id, 10, 64); err == nil {
+			lastSeq = n
+		}
+	} else if v := r.URL.Query().Get("after"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			lastSeq = n
+		}
+	}
 	var last time.Time
 	lastDir := "\x00" // forces an initial event
 	tick := time.NewTicker(500 * time.Millisecond)
@@ -955,12 +983,22 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	for {
 		var mt time.Time
 		dir := ""
-		if svc, err := s.service(); err == nil {
-			mt, dir = svc.Store.ModTime(), svc.Store.Dir
+		var svc *pipeline.Service
+		if v, err := s.service(); err == nil {
+			svc, mt, dir = v, v.Store.ModTime(), v.Store.Dir
 		}
 		if !mt.Equal(last) || dir != lastDir {
 			last, lastDir = mt, dir
 			fmt.Fprintf(w, "event: change\ndata: %d\n\n", mt.UnixNano())
+			if svc != nil {
+				if p, err := svc.Store.Load(); err == nil {
+					evs := p.BlueprintProgress.After(lastSeq)
+					writeProgressSSE(w, evs)
+					if n := len(evs); n > 0 {
+						lastSeq = evs[n-1].Seq
+					}
+				}
+			}
 			fl.Flush()
 		}
 		select {
@@ -971,6 +1009,16 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			fl.Flush()
 		case <-tick.C:
 		}
+	}
+}
+
+func writeProgressSSE(w http.ResponseWriter, events []core.BlueprintEvent) {
+	for _, ev := range events {
+		b, err := json.Marshal(ev)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(w, "id: %d\nevent: progress\ndata: %s\n\n", ev.Seq, b)
 	}
 }
 

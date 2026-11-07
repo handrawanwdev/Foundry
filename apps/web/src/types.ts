@@ -394,6 +394,27 @@ export interface Job {
 }
 export interface Event { at: string; source: string; message: string }
 
+export type BlueprintSectionStatus = "pending" | "in_progress" | "completed" | "failed" | "retrying" | "skipped";
+export type BlueprintTaskStatus = "running" | "completed" | "failed";
+export interface BlueprintSection {
+  id: string; name: string; kind?: string;
+  status: BlueprintSectionStatus;
+  activity?: string; error?: string;
+  started_at?: string; ended_at?: string;
+}
+export interface BlueprintActivity { seq: number; at: string; section_id?: string; text: string }
+export interface BlueprintEvent {
+  seq: number; taskId: string; event: string;
+  sectionId?: string; sectionName?: string; activity?: string;
+  status?: string; error?: string;
+  completedSections: number; totalSections: number; timestamp: string;
+}
+export interface BlueprintProgress {
+  task_id: string; status: BlueprintTaskStatus; activity?: string;
+  started_at: string; ended_at?: string; seq: number; last_event?: string; error?: string;
+  sections: BlueprintSection[]; activities?: BlueprintActivity[]; events?: BlueprintEvent[];
+}
+
 export interface RecentProject { dir: string; name: string }
 
 export interface Project {
@@ -408,6 +429,7 @@ export interface Project {
   blueprint_queue?: string[];
   blueprint_batch?: number;
   blueprint_started?: string;
+  blueprint_progress?: BlueprintProgress;
   job_history?: JobTiming[];
   job?: Job; events: Event[] | null; updated_at: string;
 }

@@ -4,6 +4,7 @@ import { reachable, stepOfPath, STEPS } from "../flow";
 import { agentName, agentOptions, useAI } from "../store/ai";
 import { useProject } from "../store/project";
 import { useWorkbench } from "../store/workbench";
+import { buildingInitialBlueprint } from "./BlueprintProgress";
 import { JobBanner } from "./JobBanner";
 import { Menu } from "./Menu";
 import { ProjectDialog } from "./ProjectDialog";
@@ -15,7 +16,8 @@ export function Workbench({ children }: { children: ReactNode }) {
   return (
     <div className="app">
       <TopBar />
-      {project && loc.pathname !== "/" && loc.pathname !== "/simple/connect" && <JobBanner />}
+      {project && loc.pathname !== "/" && loc.pathname !== "/simple/connect"
+        && !(loc.pathname.startsWith("/blueprint") && buildingInitialBlueprint(project)) && <JobBanner />}
       <main className="stage">{children}</main>
       <ProjectDialog />
       {error && (

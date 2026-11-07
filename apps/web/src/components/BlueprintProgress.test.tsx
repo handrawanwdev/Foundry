@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AreaStatus, BlueprintView, Project } from "../types";
+import type { AreaStatus, BlueprintEvent, BlueprintProgress, BlueprintView, Project } from "../types";
+import { foldProgressEvent } from "../bp-event";
 import { blueprintStages, buildingInitialBlueprint } from "./BlueprintProgress";
 
 const area = (id: string, status: string, topics: string[] = []): AreaStatus =>
@@ -35,9 +36,27 @@ describe("blueprintStages", () => {
     let s = blueprintStages(proj({ discovery: {}, job: job("artifacts") }), v);
     expect(stateOf(s, "security")).toBe("running");
     expect(stateOf(s, "ui")).toBe("pending");
+    s = blueprintStages(proj({ discovery: {}, job: job("blueprint") }), v);
+    expect(stateOf(s, "security")).toBe("running");
     s = blueprintStages(proj({ discovery: {}, job: job("design") }), v);
     expect(stateOf(s, "ui")).toBe("running");
     expect(stateOf(s, "security")).toBe("pending");
+  });
+
+  it("prefers live backend progress over inferred stages", () => {
+    const bp: BlueprintProgress = {
+      task_id: "blueprint-1", status: "running", activity: "Menganalisis kepemilikan data dan sumber kebenaran",
+      started_at: "2026-11-07T10:00:00Z", seq: 4,
+      sections: [
+        { id: "discovery", name: "Penjelasan Sistem", status: "completed" },
+        { id: "data", name: "Arsitektur & Siklus Hidup Data", status: "in_progress", activity: "Menganalisis kepemilikan data dan sumber kebenaran" },
+        { id: "tech", name: "Teknologi", status: "pending" },
+        { id: "ops", name: "Ops", status: "skipped" },
+      ],
+    };
+    const s = blueprintStages(proj({ blueprint_progress: bp, job: job("blueprint") }), null);
+    expect(ids(s)).toEqual(["discovery", "data", "tech", "ops"]);
+    expect([stateOf(s, "discovery"), stateOf(s, "data"), stateOf(s, "tech")]).toEqual(["done", "running", "pending"]);
   });
 
   it("runs the first open plan section only", () => {
@@ -77,5 +96,51 @@ describe("buildingInitialBlueprint", () => {
     expect(buildingInitialBlueprint(proj({ discovery: {}, job: job("plan"), blueprint_queue: q, stack: { plan: {} }, structure: { repo: {} } }))).toBe(false);
     expect(buildingInitialBlueprint(proj({ discovery: {}, job: job("artifacts") }))).toBe(false);
     expect(buildingInitialBlueprint(proj({ discovery: {}, blueprint_queue: q }))).toBe(false);
+  });
+  it("stays on the tracker while backend progress is running or failed", () => {
+    expect(buildingInitialBlueprint(proj({ discovery: {}, blueprint_progress: { status: "running", sections: [] } }))).toBe(true);
+    expect(buildingInitialBlueprint(proj({
+      discovery: {}, job: { kind: "plan", status: "failed" },
+      blueprint_progress: { status: "failed", sections: [] },
+    }))).toBe(true);
+    expect(buildingInitialBlueprint(proj({ discovery: {}, blueprint_progress: { status: "completed", sections: [] } }))).toBe(false);
+  });
+});
+
+describe("foldProgressEvent", () => {
+  const ev = (over: Partial<BlueprintEvent>): BlueprintEvent => ({
+    seq: 2, taskId: "blueprint-1", event: "activity.updated",
+    completedSections: 1, totalSections: 3, timestamp: "2026-11-07T10:00:00Z", ...over,
+  });
+  const bp = (): BlueprintProgress => ({
+    task_id: "blueprint-1", status: "running", seq: 1, started_at: "2026-11-07T09:00:00Z",
+    sections: [
+      { id: "discovery", name: "Penjelasan Sistem", status: "completed" },
+      { id: "data", name: "Data", status: "in_progress" },
+    ],
+    activities: [], events: [],
+  });
+
+  it("ignores duplicate or older seq", () => {
+    const cur = bp();
+    expect(foldProgressEvent(cur, ev({ seq: 1 })).seq).toBe(1);
+    expect(foldProgressEvent(cur, ev({ seq: 0 })).seq).toBe(1);
+  });
+
+  it("updates section from a real event and keeps completed siblings", () => {
+    const next = foldProgressEvent(bp(), ev({
+      seq: 3, event: "section.completed", sectionId: "data", status: "completed", completedSections: 2, totalSections: 2,
+    }));
+    expect(next.seq).toBe(3);
+    expect(next.sections.find((s) => s.id === "data")?.status).toBe("completed");
+    expect(next.sections.find((s) => s.id === "discovery")?.status).toBe("completed");
+  });
+
+  it("marks retrying and failed without dropping progress", () => {
+    let next = foldProgressEvent(bp(), ev({ seq: 2, event: "section.retrying", sectionId: "data", status: "retrying", activity: "Memperbaiki output Data" }));
+    expect(next.sections.find((s) => s.id === "data")?.status).toBe("retrying");
+    next = foldProgressEvent(next, ev({ seq: 3, event: "task.failed", status: "failed", error: "jawaban ditolak" }));
+    expect(next.status).toBe("failed");
+    expect(next.sections.find((s) => s.id === "discovery")?.status).toBe("completed");
   });
 });

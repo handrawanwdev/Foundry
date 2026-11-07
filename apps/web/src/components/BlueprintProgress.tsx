@@ -1,26 +1,32 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { isWorking } from "../flow";
-import type { BlueprintView, Project } from "../types";
+import { useProject } from "../store/project";
+import type { BlueprintSectionStatus, BlueprintView, Project } from "../types";
 import { Elapsed } from "./Elapsed";
 
-type State = "done" | "running" | "pending" | "skipped";
-interface Stage { id: string; title: string; hint: string; state: State }
+type State = "done" | "running" | "pending" | "skipped" | "failed" | "retrying";
+interface Stage { id: string; title: string; hint: string; state: State; activity?: string; error?: string }
 
-// Areas whose Markdown the AI writes in the "artifacts" job, one area per
-// job during the first build (artifact_request.area names it). The rest are
-// written by their own step (ui = design job, use cases and acceptance
-// come from the feature list).
 const WRITTEN_BY_ARTIFACTS = new Set(["data", "security", "integration", "operations", "migration"]);
-// Data and integration need depend on the discovery, so before it ran
-// "not applicable" only means "not known yet".
 const DECIDED_BY_DISCOVERY = new Set(["data", "integration"]);
+const ARTIFACT_JOB = new Set(["blueprint", "artifacts"]);
 
 const cut = (topics?: string[]) => (topics ?? []).slice(0, 4).join(", ");
 
-// Stages of the blueprint package: the areas the blueprint covers for this
-// project, then technology, architecture and folders.
+const fromSection = (s: BlueprintSectionStatus): State => {
+  if (s === "in_progress") return "running";
+  if (s === "completed") return "done";
+  return s;
+};
+
 export function blueprintStages(p: Project, view: BlueprintView | null): Stage[] {
+  if (p.blueprint_progress?.sections?.length) {
+    return p.blueprint_progress.sections.map((s) => ({
+      id: s.id, title: s.name, hint: s.activity || "", state: fromSection(s.status),
+      activity: s.activity, error: s.error,
+    }));
+  }
   const working = isWorking(p);
   const kind = working ? p.job?.kind : undefined;
   const st = p.structure;
@@ -41,12 +47,11 @@ export function blueprintStages(p: Project, view: BlueprintView | null): Stage[]
     if (a.status === "skipped") state = "skipped";
     else if (a.status === "covered") state = "done";
     else if (a.id === "ui" && kind === "design") state = "running";
-    else if (WRITTEN_BY_ARTIFACTS.has(a.id) && kind === "artifacts" && (!area || area === a.id)) state = "running";
+    else if (WRITTEN_BY_ARTIFACTS.has(a.id) && ARTIFACT_JOB.has(kind ?? "") && (!area || area === a.id)) state = "running";
     out.push({ id: a.id, title: a.title, hint: cut(a.topics), state });
   }
 
   const planning = kind === "plan";
-  // The open section is the first one still requested.
   const techOpen = !!stack?.plan_request;
   const archOpen = !!st?.plan_request;
   const repoOpen = !!st?.repo_request;
@@ -64,10 +69,10 @@ export function blueprintStages(p: Project, view: BlueprintView | null): Stage[]
   return out;
 }
 
-// True while the first blueprint is being built: the discovery job, then the
-// queued design and plan jobs, until technology, architecture and folders
-// have all landed. Later regenerations keep the document view.
 export function buildingInitialBlueprint(p: Project): boolean {
+  const bp = p.blueprint_progress;
+  if (bp?.status === "running") return true;
+  if (bp?.status === "failed" && p.job?.status === "failed") return true;
   if (!isWorking(p)) return false;
   if (!p.discovery) return p.job?.kind === "discovery";
   if (!p.blueprint_queue?.length) return false;
@@ -76,38 +81,106 @@ export function buildingInitialBlueprint(p: Project): boolean {
 }
 
 const MARK: Record<State, React.ReactNode> = {
-  done: "✓", skipped: "–", pending: "○", running: <span className="spinner" />,
+  done: "✓", skipped: "–", pending: "○", failed: "!", retrying: "↻",
+  running: <span className="spinner" />,
 };
 
-// What is being written now and what is next; replaces a bare spinner.
+const STATE_LABEL: Record<State, string> = {
+  done: "Selesai",
+  skipped: "Dilewati",
+  pending: "Menunggu",
+  failed: "Gagal",
+  retrying: "Mencoba kembali",
+  running: "Sedang dikerjakan",
+};
+
+function pct(done: number, total: number): string {
+  if (!total) return "0%";
+  return `${(done / total * 100).toLocaleString("id-ID", { maximumFractionDigits: 1 })}%`;
+}
+
 export function BlueprintProgress({ project }: { project: Project }) {
+  const { run, pending, stream } = useProject();
   const [view, setView] = useState<BlueprintView | null>(null);
+  const [logOpen, setLogOpen] = useState(true);
+  const activeRef = useRef<HTMLLIElement | null>(null);
+  const bp = project.blueprint_progress;
+
   useEffect(() => {
+    if (bp?.sections?.length) return;
     let stale = false;
     api.blueprint().then((v) => { if (!stale) setView(v); }).catch(() => { if (!stale) setView(null); });
     return () => { stale = true; };
-  }, [project.version, project.dir]);
+  }, [project.version, project.dir, bp?.sections?.length]);
+
   const stages = blueprintStages(project, view);
-  const running = stages.filter((s) => s.state === "running");
+  const running = stages.filter((s) => s.state === "running" || s.state === "retrying");
   const counted = stages.filter((s) => s.state !== "skipped");
-  const done = counted.filter((s) => s.state === "done").length;
+  const done = bp ? bp.sections.filter((s) => s.status === "completed").length : counted.filter((s) => s.state === "done").length;
+  const total = bp ? bp.sections.filter((s) => s.status !== "skipped").length : counted.length;
+  const failed = bp?.status === "failed" || project.job?.status === "failed";
+  const rawActivity = bp?.activity || "";
+  const activity = rawActivity
+    ? /^(AI |Menunggu|Server)/.test(rawActivity) ? rawActivity : `AI sedang ${rawActivity.charAt(0).toLowerCase()}${rawActivity.slice(1)}.`
+    : running.length ? `AI sedang menyusun ${running.map((s) => s.title).join(", ")}.` : "Menyiapkan rancangan…";
+  const started = bp?.started_at ?? project.blueprint_started ?? project.job?.started;
+  const activities = bp?.activities ?? [];
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [running[0]?.id, activity]);
+
   return (
     <div className="bp-progress">
-      <h1><span className="spinner" /> Merancang Blueprint <Elapsed started={project.blueprint_started ?? project.job?.started} /></h1>
-      <p className="muted">
-        {running.length
-          ? <>Sedang menyusun <strong>{running.map((s) => s.title).join(", ")}</strong>.</>
-          : "Menyiapkan rancangan…"}
-        {" "}({done}/{counted.length} bagian selesai)
-      </p>
+      {stream === "reconnecting" && <p className="bp-reconnect" role="status">Menyambungkan ulang…</p>}
+      <header className="bp-head">
+        <h1>
+          {failed ? null : <span className="spinner" />}
+          {failed ? "Perancangan Blueprint gagal" : "Merancang Blueprint"}
+        </h1>
+        <p className="bp-activity-now">{activity}</p>
+        <p className="muted">
+          {done}/{total} bagian selesai{total ? ` · ${pct(done, total)}` : ""} · Berjalan <Elapsed started={started} />
+        </p>
+        <div className="bp-bar" aria-hidden>
+          <span style={{ width: total ? `${(done / total) * 100}%` : "0%" }} />
+        </div>
+      </header>
       <ol className="bp-stages">
-        {stages.map((s) => (
-          <li key={s.id} className={`bp-stage ${s.state}`} aria-current={s.state === "running" ? "step" : undefined}>
+        {stages.map((s, i) => (
+          <li key={s.id} ref={s.state === "running" || s.state === "retrying" ? activeRef : undefined}
+            className={`bp-stage ${s.state}`} aria-current={s.state === "running" || s.state === "retrying" ? "step" : undefined}>
             <span className="bp-mark" aria-hidden>{MARK[s.state]}</span>
-            <span className="bp-text"><strong>{s.title}</strong>{s.hint && <span className="muted small"> {s.hint}</span>}</span>
+            <span className="bp-text">
+              <strong>{i + 1}. {s.title}</strong>
+              <span className="bp-state muted small"> {STATE_LABEL[s.state]}</span>
+              {(s.state === "running" || s.state === "retrying") && s.activity && (
+                <span className="bp-sub muted small">└ {s.activity}</span>
+              )}
+              {s.state === "failed" && s.error && <span className="bp-sub bp-err small">{s.error}</span>}
+              {s.state !== "running" && s.state !== "retrying" && s.state !== "failed" && s.hint && (
+                <span className="muted small"> {s.hint}</span>
+              )}
+            </span>
           </li>
         ))}
       </ol>
+      {activities.length > 0 && (
+        <details className="bp-log" open={logOpen} onToggle={(e) => setLogOpen((e.target as HTMLDetailsElement).open)}>
+          <summary>Aktivitas AI</summary>
+          <ol>
+            {activities.slice().reverse().map((a) => (
+              <li key={a.seq}>{a.text}</li>
+            ))}
+          </ol>
+        </details>
+      )}
+      {failed && (
+        <div className="bp-fail">
+          <p className="bp-err">{bp?.error || project.job?.error || "Proses gagal."}</p>
+          <button className="primary" disabled={pending === "retry"} onClick={() => void run("retry", api.retry)}>Coba lagi</button>
+        </div>
+      )}
     </div>
   );
 }
