@@ -22,7 +22,10 @@ export function blueprintGenerateNeeded(p: Project, view: BlueprintView | null):
   const app = !targets.length || targets.some((t) => APP_KINDS.has(t.kind));
   if (!app) return false;
   if (!p.stack?.plan) return true;
-  if (p.structure && p.structure.mode !== "existing") {
+  // no structure yet (a run stopped after the technology) is also open, as
+  // the server's unifiedParts treats it
+  if (!p.structure) return true;
+  if (p.structure.mode !== "existing") {
     if (!p.structure.plan) return true;
     if (!p.structure.repo) return true;
   }

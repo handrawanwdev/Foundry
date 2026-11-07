@@ -1206,6 +1206,13 @@ func TestDesignRevise(t *testing.T) {
 	if b := pipeline.Blockers(p); !slices.Contains(b, "workflow: 1 masalah dependency/isi") {
 		t.Fatalf("blockers = %v", b)
 	}
+	// An outline still waiting for its details is not judged yet.
+	keep := p.Workflow.Commands[0].Instructions
+	p.Workflow.Commands[0].Instructions = ""
+	if b := pipeline.Blockers(p); !slices.Contains(b, fmt.Sprintf("command workflow belum lengkap: 1 dari %d command belum berisi detail", len(p.Workflow.Commands))) {
+		t.Fatalf("blockers while filling = %v", b)
+	}
+	p.Workflow.Commands[0].Instructions = keep
 	// The new page `profil` has no command yet: the design change also
 	// requires the workflow to be revised, not only reviewed.
 	if r := pipeline.CheckWorkflow(p); !slices.ContainsFunc(r.Issues, func(is workflow.Issue) bool {

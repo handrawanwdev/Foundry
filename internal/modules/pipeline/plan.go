@@ -206,6 +206,16 @@ func planRepairing(p *core.Project) bool {
 	return false
 }
 
+// workflowRoundLabel says how far the filling of an outlined workflow got
+// ("Mengisi detail command (5/18 selesai)"); each round is its own job.
+func workflowRoundLabel(p *core.Project, msg string) string {
+	w := p.Workflow
+	if w.Unfilled() == 0 {
+		return msg
+	}
+	return fmt.Sprintf("Mengisi detail command (%d/%d selesai)", len(w.Commands)-w.Unfilled(), len(w.Commands))
+}
+
 // planRoundLabel names the section the current plan round designs, so the
 // progress line says what is being written ("Merancang Blueprint: Teknologi").
 func planRoundLabel(p *core.Project, kind, msg string) string {

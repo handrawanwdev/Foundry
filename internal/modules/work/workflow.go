@@ -748,7 +748,7 @@ func applyWorkflowDetailBatchFromParsed(p *core.Project, out workflowOut, docs [
 				remaining++
 			}
 		}
-		w.Request.Text = fmt.Sprintf("Fill in details for remaining %d commands", remaining)
+		w.Request = &core.ChangeRequest{Text: fmt.Sprintf("Fill in details for remaining %d commands", remaining)}
 	}
 	return nil
 }

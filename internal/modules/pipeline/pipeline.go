@@ -334,6 +334,9 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 		if kind == work.KindPlan && planRepairing(p) {
 			msg = "Memperbaiki output Blueprint"
 		}
+		if kind == work.KindWorkflow {
+			msg = workflowRoundLabel(p, msg)
+		}
 		if isMCP {
 			status, msg = core.JobWaiting, msg+" — menunggu AI Host (MCP)"
 		}

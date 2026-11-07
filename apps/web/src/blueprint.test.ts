@@ -59,6 +59,9 @@ describe("blueprintGenerateNeeded", () => {
     expect(blueprintGenerateNeeded(base, null)).toBe(true);
     expect(blueprintGenerateNeeded({ ...base, ui: { rules: {} }, stack: { plan: {} }, structure: { mode: "new", plan: {}, repo: {} } } as Project, null)).toBe(false);
   });
+  it("asks for a run when a stopped run left no structure after the technology", () => {
+    expect(blueprintGenerateNeeded({ ...base, ui: { rules: {} }, stack: { plan: {} }, structure: undefined } as Project, null)).toBe(true);
+  });
   it("asks for a run when an area is missing", () => {
     const view = { areas: [{ id: "data", status: "missing" }], artifacts: [], has_ui: false } as unknown as BlueprintView;
     expect(blueprintGenerateNeeded({ ...base, stack: { plan: {} }, structure: { mode: "existing" } } as Project, view)).toBe(true);

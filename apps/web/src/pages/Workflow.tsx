@@ -76,6 +76,11 @@ export function WorkflowPage() {
   const reviewIds = Object.keys(r?.review ?? {});
   const staleIds = Object.keys(r?.stale ?? {}).filter((k) => (r?.stale[k]?.length ?? 0) > 0);
   const byId = new Map(cmds.map((c) => [c.id, c]));
+  // A large workflow is written as an outline, then filled in rounds; the
+  // checks only mean something once every command has its details.
+  const writing = working && project.job?.kind === "workflow";
+  const unfilled = cmds.filter((c) => !c.instructions?.trim()).length;
+  const filling = unfilled > 0;
   const waves = r && r.waves.length ? r.waves : [cmds.map((c) => c.id)];
 
   return (
@@ -103,12 +108,14 @@ export function WorkflowPage() {
               const st = commandState(c, r);
               const run = runOf(prog, cid);
               const reported = run && run.status !== "unconfirmed" && run.status !== "waiting";
+              const empty = !c.instructions?.trim();
               return (
                 <button key={cid} className={`ws-item cmd ${cid === cmd?.id ? "on" : ""}`} aria-current={cid === cmd?.id ? "page" : undefined} onClick={() => select(cid)}>
                   <span className="cmd-id">{cid}</span>
                   <span className="ws-item-text">{c.name}</span>
                   {reported && <span className={`cmd-dot ${PHASE_CLASS[run.phase] || "st-muted"}`} title={PHASE_LABEL[run.phase]} />}
-                  {st !== "draft" && !reported && <span className={`cmd-dot st-${st}`} title={STATE_LABEL[st]} />}
+                  {empty ? (writing ? <span className="spinner" title="Detail sedang ditulis AI" /> : <span className="cmd-dot st-muted" title="Detail belum terisi" />)
+                    : st !== "draft" && !reported && <span className={`cmd-dot st-${st}`} title={STATE_LABEL[st]} />}
                 </button>
               );
             })}
@@ -118,13 +125,14 @@ export function WorkflowPage() {
 
       <main className="ws-main">
         {prog && <ExecutionOverview progress={prog} onOpen={select} onReconcile={() => void run("reconcileProgress", () => api.reconcileProgress())} busy={pending === "reconcileProgress"} />}
-        {r && r.issues.length > 0 && (
+        {filling && <FillProgress total={cmds.length} unfilled={unfilled} writing={writing} working={working} locked={locked} project={project} />}
+        {!filling && r && r.issues.length > 0 && (
           <div className="notice bad">
             <strong>{r.issues.length} masalah workflow</strong>
             <ul>{r.issues.slice(0, 6).map((is, i) => <li key={i}>{is.command && <button className="link" onClick={() => select(is.command!)}>{is.command}</button>} {is.message}</li>)}</ul>
           </div>
         )}
-        {(uncovered.length > 0 || uncoveredFeatures.length > 0) && !locked && (
+        {!filling && (uncovered.length > 0 || uncoveredFeatures.length > 0) && !locked && (
           <div className="notice warn">
             <span>
               <strong>Belum dicakup command:</strong> {[...uncoveredFeatures, ...uncovered].join(", ")}.
@@ -134,7 +142,7 @@ export function WorkflowPage() {
             </button>
           </div>
         )}
-        {quality.length > 0 && !locked && (
+        {!filling && quality.length > 0 && !locked && (
           <details className="notice wf-quality">
             <summary><strong>{quality.length} saran kualitas command</strong></summary>
             <ul>{quality.slice(0, 12).map((q, i) => <li key={i}>{q.command && <button className="link" onClick={() => select(q.command!)}>{q.command}</button>} {q.message}</li>)}</ul>
@@ -158,7 +166,7 @@ export function WorkflowPage() {
         {cmd ? (
           <>
             <div className="wf-back"><button className="link" onClick={() => setParams({}, { replace: true })}>← Timeline</button></div>
-            <CommandDoc key={cmd.id + w!.version} project={project} cmd={cmd} report={r} run={runOf(prog, cmd.id)} locked={locked} onOpen={select} />
+            <CommandDoc key={cmd.id + w!.version} project={project} cmd={cmd} report={r} run={runOf(prog, cmd.id)} locked={locked} writing={writing} onOpen={select} />
           </>
         ) : (
           <>
@@ -182,8 +190,40 @@ export function WorkflowPage() {
   );
 }
 
-function CommandDoc({ project, cmd, report, run, locked, onOpen }: {
-  project: Project; cmd: Command; report: WorkflowReport | null; run?: CommandProgress; locked: boolean; onOpen: (id: string) => void;
+// FillProgress shows the rounds that fill an outlined workflow; the page
+// reloads on every saved round, so the count moves as commands land.
+function FillProgress({ total, unfilled, writing, working, locked, project }: {
+  total: number; unfilled: number; writing: boolean; working: boolean; locked: boolean; project: Project;
+}) {
+  const { run, pending } = useProject();
+  const done = total - unfilled;
+  const pct = Math.round((done / total) * 100);
+  return (
+    <div className={`notice wf-fill ${writing ? "" : "warn"}`} role="status" aria-live="polite">
+      <div className="wf-fill-head">
+        {writing ? <span className="spinner" /> : null}
+        <strong>{writing ? "AI mengisi detail command" : "Detail command belum lengkap"}</strong>
+        <span className="muted small">{done}/{total} command berisi detail{writing && <> · <Elapsed started={project.job?.started} /></>}</span>
+        {!writing && !locked && (
+          <button className="primary" disabled={working || pending === "continueWorkflow"} onClick={() => void run("continueWorkflow", api.continueWorkflow)}>
+            Lanjutkan mengisi {unfilled} command
+          </button>
+        )}
+      </div>
+      <div className="prog-bar"><i style={{ width: `${pct}%` }} /></div>
+      <p className="small muted">
+        {writing
+          ? "Diisi bertahap, beberapa command per putaran; halaman ini ikut berubah tiap putaran tersimpan. Pemeriksaan workflow dijalankan setelah semua terisi."
+          : working
+            ? "Tunggu proses AI lain yang sedang berjalan selesai, lalu lanjutkan."
+            : "Proses berhenti sebelum semua command terisi. Command yang sudah terisi tetap; AI hanya menulis yang masih kosong."}
+      </p>
+    </div>
+  );
+}
+
+function CommandDoc({ project, cmd, report, run, locked, writing, onOpen }: {
+  project: Project; cmd: Command; report: WorkflowReport | null; run?: CommandProgress; locked: boolean; writing: boolean; onOpen: (id: string) => void;
 }) {
   const { run: act, pending } = useProject();
   const [editing, setEditing] = useState(false);
@@ -275,7 +315,10 @@ function CommandDoc({ project, cmd, report, run, locked, onOpen }: {
           )}
           {list("File dan modul terkait", cmd.files)}
           {list("Input", cmd.inputs)}
-          <section className="doc-sec"><h2>Instruksi</h2><Markdown text={cmd.instructions} /></section>
+          <section className="doc-sec"><h2>Instruksi</h2>
+            {cmd.instructions?.trim() ? <Markdown text={cmd.instructions} />
+              : <p className="small muted">{writing ? <><span className="spinner" /> AI sedang menulis detail command ini…</> : "Belum diisi."}</p>}
+          </section>
           {list("Output yang diharapkan", cmd.expected_outputs)}
           {list("Acceptance criteria", cmd.acceptance_criteria, true)}
           {list("Batasan", cmd.constraints)}

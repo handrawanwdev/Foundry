@@ -366,3 +366,60 @@ func TestWorkflowMCP(t *testing.T) {
 		t.Fatalf("workflow = %+v", p.Workflow)
 	}
 }
+
+// A workflow written as an outline says how far the filling got, both in the
+// job line and in what still blocks finalizing.
+func TestWorkflowFillingIsReported(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Discovery, p.Platform = &core.Discovery{}, &core.PlatformPlan{}
+		p.Workflow = &core.Workflow{Version: 1, Commands: []core.Command{
+			{ID: "CMD-001", Name: "a", Objective: "a", Instructions: "isi"},
+			{ID: "CMD-002", Name: "b", Objective: "b"},
+			{ID: "CMD-003", Name: "c", Objective: "c"},
+		}, Request: &core.ChangeRequest{Text: "Fill in details for remaining 2 commands"}}
+		p.Job = &core.Job{Kind: work.KindWorkflow, Status: core.JobFailed, Error: "x"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	if b := pipeline.Blockers(p); !slices.Contains(b, "command workflow belum lengkap: 2 dari 3 command belum berisi detail") {
+		t.Fatalf("blockers = %v", b)
+	}
+	if err := s.RetryJob(); err != nil {
+		t.Fatal(err)
+	}
+	p = load(t, s)
+	if !strings.HasPrefix(p.Job.Message, "Mengisi detail command (1/3 selesai)") || !strings.Contains(p.Job.Message, "MCP") {
+		t.Fatalf("job message = %q", p.Job.Message)
+	}
+
+	// The failure was dismissed (job and request gone): the filling can
+	// still be resumed, and only when something is left to fill.
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Job, p.Workflow.Request, p.Stage = nil, nil, core.StageDesign
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ContinueWorkflow(); err != nil {
+		t.Fatal(err)
+	}
+	p = load(t, s)
+	if p.Job == nil || p.Job.Kind != work.KindWorkflow || p.Workflow.Request == nil || !strings.Contains(p.Workflow.Request.Text, "remaining 2") {
+		t.Fatalf("job = %+v request = %+v", p.Job, p.Workflow.Request)
+	}
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Job = nil
+		for i := range p.Workflow.Commands {
+			p.Workflow.Commands[i].Instructions = "isi"
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ContinueWorkflow(); !errors.Is(err, pipeline.ErrNothingToDo) {
+		t.Fatalf("continue on a full workflow: %v", err)
+	}
+}

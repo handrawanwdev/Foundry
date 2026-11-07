@@ -97,6 +97,24 @@ func (s *Service) GenerateWorkflow() error {
 	})
 }
 
+// ContinueWorkflow resumes filling an outlined workflow whose rounds stopped
+// (agent killed, failure dismissed, server restarted). Commands that already
+// have their details are kept; only the empty ones are written.
+func (s *Service) ContinueWorkflow() error {
+	return s.startAIIf(work.KindWorkflow, func(p *core.Project) error {
+		if err := blueprintEditable(p); err != nil {
+			return err
+		}
+		w := p.Workflow
+		if w.Unfilled() == 0 {
+			return ErrNothingToDo
+		}
+		w.Request = &core.ChangeRequest{Text: fmt.Sprintf("Fill in details for remaining %d commands", w.Unfilled())}
+		p.Log("ui", "Lanjutkan mengisi detail command workflow")
+		return nil
+	})
+}
+
 // ReviseWorkflow asks the AI to change the commands for a request; focus
 // names the commands it is about.
 func (s *Service) ReviseWorkflow(text string, focus []string) error {
@@ -221,6 +239,11 @@ func workflowBlockers(p *core.Project) []string {
 	switch {
 	case p.Workflow == nil || len(p.Workflow.Commands) == 0:
 		return []string{"command workflow belum disusun"}
+	case p.Workflow.Unfilled() > 0:
+		// an outline still being filled: its check results are not the
+		// workflow's problems yet
+		w := p.Workflow
+		return []string{fmt.Sprintf("command workflow belum lengkap: %d dari %d command belum berisi detail", w.Unfilled(), len(w.Commands))}
 	case len(r.Issues) > 0:
 		return []string{fmt.Sprintf("workflow: %d masalah dependency/isi", len(r.Issues))}
 	case len(r.Review) > 0:

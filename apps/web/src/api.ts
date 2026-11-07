@@ -120,6 +120,7 @@ export const api = {
   // Command workflow: instructions for external coding agents, never run by Foundry.
   workflow: () => call<WorkflowView>("GET", "/project/workflow"),
   generateWorkflow: () => call("POST", "/project/workflow/generate", {}),
+  continueWorkflow: () => call("POST", "/project/workflow/continue", {}),
   reviseWorkflow: (text: string, focus: string[] = [], sync = false) => call("POST", "/project/workflow/revise", { text, focus, sync }),
   editCommand: (id: string, edit: CommandEdit) => call<Project>("PUT", `/project/workflow/commands/${encodeURIComponent(id)}`, edit),
   // needs true marks it for review; false records it as reviewed.

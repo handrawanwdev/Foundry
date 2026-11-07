@@ -124,6 +124,21 @@ func (w *Workflow) Command(id string) *Command {
 	return nil
 }
 
+// Unfilled counts the commands still waiting for their details: a large
+// workflow is written as an outline first, then filled in rounds.
+func (w *Workflow) Unfilled() int {
+	if w == nil {
+		return 0
+	}
+	n := 0
+	for _, c := range w.Commands {
+		if strings.TrimSpace(c.Instructions) == "" {
+			n++
+		}
+	}
+	return n
+}
+
 // EnsureID gives an older workflow its stable id. Called while loading a
 // project; it never changes an id that is already set.
 func (w *Workflow) EnsureID() {

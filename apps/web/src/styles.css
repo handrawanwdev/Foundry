@@ -431,6 +431,11 @@ button.ref-chip:not(:disabled):hover, a.ref-chip:hover { border-color: var(--acc
 .wf-feed time, .wf-feed .wf-meta { color: var(--muted); font-size: 12px; }
 .wf-feed .wf-meta { grid-column: 2; overflow-wrap: anywhere; }
 .wf-feed .wf-body { min-width: 0; overflow-wrap: anywhere; }
+.notice.wf-fill { display: block; background: var(--surface-2); }
+.wf-fill-head { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; margin-bottom: .45rem; }
+.wf-fill-head button { margin-left: auto; }
+.wf-fill .prog-bar > i { background: var(--accent); transition: width .4s ease; }
+.wf-fill p { margin: .45rem 0 0; }
 .notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; max-width: 760px; margin: 0 auto 1.25rem; padding: .7rem .9rem; border-radius: 12px; font-size: 13px; }
 .notice ul { margin: .3rem 0 0; padding-left: 1.1rem; flex-basis: 100%; }
 .notice.warn { background: var(--warn-soft); color: var(--warn); }

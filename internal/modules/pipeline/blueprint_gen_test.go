@@ -239,6 +239,13 @@ func TestGenerateBlueprintDismissClearsQueue(t *testing.T) {
 	if p.BlueprintBatch != 0 || len(p.BlueprintQueue) != 0 || p.Job != nil {
 		t.Fatalf("dismiss left batch: %+v", p)
 	}
+	// What was left open can still be built: the same button starts it again.
+	if err := s.GenerateBlueprint(); err != nil {
+		t.Fatalf("resume after dismiss: %v", err)
+	}
+	if p := load(t, s); p.Job == nil || p.BlueprintBatch == 0 {
+		t.Fatalf("resume started nothing: job=%+v batch=%d", p.Job, p.BlueprintBatch)
+	}
 }
 
 func designReadyMCP(t *testing.T, s *pipeline.Service) {
