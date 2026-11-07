@@ -51,7 +51,7 @@ func SourceHash(p *core.Project) string {
 		Platform     *core.PlatformPlan `json:"platform,omitempty"`
 		Stack        *stackSnapshot     `json:"stack,omitempty"`
 	}{Name: p.Name, Story: p.Story, Survey: p.Survey, Discovery: p.Discovery, Blueprint: p.Blueprint,
-		Requirements: p.Requirements, Features: p.Features, Flows: p.Flows, Platform: p.Platform}
+		Requirements: p.Requirements, Features: p.Features, Flows: p.Flows, Platform: p.Platform.Content()}
 	if s := p.Stack; s != nil {
 		snapshot.Stack = &stackSnapshot{Mode: s.Mode, Needs: s.Needs, Platform: s.Platform, Decisions: s.Decisions}
 	}

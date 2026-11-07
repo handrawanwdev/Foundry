@@ -60,7 +60,7 @@ func SourceAreas(p *core.Project) map[string]string {
 	return map[string]string{
 		"requirements": digest([]any{p.Story, p.Requirements, p.Features, p.Flows, p.Survey, disc.TechNeeds}),
 		"modules":      digest(mods),
-		"platform":     digest(p.Platform),
+		"platform":     digest(p.Platform.Content()),
 		"data":         digest(disc.Data),
 		"integrations": digest(disc.Integrations),
 		"security":     digest([]any{disc.Security, disc.Roles}),

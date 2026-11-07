@@ -3,15 +3,17 @@ package pipeline
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/progress"
 	"github.com/handrawanwdev/foundry/internal/modules/repoplan"
-	"github.com/handrawanwdev/foundry/internal/modules/techplan"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/stack"
+	"github.com/handrawanwdev/foundry/internal/modules/techplan"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 	"github.com/handrawanwdev/foundry/internal/modules/workflow"
 )
@@ -146,6 +148,9 @@ func (s *Service) EditCommand(id string, in work.CommandEdit) (*core.Project, er
 		if err := blueprintEditable(p); err != nil {
 			return err
 		}
+		if p.Workflow == nil {
+			return errors.New("workflow belum disusun")
+		}
 		before := slices.Clone(p.Workflow.Commands)
 		if err := work.EditCommand(p, id, in, spec.Artifacts(p)); err != nil {
 			return err
@@ -256,6 +261,9 @@ func workflowBlockers(p *core.Project) []string {
 // version and writes the export package into the project (docs/foundry).
 // It approves a specification, not an implementation.
 func (s *Service) Finalize() error {
+	if err := s.completeBeforeFinalize(); err != nil {
+		return err
+	}
 	_, err := s.Store.Update(func(p *core.Project) error {
 		if p.Busy() {
 			return ErrBusy
@@ -305,7 +313,7 @@ func (s *Service) Finalize() error {
 		// Completing the blueprint may change an artifact a command
 		// recorded; the workflow must still match what is exported.
 		if r := CheckWorkflow(p); !r.Ready {
-			return fmt.Errorf("%w: workflow perlu ditinjau setelah blueprint dilengkapi", ErrIncomplete)
+			return fmt.Errorf("%w: workflow perlu ditinjau setelah blueprint dilengkapi (%s)", ErrIncomplete, notReady(r))
 		}
 		if b := scopeBlockers(p); len(b) > 0 {
 			return fmt.Errorf("%w: %s setelah blueprint dilengkapi", ErrIncomplete, b[0])
@@ -324,6 +332,54 @@ func (s *Service) Finalize() error {
 		return nil
 	})
 	return err
+}
+
+// errNoCompletion ends completeBeforeFinalize without saving.
+var errNoCompletion = errors.New("blueprint sudah lengkap")
+
+// completeBeforeFinalize saves Foundry's fill-in of empty blueprint fields
+// before Finalize checks the workflow. When the fill-in changes an artifact a
+// command recorded, the command then shows as needing review and the user
+// can act on it; done inside Finalize, the change was rolled back with the
+// error and finalize failed every time with nothing to review.
+func (s *Service) completeBeforeFinalize() error {
+	_, err := s.Store.Update(func(p *core.Project) error {
+		if blueprintEditable(p) != nil || p.Platform == nil {
+			return errNoCompletion // Finalize reports why
+		}
+		before := workflow.Hashes(spec.Artifacts(p))
+		work.CompleteBlueprint(p)
+		if maps.Equal(before, workflow.Hashes(spec.Artifacts(p))) {
+			return errNoCompletion
+		}
+		stampRefs(p)
+		p.Log("ui", "Blueprint dilengkapi otomatis sebelum finalisasi")
+		return nil
+	})
+	if errors.Is(err, errNoCompletion) {
+		return nil
+	}
+	return err
+}
+
+// notReady names what keeps a workflow report from being ready.
+func notReady(r workflow.Report) string {
+	var out []string
+	for _, i := range r.Issues {
+		if i.Command == "" {
+			out = append(out, i.Message)
+			continue
+		}
+		out = append(out, i.Command+": "+i.Message)
+	}
+	ids := slices.Sorted(maps.Keys(r.Review))
+	for _, id := range ids {
+		out = append(out, id+": "+r.Review[id])
+	}
+	if len(out) > 3 {
+		out = append(out[:3], fmt.Sprintf("+%d lainnya", len(out)-3))
+	}
+	return strings.Join(out, "; ")
 }
 
 // Reopen unlocks a finalized project for another revision. The exported

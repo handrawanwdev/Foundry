@@ -404,6 +404,18 @@ type PlatformPlan struct {
 	Approved bool             `json:"approved"`
 }
 
+// Content is the platform without its approval: what plans and analyses
+// are written from. Approving (finalize) or reopening must not make them
+// stale, so source hashes read this instead of the plan itself.
+func (pl *PlatformPlan) Content() *PlatformPlan {
+	if pl == nil {
+		return nil
+	}
+	c := *pl
+	c.Approved = false
+	return &c
+}
+
 // PlatformTarget is one platform the product runs on. Who uses it is not
 // part of the target: users, roles and their platform are in
 // Discovery.Roles (requirements and security).
