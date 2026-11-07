@@ -414,6 +414,23 @@ func TestStaleAreasAndAffected(t *testing.T) {
 	}
 }
 
+// The folder plan is written from the technology: rewriting it must not mark
+// the technology plan stale, or each revision would invalidate the other.
+func TestFolderPlanIsNotASource(t *testing.T) {
+	p := project(core.PlatformWeb, core.PlatformBackend)
+	p.Structure = &core.Structure{Mode: core.StructureNew, Repo: &core.RepoPlan{Approach: "a", Topology: "t"}}
+	plan := overlay(p, nil)
+	mustAccept(t, p, plan)
+	p.Structure.Repo.Approach, p.Structure.Repo.Topology = "rewritten by AI", "other wording"
+	if got := techplan.StaleAreas(p, plan); len(got) != 0 {
+		t.Fatalf("folder rewrite made the plan stale: %v", got)
+	}
+	plan.Sources["folder"] = "old-hash" // plans written before folder stopped being a source
+	if got := techplan.StaleAreas(p, plan); len(got) != 0 {
+		t.Fatalf("legacy folder hash made the plan stale: %v", got)
+	}
+}
+
 func TestLandGenerateAppliesOnRecommended(t *testing.T) {
 	p := project(core.PlatformWeb, core.PlatformBackend)
 	plan := overlay(p, map[string]string{core.TechBackend: "Elixir + Phoenix", core.TechDatabase: "TimescaleDB"})

@@ -9,7 +9,7 @@ import { needsApproval, TECH_AREA, TECH_STATUS, techState, techVersion } from ".
 import { useProject } from "../store/project";
 import type { Project, StackCatalog, TechArea, TechItem, TechPlan } from "../types";
 import { Elapsed } from "./Elapsed";
-import { Proposal, TechRow } from "./TechStack";
+import { DesignReview, Proposal, TechRow } from "./TechStack";
 
 // Technology plan page: the approach, what needs attention, the chosen
 // technologies and the approval. Reasoning, evaluation, compatibility and
@@ -60,6 +60,7 @@ export function TechWorkspace({ project }: { project: Project }) {
       )}
       {s.plan_request?.rejected && <p className="small warn-text">Jawaban AI ditolak, mencoba lagi: {s.plan_request.rejected}</p>}
       {s.proposal && <Proposal p={s.proposal} disabled={busy || finalized} />}
+      <DesignReview project={project} />
 
       {(plan.stale || outdated) && (
         <div className="repo-banner warn">

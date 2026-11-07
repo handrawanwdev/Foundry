@@ -17,8 +17,12 @@ import (
 // when one changes, only the plan sections that depend on it are marked for
 // review. The technology decision itself is not a source (it is the plan),
 // and neither is anything derived from it (the blueprint's database engine,
-// the structure type), so the plan never goes stale from its own result.
-var SourceAreaOrder = []string{"requirements", "modules", "platform", "data", "integrations", "security", "folder"}
+// the structure type, the folder plan), so the plan never goes stale from its
+// own result. The folder plan is written from the technology and goes stale
+// when it changes; were it a source too, revising either plan would mark the
+// other stale forever. Its consistency with the plan is checked instead
+// (folder_structure).
+var SourceAreaOrder = []string{"requirements", "modules", "platform", "data", "integrations", "security"}
 
 // Plan sections are the workspace tabs.
 var Sections = []string{
@@ -32,7 +36,6 @@ var sectionsOf = map[string][]string{
 	"data":         {"context", "data", "compatibility"},
 	"integrations": {"context", "infra", "data"},
 	"security":     {"context", "infra"},
-	"folder":       {"architecture", "compatibility"},
 }
 
 func digest(v any) string {
@@ -54,10 +57,6 @@ func SourceAreas(p *core.Project) map[string]string {
 	for _, m := range repoplan.Modules(p) {
 		mods = append(mods, m.ID)
 	}
-	var folder any
-	if s := p.Structure; s != nil && s.Mode != core.StructureExisting && s.Repo != nil {
-		folder = []any{s.Repo.Approach, s.Repo.Topology, FileLanguages(s.Repo)}
-	}
 	return map[string]string{
 		"requirements": digest([]any{p.Story, p.Requirements, p.Features, p.Flows, p.Survey, disc.TechNeeds}),
 		"modules":      digest(mods),
@@ -65,7 +64,6 @@ func SourceAreas(p *core.Project) map[string]string {
 		"data":         digest(disc.Data),
 		"integrations": digest(disc.Integrations),
 		"security":     digest([]any{disc.Security, disc.Roles}),
-		"folder":       digest(folder),
 	}
 }
 
