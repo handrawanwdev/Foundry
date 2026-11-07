@@ -738,3 +738,9 @@ button.link:hover { text-decoration: underline; background: none; }
 .tp-item.on { background: var(--accent-soft); }
 .tp-badges { display: flex; flex-wrap: wrap; gap: .25rem; }
 .tp-edit { margin-top: 1rem; padding-top: .8rem; border-top: 1px dashed var(--line); }
+
+.bp-stages { list-style: none; margin: 1.25rem 0 0; padding: 0; display: grid; gap: .5rem; }
+.bp-stage { display: flex; gap: .6rem; align-items: baseline; opacity: .55; }
+.bp-stage.running, .bp-stage.done { opacity: 1; }
+.bp-stage.done .bp-mark { color: var(--accent); }
+.bp-mark { width: 1.1rem; text-align: center; flex-shrink: 0; }

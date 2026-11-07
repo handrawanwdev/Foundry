@@ -204,3 +204,20 @@ func planRepairing(p *core.Project) bool {
 	}
 	return false
 }
+
+// planRoundLabel names the section the current plan round designs, so the
+// progress line says what is being written ("Merancang Blueprint: Teknologi").
+func planRoundLabel(p *core.Project, kind, msg string) string {
+	if kind != work.KindPlan {
+		return msg
+	}
+	name := map[string]string{
+		work.KindTech:      "Teknologi",
+		work.KindStructure: "Arsitektur",
+		work.KindRepo:      "Struktur repository",
+	}[work.CurrentPlanPart(p)]
+	if name == "" {
+		return msg
+	}
+	return msg + ": " + name
+}

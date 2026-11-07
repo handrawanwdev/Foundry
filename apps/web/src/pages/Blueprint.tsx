@@ -7,6 +7,7 @@ import {
   isDesignDoc, SCOPE_DOCS, scopeIssuesOf, usedBy,
 } from "../blueprint";
 import { DeleteDialog } from "../components/DeleteDialog";
+import { BlueprintProgress } from "../components/BlueprintProgress";
 import { Elapsed } from "../components/Elapsed";
 import { Markdown } from "../components/Markdown";
 import { PromptBar } from "../components/PromptBar";
@@ -34,10 +35,7 @@ export function BlueprintPage() {
     const discovering = isWorking(project) && project.job?.kind === "discovery";
     if (discovering) {
       return (
-        <div className="dw-empty">
-          <h1><span className="spinner" /> Merancang Blueprint <Elapsed started={project.job?.started} /></h1>
-          <p className="muted">Teknologi, arsitektur, dan folder disusun dari daftar fitur yang sudah kamu tinjau.</p>
-        </div>
+        <div className="dw-empty"><BlueprintProgress project={project} /></div>
       );
     }
     const toFeatures = project.stage === "DISCOVERY";

@@ -329,7 +329,7 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 		}
 		now := time.Now().UTC()
 		p.Job = &core.Job{
-			Kind: kind, Status: status, Message: batchLabel(p, msg), Started: now,
+			Kind: kind, Status: status, Message: planRoundLabel(p, kind, batchLabel(p, msg)), Started: now,
 			ETAMS: core.EstimateJobMS(p.JobHistory, kind),
 		}
 		return nil
