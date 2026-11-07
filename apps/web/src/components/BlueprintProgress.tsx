@@ -70,7 +70,9 @@ const MARK: Record<State, React.ReactNode> = {
 export function BlueprintProgress({ project }: { project: Project }) {
   const [view, setView] = useState<BlueprintView | null>(null);
   useEffect(() => {
-    api.blueprint().then(setView).catch(() => setView(null));
+    let stale = false;
+    api.blueprint().then((v) => { if (!stale) setView(v); }).catch(() => { if (!stale) setView(null); });
+    return () => { stale = true; };
   }, [project.version, project.dir]);
   const stages = blueprintStages(project, view);
   const running = stages.filter((s) => s.state === "running");
