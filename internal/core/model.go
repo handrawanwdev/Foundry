@@ -90,6 +90,9 @@ type Project struct {
 	// BlueprintProgress is the current generation run: sections, tasks,
 	// executions and timeline. Written at real pipeline transitions.
 	BlueprintProgress *BlueprintProgress `json:"blueprint_progress,omitempty"`
+	// HashVersion is the artifact hash the recorded refs use (see
+	// core.HashVersion); older files are migrated on load.
+	HashVersion int `json:"hash_version,omitempty"`
 	// JobHistory is the last completed AI job durations, newest last.
 	// ETA is the median of matching kinds when at least two samples exist.
 	JobHistory []JobTiming `json:"job_history,omitempty"`

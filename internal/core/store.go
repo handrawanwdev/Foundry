@@ -96,7 +96,7 @@ func (s *Store) Init(name string) (*Project, error) {
 	if name == "" {
 		name = filepath.Base(s.Dir)
 	}
-	p := &Project{Name: name, Dir: s.Dir, Stage: StageTell}
+	p := &Project{Name: name, Dir: s.Dir, Stage: StageTell, HashVersion: HashVersion}
 	p.Log("system", "Project dibuat")
 	err := s.withLock(func() error {
 		if s.Exists() {
@@ -136,8 +136,19 @@ func (s *Store) Load() (*Project, error) {
 	}
 	p.NormalizeLinks()      // workflow id and subfeature parent ids of older files
 	p.Survey.FillDefaults() // answers of the first survey move to the current questions
+	for _, fn := range loadMigrations {
+		fn(&p)
+	}
 	return &p, nil
 }
+
+// loadMigrations need data rendered outside core (the artifacts); their
+// packages register them in init.
+var loadMigrations []func(*Project)
+
+// RegisterLoadMigration runs fn on every loaded project, after core's own
+// migrations.
+func RegisterLoadMigration(fn func(*Project)) { loadMigrations = append(loadMigrations, fn) }
 
 // Update loads the latest state, applies fn and saves it atomically. If fn
 // returns an error nothing is written.

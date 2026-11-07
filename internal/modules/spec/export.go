@@ -64,7 +64,67 @@ func Artifacts(p *core.Project) []core.Artifact {
 		"Kriteria penerimaan per requirement, bukti yang diharapkan, dan Definition of Done.", acceptanceMarkdown(p))
 	add(core.ArtifactDecisions, "Keputusan, Asumsi & Risiko", core.ArtifactOther,
 		"Area yang tidak dicakup, asumsi, pertanyaan terbuka, konflik, dan risiko.", decisionsMarkdown(p))
+	for i := range out {
+		if out[i].ID == core.ArtifactTechPlan || out[i].ID == core.ArtifactRepoStructure {
+			out[i].Status = statusPrefix(out[i].Body)
+		}
+	}
 	return append(out, p.Artifacts...)
+}
+
+// statusPrefix is the review status a plan artifact starts with
+// ("Status: **approved**"), or "" when it has none.
+func statusPrefix(body string) string {
+	const open = "Status: **"
+	if !strings.HasPrefix(body, open) {
+		return ""
+	}
+	end := strings.Index(body[len(open):], "**")
+	if end < 0 {
+		return ""
+	}
+	return body[:len(open)+end+2]
+}
+
+func init() { core.RegisterLoadMigration(migrateStatusHashes) }
+
+// migrateStatusHashes moves the refs recorded with the hash that still
+// counted the plan status (HashVersion 0) to the current hash. A ref that
+// matches neither was already stale and stays so.
+func migrateStatusHashes(p *core.Project) {
+	if p.HashVersion >= core.HashVersion {
+		return
+	}
+	p.HashVersion = core.HashVersion
+	moved := map[string][2]string{} // artifact id → legacy, current
+	for _, d := range Artifacts(p) {
+		if d.Status == "" {
+			continue
+		}
+		if old, cur := d.LegacyHash(), d.Hash(); old != cur {
+			moved[d.ID] = [2]string{old, cur}
+		}
+	}
+	if len(moved) == 0 {
+		return
+	}
+	if w := p.Workflow; w != nil {
+		for i := range w.Commands {
+			refs := w.Commands[i].Artifacts
+			for j := range refs {
+				if h, ok := moved[refs[j].ID]; ok && refs[j].Hash == h[0] {
+					refs[j].Hash = h[1]
+				}
+			}
+		}
+	}
+	for i := range p.Artifacts {
+		for id, seen := range p.Artifacts[i].Seen {
+			if h, ok := moved[id]; ok && seen == h[0] {
+				p.Artifacts[i].Seen[id] = h[1]
+			}
+		}
+	}
 }
 
 // BlueprintHash identifies the whole blueprint: the same artifacts give

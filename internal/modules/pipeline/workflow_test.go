@@ -423,3 +423,16 @@ func TestWorkflowFillingIsReported(t *testing.T) {
 		t.Fatalf("continue on a full workflow: %v", err)
 	}
 }
+
+// Editing or reviewing a command before a workflow exists is refused, not a
+// nil dereference that leaves the request without an answer.
+func TestCommandChangeWithoutWorkflow(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	designReady(t, s)
+	if _, err := s.EditCommand("CMD-001", work.CommandEdit{}); err == nil || !strings.Contains(err.Error(), "workflow belum disusun") {
+		t.Fatalf("edit err = %v", err)
+	}
+	if _, err := s.ReviewCommand("CMD-001", false, ""); err == nil || !strings.Contains(err.Error(), "workflow belum disusun") {
+		t.Fatalf("review err = %v", err)
+	}
+}

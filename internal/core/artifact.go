@@ -3,6 +3,7 @@ package core
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 	"time"
 )
 
@@ -29,6 +30,10 @@ type Artifact struct {
 	// Builtin marks an artifact rendered from structured data; it is never
 	// stored and changes only through its own data.
 	Builtin bool `json:"builtin,omitempty"`
+	// Status is the review status at the start of Body ("Status:
+	// **approved**"). It is not content: Hash leaves it out, so approving a
+	// plan does not make the commands that read it need review.
+	Status string `json:"-"`
 }
 
 // Artifact categories (blueprint sections).
@@ -87,9 +92,24 @@ const (
 // Hash identifies the artifact's content; a command records it to notice
 // when the artifact changes after the command was written.
 func (a Artifact) Hash() string {
-	sum := sha256.Sum256([]byte(a.Title + "\x00" + a.Summary + "\x00" + a.Body))
+	body := a.Body
+	if a.Status != "" {
+		body = strings.TrimPrefix(body, a.Status)
+	}
+	return hashOf(a.Title, a.Summary, body)
+}
+
+// LegacyHash is Hash before the status was left out (HashVersion 0); it
+// equals Hash for an artifact without a status.
+func (a Artifact) LegacyHash() string { return hashOf(a.Title, a.Summary, a.Body) }
+
+func hashOf(title, summary, body string) string {
+	sum := sha256.Sum256([]byte(title + "\x00" + summary + "\x00" + body))
 	return hex.EncodeToString(sum[:6])
 }
+
+// HashVersion is the current artifact hash: 1 leaves Artifact.Status out.
+const HashVersion = 1
 
 // ChangeRequest is a natural-language change waiting for the AI. Focus
 // names the artifacts or commands the user asked about (empty: any).
