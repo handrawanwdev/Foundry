@@ -33,7 +33,9 @@ func NewStore(dir string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{Dir: abs}, nil
+	st := &Store{Dir: abs}
+	safefile.CleanTemp(st.path(), time.Hour) // leftovers of a crashed write
+	return st, nil
 }
 
 func (s *Store) path() string     { return filepath.Join(s.Dir, StateDir, "project.json") }

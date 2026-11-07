@@ -91,6 +91,17 @@ func WriteFile(path string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
+// CleanTemp removes temporary files that a crashed WriteFile of path left
+// behind. Only files older than age go, so a live writer is never robbed.
+func CleanTemp(path string, age time.Duration) {
+	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(path), filepath.Base(path)+".*.tmp"))
+	for _, m := range matches {
+		if st, err := os.Stat(m); err == nil && st.Mode().IsRegular() && time.Since(st.ModTime()) > age {
+			os.Remove(m)
+		}
+	}
+}
+
 // ReadFile reads path like os.ReadFile, riding out a concurrent WriteFile.
 func ReadFile(path string) ([]byte, error) {
 	var b []byte

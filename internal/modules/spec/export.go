@@ -13,6 +13,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/standard"
 	"github.com/handrawanwdev/foundry/internal/modules/workflow"
+	"github.com/handrawanwdev/foundry/internal/safefile"
 )
 
 // ExportDir is where finalize writes the export package, inside the
@@ -467,6 +468,17 @@ func WriteDocs(dir string, p *core.Project) error {
 	}
 	root := filepath.Join(dir, filepath.FromSlash(ExportDir))
 	files := Files(p)
+	// New files first: a crash mid-export leaves the old package complete
+	// plus some new files, never a package missing files.
+	for name, body := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := safefile.WriteFile(path, []byte(body), 0o644); err != nil {
+			return err
+		}
+	}
 	// design-brief.md was written by older versions; the design rules
 	// replace it.
 	if err := os.Remove(filepath.Join(root, "design-brief.md")); err != nil && !os.IsNotExist(err) {
@@ -486,15 +498,6 @@ func WriteDocs(dir string, p *core.Project) error {
 					return err
 				}
 			}
-		}
-	}
-	for name, body := range files {
-		path := filepath.Join(root, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			return err
 		}
 	}
 	agents := filepath.Join(dir, "AGENTS.md")
