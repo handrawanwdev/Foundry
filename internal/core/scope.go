@@ -142,6 +142,8 @@ type AreaStatus struct {
 	// Errors counts what must be fixed before the area is covered.
 	Errors    int  `json:"errors,omitempty"`
 	Skippable bool `json:"skippable,omitempty"`
+	// Topics are what the area's artifact covers.
+	Topics []string `json:"topics,omitempty"`
 }
 
 // Coverage reports every area against the blueprint docs (built-in and
@@ -165,7 +167,7 @@ func BlueprintChecks(p *Project, docs []Artifact) ([]AreaStatus, map[string]Arti
 func coverageOf(p *Project, docs []Artifact, errByArea map[string]int) []AreaStatus {
 	out := make([]AreaStatus, 0, len(Areas))
 	for _, a := range Areas {
-		st := AreaStatus{ID: a.ID, Title: a.Title, Artifacts: []string{}, Skippable: a.Skippable}
+		st := AreaStatus{ID: a.ID, Title: a.Title, Artifacts: []string{}, Skippable: a.Skippable, Topics: a.Topics}
 		for _, d := range docs {
 			if d.Area == a.ID || slices.Contains(a.Artifacts, d.ID) {
 				st.Artifacts = append(st.Artifacts, d.ID)

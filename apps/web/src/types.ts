@@ -437,7 +437,7 @@ export interface Decision { id: string; kind: DecisionKind; text: string; area?:
 export interface AreaSkip { area: string; reason: string }
 export type AreaStatusKind = "covered" | "invalid" | "missing" | "skipped" | "not_applicable";
 export interface AreaStatus {
-  id: string; title: string; status: AreaStatusKind; artifacts: string[]; reason?: string; errors?: number; skippable?: boolean;
+  id: string; title: string; status: AreaStatusKind; artifacts: string[]; reason?: string; errors?: number; skippable?: boolean; topics?: string[];
 }
 export type ArtifactStateKind = "draft" | "valid" | "needs_review" | "finalized";
 export interface ArtifactState { status: ArtifactStateKind; reason?: string }
