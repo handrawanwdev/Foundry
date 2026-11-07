@@ -7,8 +7,8 @@ import { Elapsed } from "./Elapsed";
 type State = "done" | "running" | "pending" | "skipped";
 interface Stage { id: string; title: string; hint: string; state: State }
 
-// Areas whose Markdown the AI writes in one job: the "discovery" job on the
-// first run, the "artifacts" job on a revision. The rest are
+// Areas whose Markdown the AI writes in the "artifacts" job, one area per
+// job during the first build (artifact_request.area names it). The rest are
 // written by their own step (ui = design job, use cases and acceptance
 // come from the feature list).
 const WRITTEN_BY_ARTIFACTS = new Set(["data", "security", "integration", "operations", "migration"]);
@@ -26,6 +26,7 @@ export function blueprintStages(p: Project, view: BlueprintView | null): Stage[]
   const st = p.structure;
   const stack = p.stack;
   const existing = st?.mode === "existing";
+  const area = p.artifact_request?.area;
   const out: Stage[] = [{
     id: "discovery", title: "Penjelasan sistem",
     hint: "Ringkasan, pengguna dan peran, data, integrasi, keamanan.",
@@ -40,7 +41,7 @@ export function blueprintStages(p: Project, view: BlueprintView | null): Stage[]
     if (a.status === "skipped") state = "skipped";
     else if (a.status === "covered") state = "done";
     else if (a.id === "ui" && kind === "design") state = "running";
-    else if (WRITTEN_BY_ARTIFACTS.has(a.id) && (kind === "artifacts" || kind === "discovery")) state = "running";
+    else if (WRITTEN_BY_ARTIFACTS.has(a.id) && kind === "artifacts" && (!area || area === a.id)) state = "running";
     out.push({ id: a.id, title: a.title, hint: cut(a.topics), state });
   }
 
@@ -99,9 +100,6 @@ export function BlueprintProgress({ project }: { project: Project }) {
           : "Menyiapkan rancangan…"}
         {" "}({done}/{counted.length} bagian selesai)
       </p>
-      {running.length > 1 && (
-        <p className="muted small">Bagian bertanda berputar ditulis AI dalam satu langkah, jadi selesai bersamaan.</p>
-      )}
       <ol className="bp-stages">
         {stages.map((s) => (
           <li key={s.id} className={`bp-stage ${s.state}`} aria-current={s.state === "running" ? "step" : undefined}>

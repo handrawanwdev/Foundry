@@ -54,7 +54,9 @@ func (s *Service) GenerateBlueprint() error {
 // and folders are one unified job.
 func missingBlueprintSteps(p *core.Project) []string {
 	var steps []string
-	if work.ScopeRequest(p, spec.Artifacts(p)) != "" {
+	// One AI job per area, so the UI shows the areas one after another.
+	areas, _ := work.ScopeAreas(p, spec.Artifacts(p))
+	for range areas {
 		steps = append(steps, work.KindArtifacts)
 	}
 	if p.HasUI() && !p.UI.Written() {
@@ -155,11 +157,11 @@ func (s *Service) startBlueprintQueue(steps []string, total int) error {
 func prepareBlueprintStep(p *core.Project, kind string) error {
 	switch kind {
 	case work.KindArtifacts:
-		text := work.ScopeRequest(p, spec.Artifacts(p))
-		if text == "" {
+		areas, texts := work.ScopeAreas(p, spec.Artifacts(p))
+		if len(areas) == 0 {
 			return ErrNothingToDo
 		}
-		p.ArtifactRequest = &core.ChangeRequest{Text: text}
+		p.ArtifactRequest = &core.ChangeRequest{Text: texts[0], Area: areas[0]}
 		return nil
 	case work.KindDesign:
 		if err := designEditable(p); err != nil {

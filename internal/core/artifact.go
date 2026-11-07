@@ -96,6 +96,9 @@ func (a Artifact) Hash() string {
 type ChangeRequest struct {
 	Text  string   `json:"text"`
 	Focus []string `json:"focus,omitempty"`
+	// Area is the one blueprint area this request writes, when the first
+	// blueprint is built area by area; the UI shows that area as running.
+	Area string `json:"area,omitempty"`
 	// Rejected is why the AI's last answer was refused; the retry prompt
 	// shows it.
 	Rejected string `json:"rejected,omitempty"`

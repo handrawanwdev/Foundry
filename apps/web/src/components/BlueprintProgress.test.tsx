@@ -53,10 +53,12 @@ describe("blueprintStages", () => {
     expect(ids(s)).toEqual(["discovery", "tech"]);
   });
 
-  it("runs the areas the discovery job writes together with it", () => {
+  it("runs one area at a time during the artifacts jobs", () => {
     const v = view(area("data", "missing"), area("security", "missing"), area("ui", "missing"));
-    const s = blueprintStages(proj({ job: job("discovery") }), v);
-    expect([stateOf(s, "discovery"), stateOf(s, "data"), stateOf(s, "security"), stateOf(s, "ui")]).toEqual(["running", "running", "running", "pending"]);
+    let s = blueprintStages(proj({ discovery: {}, job: job("artifacts"), artifact_request: { text: "x", area: "security" } }), v);
+    expect([stateOf(s, "data"), stateOf(s, "security")]).toEqual(["pending", "running"]);
+    s = blueprintStages(proj({ job: job("discovery") }), v);
+    expect([stateOf(s, "discovery"), stateOf(s, "data"), stateOf(s, "security")]).toEqual(["running", "pending", "pending"]);
   });
 
   it("marks discovery running during the discovery job", () => {

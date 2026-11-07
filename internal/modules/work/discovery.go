@@ -110,6 +110,10 @@ Do not use the ids requirements, survey-decisions, architecture, technology, des
 	b.WriteString(consistencyRules)
 	b.WriteString(outputValidationRules)
 	b.WriteString(`
+FOR THIS ANSWER ONLY: return "artifacts" as an empty list []. Foundry asks for each blueprint area document (data, security,
+integration, operations, migration, and other documents) in its own next step, one area at a time, so do not write any now.
+This overrides every rule above that asks you to write area or extra documents in this answer. Still return the structured
+parts (discovery, blueprint, requirements, features, flows, platform, decisions, skip, definition_of_done) in full.
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
   "name": "short product name",

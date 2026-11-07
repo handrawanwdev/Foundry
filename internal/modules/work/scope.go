@@ -430,6 +430,27 @@ func ReviewArtifact(p *core.Project, id string, hashes map[string]string) error 
 	return nil
 }
 
+// ScopeAreas lists the areas ScopeRequest would ask for, in blueprint order,
+// with the request text for each one alone.
+func ScopeAreas(p *core.Project, docs []core.Artifact) (ids, texts []string) {
+	for _, a := range core.Coverage(p, docs) {
+		if a.ID == core.AreaUI {
+			continue // the UI design has its own job
+		}
+		switch a.Status {
+		case core.AreaMissing:
+			ids = append(ids, a.ID)
+			texts = append(texts, fmt.Sprintf("Lengkapi blueprint: tulis area %s (%s), atau lewati dengan alasan jika memang tidak relevan. "+
+				"Kerjakan HANYA area ini; area lain ditulis pada langkah berikutnya, jangan ditulis sekarang.", a.ID, a.Title))
+		case core.AreaInvalid:
+			ids = append(ids, a.ID)
+			texts = append(texts, fmt.Sprintf("Lengkapi blueprint: perbaiki area %s (%s): %d hal wajib. "+
+				"Kerjakan HANYA area ini; area lain dikerjakan pada langkah berikutnya.", a.ID, a.Title, a.Errors))
+		}
+	}
+	return ids, texts
+}
+
 // ScopeRequest is the change request that asks the AI to complete the
 // blueprint areas that are missing or invalid; "" when nothing is.
 func ScopeRequest(p *core.Project, docs []core.Artifact) string {
