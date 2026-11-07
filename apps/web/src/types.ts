@@ -494,7 +494,7 @@ export interface AreaStatus {
 }
 export type ArtifactStateKind = "draft" | "valid" | "needs_review" | "finalized";
 export interface ArtifactState { status: ArtifactStateKind; reason?: string }
-export interface ChangeRequest { text: string; focus?: string[]; area?: string; rejected?: string; cascade?: boolean; sync?: boolean }
+export interface ChangeRequest { text: string; focus?: string[]; area?: string; rejected?: string; cascade?: boolean; sync?: boolean; handled?: string[] }
 // What deleting one blueprint document reaches.
 export interface DeleteImpact {
   doc: string;

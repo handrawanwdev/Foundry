@@ -81,7 +81,7 @@ func TestWorkflowPromptCarriesChangePlan(t *testing.T) {
 		},
 		Files: core.ChangeFiles{Add: []core.ChangeFile{{Path: "internal/notify/service.go", Responsibility: "kirim"}}},
 	}
-	got := workflowFreshPrompt(p, nil)
+	got := workflowSketchPrompt(p, nil)
 	for _, want := range []string{
 		"EXISTING CODEBASE: yes",
 		"EXISTING PROJECT COMMANDS",

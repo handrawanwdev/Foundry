@@ -84,7 +84,7 @@ func TestCommandRulesCarryInvariantsAndAccess(t *testing.T) {
 // inventory scenario's consistency and access needs reach the planner.
 func TestWorkflowPromptCarriesCommandRules(t *testing.T) {
 	p := &core.Project{Story: "Inventaris gudang dengan pencatatan stok atomik dan akses per peran"}
-	got := workflowFreshPrompt(p, nil)
+	got := workflowSketchPrompt(p, nil)
 	for _, want := range []string{
 		"a transaction must fail without partial change",
 		"names the permission(s) from authz that gate the action",

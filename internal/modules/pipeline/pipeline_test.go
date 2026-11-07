@@ -229,8 +229,14 @@ func fakeAgent() {
 			fmt.Println(`{"commands": []}`)
 		case strings.Contains(prompt, "dihapus dari blueprint"):
 			fmt.Println(cleanupWorkflowJSON(prompt))
+		case strings.Contains(prompt, "DETAIL PHASE"):
+			src := workflowJSON
+			if mode == "embedded" {
+				src = embeddedWorkflowJSON
+			}
+			fmt.Println(detailAnswer(prompt, src))
 		case strings.Contains(prompt, "CURRENT COMMANDS"):
-			fmt.Println(workflowRevisionJSON)
+			fmt.Println(revisionRound(prompt, workflowRevisionChanges...))
 		case mode == "embedded":
 			fmt.Println(embeddedWorkflowJSON)
 		case mode == "cycle_once" && !strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED"):
@@ -519,6 +525,50 @@ func promptPlatforms(prompt string) []string {
 	return out
 }
 
+// detailFor matches the command a detail round asks for ("- CMD-002: ...").
+var detailFor = regexp.MustCompile(`DETAIL PHASE - Fill in details for these \d+ commands:\n- CMD-(\d+):`)
+
+// detailAnswer answers a detail round from a full workflow answer: the
+// outline numbered its commands CMD-001, CMD-002, ... in answer order, so
+// the requested command is the n-th one, sent back under its CMD id.
+func detailAnswer(prompt, raw string) string {
+	m := detailFor.FindStringSubmatch(prompt)
+	if m == nil {
+		return `{"commands": []}`
+	}
+	n, _ := strconv.Atoi(m[1])
+	var out struct {
+		Commands []map[string]any `json:"commands"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil || n < 1 || n > len(out.Commands) {
+		return `{"commands": []}`
+	}
+	c := out.Commands[n-1]
+	c["id"] = fmt.Sprintf("CMD-%03d", n)
+	b, _ := json.Marshal(map[string]any{"commands": []any{c}})
+	return string(b)
+}
+
+// submitWorkflow answers a workflow job as an MCP host: the outline first,
+// then every detail round Foundry queues, one command at a time.
+func submitWorkflow(s *pipeline.Service, raw string) error {
+	if err := s.SubmitWork(work.KindWorkflow, raw); err != nil {
+		return err
+	}
+	for {
+		item, err := s.NextWork()
+		if err != nil {
+			return err
+		}
+		if item.Kind != work.KindWorkflow || !strings.Contains(item.Prompt, "DETAIL PHASE") {
+			return nil
+		}
+		if err := s.SubmitWork(work.KindWorkflow, detailAnswer(item.Prompt, raw)); err != nil {
+			return err
+		}
+	}
+}
+
 const workflowJSON = `{"commands": [
  {"id": "C1", "name": "Kontrak API janji temu", "objective": "Tetapkan kontrak API", "instructions": "Periksa repository. Tulis kontrak API janji temu.",
   "artifacts": ["requirements", "architecture"], "covers": ["REQ-001", "req-002"], "expected_outputs": ["openapi.yaml"], "acceptance_criteria": ["Kontrak mencakup REQ-001"]},
@@ -549,18 +599,37 @@ func cleanupWorkflowJSON(prompt string) string {
 			out = append(out, r)
 		}
 	}
-	return `{"commands": [` + strings.Join(out, ",") + `]}`
+	return revisionRound(prompt, out...)
 }
 
 const cyclicWorkflowJSON = `{"commands": [
  {"id": "C1", "name": "A", "objective": "a", "instructions": "a", "depends_on": ["C2"], "artifacts": ["requirements"]},
  {"id": "C2", "name": "B", "objective": "b", "instructions": "b", "depends_on": ["C1"], "artifacts": ["requirements"]}]}`
 
-const workflowRevisionJSON = `{"commands": [
- {"id": "CMD-002", "name": "Backend janji temu + notifikasi", "objective": "Endpoint janji", "instructions": "Implementasikan endpoint dan notifikasi.",
-  "depends_on": ["CMD-001"], "artifacts": ["architecture"]},
- {"id": "NEW1", "name": "Test integrasi", "objective": "Uji alur janji", "instructions": "Tulis test integrasi alur janji.",
-  "depends_on": ["CMD-002", "CMD-003"], "artifacts": ["requirements"], "acceptance_criteria": ["Alur buat janji lulus"]}]}`
+// workflowRevisionChanges is the revision "tambahkan test integrasi", one
+// command change per round.
+var workflowRevisionChanges = []string{
+	`{"id": "CMD-002", "name": "Backend janji temu + notifikasi", "objective": "Endpoint janji", "instructions": "Implementasikan endpoint dan notifikasi.",
+  "depends_on": ["CMD-001"], "artifacts": ["architecture"]}`,
+	`{"id": "NEW1", "name": "Test integrasi", "objective": "Uji alur janji", "instructions": "Tulis test integrasi alur janji.",
+  "depends_on": ["CMD-002", "CMD-003"], "artifacts": ["requirements"], "acceptance_criteria": ["Alur buat janji lulus"]}`,
+}
+
+// earlierRounds reads how many changes the earlier rounds of a revision made.
+var earlierRounds = regexp.MustCompile(`EARLIER ROUNDS of this request \(already saved in CURRENT COMMANDS\): ([^\n]*)\.\n`)
+
+// revisionRound answers one round of a sequential revision: the next of the
+// given command changes, with done on the last one.
+func revisionRound(prompt string, changes ...string) string {
+	k := 0
+	if m := earlierRounds.FindStringSubmatch(prompt); m != nil {
+		k = len(strings.Split(m[1], ", "))
+	}
+	if k >= len(changes) {
+		return `{"commands": [], "done": true}`
+	}
+	return fmt.Sprintf(`{"commands": [%s], "done": %t}`, changes[k], k == len(changes)-1)
+}
 
 const artifactsJSON = `{"artifacts": [{"id": "Threat Model", "title": "Threat Model", "category": "quality", "summary": "Ancaman utama",
   "body": "## Aset\n\n- Data pasien", "refs": ["requirements", "ghost"]}]}`
@@ -1350,7 +1419,7 @@ func TestFinalizeNeedsValidDesign(t *testing.T) {
 		t.Fatal(err)
 	}
 	noUI := strings.Replace(workflowJSON, `"design-rules", "layout-spec", `, ``, 1)
-	if err := s.SubmitWork(work.KindWorkflow, noUI); err == nil || !strings.Contains(err.Error(), "tidak ada command yang merujuk artefak design-rules") {
+	if err := submitWorkflow(s, noUI); err == nil || !strings.Contains(err.Error(), "tidak ada command yang merujuk artefak design-rules") {
 		t.Fatalf("workflow without design err = %v", err)
 	}
 }
@@ -1712,7 +1781,7 @@ func workflowReady(s *pipeline.Service) error {
 	}
 	s.Wait()
 	if p, _ = s.Store.Load(); p.Job != nil && p.Job.Status == core.JobWaiting {
-		return s.SubmitWork(work.KindWorkflow, workflowJSON)
+		return submitWorkflow(s, workflowJSON)
 	}
 	if p.Workflow == nil || len(p.Workflow.Commands) == 0 {
 		return fmt.Errorf("workflow not written: job %+v", p.Job)

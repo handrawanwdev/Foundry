@@ -45,17 +45,65 @@ func staleCommands(p *core.Project) map[string][]string {
 func applyWorkflowDelta(p *core.Project, raw string) error {
 	var before []core.Command
 	kind, reason := "generate", "Disusun dari blueprint"
+	cont := false // a later round of a revision already under way
 	if w := p.Workflow; w != nil && len(w.Commands) > 0 {
 		before, kind = slices.Clone(w.Commands), "revise"
 		if w.Request != nil {
 			reason = w.Request.Text
+			cont = len(w.Request.Handled) > 0
 		}
 	}
 	if err := work.ApplyWorkflow(p, raw, spec.Artifacts(p)); err != nil {
 		return err
 	}
-	progress.Track(p, before, kind, reason, "ai", time.Now().UTC())
+	if ch := progress.Track(p, before, kind, reason, "ai", time.Now().UTC()); ch != nil && cont {
+		mergeRound(p.Workflow)
+	}
 	return nil
+}
+
+// mergeRound folds the change a revision round just recorded into the
+// change of the request's earlier rounds: one revision is one history entry,
+// however many rounds wrote it.
+func mergeRound(w *core.Workflow) {
+	n := len(w.Changes)
+	if n < 2 {
+		return
+	}
+	prev, ch := &w.Changes[n-2], w.Changes[n-1]
+	if prev.Kind != ch.Kind || prev.Reason != ch.Reason {
+		return
+	}
+	for _, id := range ch.Added {
+		if !slices.Contains(prev.Added, id) {
+			prev.Added = append(prev.Added, id)
+		}
+	}
+	for _, m := range ch.Modified {
+		if slices.Contains(prev.Added, m.ID) || slices.ContainsFunc(prev.Modified, func(x core.CommandChange) bool { return x.ID == m.ID }) {
+			continue // the earliest text before this revision is kept
+		}
+		prev.Modified = append(prev.Modified, m)
+	}
+	for _, r := range ch.Removed {
+		if i := slices.Index(prev.Added, r.ID); i >= 0 {
+			prev.Added = slices.Delete(prev.Added, i, i+1) // added and removed within the revision
+			continue
+		}
+		if i := slices.IndexFunc(prev.Modified, func(x core.CommandChange) bool { return x.ID == r.ID }); i >= 0 {
+			r.Before = prev.Modified[i].Before
+			prev.Modified = slices.Delete(prev.Modified, i, i+1)
+		}
+		prev.Removed = append(prev.Removed, r)
+	}
+	prev.Version, prev.At = ch.Version, ch.At
+	prev.Reused = 0
+	for _, c := range w.Commands {
+		if !slices.Contains(prev.Added, c.ID) && !slices.ContainsFunc(prev.Modified, func(x core.CommandChange) bool { return x.ID == c.ID }) {
+			prev.Reused++
+		}
+	}
+	w.Changes = w.Changes[:n-1]
 }
 
 // CommandBrief is everything an agent needs to carry out one command.

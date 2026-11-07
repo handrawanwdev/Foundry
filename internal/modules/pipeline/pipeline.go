@@ -618,6 +618,12 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			if err := applyWorkflowDelta(p, raw); err != nil {
 				return err
 			}
+			// Commands are written and revised one per round. The agent loop
+			// starts the next round itself (runWorkflow); an MCP host gets it
+			// queued.
+			if w := p.Workflow; source == "mcp" && w != nil && w.Request != nil {
+				next = work.KindWorkflow
+			}
 		default:
 			return fmt.Errorf("jenis pekerjaan %q tidak dikenal", kind)
 		}

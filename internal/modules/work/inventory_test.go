@@ -195,7 +195,7 @@ func TestInventoryScenarioWorkflowPrompt(t *testing.T) {
 	if len(docs) == 0 {
 		t.Fatal("no blueprint artifacts rendered")
 	}
-	got := workflowFreshPrompt(p, docs)
+	got := workflowSketchPrompt(p, docs)
 	for _, want := range []string{
 		"a transaction must fail without partial change",
 		"names the permission(s) from authz that gate the action",

@@ -180,7 +180,7 @@ export function WorkflowPage() {
         <PromptBar
           label={cmd ? `Minta perubahan workflow (sedang melihat: ${cmd.id})…` : "Minta perubahan workflow…"}
           placeholder="Contoh: pecah CMD-003 jadi backend dan frontend; tambahkan command migrasi data sebelum CMD-004."
-          hint="AI mengubah command yang terdampak saja; dependency divalidasi."
+          hint="AI mengubah command yang terdampak satu per satu, berurutan; dependency divalidasi."
           disabled={working}
           busy={pending === "reviseWorkflow"}
           onSend={(text) => run("reviseWorkflow", () => api.reviseWorkflow(text, cmd ? [cmd.id] : []))}
@@ -213,7 +213,7 @@ function FillProgress({ total, unfilled, writing, working, locked, project }: {
       <div className="prog-bar"><i style={{ width: `${pct}%` }} /></div>
       <p className="small muted">
         {writing
-          ? "Diisi bertahap, beberapa command per putaran; halaman ini ikut berubah tiap putaran tersimpan. Pemeriksaan workflow dijalankan setelah semua terisi."
+          ? "Diisi berurutan, satu command per putaran mengikuti urutan dependency; halaman ini ikut berubah tiap command tersimpan. Pemeriksaan workflow dijalankan setelah semua terisi."
           : working
             ? "Tunggu proses AI lain yang sedang berjalan selesai, lalu lanjutkan."
             : "Proses berhenti sebelum semua command terisi. Command yang sudah terisi tetap; AI hanya menulis yang masih kosong."}

@@ -207,10 +207,14 @@ func planRepairing(p *core.Project) bool {
 }
 
 // workflowRoundLabel says how far the filling of an outlined workflow got
-// ("Mengisi detail command (5/18 selesai)"); each round is its own job.
+// ("Mengisi detail command (5/18 selesai)") or which round a revision is in
+// ("Merevisi workflow, command ke-3"); each round is its own job.
 func workflowRoundLabel(p *core.Project, msg string) string {
 	w := p.Workflow
 	if w.Unfilled() == 0 {
+		if w != nil && w.Request != nil && len(w.Request.Handled) > 0 {
+			return fmt.Sprintf("Merevisi workflow, command ke-%d", len(w.Request.Handled)+1)
+		}
 		return msg
 	}
 	return fmt.Sprintf("Mengisi detail command (%d/%d selesai)", len(w.Commands)-w.Unfilled(), len(w.Commands))

@@ -41,6 +41,8 @@ type commandOut struct {
 type workflowOut struct {
 	Commands []commandOut `json:"commands"`
 	Remove   []string     `json:"remove"`
+	// Done ends a revision: this answer is the last change it needs.
+	Done bool `json:"done"`
 }
 
 const commandRules = `Command rules:
@@ -89,56 +91,36 @@ func writeFeatureCatalog(b *strings.Builder, p *core.Project) {
 
 // WorkflowPrompt asks for the workflow (no commands yet) or for a revision
 // of it (the pending request). docs is the whole blueprint.
-// When the blueprint is large (total body > threshold), uses two-phase batching
-// to avoid context-limit / quota errors:
-// Phase 1 (Sketch): Generate command skeleton with artifact summaries only
-// Phase 2 (Details): Fill in details for commands in batches
-// Small blueprints use the original single-pass prompt.
+// Generation is always sequential, whatever the blueprint size:
+// Phase 1 (Sketch): the command skeleton, with artifact summaries only
+// Phase 2 (Details): one command per round, in dependency order
 func WorkflowPrompt(p *core.Project, docs []core.Artifact) string {
-	mode := detectWorkflowPromptMode(p, docs)
-	switch mode {
+	switch detectWorkflowPromptMode(p) {
 	case "sketch":
 		return workflowSketchPrompt(p, docs)
 	case "detail":
 		return workflowDetailBatchPrompt(p, docs)
-	case "fresh":
-		return workflowFreshPrompt(p, docs)
 	default:
 		return workflowRevisionPrompt(p, docs)
 	}
 }
 
-// workflowBatchThreshold is the total artifact body size above which the
-// workflow prompt switches to sketch mode to avoid context-limit errors.
-const workflowBatchThreshold = 50_000
+// workflowSketchFullBody is the total artifact body size up to which the
+// outline prompt carries the artifact bodies; above it, summaries only.
+const workflowSketchFullBody = 50_000
 
-// detectWorkflowPromptMode decides which prompt style to use.
-// Returns "sketch" for large fresh workflows, "detail" for workflows with
-// commands that still lack instructions, "fresh" for small new workflows,
-// and "" for the original revision prompt.
-func detectWorkflowPromptMode(p *core.Project, docs []core.Artifact) string {
+// detectWorkflowPromptMode decides which prompt style to use: "sketch" for
+// a new workflow, "detail" while commands still lack instructions, and ""
+// for a revision of a complete workflow.
+func detectWorkflowPromptMode(p *core.Project) string {
 	w := p.Workflow
-
-	// Existing commands that still need details → detail phase
-	if w != nil && len(w.Commands) > 0 {
-		for _, cmd := range w.Commands {
-			if cmd.Instructions == "" {
-				return "detail"
-			}
-		}
-		// All commands have instructions → revision
-		return ""
-	}
-
-	// Fresh workflow (no commands)
-	totalBody := 0
-	for _, d := range docs {
-		totalBody += len(d.Body)
-	}
-	if totalBody > workflowBatchThreshold {
+	if w == nil || len(w.Commands) == 0 {
 		return "sketch"
 	}
-	return "fresh"
+	if w.Unfilled() > 0 {
+		return "detail"
+	}
+	return ""
 }
 
 // workflowSketchPrompt generates a prompt for command skeleton only
@@ -164,12 +146,21 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	writeRepoBrief(&b, p)
 	writeFeatureCatalog(&b, p)
 
-	// Use artifact summaries only (not full bodies) to reduce context size
-	b.WriteString("BLUEPRINT ARTIFACTS (summaries only):\n")
+	// A small blueprint is read whole (long artifacts cut); a large one by
+	// summaries only, so the outline stays within the context limit.
+	totalBody := 0
 	for _, d := range docs {
-		fmt.Fprintf(&b, "=== %s (%s, %s%s) %s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary)
+		totalBody += len(d.Body)
 	}
-	b.WriteString("\n")
+	if totalBody <= workflowSketchFullBody {
+		writeDocs(&b, docs, promptBody)
+	} else {
+		b.WriteString("BLUEPRINT ARTIFACTS (summaries only):\n")
+		for _, d := range docs {
+			fmt.Fprintf(&b, "=== %s (%s, %s%s) %s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary)
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString(precedenceRules)
 
 	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Rejected != "" {
@@ -210,20 +201,11 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	writeFeatureCatalog(&b, p)
 	w := p.Workflow
 
-	// Find commands that need details (instructions empty)
-	var needsDetails []core.Command
-	for _, cmd := range w.Commands {
-		if cmd.Instructions == "" {
-			needsDetails = append(needsDetails, cmd)
-		}
+	// Commands are filled strictly one per round, in sequence.
+	var batch []core.Command
+	if c := nextFillCommand(w.Commands); c != nil {
+		batch = []core.Command{*c}
 	}
-
-	// Process in batches of 5 commands
-	batchSize := 5
-	if len(needsDetails) < batchSize {
-		batchSize = len(needsDetails)
-	}
-	batch := needsDetails[:batchSize]
 
 	b.WriteString("CURRENT COMMANDS (skeleton):\n" + mustJSON(skeletonCommands(w.Commands, batch)) + "\n\n")
 
@@ -273,6 +255,40 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	}
 	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"], \"files\": [\"\"]}]}")
 	return b.String()
+}
+
+// nextFillCommand is the command the next detail round writes: the first
+// unfilled command, in workflow order, whose dependencies are all filled, so
+// every command is written after the commands it builds on. Without such a
+// command (a dependency cycle) it falls back to the first unfilled one.
+func nextFillCommand(cmds []core.Command) *core.Command {
+	filled := map[string]bool{}
+	for _, c := range cmds {
+		if strings.TrimSpace(c.Instructions) != "" {
+			filled[c.ID] = true
+		}
+	}
+	var first *core.Command
+	for i := range cmds {
+		c := &cmds[i]
+		if filled[c.ID] {
+			continue
+		}
+		if first == nil {
+			first = c
+		}
+		ready := true
+		for _, d := range c.DependsOn {
+			if !filled[d] {
+				ready = false
+				break
+			}
+		}
+		if ready {
+			return c
+		}
+	}
+	return first
 }
 
 // writeBatchCriteria lists the criteria of the requirements a detail batch
@@ -325,44 +341,6 @@ func skeletonCommands(cmds, batch []core.Command) []core.Command {
 	return out
 }
 
-// workflowFreshPrompt generates the prompt for creating a new workflow (no commands yet)
-func workflowFreshPrompt(p *core.Project, docs []core.Artifact) string {
-	var b strings.Builder
-	b.WriteString(`You are the workflow planner of Foundry. Foundry designs software and writes instructions for an EXTERNAL coding agent (Claude Code, Codex, OpenCode, Qwen Code, ...). Foundry never runs them. Do not write application code. Do not modify files.
-Write every human-readable text in the same language as the story.
-
-PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
-	if p.Platform != nil {
-		var kinds []string
-		for _, t := range p.Platform.Targets {
-			kinds = append(kinds, t.Kind)
-		}
-		b.WriteString("PLATFORM: " + strings.Join(kinds, ", ") + "\n")
-	}
-	writeCodebaseBrief(&b, p)
-	b.WriteString("\n" + surveyWorkflowRules(p))
-	writeBinding(&b, p)
-	writeStackBrief(&b, p)
-	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
-	writeRepoBrief(&b, p)
-	writeFeatureCatalog(&b, p)
-	cut := promptBody
-	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Sync {
-		cut = 0
-	}
-	writeDocs(&b, docs, cut)
-	b.WriteString("Turn the blueprint into a command workflow of 3-25 commands. Use ids C1, C2, ...\n\n")
-	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Rejected != "" {
-		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + w.Request.Rejected + "\n\n")
-	}
-	b.WriteString(commandRules)
-	if HasUI(p) {
-		b.WriteString(VisualVerificationRules)
-	}
-	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [" + commandShape + "]}")
-	return b.String()
-}
-
 // workflowRevisionPrompt is the original prompt for revising an existing complete workflow
 func workflowRevisionPrompt(p *core.Project, docs []core.Artifact) string {
 	var b strings.Builder
@@ -407,6 +385,9 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		if len(r.Focus) > 0 {
 			b.WriteString("Commands the request is about: " + strings.Join(r.Focus, ", ") + ".\n\n")
 		}
+		if len(r.Handled) > 0 {
+			b.WriteString("EARLIER ROUNDS of this request (already saved in CURRENT COMMANDS): " + strings.Join(r.Handled, ", ") + ".\n\n")
+		}
 		if r.Rejected != "" {
 			b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + r.Rejected + "\n\n")
 		}
@@ -415,15 +396,17 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	if HasUI(p) {
 		b.WriteString(VisualVerificationRules)
 	}
-	b.WriteString(`Revision rules:
-- change only the commands the request affects. Return only commands you add or change, each in full. Keep the id of a changed command; give new commands ids NEW1, NEW2, ...
-- when the request asks to follow changed blueprint artifacts, return every command whose artifacts changed even if its text stays valid; that records the new artifact versions.
-- remove lists the ids of commands to delete; commands that depended on them must be returned with fixed depends_on.
-- commands not returned stay as they are. A long answer may be cut short; Foundry asks again for the commands you did not return yet.
+	b.WriteString(`Revision rules (Foundry runs the request in rounds, ONE command change per round):
+- each answer makes exactly one change: return one command (changed or new) in commands, or put one id in remove and leave commands empty. Never more than one.
+- pick the next change the request still needs, in dependency order: a command before the commands that depend on it. Do not repeat a change from the earlier rounds.
+- return the command in full. Keep the id of a changed command; give a new command the id NEW1.
+- removing a command hands its dependencies to the commands that depended on it; change those in later rounds only when their text has to change.
+- when the request asks to follow changed blueprint artifacts, return every command whose artifacts changed, one per round, even if its text stays valid; that records the new artifact versions.
+- set done to true when this answer is the last change the request needs, false when more commands still need a change. When nothing is left to change, reply {"commands": [], "done": true}.
 - a changed command has to be done again by the coding agent, so leave commands the agent already finished as they are unless the request or the blueprint really requires a change. Add what is missing as new commands instead.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block:
-{"commands": [` + commandShape + `], "remove": ["CMD-003"]}`)
+{"commands": [` + commandShape + `], "remove": [], "done": false}`)
 	return b.String()
 }
 
@@ -447,9 +430,11 @@ func writeExecutionState(b *strings.Builder, p *core.Project) {
 // ApplyWorkflow lands the AI's workflow or revision. The result must pass
 // the workflow check (references, no cycle) or nothing changes.
 // Routes based on response content:
-// - Commands with instructions → complete workflow (original behavior)
-// - Commands without instructions → sketch phase (triggers detail batches)
-// - Existing skeleton + commands with details → detail batch phase
+//   - New workflow → sketch phase; any instructions in the answer are dropped
+//     and every command is filled in its own round
+//   - Existing skeleton + commands with details → detail phase (one command)
+//   - Complete workflow → revision
+//
 // Visual verification commands can be added explicitly via AddVisualVerificationCommands.
 func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 	var out workflowOut
@@ -476,8 +461,8 @@ func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 
 	// Route based on project state and response content
 	var applyErr error
-	if fresh && !hasInstructions && len(out.Commands) > 0 {
-		// Fresh workflow + no instructions → sketch phase
+	if fresh && len(out.Commands) > 0 {
+		// Fresh workflow → sketch phase, filled one command per round
 		applyErr = applyWorkflowSketchFromParsed(p, out, docs)
 	} else if !fresh {
 		// Check if existing commands need details
@@ -503,39 +488,53 @@ func ApplyWorkflow(p *core.Project, raw string, docs []core.Artifact) error {
 	return applyErr
 }
 
-// applyWorkflowRevisionFromParsed applies a revision using already-parsed output.
+// maxRevisionRounds ends a revision that never says it is done.
+const maxRevisionRounds = MaxCommands
+
+// applyWorkflowRevisionFromParsed applies one round of a revision: exactly
+// one command changed or added, or one command removed. The request stays
+// open for the next round until the answer says done (or is empty); the UI
+// check, which a half-done revision may fail, runs on the last round.
 func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []core.Artifact) error {
 	w := p.Workflow
-	fresh := w == nil || len(w.Commands) == 0
-	if fresh && len(out.Commands) == 0 {
+	if w == nil || len(w.Commands) == 0 {
 		return errors.New("workflow kosong: tidak ada command")
 	}
 	hashes := workflow.Hashes(docs)
-	if !fresh && len(out.Commands) == 0 && len(out.Remove) == 0 {
-		if w.Request != nil && w.Request.Sync {
-			acceptStale(w, w.Request.Focus, hashes) // reviewed, text stays valid
-			w.Request = nil
-			w.Version++
-			return nil
+	r := w.Request
+	if r == nil {
+		r = &core.ChangeRequest{}
+	}
+	if n := len(out.Commands) + len(out.Remove); n > 1 {
+		return fmt.Errorf("revisi harus satu command per jawaban, jawaban berisi %d perubahan; kirim satu saja, sisanya di putaran berikutnya", n)
+	}
+	if len(out.Commands) == 0 && len(out.Remove) == 0 {
+		switch {
+		case r.Sync:
+			acceptStale(w, r.Focus, hashes) // reviewed, text stays valid
+		case len(r.Handled) == 0:
+			return errors.New("AI tidak menemukan perubahan untuk permintaan ini; tulis lebih spesifik")
 		}
-		return errors.New("AI tidak menemukan perubahan untuk permintaan ini; tulis lebih spesifik")
-	}
-	var staleBefore map[string][]string
-	if !fresh {
-		staleBefore = workflow.Stale(w.Commands, hashes)
-	}
-	var cmds []core.Command
-	if !fresh {
-		cmds = slices.Clone(w.Commands)
-		for _, id := range out.Remove {
-			i := slices.IndexFunc(cmds, func(c core.Command) bool { return c.ID == id })
-			if i < 0 {
-				return fmt.Errorf("command %s yang dihapus tidak ada", id)
-			}
-			cmds = slices.Delete(cmds, i, i+1)
+		if issues := CheckUI(p, w.Commands); len(issues) > 0 {
+			return UIError(issues)
 		}
+		w.Request = nil
+		w.Version++
+		return nil
 	}
-	// New commands get the next free numbers; AI ids map to them.
+	cmds := slices.Clone(w.Commands)
+	var did string
+	for _, id := range out.Remove {
+		i := slices.IndexFunc(cmds, func(c core.Command) bool { return c.ID == id })
+		if i < 0 {
+			return fmt.Errorf("command %s yang dihapus tidak ada", id)
+		}
+		gone := cmds[i]
+		cmds = slices.Delete(cmds, i, i+1)
+		rewireDependents(cmds, gone)
+		did = "removed " + id
+	}
+	// A new command gets the next free number; its AI id maps to it.
 	idMap := map[string]string{}
 	for _, c := range cmds {
 		idMap[c.ID] = c.ID
@@ -543,14 +542,15 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 	next := nextCommandNumber(p, cmds)
 	for _, o := range out.Commands {
 		id := strings.TrimSpace(o.ID)
-		if _, kept := idMap[id]; kept && !fresh {
+		if id == "" {
+			return errors.New("id command kosong")
+		}
+		if _, kept := idMap[id]; kept {
+			did = "changed " + id
 			continue
 		}
-		if _, dup := idMap[id]; dup || id == "" {
-			return fmt.Errorf("id command %q kosong atau ganda", id)
-		}
 		idMap[id] = fmt.Sprintf("CMD-%03d", next)
-		next++
+		did = "added " + idMap[id]
 	}
 	for _, o := range out.Commands {
 		c, err := commandFrom(o, idMap, hashes)
@@ -569,23 +569,60 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 	if err := checkCommands(cmds, hashes, p.Requirements, p.Features); err != nil {
 		return err
 	}
-	if issues := CheckUI(p, cmds); len(issues) > 0 {
-		return UIError(issues)
-	}
-	// A new workflow covers every MUST requirement; an older workflow is
-	// only reported (it may predate covers).
-	if _, uncovered := workflow.Covers(cmds, p.Requirements); fresh && len(uncovered) > 0 {
-		return fmt.Errorf("workflow tidak valid: requirement MUST belum dicakup command mana pun (covers): %s", strings.Join(uncovered, ", "))
-	}
-	if w == nil {
-		w = &core.Workflow{}
-		p.Workflow = w
+	// The revision ends when the AI says so, repeats a change (no progress),
+	// runs out of rounds, or (sync) has no focused stale command left.
+	last := out.Done || slices.Contains(r.Handled, did) || len(r.Handled)+1 >= maxRevisionRounds ||
+		r.Sync && !focusStale(cmds, r.Focus, hashes)
+	if last {
+		if issues := CheckUI(p, cmds); len(issues) > 0 {
+			return UIError(issues)
+		}
 	}
 	w.Commands, w.Status = cmds, core.CommandDraft
 	w.EnsureID()
 	w.Version++
-	pendingRequest(w, staleBefore, hashes)
+	switch {
+	case last && r.Sync:
+		acceptStale(w, r.Focus, hashes) // the rest was reviewed: text stays valid
+		w.Request = nil
+	case last:
+		w.Request = nil
+	case w.Request != nil:
+		w.Request.Handled = append(w.Request.Handled, did)
+		w.Request.Rejected = "" // the next round gets its own retry
+	}
 	return nil
+}
+
+// rewireDependents hands a removed command's dependencies to the commands
+// that depended on it, so the order the removal leaves stays valid.
+func rewireDependents(cmds []core.Command, gone core.Command) {
+	for i := range cmds {
+		c := &cmds[i]
+		at := slices.Index(c.DependsOn, gone.ID)
+		if at < 0 {
+			continue
+		}
+		deps := slices.Delete(slices.Clone(c.DependsOn), at, at+1)
+		for _, d := range gone.DependsOn {
+			if d != c.ID && !slices.Contains(deps, d) {
+				deps = append(deps, d)
+			}
+		}
+		c.DependsOn = deps
+	}
+}
+
+// focusStale reports whether a focused command still refers to an artifact
+// that changed after it was written.
+func focusStale(cmds []core.Command, focus []string, hashes map[string]string) bool {
+	stale := workflow.Stale(cmds, hashes)
+	for _, c := range cmds {
+		if (len(focus) == 0 || slices.Contains(focus, c.ID)) && len(stale[c.ID]) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // nextCommandNumber is the first number never used: not by a command, nor by
@@ -675,23 +712,26 @@ func applyWorkflowDetailBatchFromParsed(p *core.Project, out workflowOut, docs [
 	}
 	w := p.Workflow
 	hashes := workflow.Hashes(docs)
-	// Build a map of command details from the output
+	// Rounds are sequential: only the command this round asked for is taken;
+	// details for any other command are ignored and written in its own round.
+	next := nextFillCommand(w.Commands)
+	if next == nil {
+		return errors.New("tidak ada command yang perlu diisi")
+	}
 	detailsMap := make(map[string]commandOut)
 	for _, o := range out.Commands {
-		id := strings.TrimSpace(o.ID)
-		if id != "" {
+		if id := strings.TrimSpace(o.ID); id == next.ID {
 			detailsMap[id] = o
 		}
 	}
-	// Apply details to existing commands that lack instructions
 	updated := 0
 	for i := range w.Commands {
 		cmd := &w.Commands[i]
-		if cmd.Instructions != "" {
-			continue // Already has details
+		if cmd.ID != next.ID {
+			continue
 		}
 		d, ok := detailsMap[cmd.ID]
-		if !ok {
+		if !ok || strings.TrimSpace(d.Instructions) == "" {
 			continue
 		}
 		cmd.Context = strings.TrimSpace(d.Context)
@@ -716,7 +756,7 @@ func applyWorkflowDetailBatchFromParsed(p *core.Project, out workflowOut, docs [
 		updated++
 	}
 	if updated == 0 {
-		return errors.New("tidak ada command yang diupdate; pastikan id command sesuai")
+		return fmt.Errorf("detail untuk %s tidak ada; pastikan id command sesuai", next.ID)
 	}
 	w.EnsureID()
 	w.Version++
@@ -736,7 +776,6 @@ func applyWorkflowDetailBatchFromParsed(p *core.Project, out workflowOut, docs [
 		if issues := CheckUI(p, w.Commands); len(issues) > 0 {
 			return UIError(issues)
 		}
-		pendingRequest(w, nil, hashes)
 		w.Request = nil
 	} else {
 		if err := checkSketchCommands(w.Commands, hashes, p.Requirements, p.Features); err != nil {
@@ -796,30 +835,6 @@ func acceptStale(w *core.Workflow, focus []string, hashes map[string]string) {
 			}
 		}
 		c.Status, c.Review = core.CommandDraft, ""
-	}
-}
-
-// pendingRequest keeps a change request alive while the answer changed only
-// some of the focused stale commands; the orchestrator runs another round for
-// the rest. No progress clears it, so a revision always terminates.
-func pendingRequest(w *core.Workflow, staleBefore map[string][]string, hashes map[string]string) {
-	if w.Request == nil {
-		return
-	}
-	focus := w.Request.Focus
-	staleAfter := workflow.Stale(w.Commands, hashes)
-	remaining, progressed := false, false
-	for _, c := range w.Commands {
-		if len(focus) > 0 && !slices.Contains(focus, c.ID) {
-			continue
-		}
-		before := len(staleBefore[c.ID]) > 0
-		after := len(staleAfter[c.ID]) > 0
-		remaining = remaining || after
-		progressed = progressed || before && !after
-	}
-	if !remaining || !progressed {
-		w.Request = nil
 	}
 }
 

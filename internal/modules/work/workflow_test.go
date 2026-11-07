@@ -1,6 +1,7 @@
 package work
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -43,11 +44,32 @@ func staleProject(t *testing.T) (*core.Project, []core.Artifact) {
 	raw := `{"commands": [
 		{"id": "C1", "name": "satu", "objective": "o", "instructions": "i", "artifacts": ["requirements"]},
 		{"id": "C2", "name": "dua", "objective": "o", "instructions": "i", "depends_on": ["C1"], "artifacts": ["requirements"]}]}`
+	applyFullWorkflow(t, p, raw, docs)
+	docs[0] = core.Artifact{ID: "requirements", Title: "R", Body: "v2"}
+	return p, docs
+}
+
+// applyFullWorkflow lands a new workflow the way Foundry writes it: the
+// outline first, then one detail round per command, in sequence.
+func applyFullWorkflow(t *testing.T, p *core.Project, raw string, docs []core.Artifact) {
+	t.Helper()
 	if err := ApplyWorkflow(p, raw, docs); err != nil {
 		t.Fatal(err)
 	}
-	docs[0] = core.Artifact{ID: "requirements", Title: "R", Body: "v2"}
-	return p, docs
+	var out workflowOut
+	if err := ExtractJSON(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	for p.Workflow.Unfilled() > 0 {
+		next := nextFillCommand(p.Workflow.Commands)
+		i := slices.IndexFunc(p.Workflow.Commands, func(c core.Command) bool { return c.ID == next.ID })
+		d := out.Commands[i]
+		d.ID = next.ID
+		b, _ := json.Marshal(workflowOut{Commands: []commandOut{d}})
+		if err := ApplyWorkflow(p, string(b), docs); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 // A truncated answer must not decode to an empty workflow: the inner command
@@ -61,8 +83,8 @@ func TestExtractWorkflowRejectsInnerObject(t *testing.T) {
 	}
 }
 
-// OpenCode cuts long answers at the model's output limit. The commands that
-// arrived whole are applied, the request stays for the next round, and the
+// OpenCode cuts long answers at the model's output limit. The command that
+// arrived whole is applied, the request stays for the next round, and the
 // next answer finishes it.
 func TestApplyWorkflowTruncatedMakesProgress(t *testing.T) {
 	p, docs := staleProject(t)
@@ -84,7 +106,7 @@ func TestApplyWorkflowTruncatedMakesProgress(t *testing.T) {
 	}
 
 	full := `{"commands": [{"id": "CMD-002", "name": "dua baru", "objective": "o",
-		"instructions": "i", "depends_on": ["CMD-001"], "artifacts": ["requirements"]}]}`
+		"instructions": "i", "depends_on": ["CMD-001"], "artifacts": ["requirements"]}], "done": true}`
 	if err := ApplyWorkflow(p, full, docs); err != nil {
 		t.Fatal(err)
 	}
@@ -174,12 +196,96 @@ func TestRemovedCommandIDIsNotReused(t *testing.T) {
 		{ID: "CMD-002", Name: "b", Objective: "o", Instructions: "i", Artifacts: []core.ArtifactRef{{ID: "requirements", Hash: "h"}}},
 	}, Request: &core.ChangeRequest{Text: "ganti"}}}
 	p.Progress = &core.Progress{Retired: map[string]core.CommandRun{"CMD-007": {CommandID: "CMD-007", Status: core.RunVerified}}}
-	raw := `{"remove":["CMD-002"],"commands":[{"id":"NEW1","name":"c","objective":"o","instructions":"i","artifacts":["requirements"],"priority":"Tinggi","complexity":"bogus"}]}`
-	if err := ApplyWorkflow(p, raw, []core.Artifact{{ID: "requirements"}}); err != nil {
+	docs := []core.Artifact{{ID: "requirements"}}
+	if err := ApplyWorkflow(p, `{"remove":["CMD-002"],"commands":[]}`, docs); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"commands":[{"id":"NEW1","name":"c","objective":"o","instructions":"i","artifacts":["requirements"],"priority":"Tinggi","complexity":"bogus"}],"done":true}`
+	if err := ApplyWorkflow(p, raw, docs); err != nil {
 		t.Fatal(err)
 	}
 	c := p.Workflow.Commands[1]
 	if c.ID != "CMD-008" || c.Priority != core.LevelHigh || c.Complexity != "" {
 		t.Fatalf("command = %+v; a new command must not inherit a removed one's run", c)
+	}
+}
+
+// Detail rounds are sequential: one command each, never before the
+// commands it depends on, whatever order the outline lists them in.
+func TestNextFillCommandFollowsDependencies(t *testing.T) {
+	cmds := []core.Command{
+		{ID: "CMD-001", DependsOn: []string{"CMD-002"}},
+		{ID: "CMD-002"},
+		{ID: "CMD-003", DependsOn: []string{"CMD-001"}},
+	}
+	var order []string
+	for {
+		c := nextFillCommand(cmds)
+		if c == nil {
+			break
+		}
+		order = append(order, c.ID)
+		c.Instructions = "isi"
+	}
+	if !slices.Equal(order, []string{"CMD-002", "CMD-001", "CMD-003"}) {
+		t.Fatalf("order = %v", order)
+	}
+}
+
+// A detail answer lands only the command the round asked for.
+func TestDetailRoundFillsOnlyRequestedCommand(t *testing.T) {
+	docs := []core.Artifact{{ID: "requirements", Title: "R", Body: "v1"}}
+	p := &core.Project{}
+	if err := ApplyWorkflow(p, `{"commands": [
+		{"id": "C1", "name": "a", "objective": "o", "instructions": "i", "artifacts": ["requirements"]},
+		{"id": "C2", "name": "b", "objective": "o", "instructions": "i", "depends_on": ["C1"], "artifacts": ["requirements"]}]}`, docs); err != nil {
+		t.Fatal(err)
+	}
+	if n := p.Workflow.Unfilled(); n != 2 {
+		t.Fatalf("outline kept instructions: unfilled = %d", n)
+	}
+	both := `{"commands": [{"id": "CMD-001", "instructions": "satu"}, {"id": "CMD-002", "instructions": "dua"}]}`
+	if err := ApplyWorkflow(p, both, docs); err != nil {
+		t.Fatal(err)
+	}
+	if c := p.Workflow.Commands; c[0].Instructions != "satu" || c[1].Instructions != "" || p.Workflow.Request == nil {
+		t.Fatalf("commands = %+v", c)
+	}
+	if err := ApplyWorkflow(p, `{"commands": [{"id": "CMD-001", "instructions": "x"}]}`, docs); err == nil {
+		t.Fatal("answer for a command out of turn accepted")
+	}
+}
+
+// A revision makes one command change per answer and keeps the request open,
+// with what it did, until the answer says done.
+func TestRevisionIsOneCommandPerRound(t *testing.T) {
+	docs := []core.Artifact{{ID: "requirements"}}
+	p := &core.Project{Workflow: &core.Workflow{Version: 1, Commands: []core.Command{
+		{ID: "CMD-001", Name: "a", Objective: "o", Instructions: "i", Artifacts: []core.ArtifactRef{{ID: "requirements"}}},
+		{ID: "CMD-002", Name: "b", Objective: "o", Instructions: "i", DependsOn: []string{"CMD-001"}, Artifacts: []core.ArtifactRef{{ID: "requirements"}}},
+		{ID: "CMD-003", Name: "c", Objective: "o", Instructions: "i", DependsOn: []string{"CMD-002"}, Artifacts: []core.ArtifactRef{{ID: "requirements"}}},
+	}, Request: &core.ChangeRequest{Text: "ganti"}}}
+	two := `{"commands": [{"id": "CMD-001", "name": "x", "objective": "o", "instructions": "i", "artifacts": ["requirements"]},
+		{"id": "CMD-002", "name": "y", "objective": "o", "instructions": "i", "artifacts": ["requirements"]}]}`
+	if err := ApplyWorkflow(p, two, docs); err == nil || !strings.Contains(err.Error(), "satu command per jawaban") {
+		t.Fatalf("two changes in one answer err = %v", err)
+	}
+	if err := ApplyWorkflow(p, `{"commands": [], "remove": ["CMD-002"]}`, docs); err != nil {
+		t.Fatal(err)
+	}
+	if c := p.Workflow.Command("CMD-003"); c == nil || !slices.Equal(c.DependsOn, []string{"CMD-001"}) {
+		t.Fatalf("dependent not rewired: %+v", c)
+	}
+	if r := p.Workflow.Request; r == nil || !slices.Equal(r.Handled, []string{"removed CMD-002"}) {
+		t.Fatalf("request after round 1 = %+v", r)
+	}
+	if !strings.Contains(WorkflowPrompt(p, docs), "EARLIER ROUNDS of this request (already saved in CURRENT COMMANDS): removed CMD-002.") {
+		t.Fatal("next round prompt misses the earlier rounds")
+	}
+	if err := ApplyWorkflow(p, `{"commands": [{"id": "CMD-003", "name": "z", "objective": "o", "instructions": "i", "depends_on": ["CMD-001"], "artifacts": ["requirements"]}], "done": true}`, docs); err != nil {
+		t.Fatal(err)
+	}
+	if p.Workflow.Request != nil || p.Workflow.Command("CMD-003").Name != "z" {
+		t.Fatalf("done answer left request %+v", p.Workflow.Request)
 	}
 }

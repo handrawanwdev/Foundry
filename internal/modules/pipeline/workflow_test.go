@@ -40,7 +40,7 @@ func TestWorkflowLifecycle(t *testing.T) {
 	p := load(t, s)
 	w := p.Workflow
 	if len(w.Commands) != 3 || w.Commands[1].ID != "CMD-002" || !slices.Equal(w.Commands[1].DependsOn, []string{"CMD-001"}) ||
-		w.Commands[0].Artifacts[0].Hash == "" || w.Version != 1 {
+		w.Commands[0].Artifacts[0].Hash == "" || w.Version != 4 { // outline + one round per command
 		t.Fatalf("workflow = %+v", w)
 	}
 	r := pipeline.CheckWorkflow(p)
@@ -59,7 +59,7 @@ func TestWorkflowLifecycle(t *testing.T) {
 	p = load(t, s)
 	w = p.Workflow
 	if len(w.Commands) != 4 || w.Commands[1].Name != "Backend janji temu + notifikasi" || w.Commands[0].Name != "Kontrak API janji temu" ||
-		w.Commands[3].ID != "CMD-004" || !slices.Equal(w.Commands[3].DependsOn, []string{"CMD-002", "CMD-003"}) || w.Request != nil || w.Version != 2 {
+		w.Commands[3].ID != "CMD-004" || !slices.Equal(w.Commands[3].DependsOn, []string{"CMD-002", "CMD-003"}) || w.Request != nil || w.Version != 6 { // two revision rounds, one command each
 		t.Fatalf("revised = %+v", w.Commands)
 	}
 
@@ -210,7 +210,7 @@ func TestWorkflowCycleRetried(t *testing.T) {
 	p := load(t, s)
 	mustJob(t, p, work.KindWorkflow, core.JobDone)
 	raw, _ := os.ReadFile(runs)
-	if n := strings.Count(string(raw), "workflow"); n != 2 || len(p.Workflow.Commands) != 3 || p.Workflow.Request != nil {
+	if n := strings.Count(string(raw), "workflow"); n != 5 || len(p.Workflow.Commands) != 3 || p.Workflow.Request != nil {
 		t.Fatalf("runs=%d workflow=%+v", n, p.Workflow)
 	}
 }
@@ -231,7 +231,7 @@ func TestOverloadedAgentRetried(t *testing.T) {
 	p := load(t, s)
 	mustJob(t, p, work.KindWorkflow, core.JobDone)
 	raw, _ := os.ReadFile(runs)
-	if n := strings.Count(string(raw), "attempt"); n != 2 || len(p.Workflow.Commands) != 3 {
+	if n := strings.Count(string(raw), "attempt"); n != 5 || len(p.Workflow.Commands) != 3 {
 		t.Fatalf("attempts=%d workflow=%+v", n, p.Workflow)
 	}
 	timed, waited := 0, 0
@@ -243,7 +243,7 @@ func TestOverloadedAgentRetried(t *testing.T) {
 			waited++
 		}
 	}
-	if timed != 2 || waited != 1 {
+	if timed != 5 || waited != 1 { // 2 outline attempts + 3 detail rounds
 		t.Fatalf("timed=%d waited=%d", timed, waited)
 	}
 }
@@ -359,7 +359,7 @@ func TestWorkflowMCP(t *testing.T) {
 	if item, _ = s.NextWork(); !strings.Contains(item.Prompt, "YOUR LAST ANSWER WAS REFUSED") {
 		t.Fatal("retry prompt misses the rejection")
 	}
-	if err := s.SubmitWork(work.KindWorkflow, workflowJSON); err != nil {
+	if err := submitWorkflow(s, workflowJSON); err != nil {
 		t.Fatal(err)
 	}
 	if p := load(t, s); len(p.Workflow.Commands) != 3 {

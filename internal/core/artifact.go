@@ -109,6 +109,10 @@ type ChangeRequest struct {
 	// line with changed decisions; an answer without changes is valid,
 	// nothing contradicted them.
 	Sync bool `json:"sync,omitempty"`
+	// Handled lists what the earlier rounds of a workflow revision did
+	// ("changed CMD-002", "added CMD-007", "removed CMD-004"): a revision
+	// makes one command change per round.
+	Handled []string `json:"handled,omitempty"`
 }
 
 // HasUI reports whether the product has screens to design.

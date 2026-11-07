@@ -90,7 +90,7 @@ func TestDeleteDesignReleasesAndCleansCommands(t *testing.T) {
 	if r := pipeline.CheckWorkflow(p); len(r.Issues) > 0 || len(r.Review) > 0 || p.Workflow.Request != nil {
 		t.Fatalf("workflow after cleanup = %+v, request %+v", r, p.Workflow.Request)
 	}
-	if n := runs(t, path); n["workflow"] != 2 || n["blueprint"] != 0 {
+	if n := runs(t, path); n["workflow"] != 5 || n["blueprint"] != 0 { // outline + 3 detail rounds + cleanup
 		t.Fatalf("runs = %v", n)
 	}
 }
@@ -131,7 +131,7 @@ func TestDeleteArtifactChainsArtifactThenWorkflowCleanup(t *testing.T) {
 	if c := p.Workflow.Command("CMD-002"); c.Status != core.CommandDraft || len(c.Artifacts) != 1 || c.Artifacts[0].ID != "architecture" {
 		t.Fatalf("CMD-002 = %+v", c)
 	}
-	if n := runs(t, path); n["blueprint"] != 1 || n["workflow"] != 2 {
+	if n := runs(t, path); n["blueprint"] != 1 || n["workflow"] != 5 {
 		t.Fatalf("runs = %v", n)
 	}
 	// The data area is now missing: finalize asks to write or skip it.
@@ -166,7 +166,7 @@ func TestDeleteCleanupFailureKeepsDeletion(t *testing.T) {
 	if r := pipeline.CheckWorkflow(p); len(r.Issues) > 0 {
 		t.Fatalf("workflow invalid after a failed cleanup: %+v", r.Issues)
 	}
-	if n := runs(t, path); n["blueprint"] != 2 || n["workflow"] != 1 { // one retry, no workflow cleanup
+	if n := runs(t, path); n["blueprint"] != 2 || n["workflow"] != 4 { // one retry, no workflow cleanup
 		t.Fatalf("runs = %v", n)
 	}
 	if err := s.DismissJob(); err != nil {
@@ -193,7 +193,7 @@ func TestDeleteCleanupThroughMCP(t *testing.T) {
 	if err := s.GenerateWorkflow(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SubmitWork(work.KindWorkflow, workflowJSON); err != nil {
+	if err := submitWorkflow(s, workflowJSON); err != nil {
 		t.Fatal(err)
 	}
 	dataReferenced(t, s)
@@ -210,8 +210,13 @@ func TestDeleteCleanupThroughMCP(t *testing.T) {
 	if item, err = s.NextWork(); err != nil || item.Kind != work.KindWorkflow || !strings.Contains(item.Prompt, "Commands the request is about: CMD-002.") {
 		t.Fatalf("next = %+v, %v", item.Kind, err)
 	}
-	if err := s.SubmitWork(work.KindWorkflow, cleanupWorkflowJSON(item.Prompt)); err != nil {
-		t.Fatal(err)
+	for item.Kind == work.KindWorkflow { // one command per round
+		if err := s.SubmitWork(work.KindWorkflow, cleanupWorkflowJSON(item.Prompt)); err != nil {
+			t.Fatal(err)
+		}
+		if item, err = s.NextWork(); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if p := load(t, s); p.Workflow.Command("CMD-002").Status != core.CommandDraft || p.Workflow.Request != nil || p.ArtifactRequest != nil {
 		t.Fatalf("workflow = %+v", p.Workflow)
