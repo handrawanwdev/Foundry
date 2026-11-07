@@ -260,3 +260,31 @@ func designReadyMCP(t *testing.T, s *pipeline.Service) {
 	}
 	holdAutoPlan(t, s)
 }
+
+// The progress line names the plan section being designed, round by round.
+func TestPlanRoundLabelNamesSection(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	designReadyMCP(t, s)
+	if err := s.GenerateBlueprint(); err != nil {
+		t.Fatal(err)
+	}
+	w, err := s.NextWork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Teknologi", "Arsitektur", "Struktur repository"}
+	for i, name := range want {
+		if msg := load(t, s).Job.Message; msg != "Merancang Blueprint: "+name {
+			t.Fatalf("round %d message = %q, want section %q", i, msg, name)
+		}
+		if err := s.SubmitWork(work.KindPlan, fakeUnifiedAnswer(w.Prompt, false)); err != nil {
+			t.Fatal(err)
+		}
+		if i == len(want)-1 {
+			break
+		}
+		if w, err = s.NextWork(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

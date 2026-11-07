@@ -214,3 +214,17 @@ func TestLoadRenamesArtifactsOfBuiltinIDs(t *testing.T) {
 		t.Fatalf("invented data: %+v %+v", p.Requirements, p.Flows)
 	}
 }
+
+// Every area reports its catalog topics so the progress screen can list
+// what each blueprint section contains.
+func TestCoverageCarriesTopics(t *testing.T) {
+	got := Coverage(scopeProject(), nil)
+	for _, a := range Areas {
+		if len(a.Topics) == 0 {
+			continue
+		}
+		if st := statusOf(got, a.ID); !slices.Equal(st.Topics, a.Topics) {
+			t.Errorf("%s topics = %v, want %v", a.ID, st.Topics, a.Topics)
+		}
+	}
+}
