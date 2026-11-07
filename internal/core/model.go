@@ -84,6 +84,9 @@ type Project struct {
 	// with, for "2/5" in the UI. Both empty when no batch is running.
 	BlueprintQueue []string `json:"blueprint_queue,omitempty"`
 	BlueprintBatch int      `json:"blueprint_batch,omitempty"`
+	// BlueprintStarted is when the first blueprint build began (discovery),
+	// so the UI can show one clock for the whole run, not one per AI job.
+	BlueprintStarted *time.Time `json:"blueprint_started,omitempty"`
 	// JobHistory is the last completed AI job durations, newest last.
 	// ETA is the median of matching kinds when at least two samples exist.
 	JobHistory []JobTiming `json:"job_history,omitempty"`

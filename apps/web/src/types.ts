@@ -407,6 +407,7 @@ export interface Project {
   decision_sync?: string[];
   blueprint_queue?: string[];
   blueprint_batch?: number;
+  blueprint_started?: string;
   job_history?: JobTiming[];
   job?: Job; events: Event[] | null; updated_at: string;
 }

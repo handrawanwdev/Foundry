@@ -7,7 +7,7 @@ import {
   isDesignDoc, SCOPE_DOCS, scopeIssuesOf, usedBy,
 } from "../blueprint";
 import { DeleteDialog } from "../components/DeleteDialog";
-import { BlueprintProgress } from "../components/BlueprintProgress";
+import { BlueprintProgress, buildingInitialBlueprint } from "../components/BlueprintProgress";
 import { Elapsed } from "../components/Elapsed";
 import { Markdown } from "../components/Markdown";
 import { PromptBar } from "../components/PromptBar";
@@ -31,13 +31,12 @@ export function BlueprintPage() {
   }, [project?.version, project?.dir]);
 
   if (!project) return null;
+  if (buildingInitialBlueprint(project)) {
+    return (
+      <div className="dw-empty"><BlueprintProgress project={project} /></div>
+    );
+  }
   if (!project.discovery) {
-    const discovering = isWorking(project) && project.job?.kind === "discovery";
-    if (discovering) {
-      return (
-        <div className="dw-empty"><BlueprintProgress project={project} /></div>
-      );
-    }
     const toFeatures = project.stage === "DISCOVERY";
     return (
       <div className="dw-empty">

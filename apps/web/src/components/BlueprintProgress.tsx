@@ -7,7 +7,8 @@ import { Elapsed } from "./Elapsed";
 type State = "done" | "running" | "pending" | "skipped";
 interface Stage { id: string; title: string; hint: string; state: State }
 
-// Areas whose Markdown the AI writes in the "artifacts" job; the rest are
+// Areas whose Markdown the AI writes in one job: the "discovery" job on the
+// first run, the "artifacts" job on a revision. The rest are
 // written by their own step (ui = design job, use cases and acceptance
 // come from the feature list).
 const WRITTEN_BY_ARTIFACTS = new Set(["data", "security", "integration", "operations", "migration"]);
@@ -39,7 +40,7 @@ export function blueprintStages(p: Project, view: BlueprintView | null): Stage[]
     if (a.status === "skipped") state = "skipped";
     else if (a.status === "covered") state = "done";
     else if (a.id === "ui" && kind === "design") state = "running";
-    else if (WRITTEN_BY_ARTIFACTS.has(a.id) && kind === "artifacts") state = "running";
+    else if (WRITTEN_BY_ARTIFACTS.has(a.id) && (kind === "artifacts" || kind === "discovery")) state = "running";
     out.push({ id: a.id, title: a.title, hint: cut(a.topics), state });
   }
 
@@ -62,6 +63,17 @@ export function blueprintStages(p: Project, view: BlueprintView | null): Stage[]
   return out;
 }
 
+// True while the first blueprint is being built: the discovery job, then the
+// queued design and plan jobs, until technology, architecture and folders
+// have all landed. Later regenerations keep the document view.
+export function buildingInitialBlueprint(p: Project): boolean {
+  if (!isWorking(p)) return false;
+  if (!p.discovery) return p.job?.kind === "discovery";
+  if (!p.blueprint_queue?.length) return false;
+  const existing = p.structure?.mode === "existing";
+  return !(p.stack?.plan && (existing || p.structure?.repo));
+}
+
 const MARK: Record<State, React.ReactNode> = {
   done: "✓", skipped: "–", pending: "○", running: <span className="spinner" />,
 };
@@ -80,13 +92,16 @@ export function BlueprintProgress({ project }: { project: Project }) {
   const done = counted.filter((s) => s.state === "done").length;
   return (
     <div className="bp-progress">
-      <h1><span className="spinner" /> Merancang Blueprint <Elapsed started={project.job?.started} /></h1>
+      <h1><span className="spinner" /> Merancang Blueprint <Elapsed started={project.blueprint_started ?? project.job?.started} /></h1>
       <p className="muted">
         {running.length
           ? <>Sedang menyusun <strong>{running.map((s) => s.title).join(", ")}</strong>.</>
           : "Menyiapkan rancangan…"}
         {" "}({done}/{counted.length} bagian selesai)
       </p>
+      {running.length > 1 && (
+        <p className="muted small">Bagian bertanda berputar ditulis AI dalam satu langkah, jadi selesai bersamaan.</p>
+      )}
       <ol className="bp-stages">
         {stages.map((s) => (
           <li key={s.id} className={`bp-stage ${s.state}`} aria-current={s.state === "running" ? "step" : undefined}>

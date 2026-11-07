@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
@@ -90,6 +91,8 @@ func (s *Service) StartBlueprint() error {
 		if strings.TrimSpace(p.Story) == "" {
 			return fmt.Errorf("%w: tulis prompt dulu", ErrWrongStage)
 		}
+		now := time.Now().UTC()
+		p.BlueprintStarted = &now
 		return nil
 	})
 }

@@ -129,6 +129,10 @@ func (s *Service) startBlueprintQueue(steps []string, total int) error {
 				return err
 			}
 			p.BlueprintQueue = steps
+			if total > 0 && !continuesDiscovery(p) {
+				now := time.Now().UTC()
+				p.BlueprintStarted = &now
+			}
 			if total > 0 {
 				p.BlueprintBatch = total
 			} else if p.BlueprintBatch == 0 {
@@ -333,4 +337,10 @@ func batchLabel(p *core.Project, msg string) string {
 		return "Merancang Blueprint"
 	}
 	return msg
+}
+
+// continuesDiscovery: the batch is the rest of the first blueprint run that
+// discovery began, so it keeps that run's start time.
+func continuesDiscovery(p *core.Project) bool {
+	return p.BlueprintStarted != nil && p.Job != nil && p.Job.Kind == work.KindDiscovery && p.Job.Status == core.JobDone
 }

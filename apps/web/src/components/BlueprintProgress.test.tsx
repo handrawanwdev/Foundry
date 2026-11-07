@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AreaStatus, BlueprintView, Project } from "../types";
-import { blueprintStages } from "./BlueprintProgress";
+import { blueprintStages, buildingInitialBlueprint } from "./BlueprintProgress";
 
 const area = (id: string, status: string, topics: string[] = []): AreaStatus =>
   ({ id, title: id.toUpperCase(), status, topics } as unknown as AreaStatus);
@@ -53,7 +53,27 @@ describe("blueprintStages", () => {
     expect(ids(s)).toEqual(["discovery", "tech"]);
   });
 
+  it("runs the areas the discovery job writes together with it", () => {
+    const v = view(area("data", "missing"), area("security", "missing"), area("ui", "missing"));
+    const s = blueprintStages(proj({ job: job("discovery") }), v);
+    expect([stateOf(s, "discovery"), stateOf(s, "data"), stateOf(s, "security"), stateOf(s, "ui")]).toEqual(["running", "running", "running", "pending"]);
+  });
+
   it("marks discovery running during the discovery job", () => {
     expect(stateOf(blueprintStages(proj({ job: job("discovery") }), null), "discovery")).toBe("running");
+  });
+});
+
+describe("buildingInitialBlueprint", () => {
+  const q = ["plan"];
+  it("covers discovery, design and plan until all plan sections landed", () => {
+    expect(buildingInitialBlueprint(proj({ job: job("discovery") }))).toBe(true);
+    expect(buildingInitialBlueprint(proj({ discovery: {}, job: job("design"), blueprint_queue: ["design", "plan"] }))).toBe(true);
+    expect(buildingInitialBlueprint(proj({ discovery: {}, job: job("plan"), blueprint_queue: q, stack: { plan: {} }, structure: {} }))).toBe(true);
+  });
+  it("ends when tech and repo landed, or when nothing is queued", () => {
+    expect(buildingInitialBlueprint(proj({ discovery: {}, job: job("plan"), blueprint_queue: q, stack: { plan: {} }, structure: { repo: {} } }))).toBe(false);
+    expect(buildingInitialBlueprint(proj({ discovery: {}, job: job("artifacts") }))).toBe(false);
+    expect(buildingInitialBlueprint(proj({ discovery: {}, blueprint_queue: q }))).toBe(false);
   });
 });
