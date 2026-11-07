@@ -94,7 +94,7 @@ func TestStartBlueprint(t *testing.T) {
 	}
 	s.Wait()
 	p := load(t, s)
-	mustJob(t, p, work.KindDesign, core.JobDone)
+	mustJob(t, p, work.KindPlan, core.JobDone)
 	if p.Stage != core.StageDesign || p.Discovery == nil {
 		t.Fatalf("stage=%s discovery=%v", p.Stage, p.Discovery)
 	}

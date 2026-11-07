@@ -415,6 +415,29 @@ func Normalize(plan *core.RepoPlan) {
 	d.Allowed = normalizeRules(d.Allowed, maxDeps)
 	d.Forbidden = normalizeRules(d.Forbidden, maxDeps)
 	d.Communication = normalizeRules(d.Communication, maxDeps)
+	owners := map[string]bool{core.OwnerShared: true, core.OwnerPlatform: true}
+	for _, m := range plan.Modules {
+		owners[m.Module] = true
+	}
+	knownEP := func(e string) bool {
+		if e == "" {
+			return true
+		}
+		if !strings.ContainsAny(e, "/.") && owners[e] {
+			return true
+		}
+		return have[e] || have[e+"/"]
+	}
+	keepRules := func(rules []core.RepoDepRule) []core.RepoDepRule {
+		var out []core.RepoDepRule
+		for _, r := range rules {
+			if knownEP(r.From) && knownEP(r.To) {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	d.Allowed, d.Forbidden, d.Communication = keepRules(d.Allowed), keepRules(d.Forbidden), keepRules(d.Communication)
 	d.SharedRules = cleanList(d.SharedRules, maxRules)
 	var ifs []core.RepoInterface
 	for _, i := range d.Interfaces {

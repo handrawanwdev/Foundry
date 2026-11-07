@@ -7,6 +7,14 @@ export type SurveyKind = "web" | "mobile" | "desktop" | "cli" | "api" | "embedde
 export type SurveyUsers = "public" | "registered" | "internal" | "mixed" | "system";
 export type SurveyStage = "prototype" | "mvp" | "production";
 export type SurveyArch = "modular" | "services" | "existing";
+export type WorkIntent =
+  | "new_project"
+  | "existing_project"
+  | "new_feature"
+  | "enhancement"
+  | "refactoring"
+  | "bug_fix"
+  | "architecture";
 export type SurveyPriority = "security" | "performance" | "reliability" | "scalability" | "testing" | "operations";
 // An empty answer is left to Foundry: read from the story or recommended.
 export interface Survey {
@@ -127,15 +135,48 @@ export interface StructureVersion {
   version: number; at: string; source: string; request?: string; changes?: string[]; impact?: StructureImpact[];
   status: TechStatus; ir: StructureIR; analysis?: string; alternative?: string; reason?: string; tree?: string;
 }
+export interface ContextFinding {
+  kind?: string; text: string; path?: string; evidence?: string; confidence?: "observed" | "documented" | "assumed" | "estimated";
+}
+export interface ContextModule { name: string; path: string; evidence?: string; depends_on?: string[] }
+export interface ContextEntity { name: string; fields?: string[]; path?: string; evidence?: string }
+export interface ContextAPI { kind?: string; path: string; detail?: string; evidence?: string }
+export interface ContextDep { from: string; to: string; kind?: string; path?: string; evidence?: string; confidence?: string }
+export interface ContextChange { area: string; path?: string; action: "add" | "modify" | "remove" }
+export interface ProjectContext {
+  layout?: ContextFinding[]; languages?: ContextFinding[]; frameworks?: ContextFinding[];
+  modules?: ContextModule[]; data?: ContextEntity[]; apis?: ContextAPI[];
+  auth?: ContextFinding[]; tests?: ContextFinding[]; docs?: ContextFinding[];
+  conventions?: ContextFinding[]; features?: ContextFinding[];
+  deps?: ContextDep[]; changes?: ContextChange[];
+  scanned_at?: string; fingerprint?: string; area_hash?: Record<string, string>;
+  stale?: boolean; stale_areas?: string[];
+  corrections?: string;
+}
+export interface ChangeItem { action: "add" | "modify" | "reuse" | "refactor" | "remove"; target: string; module?: string; reason?: string; files?: string[] }
+export interface ChangeImpact {
+  area: string; message: string; risk?: "low" | "medium" | "high";
+  kind?: string; source?: "observed" | "estimated"; evidence?: string; path?: string;
+}
+export interface ChangeConflict { kind?: string; where?: string; message: string; keep?: string; reason?: string }
+export interface ChangeFile { path: string; responsibility?: string; reason?: string }
+export interface ChangeFiles { add?: ChangeFile[]; modify?: ChangeFile[]; remove?: ChangeFile[] }
+export interface ChangePlan {
+  scope?: "full" | "change"; summary?: string; existing?: string[];
+  items?: ChangeItem[]; impact?: ChangeImpact[]; files?: ChangeFiles;
+  conflicts?: ChangeConflict[]; kept?: string[];
+}
 export interface Structure {
   mode: "existing" | "new"; components: Component[] | null; template?: string; layout?: string[];
   reason: string; approved: boolean;
   ui?: ExistingUI;
+  context?: ProjectContext;
   ir?: StructureIR; recommended?: StructureType; status?: TechStatus; issues?: TechIssue[];
   proposal?: StructureProposal; plan?: StructurePlan; plan_request?: StructurePlanRequest;
   request?: string; history?: StructureVersion[];
   // The detailed repository plan the AI designs, and the design or revision waiting for it.
   repo?: RepoPlan; repo_request?: RepoRequest;
+  adaptation?: ChangeItem[];
 }
 
 // ---- Repository plan: folders and files with their responsibility, module mapping, dependency rules ----
@@ -229,7 +270,8 @@ export interface TechItem {
   area: string; group?: string; technology: string; version?: string; version_verified?: boolean;
   language?: string; runtime?: string; purpose: string; fulfills?: string[]; driver: string; reasoning: string;
   pros?: string[]; cons?: string[]; tradeoffs?: string[]; depends_on?: string[]; integration?: string; operational?: string;
-  alternatives?: TechAlternative[]; confidence: string; assumptions?: string[]; in_catalog?: boolean; user_chosen?: string;
+  alternatives?: TechAlternative[]; confidence: string; assumptions?: string[]; action?: "reuse" | "add" | "modify" | "refactor" | "remove";
+  in_catalog?: boolean; user_chosen?: string;
 }
 export interface TechConstraint { areas: string[]; rule: string; reason?: string }
 export interface TechCompat { area: string; status: string; between?: string[]; note?: string; basis?: string; source?: string }
@@ -340,16 +382,23 @@ export interface VisualSummary {
   pages: number; pass: number; partial: number; fail: number; untested: number;
   open_findings: number; open_high: number; checked_at?: string; not_checked?: string[];
 }
+export interface JobStep {
+  id: string; label: string; status: "pending" | "running" | "done" | "skipped" | "failed";
+  started_at?: string; ended_at?: string;
+}
+export interface JobTiming { kind: string; ms: number; at: string }
 export interface Job {
   kind: string; status: "running" | "done" | "failed" | "waiting_host";
   message: string; error?: string; started: string;
+  steps?: JobStep[]; eta_ms?: number;
 }
 export interface Event { at: string; source: string; message: string }
 
 export interface RecentProject { dir: string; name: string }
 
 export interface Project {
-  version: number; name: string; dir: string; stage: Stage; story: string; survey?: Survey;
+  version: number; name: string; dir: string; stage: Stage; story: string;
+  intent?: WorkIntent; change?: ChangePlan; survey?: Survey;
   discovery?: Discovery; feature_map?: FeatureMap; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
   platform?: PlatformPlan; structure?: Structure; stack?: TechStack; ui?: UIDesign; visual?: VisualAudit;
   artifacts?: Artifact[]; artifact_request?: ChangeRequest; workflow?: Workflow;
@@ -358,6 +407,7 @@ export interface Project {
   decision_sync?: string[];
   blueprint_queue?: string[];
   blueprint_batch?: number;
+  job_history?: JobTiming[];
   job?: Job; events: Event[] | null; updated_at: string;
 }
 

@@ -43,6 +43,11 @@ STORY:
 `)
 	b.WriteString(strings.TrimSpace(p.Story))
 	b.WriteString("\n\n")
+	writeWorkIntent(&b, p)
+	if existingProject(p) {
+		b.WriteString("Do not add a feature the repository already has unless the story extends it. Prefer reuse.\n\n")
+		writeExistingContext(&b, p)
+	}
 	if s := p.Survey; s != nil {
 		if s.What != "" && s.What != p.Story {
 			fmt.Fprintf(&b, "Survey what: %s\n", s.What)

@@ -13,27 +13,51 @@ import { StructurePanel } from "./StructurePanel";
 
 // Structure workspace: decide the shape, then the folder plan. One page,
 // two steps — approve the decision, then generate, revise, and approve folders.
-export function RepoWorkspace({ project }: { project: Project }) {
+export function RepoWorkspace({ project, section = "all" }: { project: Project; section?: "architecture" | "repo" | "all" }) {
   const s = project.structure as Structure;
+  const architecture = section === "all" || section === "architecture";
+  const folders = section === "all" || section === "repo";
 
   if (s.mode === "existing") {
-    return <div className="repo"><h1>Struktur repository</h1><p className="muted">Project yang sudah ada mengikuti struktur kodenya; rencana folder hanya untuk project baru.</p></div>;
+    return (
+      <div className="repo">
+        <h1>{architecture ? "Arsitektur" : "Struktur repository"}</h1>
+        <p className="muted">Project yang sudah ada mengikuti struktur kodenya; rencana folder hanya untuk project baru.</p>
+        <AdaptationList items={s.adaptation} />
+      </div>
+    );
   }
   if (!s.ir) {
-    return <div className="repo"><h1>Struktur repository</h1><p className="muted">Keputusan struktur belum ada. Muncul setelah platform dan teknologi dipilih.</p></div>;
+    return <div className="repo"><h1>{architecture ? "Arsitektur" : "Struktur repository"}</h1><p className="muted">Keputusan struktur belum ada. Muncul setelah platform dan teknologi dipilih.</p></div>;
   }
 
   return (
     <div className="repo">
       <header className="repo-head">
         <div>
-          <h1>Struktur repository</h1>
-          <p className="small muted">Bentuk struktur dulu, lalu rencana folder dan tanggung jawabnya.</p>
+          <h1>{folders && !architecture ? "Struktur repository" : architecture && !folders ? "Arsitektur" : "Struktur repository"}</h1>
+          <p className="small muted">{architecture && !folders
+            ? "Batas domain, modul, dan alternatif struktur."
+            : "Bentuk struktur dulu, lalu rencana folder dan tanggung jawabnya."}</p>
         </div>
       </header>
-      <StructurePanel project={project} />
-      <RepoPlan project={project} />
+      {architecture && <StructurePanel project={project} />}
+      {folders && <RepoPlan project={project} />}
     </div>
+  );
+}
+
+function AdaptationList({ items }: { items?: { action: string; target: string; module?: string; reason?: string }[] }) {
+  if (!items?.length) return null;
+  return (
+    <section className="info-sec">
+      <h3>Rekomendasi terhadap kode yang ada</h3>
+      <ul className="adapt-list">
+        {items.map((it, i) => (
+          <li key={i}><span className="tag">{it.action}</span> {it.target}{it.module ? ` (${it.module})` : ""}{it.reason ? ` — ${it.reason}` : ""}</li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

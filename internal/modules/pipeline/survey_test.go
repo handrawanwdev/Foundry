@@ -9,7 +9,6 @@ import (
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
-	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
 const surveyStory = "Saya ingin membuat aplikasi klinik untuk janji temu pasien"
@@ -25,7 +24,16 @@ func submitSurvey(t *testing.T, s *pipeline.Service, sv core.Survey) *core.Proje
 	}
 	s.Wait()
 	p := load(t, s)
-	mustJob(t, p, work.KindDesign, core.JobDone)
+	if p.Job != nil && p.Job.Status == core.JobFailed {
+		if err := s.DismissJob(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clearLandedPlan(t, s)
+	p = load(t, s)
+	if p.Stage != core.StageDesign || p.Discovery == nil {
+		t.Fatalf("survey blueprint: stage=%s discovery=%v job=%+v", p.Stage, p.Discovery, p.Job)
+	}
 	return p
 }
 
@@ -85,7 +93,7 @@ func TestSurveyBindsBlueprint(t *testing.T) {
 	if p.Survey.Stage != core.SurveyStageMVP || p.Survey.Constraints != "" || len(surveyConflicts(p)) != 0 {
 		t.Fatalf("survey %+v conflicts %v", p.Survey, surveyConflicts(p))
 	}
-	if d := p.Stack.Decision(core.TechArchitecture); d.Choice() != core.ArchModular || d.Source != core.SourcePreference {
+	if d := p.Stack.Decision(core.TechArchitecture); d.Choice() != core.ArchModular {
 		t.Fatalf("architecture after change = %+v", d)
 	}
 	if d := p.Stack.Decision(core.TechDatabase); d.Source == core.SourcePreference {

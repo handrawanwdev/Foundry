@@ -134,6 +134,9 @@ func NormalizePlan(p *core.Project, plan *core.StructurePlan) error {
 		if !slices.Contains(core.StructureTypes, a.Type) {
 			return fmt.Errorf("alternatif %q memakai tipe struktur %q yang tidak dikenal (simple, modular, monorepo, microservices)", a.Name, a.Type)
 		}
+		if p.Stack != nil && p.Stack.Choice(core.TechRepository) == core.RepoMonorepo && a.Type == core.StructModular {
+			a.IR.Type, a.Type = core.StructMonorepo, core.StructMonorepo
+		}
 		Normalize(a.IR)
 		fillModuleReasonsFromDomains(a.IR, plan.Domains)
 		if err := partsHaveReasons(a.IR); err != nil {

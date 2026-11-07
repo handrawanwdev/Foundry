@@ -3,9 +3,9 @@ import { api } from "../api";
 import { Elapsed } from "../components/Elapsed";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
-import type { Survey } from "../types";
+import type { Survey, WorkIntent } from "../types";
 import {
-  archOptions, defaultSurvey, existingComponents, isExistingProject, kindsFromCode, SURVEY_KINDS, SURVEY_PRIORITIES, SURVEY_STAGES, SURVEY_USERS,
+  archOptions, contextSummary, defaultIntent, defaultSurvey, EXISTING_INTENTS, existingComponents, isExistingProject, kindsFromCode, SURVEY_KINDS, SURVEY_PRIORITIES, SURVEY_STAGES, SURVEY_USERS,
   surveySummary, TELL_ANALYSIS, tellIntro, tellPlaceholder, tellTitle, tellWaiting, toggle,
 } from "../tell";
 
@@ -20,11 +20,15 @@ export function TellPage() {
   const { project, run, pending } = useProject();
   const [story, setStory] = useState(project?.story ?? "");
   const [survey, setSurvey] = useState<Survey>(() => defaultSurvey(project?.survey, project));
+  const [intent, setIntent] = useState<WorkIntent>(() => defaultIntent(project));
+  const [corrections, setCorrections] = useState(project?.structure?.context?.corrections ?? "");
   const [confirmReset, setConfirmReset] = useState(false);
   if (!project) return null;
 
   const existing = isExistingProject(project);
   const components = existingComponents(project);
+  const ctx = project.structure?.context;
+  const ctxLines = contextSummary(ctx);
   const fromCode = project.survey?.kinds?.length ? [] : kindsFromCode(project);
   const set = (patch: Partial<Survey>) => setSurvey({ ...survey, ...patch });
   const discovering = project.stage === "DISCOVERY" && isWorking(project);
@@ -54,19 +58,59 @@ export function TellPage() {
       return;
     }
     setConfirmReset(false);
-    await run("story", () => api.story(story, { ...survey, what: story }));
+    await run("story", () => api.story(story, { ...survey, what: story }, existing ? intent : "new_project", corrections));
   };
 
   return (
     <section className="tell">
-      <h1>{tellTitle(existing)}</h1>
+      <h1>{tellTitle(existing, existing ? intent : "new_project")}</h1>
       <p className="muted">{tellIntro(existing)}</p>
       {components && <p className="muted small">Kode yang dibaca: {components}</p>}
+      {existing && (
+        <div className="survey-field">
+          <span>Jenis pekerjaan</span>
+          <div className="survey-kinds">
+            {EXISTING_INTENTS.map((k) => (
+              <button key={k.id} type="button" aria-pressed={intent === k.id}
+                className={intent === k.id ? "chip on" : "chip"}
+                title={k.hint}
+                onClick={() => setIntent(k.id)}>{k.label}</button>
+            ))}
+          </div>
+          <span className="small">{EXISTING_INTENTS.find((k) => k.id === intent)?.hint}</span>
+        </div>
+      )}
+      {existing && ctx && (
+        <details className="theme-pick context-panel">
+          <summary className="muted small">
+            Hasil baca repository{ctxLines.length ? `: ${ctxLines.join(" · ")}` : ""}
+          </summary>
+          {ctx.stale && (
+            <p className="warn">Konteks kedaluwarsa{ctx.stale_areas?.length ? ` (${ctx.stale_areas.join(", ")})` : ""}. Repository berubah setelah pemindaian. Temuan di bawah bukan fakta terkini sampai dipindai ulang.</p>
+          )}
+          <p className="muted small">Bukti dari kode dan dokumen. Path bukan tanggung jawab kecuali evidence mengatakannya. Koreksi di bawah mengikat rancangan.</p>
+          <ContextList title="Layout" items={ctx.layout?.map((f) => f.text)} />
+          <ContextList title="Bahasa" items={ctx.languages?.map((f) => f.text)} />
+          <ContextList title="Framework" items={ctx.frameworks?.map((f) => f.text)} />
+          <ContextList title="Modul" items={ctx.modules?.map((m) => m.depends_on?.length ? `${m.path} → ${m.depends_on.join(", ")}` : m.path)} />
+          <ContextList title="Data" items={ctx.data?.map((e) => e.fields?.length ? `${e.name} (${e.fields.join(", ")})` : e.name)} />
+          <ContextList title="API" items={ctx.apis?.map((a) => a.detail || a.path)} />
+          <ContextList title="Auth" items={ctx.auth?.map((f) => f.path || f.text)} />
+          <ContextList title="Tes" items={ctx.tests?.map((f) => f.text)} />
+          <ContextList title="Dependensi" items={ctx.deps?.map((d) => `${d.from} → ${d.to} (${d.kind})`)} />
+          <ContextList title="Perubahan repo" items={ctx.changes?.map((ch) => `${ch.action} ${ch.path || ch.area}`)} />
+          <ContextList title="Fitur terdokumentasi" items={ctx.features?.map((f) => f.text)} />
+          <label className="survey-wide">Koreksi (opsional)
+            <textarea rows={2} value={corrections} onChange={(e) => setCorrections(e.target.value)}
+              placeholder="Mis. modul billing sudah handle invoice; jangan buat ulang. Auth memakai session, bukan JWT." />
+          </label>
+        </details>
+      )}
       <textarea
         rows={7}
         value={story}
         onChange={(e) => setStory(e.target.value)}
-        placeholder={tellPlaceholder(existing)}
+        placeholder={tellPlaceholder(existing, existing ? intent : undefined)}
       />
       {!existing && (
         <div className="examples">
@@ -137,5 +181,14 @@ export function TellPage() {
         Mulai Merancang
       </button>
     </section>
+  );
+}
+
+function ContextList({ title, items }: { title: string; items?: string[] }) {
+  if (!items?.length) return null;
+  return (
+    <p className="context-line">
+      <strong>{title}:</strong> {items.slice(0, 12).join(", ")}{items.length > 12 ? ` (+${items.length - 12})` : ""}
+    </p>
   );
 }

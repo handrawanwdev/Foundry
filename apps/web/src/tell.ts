@@ -1,4 +1,4 @@
-import type { Project, Survey, SurveyArch, SurveyKind, SurveyPriority, SurveyStage, SurveyUsers } from "./types";
+import type { Project, ProjectContext, Survey, SurveyArch, SurveyKind, SurveyPriority, SurveyStage, SurveyUsers, WorkIntent } from "./types";
 
 // The seven planning domains Foundry analyzes the story across, shown while
 // it understands the request. They mirror the discovery prompt's analysisDomains
@@ -106,13 +106,35 @@ export function isExistingProject(p: Project | null | undefined): boolean {
   return p?.structure?.mode === "existing";
 }
 
-export function tellTitle(existing: boolean): string {
+export const EXISTING_INTENTS: { id: WorkIntent; label: string; hint: string }[] = [
+  { id: "new_feature", label: "Fitur baru", hint: "Tambah kemampuan yang belum ada." },
+  { id: "enhancement", label: "Peningkatan", hint: "Perkuat yang sudah berjalan." },
+  { id: "refactoring", label: "Refactoring", hint: "Rapikan struktur, perilaku tetap." },
+  { id: "bug_fix", label: "Perbaikan bug", hint: "Perbaiki cacat dengan perubahan kecil." },
+  { id: "architecture", label: "Perbaikan arsitektur", hint: "Ubah batas modul atau pola, dengan alasan." },
+  { id: "existing_project", label: "Pahami project", hint: "Petakan sistem existing, lalu rancang." },
+];
+
+export function defaultIntent(p: Project | null | undefined): WorkIntent {
+  if (p?.intent) return p.intent;
+  return isExistingProject(p) ? "existing_project" : "new_project";
+}
+
+export function tellTitle(existing: boolean, intent?: WorkIntent): string {
+  switch (intent) {
+    case "new_feature": return "Fitur baru apa yang ingin ditambahkan?";
+    case "enhancement": return "Apa yang ingin ditingkatkan?";
+    case "refactoring": return "Apa yang ingin dirapikan?";
+    case "bug_fix": return "Bug apa yang ingin diperbaiki?";
+    case "architecture": return "Perbaikan arsitektur apa yang dibutuhkan?";
+    case "existing_project": return "Apa yang ingin dikerjakan pada project ini?";
+  }
   return existing ? "Apa yang ingin ditambahkan?" : "Apa yang ingin kamu buat?";
 }
 
 export function tellIntro(existing: boolean): string {
   return existing
-    ? "Ceritakan fitur atau perubahan. Foundry mengikuti struktur, teknologi, dan UI project ini — tidak diganti template."
+    ? "Pilih jenis pekerjaan, ceritakan perubahannya. Foundry membaca repository lalu menyesuaikan rancangan — tidak diganti template."
     : "Ceritakan dengan bahasa biasa: aplikasi, layanan, pipeline data, firmware, atau perubahan teknis. Foundry menyusun daftar fitur, lalu blueprint dan command workflow untuk coding agent eksternal.";
 }
 
@@ -122,8 +144,32 @@ export function tellWaiting(existing: boolean): string {
     : "Menganalisis ceritamu untuk blueprint. Tahap ini belum menulis kode aplikasi.";
 }
 
-export function tellPlaceholder(existing: boolean): string {
+export function tellPlaceholder(existing: boolean, intent?: WorkIntent): string {
+  switch (intent) {
+    case "new_feature": return "Saya ingin menambahkan sistem notifikasi…";
+    case "enhancement": return "Saya ingin mempercepat laporan dan menambah filter…";
+    case "refactoring": return "Saya ingin memisahkan modul tagihan dari order…";
+    case "bug_fix": return "Login gagal setelah refresh token kadaluarsa…";
+    case "architecture": return "Saya ingin memisahkan authorization jadi modul sendiri…";
+  }
   return existing ? "Saya ingin menambahkan fitur ..." : "Contoh: aplikasi klinik untuk janji temu pasien, atau firmware sensor suhu yang mengirim data lewat MQTT…";
+}
+
+export function contextSummary(ctx: ProjectContext | undefined): string[] {
+  if (!ctx) return [];
+  const lines: string[] = [];
+  const push = (label: string, n: number) => { if (n) lines.push(`${label} ${n}`); };
+  push("folder", ctx.layout?.length ?? 0);
+  push("bahasa", ctx.languages?.length ?? 0);
+  push("modul", ctx.modules?.length ?? 0);
+  push("entitas", ctx.data?.length ?? 0);
+  push("API", ctx.apis?.length ?? 0);
+  push("auth", ctx.auth?.length ?? 0);
+  push("tes", ctx.tests?.length ?? 0);
+  push("dokumen", ctx.docs?.length ?? 0);
+  push("dependensi", ctx.deps?.length ?? 0);
+  if (ctx.stale) lines.push("kedaluwarsa");
+  return lines;
 }
 
 export function existingComponents(p: Project | null | undefined): string {

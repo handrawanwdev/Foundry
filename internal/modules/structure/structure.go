@@ -37,13 +37,15 @@ func TemplateByID(id string) (Template, bool) {
 
 // Detect scans dir. Existing code wins over any recommendation; a new
 // project's IR is filled by Sync once the technology is decided.
-func Detect(dir string, platform *core.PlatformPlan) *core.Structure {
+// prev is the last project context; unchanged areas are reused.
+func Detect(dir string, platform *core.PlatformPlan, prev *core.ProjectContext) *core.Structure {
 	r := scan.Scan(dir)
 	if r.Existing {
 		return &core.Structure{
 			Mode:       core.StructureExisting,
 			Components: r.Components,
 			Reason:     "Foundry akan mengikuti struktur project yang sudah ada.",
+			Context:    scan.Refresh(dir, prev, r.Components),
 		}
 	}
 	return &core.Structure{Mode: core.StructureNew}

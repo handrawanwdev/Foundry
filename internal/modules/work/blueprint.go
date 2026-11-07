@@ -55,6 +55,229 @@ func NormalizeBlueprint(b *core.Blueprint) *core.Blueprint {
 	return b
 }
 
+// MergeBlueprint overlays a change-scope design onto the main blueprint.
+// Untouched modules, entities and architecture stay; silent replacement is
+// recorded in kept so the user can review it.
+func MergeBlueprint(prev, next *core.Blueprint, change *core.ChangePlan, intent core.WorkIntent) (*core.Blueprint, []string) {
+	next = NormalizeBlueprint(next)
+	if prev == nil {
+		return next, nil
+	}
+	if next == nil {
+		return prev, nil
+	}
+	if intent == core.IntentNewProject || (change != nil && change.Scope == core.BlueprintScopeFull) {
+		return next, nil
+	}
+	added, modified, removed := changeModuleSets(change)
+	var kept []string
+	out := *next
+	out.Modules = mergeModules(prev.Modules, next.Modules, added, modified, removed, &kept)
+	out.Database.Entities = mergeEntities(prev.Database.Entities, next.Database.Entities, added, modified, removed, &kept)
+	if intent != core.IntentArchitecture && strings.TrimSpace(prev.Architecture.Pattern) != "" {
+		if next.Architecture.Pattern != "" && next.Architecture.Pattern != prev.Architecture.Pattern {
+			kept = append(kept, "architecture.pattern="+prev.Architecture.Pattern)
+		}
+		out.Architecture = prev.Architecture
+	}
+	if !touchesAuth(change) && (prev.Auth != next.Auth || prev.Authz.Model != next.Authz.Model) {
+		if prev.Auth.Method != "" && next.Auth.Method != "" && prev.Auth.Method != next.Auth.Method {
+			kept = append(kept, "auth.method="+prev.Auth.Method)
+		}
+		out.Auth = prev.Auth
+		out.Authz.Model = prev.Authz.Model
+		out.Authz.Convention = prev.Authz.Convention
+	}
+	out.Authz.Permissions = unionStr(prev.Authz.Permissions, next.Authz.Permissions)
+	out.Events.Events = mergeEvents(prev.Events.Events, next.Events.Events)
+	out.Workers = mergeWorkers(prev.Workers, next.Workers, added, modified)
+	return NormalizeBlueprint(&out), kept
+}
+
+func changeModuleSets(change *core.ChangePlan) (added, modified, removed map[string]bool) {
+	added, modified, removed = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	if change == nil {
+		return
+	}
+	mark := func(dst map[string]bool, it core.ChangeItem) {
+		for _, s := range []string{it.Module, it.Target} {
+			if s = slugID(s); s != "" {
+				dst[s] = true
+			}
+		}
+	}
+	for _, it := range change.Items {
+		switch it.Action {
+		case core.ChangeAdd:
+			mark(added, it)
+		case core.ChangeModify, core.ChangeRefactor:
+			mark(modified, it)
+		case core.ChangeRemove:
+			mark(removed, it)
+		}
+	}
+	return
+}
+
+func mergeModules(prev, next []core.Module, added, modified, removed map[string]bool, kept *[]string) []core.Module {
+	byID := map[string]core.Module{}
+	order := []string{}
+	for _, m := range prev {
+		if removed[m.ID] {
+			continue
+		}
+		byID[m.ID] = m
+		order = append(order, m.ID)
+	}
+	for _, m := range next {
+		if removed[m.ID] {
+			continue
+		}
+		old, ok := byID[m.ID]
+		if !ok {
+			byID[m.ID] = m
+			order = append(order, m.ID)
+			continue
+		}
+		if added[m.ID] || modified[m.ID] {
+			byID[m.ID] = m
+			continue
+		}
+		if m.Responsibility != old.Responsibility || strings.Join(m.Interface, ",") != strings.Join(old.Interface, ",") {
+			*kept = append(*kept, "module:"+old.ID)
+		}
+	}
+	var out []core.Module
+	seen := map[string]bool{}
+	for _, id := range order {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, byID[id])
+	}
+	return out
+}
+
+func mergeEntities(prev, next []core.Entity, added, modified, removed map[string]bool, kept *[]string) []core.Entity {
+	byName := map[string]core.Entity{}
+	order := []string{}
+	key := func(n string) string { return strings.ToLower(strings.TrimSpace(n)) }
+	for _, e := range prev {
+		k := key(e.Name)
+		if removed[slugID(e.Name)] || removed[k] {
+			continue
+		}
+		byName[k] = e
+		order = append(order, k)
+	}
+	for _, e := range next {
+		k := key(e.Name)
+		if removed[slugID(e.Name)] || removed[k] {
+			continue
+		}
+		old, ok := byName[k]
+		if !ok {
+			byName[k] = e
+			order = append(order, k)
+			continue
+		}
+		if added[slugID(e.Name)] || modified[slugID(e.Name)] || added[k] || modified[k] {
+			byName[k] = e
+			continue
+		}
+		if strings.Join(e.Fields, ",") != strings.Join(old.Fields, ",") {
+			*kept = append(*kept, "entity:"+old.Name)
+		}
+	}
+	var out []core.Entity
+	for _, k := range order {
+		out = append(out, byName[k])
+	}
+	return out
+}
+
+func mergeEvents(prev, next []core.EventSpec) []core.EventSpec {
+	byType := map[string]core.EventSpec{}
+	order := []string{}
+	for _, e := range append(append([]core.EventSpec{}, prev...), next...) {
+		t := strings.TrimSpace(e.Type)
+		if t == "" {
+			continue
+		}
+		if _, ok := byType[t]; !ok {
+			order = append(order, t)
+		}
+		byType[t] = e
+	}
+	var out []core.EventSpec
+	for _, t := range order {
+		out = append(out, byType[t])
+	}
+	return out
+}
+
+func mergeWorkers(prev, next []core.Worker, added, modified map[string]bool) []core.Worker {
+	byName := map[string]core.Worker{}
+	order := []string{}
+	for _, w := range prev {
+		k := strings.ToLower(w.Name)
+		byName[k] = w
+		order = append(order, k)
+	}
+	for _, w := range next {
+		k := strings.ToLower(w.Name)
+		if _, ok := byName[k]; !ok {
+			byName[k] = w
+			order = append(order, k)
+			continue
+		}
+		if added[slugID(w.Name)] || modified[slugID(w.Name)] {
+			byName[k] = w
+		}
+	}
+	var out []core.Worker
+	for _, k := range order {
+		out = append(out, byName[k])
+	}
+	return out
+}
+
+func touchesAuth(change *core.ChangePlan) bool {
+	if change == nil {
+		return false
+	}
+	hit := func(s string) bool {
+		s = strings.ToLower(s)
+		return strings.Contains(s, "auth") || strings.Contains(s, "jwt") || strings.Contains(s, "rbac") || strings.Contains(s, "permission")
+	}
+	for _, it := range change.Items {
+		if hit(it.Target) || hit(it.Module) || hit(strings.Join(it.Files, " ")) {
+			return true
+		}
+	}
+	for _, f := range append(append(append([]core.ChangeFile{}, change.Files.Add...), change.Files.Modify...), change.Files.Remove...) {
+		if hit(f.Path) {
+			return true
+		}
+	}
+	return false
+}
+
+func unionStr(a, b []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, s := range append(append([]string{}, a...), b...) {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[strings.ToLower(s)] {
+			continue
+		}
+		seen[strings.ToLower(s)] = true
+		out = append(out, s)
+	}
+	return out
+}
+
 func normModules(in []core.Module) []core.Module {
 	var out []core.Module
 	seen := map[string]int{}

@@ -189,6 +189,7 @@ func TestDeleteCleanupThroughMCP(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	holdAutoPlan(t, s)
 	if err := s.GenerateWorkflow(); err != nil {
 		t.Fatal(err)
 	}
@@ -259,6 +260,7 @@ func TestDeleteDocumentWaitsForPendingJob(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	holdAutoPlan(t, s)
 	if err := s.GenerateWorkflow(); err != nil { // waits for the host
 		t.Fatal(err)
 	}

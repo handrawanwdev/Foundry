@@ -1,9 +1,9 @@
 import { api } from "../api";
-import { BLUEPRINT_STEP_LABEL } from "../blueprint";
+import { formatElapsed } from "../elapsed";
 import { useProject } from "../store/project";
 import { Elapsed } from "./Elapsed";
 
-// Shows what Foundry is doing right now, for every step.
+// Shows what Foundry is doing right now.
 export function JobBanner() {
   const { project, run, pending } = useProject();
   const job = project?.job;
@@ -22,13 +22,13 @@ export function JobBanner() {
       </div>
     );
   }
-  const rest = (project?.blueprint_queue ?? []).map((k) => BLUEPRINT_STEP_LABEL[k] ?? k);
+  const typical = job.eta_ms && job.eta_ms > 0 ? formatElapsed(job.eta_ms) : "";
   if (job.status === "waiting_host") {
     return (
       <div className="banner waiting">
         <span className="spinner" /> <strong>{job.message}</strong>
         <Elapsed started={job.started} />
-        {rest.length > 1 && <span className="muted small">Sisa: {rest.join(" → ")}</span>}
+        {typical && <span className="muted small">biasanya {typical}</span>}
         <div className="muted small banner-hint">
           Di AI Host kamu, minta: <code>Lanjutkan pekerjaan Foundry (panggil next_work)</code>
         </div>
@@ -39,7 +39,7 @@ export function JobBanner() {
     <div className="banner running">
       <span className="spinner" /> <strong>{job.message}…</strong>
       <Elapsed started={job.started} />
-      {rest.length > 1 && <span className="muted small">Sisa: {rest.join(" → ")}</span>}
+      {typical && <span className="muted small">biasanya {typical}</span>}
     </div>
   );
 }

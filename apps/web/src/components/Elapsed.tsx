@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatElapsed } from "../elapsed";
 
-// Live clock next to a loading line ("Memahami kebutuhan… 0:12").
+// Live clock next to a loading line ("Merancang Blueprint… 0:12").
 // With a job timestamp, count from that instant. Without one, count from mount
 // so boot and fetch loaders still tick.
 export function Elapsed({ started }: { started?: string }) {

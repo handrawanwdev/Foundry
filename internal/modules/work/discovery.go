@@ -33,6 +33,7 @@ type discoveryOut struct {
 	Done         []string           `json:"definition_of_done"`
 	Decisions    []core.Decision    `json:"decisions"`
 	Skip         []core.AreaSkip    `json:"skip"`
+	Change       *core.ChangePlan   `json:"change"`
 }
 
 func DiscoveryPrompt(p *core.Project) string {
@@ -57,6 +58,7 @@ STORY:
 `)
 	b.WriteString(p.Story)
 	b.WriteString("\n\n")
+	writeWorkIntent(&b, p)
 	if ctx := FeatureMapContext(p); ctx != "" {
 		b.WriteString(ctx)
 		b.WriteString("\n")
@@ -70,6 +72,7 @@ STORY:
 			fmt.Fprintf(&b, "- %s at %s (%s) evidence: %s\n", c.Kind, c.Path, c.Tech, c.Evidence)
 		}
 		b.WriteString("\n")
+		writeExistingContext(&b, p)
 	}
 	b.WriteString(`Platform kinds allowed: web, android, ios, desktop, backend, cli, embedded (firmware, IoT, robotics), other (library, SDK,
 data pipeline, ML system, infrastructure, tooling). Choose them from where the software runs. A platform target names no
@@ -97,7 +100,7 @@ Blueprint rules:
 Artifacts: 0-10 extra blueprint documents for what THIS project needs beyond requirements, architecture and screens:
 the area artifacts below that apply, plus other documents the project needs (domain model, API or event contracts,
 protocol spec, data pipeline design, evaluation plan, test strategy, hardware interfaces). Skip what is not needed.
-Do not use the ids requirements, survey-decisions, architecture, technology, design-rules, layout-spec, use-cases, acceptance, decisions, system-overview
+Do not use the ids requirements, survey-decisions, architecture, technology, design-rules, layout-spec, use-cases, acceptance, decisions, system-overview, project-context, change-plan
 (Foundry writes those from the structured data).
 ` + artifactRules + `
 `)
@@ -138,7 +141,8 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
   "artifacts": [{"id": "threat-model", "title": "", "category": "quality", "area": "security", "summary": "", "body": "Markdown", "refs": []}],
   "definition_of_done": [""],
   "decisions": [` + decisionShape + `],
-  "skip": [{"area": "migration", "reason": ""}]
+  "skip": [{"area": "migration", "reason": ""}],
+  ` + changeJSONShape + `
 }`)
 	return b.String()
 }
@@ -256,7 +260,25 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	}
 	d := out.Discovery
 	p.Discovery = &d
-	p.Blueprint = NormalizeBlueprint(out.Blueprint)
+	prevBP, prevDec := p.Blueprint, slices.Clone(p.Decisions)
+	ch := core.NormalizeChangePlan(out.Change)
+	if ch != nil {
+		if p.IntentOrDefault().ChangeScope() && ch.Scope == "" {
+			ch.Scope = core.BlueprintScopeChange
+		}
+	} else if p.IntentOrDefault().ChangeScope() {
+		ch = &core.ChangePlan{Scope: core.BlueprintScopeChange}
+	}
+	nextBP := NormalizeBlueprint(out.Blueprint)
+	if p.IntentOrDefault().ChangeScope() && prevBP != nil {
+		merged, kept := MergeBlueprint(prevBP, nextBP, ch, p.IntentOrDefault())
+		p.Blueprint = merged
+		if ch != nil && len(kept) > 0 {
+			ch.Kept = append(ch.Kept, kept...)
+		}
+	} else {
+		p.Blueprint = nextBP
+	}
 	p.Requirements, p.Features, p.Flows = reqs, feats, flows
 	if p.FeatureMap.Empty() {
 		p.FeatureMap = core.FeatureMapFromFeatures(feats)
@@ -269,17 +291,58 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	SetArtifacts(p, out.Artifacts)
 	p.UI = nil
 	p.Done = nonEmpty(out.Done)
-	p.Decisions = mergeDecisions(nil, append(cleanDecisions(out.Decisions), SurveyConflicts(p)...))
+	incoming := append(cleanDecisions(out.Decisions), SurveyConflicts(p)...)
+	if p.IntentOrDefault().ChangeScope() && len(prevDec) > 0 {
+		p.Decisions = preserveDecisions(prevDec, incoming)
+	} else {
+		p.Decisions = mergeDecisions(nil, incoming)
+	}
 	p.DecisionSync = nil // the artifacts were written with these decisions
 	p.Skips = nil
 	for _, sk := range out.Skip {
 		skipArea(p, sk.Area, sk.Reason) // an invalid skip is dropped: the area stays expected
 	}
+	p.Change = ch
+	core.EnrichChange(p)
 	return nil
 }
 
 // cleanDecisions drops decisions without text and fixes unknown kinds and
 // areas, so a discovery is not refused for its decision register.
+func preserveDecisions(prev, incoming []core.Decision) []core.Decision {
+	out := slices.Clone(prev)
+	for _, d := range incoming {
+		dup := false
+		for _, p := range prev {
+			if strings.EqualFold(strings.TrimSpace(p.Text), strings.TrimSpace(d.Text)) {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		out = mergeDecisions(out, []core.Decision{d})
+	}
+	for _, old := range prev {
+		if old.Open() || strings.TrimSpace(old.Resolution) == "" || old.Area == "" {
+			continue
+		}
+		for _, d := range incoming {
+			if d.Area != old.Area || strings.TrimSpace(d.Resolution) == "" || d.Resolution == old.Resolution {
+				continue
+			}
+			out = mergeDecisions(out, []core.Decision{{
+				Kind:       core.DecisionConflict,
+				Area:       old.Area,
+				Text:       fmt.Sprintf("Rancangan baru mengusulkan %q yang bertentangan dengan %s (%s). Keputusan lama dipertahankan.", d.Resolution, old.ID, old.Resolution),
+				Resolution: "Keputusan lama dipertahankan: " + old.ID,
+			}})
+		}
+	}
+	return out
+}
+
 func cleanDecisions(in []core.Decision) []core.Decision {
 	var out []core.Decision
 	for _, d := range in {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { archOptions, defaultSurvey, existingComponents, isExistingProject, surveySummary, TELL_ANALYSIS, tellIntro, tellPlaceholder, tellTitle, tellWaiting, toggle } from "./tell";
+import { archOptions, contextSummary, defaultIntent, defaultSurvey, EXISTING_INTENTS, existingComponents, isExistingProject, surveySummary, TELL_ANALYSIS, tellIntro, tellPlaceholder, tellTitle, tellWaiting, toggle } from "./tell";
 import type { Project } from "./types";
 
 const project = (mode?: "existing" | "new") =>
@@ -56,6 +56,22 @@ describe("tell copy", () => {
   it("toggles multi-select answers", () => {
     expect(toggle(undefined, "web")).toEqual(["web"]);
     expect(toggle(["web", "api"], "web")).toEqual(["api"]);
+  });
+
+  it("offers existing-project work kinds and keeps new-project copy", () => {
+    expect(EXISTING_INTENTS.map((k) => k.id)).toEqual([
+      "new_feature", "enhancement", "refactoring", "bug_fix", "architecture", "existing_project",
+    ]);
+    expect(defaultIntent(project("existing"))).toBe("existing_project");
+    expect(defaultIntent(project("new"))).toBe("new_project");
+    expect(tellTitle(true, "new_feature")).toMatch(/Fitur baru/);
+    expect(tellPlaceholder(true, "bug_fix")).toMatch(/Login gagal/);
+    expect(contextSummary({ modules: [{ name: "billing", path: "internal/billing" }], data: [{ name: "Invoice" }] })).toEqual(["modul 1", "entitas 1"]);
+    expect(contextSummary({
+      modules: [{ name: "billing", path: "internal/billing" }],
+      deps: [{ from: "internal/http", to: "internal/billing", kind: "module" }],
+      stale: true,
+    })).toEqual(["modul 1", "dependensi 1", "kedaluwarsa"]);
   });
 
   it("shows exactly the seven planning domains, not the old flat categories", () => {

@@ -126,7 +126,99 @@ func ConsistencyIssues(p *Project) []Issue {
 		}
 	}
 
+	out = append(out, changeConsistency(p)...)
+	out = append(out, traceConsistency(p)...)
 	return out
+}
+
+func changeConsistency(p *Project) []Issue {
+	if p.Change == nil || p.Change.Empty() {
+		return nil
+	}
+	var out []Issue
+	find := func(level, where, msg, impact, suggestion string) {
+		out = append(out, Issue{Level: level, Where: where, Message: msg, Impact: impact, Suggestion: suggestion})
+	}
+	for _, cf := range ChangeConflicts(p) {
+		level := IssueWarning
+		if cf.Kind == "dependents" {
+			level = IssueError
+		}
+		where := cf.Where
+		if where == "" {
+			where = "change-plan"
+		}
+		find(level, where, cf.Message,
+			"rancangan perubahan bertentangan dengan blueprint utama atau dependensi yang teramati",
+			orKeep(cf.Keep, "sesuaikan change plan; jangan timpa keputusan yang masih berlaku"))
+	}
+	if p.Change.Scope == BlueprintScopeChange && p.Blueprint != nil {
+		for _, it := range p.Change.Items {
+			if it.Action != ChangeRemove {
+				continue
+			}
+			mod := strings.ToLower(strings.TrimSpace(it.Module))
+			if mod == "" {
+				mod = strings.ToLower(strings.TrimSpace(it.Target))
+			}
+			if mod == "" {
+				continue
+			}
+			for _, m := range p.Blueprint.Modules {
+				if strings.ToLower(m.ID) != mod {
+					continue
+				}
+				if len(m.DependsOn) == 0 {
+					break
+				}
+				find(IssueWarning, "change-plan", fmt.Sprintf("penghapusan modul %s masih disebut di blueprint utama", m.ID),
+					"blueprint utama dan change plan saling bertentangan",
+					"hapus modul dari blueprint hanya setelah dependensinya dipindahkan")
+			}
+		}
+	}
+	return out
+}
+
+func traceConsistency(p *Project) []Issue {
+	if len(p.Requirements) == 0 {
+		return nil
+	}
+	var out []Issue
+	find := func(level, where, msg, impact, suggestion string) {
+		out = append(out, Issue{Level: level, Where: where, Message: msg, Impact: impact, Suggestion: suggestion})
+	}
+	hasWF := p.Workflow != nil && len(p.Workflow.Commands) > 0
+	for _, t := range Traceability(p) {
+		if t.FeatureID == "" {
+			continue // RequirementCoverageIssues already blocks this
+		}
+		if hasWF && len(t.Commands) == 0 {
+			req := p.requirement(t.RequirementID)
+			if req != nil && req.Priority == "MUST" {
+				find(IssueError, t.RequirementID, fmt.Sprintf("%s tidak tercakup command workflow mana pun", t.RequirementID),
+					"requirement hilang saat implementasi; export tidak dapat menjamin kebutuhan terpenuhi",
+					"tambahkan command yang covers "+t.RequirementID)
+			}
+		}
+	}
+	return out
+}
+
+func orKeep(keep, fallback string) string {
+	if strings.TrimSpace(keep) != "" {
+		return "pertahankan " + keep + "; " + fallback
+	}
+	return fallback
+}
+
+func (p *Project) requirement(id string) *Requirement {
+	for i := range p.Requirements {
+		if p.Requirements[i].ID == id {
+			return &p.Requirements[i]
+		}
+	}
+	return nil
 }
 
 func bpModules(p *Project) []Module {

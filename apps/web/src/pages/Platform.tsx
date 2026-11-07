@@ -53,7 +53,7 @@ export function PlatformStructure({ project }: { project: Project }) {
           {project.stack && (
             <section className="info-sec tp-invite">
               <h3>Rencana teknologi</h3>
-              <p className="small muted">Belum ada. Tekan <strong>Susun rancangan</strong> di Blueprint — teknologi dirancang bersama cakupan, desain, dan struktur.</p>
+              <p className="small muted">Belum ada. Tekan <strong>Susun rancangan</strong> di Blueprint — satu proses merancang teknologi, arsitektur, dan folder dari daftar fitur.</p>
             </section>
           )}
         </>

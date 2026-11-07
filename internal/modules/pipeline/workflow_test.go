@@ -342,6 +342,7 @@ func TestWorkflowMCP(t *testing.T) {
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 	if err := s.GenerateWorkflow(); err != nil {
 		t.Fatal(err)
 	}

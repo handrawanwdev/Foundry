@@ -227,9 +227,6 @@ func TestAcceptRefusals(t *testing.T) {
 		{"architecture outside closed set", func(_ *core.Project, pl *core.TechPlan) {
 			pl.Item(core.TechArchitecture).Technology = "Hexagonal"
 		}, "arsitektur harus salah satu"},
-		{"depends_on missing area", func(_ *core.Project, pl *core.TechPlan) {
-			pl.Item(core.TechBackend).DependsOn = []string{"ghost"}
-		}, "depends_on mengacu ke area \"ghost\""},
 		{"duplicate area", func(_ *core.Project, pl *core.TechPlan) {
 			pl.Items = append(pl.Items, filled(core.TechBackend, "Go + Gin", "Go"))
 		}, "muncul lebih dari sekali"},

@@ -4,7 +4,8 @@ import type { AreaStatusKind, Artifact, ArtifactCategory, ArtifactStateKind, Blu
 export const DESIGN_DOCS = { rules: "design-rules", layout: "layout-spec" } as const;
 
 export const BLUEPRINT_STEP_LABEL: Record<string, string> = {
-  blueprint: "Cakupan", design: "Desain", tech: "Teknologi", structure: "Struktur", repo: "Folder",
+  blueprint: "Cakupan", design: "Desain", plan: "Blueprint",
+  tech: "Teknologi", structure: "Struktur", repo: "Folder",
 };
 
 const APP_KINDS = new Set(["web", "android", "ios", "desktop", "backend"]);

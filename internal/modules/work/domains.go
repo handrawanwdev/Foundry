@@ -51,7 +51,8 @@ const adaptiveSurveyRules = `ADAPTIVE SURVEY:
 const traceabilityRules = `REQUIREMENT TRACEABILITY:
 - every requirement is covered by at least one feature; every feature has 2-6 concrete sub-features.
 - connect each requirement to the use case(s) and feature(s) it serves, and (when relevant) to its business rules, the data model, the UI/API, and its acceptance criteria. Do not force a relation that does not exist to fill a checklist.
-- keep the ids you assign consistent across the whole answer (requirements, features, flows, acceptance, decisions), so the links survive landing.
+- keep the chain Requirement → Feature → Domain → Module → File delta → Acceptance → Test plan → Command. A MUST requirement must still be covered by a command when the workflow is written.
+- keep the ids you assign consistent across the whole answer (requirements, features, flows, acceptance, decisions), so the links survive landing and export.
 `
 
 // consistencyRules is the section-7 cross-artifact check the model runs

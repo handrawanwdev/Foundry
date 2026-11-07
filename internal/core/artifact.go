@@ -52,6 +52,7 @@ var BuiltinArtifacts = map[string]bool{
 	"requirements": true, "architecture": true, "technology": true, ArtifactDesignRules: true, ArtifactLayoutSpec: true,
 	ArtifactUseCases: true, ArtifactAcceptance: true, ArtifactDecisions: true, ArtifactSurvey: true,
 	ArtifactSystemOverview: true, ArtifactRepoStructure: true, ArtifactTechPlan: true,
+	ArtifactProjectContext: true, ArtifactChangePlan: true,
 }
 
 // Built-in artifacts besides requirements, architecture and technology.
@@ -75,6 +76,12 @@ const (
 	// reasoning, alternatives, compatibility and evaluation. It exists once
 	// the plan does.
 	ArtifactTechPlan = "technology-plan"
+	// ArtifactProjectContext is the evidence-based reading of an existing
+	// repository. It exists once the scan found something.
+	ArtifactProjectContext = "project-context"
+	// ArtifactChangePlan is the Feature Change Blueprint: what is added,
+	// modified, reused, refactored or removed, and the impact of that.
+	ArtifactChangePlan = "change-plan"
 )
 
 // Hash identifies the artifact's content; a command records it to notice

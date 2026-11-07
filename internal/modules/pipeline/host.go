@@ -9,7 +9,7 @@ import (
 
 // WorkItem is what an MCP host must do next.
 type WorkItem struct {
-	Kind   string `json:"kind"` // feature_map | discovery | design | stack | tech | structure | repo | blueprint | workflow | none
+	Kind   string `json:"kind"` // feature_map | discovery | design | stack | tech | structure | repo | plan | blueprint | workflow | none
 	Prompt string `json:"prompt"`
 	Submit string `json:"submit"` // how to hand the result back
 }
@@ -24,7 +24,7 @@ func (s *Service) NextWork() (*WorkItem, error) {
 		return &WorkItem{Kind: "none", Prompt: nothingMessage(p)}, nil
 	}
 	switch p.Job.Kind {
-	case work.KindFeatureMap, work.KindDiscovery, work.KindDesign, work.KindStack, work.KindTech, work.KindStructure, work.KindRepo, work.KindArtifacts, work.KindWorkflow:
+	case work.KindFeatureMap, work.KindDiscovery, work.KindDesign, work.KindStack, work.KindTech, work.KindStructure, work.KindRepo, work.KindPlan, work.KindArtifacts, work.KindWorkflow:
 		return &WorkItem{Kind: p.Job.Kind, Prompt: s.promptFor(p, p.Job.Kind),
 			Submit: fmt.Sprintf(`submit_work {"kind": %q, "result": "<the JSON object>"}`, p.Job.Kind)}, nil
 	}
@@ -54,6 +54,7 @@ func (s *Service) SubmitWork(kind, result string) error {
 	if p.Job == nil || p.Job.Status != core.JobWaiting || p.Job.Kind != kind {
 		return fmt.Errorf("%w: Foundry tidak sedang menunggu %s", ErrWrongStage, kind)
 	}
+	saveAIRaw(p.Dir, kind, result)
 	err = s.applyAI(kind, result, "mcp")
 	s.noteRejection(kind, err) // the host gets the error; next_work shows it too
 	return err

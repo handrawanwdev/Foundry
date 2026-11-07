@@ -592,6 +592,7 @@ func TestTechPlanRejectedInMCPPrompt(t *testing.T) {
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 	if _, err := s.SetPlatform([]core.PlatformTarget{{Kind: core.PlatformWeb, Rationale: "web"}, {Kind: core.PlatformBackend, Rationale: "api"}}); err != nil {
 		t.Fatal(err)
 	}

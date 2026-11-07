@@ -42,7 +42,8 @@ export const api = {
   templates: () => call<Template[]>("GET", "/templates"),
 
   project: () => call<Project>("GET", "/project"),
-  story: (story: string, survey?: Survey) => call<Project>("POST", "/project/story", { story, survey }),
+  story: (story: string, survey?: Survey, intent?: string, corrections?: string) =>
+    call<Project>("POST", "/project/story", { story, survey, intent, corrections }),
   saveFeatureMap: (m: FeatureMap) => call<Project>("PUT", "/project/feature-map", m),
   generateFeatureMap: (text = "") => call("POST", "/project/feature-map/generate", { text }),
   expandFeature: (id: string, text = "") => call("POST", "/project/feature-map/expand", { id, text }),

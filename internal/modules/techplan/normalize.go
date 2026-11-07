@@ -100,6 +100,13 @@ func Normalize(plan *core.TechPlan) {
 		}
 	}
 	slices.SortStableFunc(items, func(a, b core.TechItem) int { return rank(a) - rank(b) })
+	known := map[string]bool{}
+	for i := range items {
+		known[items[i].Area] = true
+	}
+	for i := range items {
+		items[i].DependsOn = slices.DeleteFunc(items[i].DependsOn, func(a string) bool { return !known[a] })
+	}
 	plan.Items = items
 
 	var cons []core.TechConstraint
@@ -182,6 +189,14 @@ func normalizeItem(it *core.TechItem) {
 	it.DependsOn = cleanAreas(it.DependsOn)
 	it.DependsOn = slices.DeleteFunc(it.DependsOn, func(a string) bool { return a == it.Area })
 	it.Driver, it.Confidence = lower(it.Driver), lower(it.Confidence)
+	it.Driver = canonical(it.Driver, core.TechDrivers...)
+	if !slices.Contains(core.TechDrivers, it.Driver) {
+		it.Driver = core.DriverEngineering
+	}
+	it.Confidence = canonical(it.Confidence, core.TechConfidence...)
+	if !slices.Contains(core.TechConfidence, it.Confidence) {
+		it.Confidence = "medium"
+	}
 	var alts []core.TechAlternative
 	for _, a := range it.Alternatives {
 		a.Technology, a.Why, a.Difference = clean(a.Technology, maxName), clean(a.Why, maxText), clean(a.Difference, maxText)
@@ -201,6 +216,17 @@ func canonical(v string, allowed ...string) string {
 		if strings.EqualFold(v, a) {
 			return a
 		}
+	}
+	low := strings.ToLower(v)
+	hit := ""
+	for _, a := range allowed {
+		al := strings.ToLower(a)
+		if strings.Contains(low, al) && len(a) >= len(hit) {
+			hit = a
+		}
+	}
+	if hit != "" {
+		return hit
 	}
 	return v
 }

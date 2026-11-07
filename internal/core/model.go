@@ -30,6 +30,12 @@ type Project struct {
 	Dir     string `json:"dir"`
 	Stage   Stage  `json:"stage"`
 	Story   string `json:"story"`
+	// Intent is the planning job: new project, existing project, a feature
+	// change, and so on. Empty until the user chooses or the folder decides.
+	Intent WorkIntent `json:"intent,omitempty"`
+	// Change is the Feature Change Blueprint: the delta against the current
+	// system. Nil for a full project blueprint.
+	Change *ChangePlan `json:"change,omitempty"`
 	// Survey holds the optional answers that bind technical decisions.
 	Survey    *Survey    `json:"survey,omitempty"`
 	Discovery *Discovery `json:"discovery,omitempty"`
@@ -76,11 +82,14 @@ type Project struct {
 	// BlueprintQueue is the remaining AI kinds of GenerateBlueprint
 	// (current first). BlueprintBatch is how many steps that run started
 	// with, for "2/5" in the UI. Both empty when no batch is running.
-	BlueprintQueue []string  `json:"blueprint_queue,omitempty"`
-	BlueprintBatch int       `json:"blueprint_batch,omitempty"`
-	Job            *Job      `json:"job,omitempty"`
-	Events         []Event   `json:"events"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	BlueprintQueue []string `json:"blueprint_queue,omitempty"`
+	BlueprintBatch int      `json:"blueprint_batch,omitempty"`
+	// JobHistory is the last completed AI job durations, newest last.
+	// ETA is the median of matching kinds when at least two samples exist.
+	JobHistory []JobTiming `json:"job_history,omitempty"`
+	Job        *Job        `json:"job,omitempty"`
+	Events     []Event     `json:"events"`
+	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
 // Survey answers. An empty answer means the user left it to Foundry: it is
@@ -437,6 +446,13 @@ type Structure struct {
 	// UI is what the existing frontend already has; nil for new projects
 	// or when no frontend was found.
 	UI *ExistingUI `json:"ui,omitempty"`
+	// Context is the evidence-based picture of the repository: layout,
+	// modules, data, APIs, auth, tests, docs and conventions. Nil for a
+	// new project. The user may correct it before blueprint.
+	Context *ProjectContext `json:"context,omitempty"`
+	// Adaptation classifies unified-planning recommendations against an
+	// existing codebase: reuse, add, modify, refactor, remove.
+	Adaptation []ChangeItem `json:"adaptation,omitempty"`
 }
 
 // ExistingUI is the frontend an existing project already has, read from
@@ -480,11 +496,100 @@ const (
 )
 
 type Job struct {
-	Kind    string    `json:"kind"` // feature_map | discovery | design | stack | structure | blueprint | workflow
+	Kind    string    `json:"kind"` // feature_map | discovery | design | stack | tech | structure | repo | plan | blueprint | workflow
 	Status  JobStatus `json:"status"`
 	Message string    `json:"message"`
 	Error   string    `json:"error,omitempty"`
 	Started time.Time `json:"started"`
+	// Steps are the real stages of this job. Empty for jobs that are one step.
+	Steps []JobStep `json:"steps,omitempty"`
+	// ETAMS is remaining-time guess from JobHistory, 0 when there is not enough data.
+	ETAMS int64 `json:"eta_ms,omitempty"`
+}
+
+const (
+	StepPending = "pending"
+	StepRunning = "running"
+	StepDone    = "done"
+	StepSkipped = "skipped"
+	StepFailed  = "failed"
+)
+
+// JobStep is one observable stage of an AI job.
+type JobStep struct {
+	ID        string     `json:"id"`
+	Label     string     `json:"label"`
+	Status    string     `json:"status"` // pending | running | done | skipped | failed
+	StartedAt *time.Time `json:"started_at,omitempty"`
+	EndedAt   *time.Time `json:"ended_at,omitempty"`
+}
+
+// JobTiming is one finished AI job duration, used for ETA.
+type JobTiming struct {
+	Kind string    `json:"kind"`
+	MS   int64     `json:"ms"`
+	At   time.Time `json:"at"`
+}
+
+const maxJobHistory = 20
+
+// SetStep records a step transition. Unknown ids are ignored.
+func (j *Job) SetStep(id, status string, at time.Time) {
+	if j == nil {
+		return
+	}
+	for i := range j.Steps {
+		if j.Steps[i].ID != id {
+			continue
+		}
+		s := &j.Steps[i]
+		s.Status = status
+		switch status {
+		case StepRunning:
+			if s.StartedAt == nil {
+				t := at
+				s.StartedAt = &t
+			}
+			s.EndedAt = nil
+		case StepDone, StepFailed, StepSkipped:
+			t := at
+			s.EndedAt = &t
+			if s.StartedAt == nil {
+				s.StartedAt = &t
+			}
+		}
+		return
+	}
+}
+
+// EstimateJobMS is the median duration of kind in history. 0 until two samples exist.
+func EstimateJobMS(history []JobTiming, kind string) int64 {
+	var samples []int64
+	for i := len(history) - 1; i >= 0 && len(samples) < 5; i-- {
+		if history[i].Kind == kind && history[i].MS > 0 {
+			samples = append(samples, history[i].MS)
+		}
+	}
+	if len(samples) < 2 {
+		return 0
+	}
+	slices.Sort(samples)
+	return samples[len(samples)/2]
+}
+
+// RecordJobTiming appends a finished job duration, keeping the log bounded.
+func RecordJobTiming(p *Project, kind string, started time.Time, at time.Time) {
+	if p == nil || started.IsZero() || at.Before(started) {
+		return
+	}
+	ms := at.Sub(started).Milliseconds()
+	if ms <= 0 {
+		return
+	}
+	p.JobHistory = append(p.JobHistory, JobTiming{Kind: kind, MS: ms, At: at})
+	if n := len(p.JobHistory); n > maxJobHistory {
+		p.JobHistory = p.JobHistory[n-maxJobHistory:]
+	}
 }
 
 type Event struct {

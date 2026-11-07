@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentPrompt, blueprintGenerateNeeded, DESIGN_DOCS, designIssuesOf, isDesignDoc, SCOPE_DOCS, scopeIssuesOf } from "./blueprint";
+import { agentPrompt, BLUEPRINT_STEP_LABEL, blueprintGenerateNeeded, DESIGN_DOCS, designIssuesOf, isDesignDoc, SCOPE_DOCS, scopeIssuesOf } from "./blueprint";
 import type { BlueprintView, ExportManifest, Project } from "./types";
 
 const manifest = {
@@ -44,6 +44,12 @@ describe("design artifacts", () => {
     expect(designIssuesOf(issues, DESIGN_DOCS.rules).map((i) => i.message)).toEqual(["principles belum diisi"]);
     expect(designIssuesOf(issues, DESIGN_DOCS.layout)).toHaveLength(2);
     expect(isDesignDoc("layout-spec") && isDesignDoc("design-rules") && !isDesignDoc("ui-design")).toBe(true);
+  });
+});
+
+describe("unified planning labels", () => {
+  it("names the unified job, not three separate design stages", () => {
+    expect(BLUEPRINT_STEP_LABEL.plan).toBe("Blueprint");
   });
 });
 

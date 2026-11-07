@@ -52,6 +52,9 @@ Write every human-readable text in the same language as the story.
 
 PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	writeBinding(&b, p)
+	writeWorkIntent(&b, p)
+	writeExistingContext(&b, p)
+	writeChangePlan(&b, p)
 	writeStackBrief(&b, p)
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies; keep every artifact consistent with it)")
 	writeRepoBrief(&b, p)

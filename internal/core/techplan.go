@@ -157,6 +157,9 @@ type TechItem struct {
 	Alternatives []TechAlternative `json:"alternatives,omitempty"`
 	Confidence   string            `json:"confidence"`
 	Assumptions  []string          `json:"assumptions,omitempty"`
+	// Action classifies the decision against an existing codebase:
+	// reuse | add | modify | refactor | remove. Empty on greenfield.
+	Action string `json:"action,omitempty"`
 
 	// Computed by Foundry, never trusted from the AI.
 	InCatalog bool `json:"in_catalog,omitempty"`

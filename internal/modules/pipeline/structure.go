@@ -142,6 +142,52 @@ func (s *Service) AnalyzeStructure(text string) error {
 	return s.startAI(work.KindStructure)
 }
 
+// adoptRecommendedStructure takes the AI recommendation as the structure
+// and approves it, in the caller's store update. Used by unified planning
+// so the folder plan can land against the adopted IR.
+func adoptRecommendedStructure(p *core.Project) error {
+	st := p.Structure
+	if st == nil || st.Mode == core.StructureExisting {
+		return nil
+	}
+	if st.State() == core.TechApproved && (st.Plan == nil || st.Plan.Selected != "") {
+		return nil
+	}
+	if st.Plan == nil {
+		return nil
+	}
+	st.Plan.SourceHash = structure.SourceHash(p)
+	st.Plan.Stale = false
+	alt := st.Plan.RecommendedAlternative()
+	if alt == nil {
+		return errors.New("rekomendasi struktur tidak ada")
+	}
+	ir := work.PlanAlternativeIR(st.Plan, alt)
+	decision := alt.Summary
+	if alt.ID == st.Plan.Recommendation {
+		decision = st.Plan.Reason
+	}
+	err := structure.ProposeIR(st, p, ir, nil, "ai", st.Plan.Reason, alt.Summary)
+	if errors.Is(err, structure.ErrNoChange) {
+		if hasStructureError(structure.Validate(ir, p, p.Stack)) {
+			return err
+		}
+		st.Plan.Selected, st.Plan.Decision, st.Plan.DecidedAt = alt.ID, decision, time.Now().UTC()
+		return structure.Approve(st, p)
+	}
+	if err != nil {
+		return err
+	}
+	if hasStructureError(st.Proposal.Issues) {
+		return errors.New("rekomendasi punya masalah validasi; perbaiki usulan struktur dulu")
+	}
+	st.Plan.Selected, st.Plan.Decision, st.Plan.DecidedAt = alt.ID, decision, time.Now().UTC()
+	if err := applyStructureProposalLocked(p); err != nil {
+		return err
+	}
+	return structure.Approve(st, p)
+}
+
 // UseStructureAlternative adopts one AI alternative as the structure and
 // approves it. When the alternative has validation errors the proposal is
 // left waiting, so the user can fix it with the existing editor.
@@ -273,43 +319,45 @@ func (s *Service) ApplyStructureProposal() (*core.Project, error) {
 		if err := structureEditable(p); err != nil {
 			return err
 		}
-		st := p.Structure
-		if st.Proposal == nil {
-			return structure.ErrNoProposal
-		}
-		if len(st.Proposal.Tech) > 0 && p.Stack.Proposal != nil {
-			return stack.ErrPending
-		}
-		before, pr, err := structure.Apply(st)
-		if err != nil {
-			return err
-		}
-		if len(pr.Tech) > 0 {
-			old := core.CloneDecisions(p.Stack.Decisions)
-			var areas []string
-			for _, c := range pr.Tech {
-				areas = append(areas, c.Area)
-				value := c.To
-				if d := p.Stack.Decision(c.Area); d != nil && value == d.Recommended {
-					value = ""
-				}
-				if err := stack.Override(p.Stack, c.Area, value, c.Reason); err != nil {
-					return err
-				}
-			}
-			stack.Follow(p.Stack, areas...)
-			stackChanged(p, old, "structure", "Struktur project: "+pr.IR.Type)
-			work.ResetBlueprintTech(p, stack.Diff(old, p.Stack.Decisions))
-		}
-		// The architecture and technology artifacts render this structure;
-		// commands that recorded them become stale through their hashes.
-		work.CompleteBlueprint(p)
-		stampRefs(p)
-		structure.Refresh(st, p)
-		v := structure.Record(st, before, pr.Source, pr.Request)
-		p.Log("ui", fmt.Sprintf("Struktur v%d diterapkan: %s", v.Version, strings.Join(v.Changes, "; ")))
-		return nil
+		return applyStructureProposalLocked(p)
 	})
+}
+
+func applyStructureProposalLocked(p *core.Project) error {
+	st := p.Structure
+	if st.Proposal == nil {
+		return structure.ErrNoProposal
+	}
+	if len(st.Proposal.Tech) > 0 && p.Stack.Proposal != nil {
+		return stack.ErrPending
+	}
+	before, pr, err := structure.Apply(st)
+	if err != nil {
+		return err
+	}
+	if len(pr.Tech) > 0 {
+		old := core.CloneDecisions(p.Stack.Decisions)
+		var areas []string
+		for _, c := range pr.Tech {
+			areas = append(areas, c.Area)
+			value := c.To
+			if d := p.Stack.Decision(c.Area); d != nil && value == d.Recommended {
+				value = ""
+			}
+			if err := stack.Override(p.Stack, c.Area, value, c.Reason); err != nil {
+				return err
+			}
+		}
+		stack.Follow(p.Stack, areas...)
+		stackChanged(p, old, "structure", "Struktur project: "+pr.IR.Type)
+		work.ResetBlueprintTech(p, stack.Diff(old, p.Stack.Decisions))
+	}
+	work.CompleteBlueprint(p)
+	stampRefs(p)
+	structure.Refresh(st, p)
+	v := structure.Record(st, before, pr.Source, pr.Request)
+	p.Log("ui", fmt.Sprintf("Struktur v%d diterapkan: %s", v.Version, strings.Join(v.Changes, "; ")))
+	return nil
 }
 
 func (s *Service) DiscardStructureProposal() (*core.Project, error) {

@@ -128,6 +128,7 @@ func TestStructurePlanRejectionIsFedBack(t *testing.T) {
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 	p := load(t, s)
 	plan := aiPlan(p)
 	domains := structure.Domains(p)
@@ -185,6 +186,7 @@ func TestStructurePlanEndToEnd(t *testing.T) {
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 	p := load(t, s)
 	plan := aiPlan(p)
 	raw, err := json.Marshal(plan)

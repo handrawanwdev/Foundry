@@ -2,6 +2,7 @@ package pipeline_test
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -10,9 +11,9 @@ import (
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
-// One click after discovery writes the remaining designs in order:
-// technology, structure analysis (adopted), folder plan. Design and
-// covered areas are skipped because discovery already produced them.
+// One click after discovery writes remaining designs: Unified Blueprint
+// Planning lands technology, architecture and folder structure in one AI
+// job. Design and covered areas are skipped because discovery produced them.
 func TestGenerateBlueprintChains(t *testing.T) {
 	s := newService(t, fakeAI{}, "")
 	designReady(t, s)
@@ -36,8 +37,11 @@ func TestGenerateBlueprintChains(t *testing.T) {
 	if p.Structure.Repo == nil {
 		t.Fatalf("repo plan missing: %+v", p.Structure)
 	}
-	if p.Job == nil || p.Job.Status != core.JobDone || p.Job.Kind != work.KindRepo {
+	if p.Job == nil || p.Job.Status != core.JobDone || p.Job.Kind != work.KindPlan {
 		t.Fatalf("last job = %+v", p.Job)
+	}
+	if p.Stack.Plan.Stale || p.Structure.Plan.Stale || p.Structure.Repo.Stale {
+		t.Fatalf("co-designed plans marked stale: tech=%v struct=%v repo=%v", p.Stack.Plan.Stale, p.Structure.Plan.Stale, p.Structure.Repo.Stale)
 	}
 	if err := s.GenerateBlueprint(); !errors.Is(err, pipeline.ErrNothingToDo) {
 		t.Fatalf("second generate err = %v", err)
@@ -71,39 +75,122 @@ func TestGenerateBlueprintMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, err := s.NextWork()
-	if err != nil || w.Kind != work.KindTech || !strings.Contains(w.Prompt, "technology architect") {
+	if err != nil || w.Kind != work.KindPlan || !strings.Contains(w.Prompt, "unified blueprint architect") {
 		t.Fatalf("first = %+v err=%v", w, err)
 	}
 	p := load(t, s)
-	if p.BlueprintBatch < 2 || p.BlueprintQueue[0] != work.KindTech {
+	if p.BlueprintBatch != 1 || p.BlueprintQueue[0] != work.KindPlan {
 		t.Fatalf("batch=%d queue=%v", p.BlueprintBatch, p.BlueprintQueue)
 	}
-	if !strings.Contains(p.Job.Message, "/") {
-		t.Fatalf("job message missing step index: %q", p.Job.Message)
+	if !strings.Contains(p.Job.Message, "Merancang Blueprint") {
+		t.Fatalf("job message = %q", p.Job.Message)
 	}
-	if err := s.SubmitWork(work.KindTech, fakeTechAnswer(w.Prompt, false)); err != nil {
-		t.Fatal(err)
+	if len(p.Job.Steps) != 0 {
+		t.Fatalf("unified job must not list sub-steps: %+v", p.Job.Steps)
 	}
-	w, err = s.NextWork()
-	if err != nil || w.Kind != work.KindStructure || !strings.Contains(w.Prompt, "software architect") {
-		t.Fatalf("second = %+v err=%v", w, err)
-	}
-	if err := s.SubmitWork(work.KindStructure, fakeStructurePlan(w.Prompt, false)); err != nil {
-		t.Fatal(err)
-	}
-	w, err = s.NextWork()
-	if err != nil || w.Kind != work.KindRepo || !strings.Contains(w.Prompt, "repository architect") {
-		t.Fatalf("third = %+v err=%v", w, err)
-	}
-	if load(t, s).Structure.State() != core.TechApproved {
-		t.Fatalf("structure not adopted before repo: %s", load(t, s).Structure.State())
-	}
-	if err := s.SubmitWork(work.KindRepo, fakeRepoAnswer(w.Prompt, false)); err != nil {
+	if err := s.SubmitWork(work.KindPlan, fakeUnifiedAnswer(w.Prompt, false)); err != nil {
 		t.Fatal(err)
 	}
 	p = load(t, s)
-	if p.BlueprintBatch != 0 || p.Structure.Repo == nil {
-		t.Fatalf("batch=%d repo=%v job=%+v", p.BlueprintBatch, p.Structure.Repo, p.Job)
+	if p.BlueprintBatch != 0 || p.Structure == nil || p.Structure.Repo == nil || p.Stack == nil || p.Stack.Plan == nil {
+		t.Fatalf("batch=%d repo=%v plan=%v job=%+v", p.BlueprintBatch, p.Structure.Repo, p.Stack.Plan, p.Job)
+	}
+	if p.Structure.State() != core.TechApproved {
+		t.Fatalf("structure not adopted: %s", p.Structure.State())
+	}
+}
+
+func TestGenerateBlueprintRepairsJSON(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	designReadyMCP(t, s)
+	if err := s.GenerateBlueprint(); err != nil {
+		t.Fatal(err)
+	}
+	w, err := s.NextWork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := fakeUnifiedAnswer(w.Prompt, false)
+	broken := strings.Replace(good, "\n```", ")\n```", 1)
+	if err := s.SubmitWork(work.KindPlan, broken); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	if p.Stack == nil || p.Stack.Plan == nil || p.Structure == nil || p.Structure.Repo == nil {
+		t.Fatalf("repaired JSON did not land: job=%+v", p.Job)
+	}
+}
+
+func TestGenerateBlueprintEmptyKeepsDecisions(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	designReadyMCP(t, s)
+	if err := s.GenerateBlueprint(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SubmitWork(work.KindPlan, "   "); err == nil {
+		t.Fatal("empty output should fail")
+	}
+	p := load(t, s)
+	if p.Stack == nil || p.Stack.PlanRequest == nil {
+		t.Fatal("plan request dropped after empty output")
+	}
+	if p.Stack.Plan != nil {
+		t.Fatal("empty output overwrote technology plan")
+	}
+	if p.Job == nil || p.Job.Status != core.JobWaiting {
+		t.Fatalf("mcp job = %+v", p.Job)
+	}
+}
+
+func TestGenerateBlueprintOneAICall(t *testing.T) {
+	runs := t.TempDir() + "/runs"
+	t.Setenv("FAKE_RUNS", runs)
+	s := newService(t, fakeAI{}, "")
+	designReady(t, s)
+	if err := os.WriteFile(runs, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.GenerateBlueprint(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	raw, err := os.ReadFile(runs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if strings.Count(text, "plan\n") != 1 {
+		t.Fatalf("want one unified plan call, got %q", text)
+	}
+	for _, old := range []string{"tech\n", "structure\n", "repo\n"} {
+		if strings.Contains(text, old) {
+			t.Fatalf("standalone %s still ran: %q", strings.TrimSpace(old), text)
+		}
+	}
+}
+
+func TestStartBlueprintChainsUnifiedPlan(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	if _, err := s.SubmitStory("Saya ingin membuat aplikasi klinik untuk janji temu pasien"); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	if err := s.StartBlueprint(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	if p.Stack == nil || p.Stack.Plan == nil {
+		t.Fatalf("tech plan missing after features: %+v", p.Stack)
+	}
+	if p.Structure == nil || p.Structure.Plan == nil || p.Structure.Repo == nil {
+		t.Fatalf("architecture/repo missing after features: %+v", p.Structure)
+	}
+	if p.Job == nil || p.Job.Kind != work.KindPlan || p.Job.Status != core.JobDone {
+		t.Fatalf("last job = %+v", p.Job)
+	}
+	if err := s.GenerateBlueprint(); !errors.Is(err, pipeline.ErrNothingToDo) {
+		t.Fatalf("second generate err = %v", err)
 	}
 }
 
@@ -145,4 +232,5 @@ func designReadyMCP(t *testing.T, s *pipeline.Service) {
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 }

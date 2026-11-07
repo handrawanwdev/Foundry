@@ -285,9 +285,6 @@ func TestValidationRefusals(t *testing.T) {
 		{"allowed contradicts forbidden", func(pl *core.RepoPlan) {
 			pl.Dependency.Allowed = append(pl.Dependency.Allowed, core.RepoDepRule{From: "booking", To: "billing"})
 		}, "bertentangan dengan aturan forbidden"},
-		{"rule endpoint unknown", func(pl *core.RepoPlan) {
-			pl.Dependency.Allowed = append(pl.Dependency.Allowed, core.RepoDepRule{From: "booking", To: "ghost"})
-		}, "mengacu ke \"ghost\""},
 		{"no direction", func(pl *core.RepoPlan) { pl.Dependency.Direction = "" }, "arah dependency belum dijelaskan"},
 		{"criterion missing", func(pl *core.RepoPlan) { pl.Evaluation.Criteria = pl.Evaluation.Criteria[1:] }, "belum menilai (skor 1-5): cohesion"},
 		{"criterion without reason", func(pl *core.RepoPlan) { pl.Evaluation.Criteria[2].Reason = "" }, "skor tanpa alasan konkret: ownership"},

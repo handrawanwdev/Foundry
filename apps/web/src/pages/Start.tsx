@@ -13,10 +13,10 @@ export function StartPage() {
   return (
     <div className="start">
       <h1 className="start-title">Dari prompt jadi blueprint dan instruksi.</h1>
-      <p className="start-lead">Jelaskan software yang ingin dibuat atau diubah. Foundry menyusun blueprint dan command workflow; kamu tinjau, revisi, finalisasi, lalu ekspor untuk coding agent eksternal.</p>
+      <p className="start-lead">Project baru atau project yang sudah ada. Foundry membaca repository, menyusun blueprint dan command workflow; kamu tinjau, revisi, finalisasi, lalu ekspor untuk coding agent eksternal.</p>
       <div className="start-actions">
         <button className="primary big" onClick={() => setDialog("new")}>Project baru</button>
-        <button className="big" onClick={() => setDialog("open")}>Buka project</button>
+        <button className="big" onClick={() => setDialog("open")}>Buka project existing</button>
         <button className="ghost" onClick={() => nav("/simple/connect")}>
           {ai?.ready ? `AI: ${agentName(ai)}` : "Hubungkan AI dulu"}
         </button>

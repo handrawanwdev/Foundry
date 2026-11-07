@@ -156,6 +156,8 @@ body { overflow: hidden; }
 .banner-hint { flex-basis: 100%; }
 .banner-more summary { cursor: pointer; }
 .banner-more > div { max-height: 40vh; overflow-y: auto; }
+.adapt-list { margin: .4rem 0 0; padding: 0; list-style: none; display: grid; gap: .35rem; }
+.adapt-list li { display: flex; gap: .5rem; align-items: baseline; }
 .toast { position: fixed; bottom: 1rem; right: 1rem; padding: .75rem 1rem; border-radius: 12px; max-width: 420px; cursor: pointer; z-index: 80; }
 .toast.error { background: #a1260d; color: #fff; box-shadow: var(--shadow-pop); }
 .toast .muted { color: #fee; }
@@ -229,6 +231,9 @@ body { overflow: hidden; }
 @media (max-width: 560px) { .survey { grid-template-columns: 1fr; } }
 .checklist li { margin: .2rem 0; }
 blockquote { border-left: 3px solid var(--line-strong); margin: 1rem 0; padding-left: 1rem; color: var(--muted); }
+.context-panel { margin: 0; }
+.context-line { margin: .2rem 0; font-size: .8rem; color: var(--muted); line-height: 1.45; }
+.context-line strong { color: var(--text); font-weight: 600; }
 
 /* ---------- Connect ---------- */
 .connect { max-width: 560px; margin: 1.5rem auto 2.5rem; }

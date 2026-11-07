@@ -35,8 +35,8 @@ export function BlueprintPage() {
     if (discovering) {
       return (
         <div className="dw-empty">
-          <h1><span className="spinner" /> Memahami kebutuhan <Elapsed started={project.job?.started} /></h1>
-          <p className="muted">Blueprint disusun dari daftar fitur yang sudah kamu tinjau.</p>
+          <h1><span className="spinner" /> Merancang Blueprint <Elapsed started={project.job?.started} /></h1>
+          <p className="muted">Teknologi, arsitektur, dan folder disusun dari daftar fitur yang sudah kamu tinjau.</p>
         </div>
       );
     }
@@ -103,8 +103,15 @@ export function BlueprintPage() {
         <div className="ws-group">
           <div className="ws-group-label">Keputusan</div>
           <button className={`ws-item ${id === "platform" ? "on" : ""}`} onClick={() => select("platform")}>
-            <span className="ws-item-text">Platform & Teknologi</span>
+            <span className="ws-item-text">Teknologi</span>
           </button>
+          {(project.structure?.ir || project.structure?.mode === "existing") && (
+            <button className={`ws-item ${id === "architecture" ? "on" : ""}`} aria-current={id === "architecture" ? "page" : undefined} onClick={() => select("architecture")}>
+              <span className="ws-item-text">Arsitektur</span>
+              {project.structure?.plan?.stale && <span className="ws-count" title="Sumber berubah; perlu ditinjau">!</span>}
+              {!project.structure?.plan && project.structure?.mode !== "existing" && <span className="muted small">belum ada</span>}
+            </button>
+          )}
           {project.structure?.ir && project.structure.mode !== "existing" && (
             <button className={`ws-item ${id === "repo" ? "on" : ""}`} aria-current={id === "repo" ? "page" : undefined} onClick={() => select("repo")}>
               <span className="ws-item-text">Struktur repository</span>
@@ -119,7 +126,8 @@ export function BlueprintPage() {
         <BatchBar project={project} view={view} locked={locked} />
         <DecisionSyncNotice project={project} locked={locked} />
         {id === "platform" ? <PlatformStructure project={project} />
-          : id === "repo" ? <RepoWorkspace project={project} />
+          : id === "architecture" ? <RepoWorkspace project={project} section="architecture" />
+          : id === "repo" ? <RepoWorkspace project={project} section="repo" />
           : !view ? <p className="muted"><span className="spinner" /> Memuat blueprint… <Elapsed /></p>
           : id === "scope" ? <ScopePanel project={project} view={view} locked={locked} onOpen={select} />
           : id === "design" && designing ? <DesignEmpty project={project} locked={locked} />
@@ -130,7 +138,7 @@ export function BlueprintPage() {
           : <p className="muted">Pilih artefak di kiri.</p>}
       </main>
 
-      {!locked && !working && (id === "repo" ? (
+      {!locked && !working && (id === "repo" || id === "architecture" ? (
         <RepoPrompt project={project} working={working} />
       ) : id === "platform" ? (
         <PlatformPrompt project={project} working={working} />
@@ -170,7 +178,7 @@ function BatchBar({ project, view, locked }: {
         onClick={() => void run("generateBlueprint", api.generateBlueprint)}>
         Susun rancangan
       </button>
-      <span className="small muted">Cakupan, desain, teknologi, struktur, dan folder — satu proses, satu konteks.</span>
+      <span className="small muted">Satu proses Blueprint: teknologi, arsitektur, dan folder dari daftar fitur.</span>
     </div>
   );
 }

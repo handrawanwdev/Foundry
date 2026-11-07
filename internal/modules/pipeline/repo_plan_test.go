@@ -414,6 +414,7 @@ func TestRepoPlanThroughMCPHost(t *testing.T) {
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 	if err := s.GenerateRepoPlan("", ""); err != nil {
 		t.Fatal(err)
 	}

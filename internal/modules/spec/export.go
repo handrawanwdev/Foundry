@@ -43,6 +43,10 @@ func Artifacts(p *core.Project) []core.Artifact {
 	arch := strings.TrimPrefix(architectureMarkdown(p), "## Architecture\n\n")
 	add("architecture", "Arsitektur", core.ArtifactArchitecture,
 		"Pola arsitektur, modul, data, keamanan, dan aturan teknis.", strings.ReplaceAll("\n"+arch, "\n### ", "\n## ")[1:])
+	add(core.ArtifactProjectContext, "Konteks Project Existing", core.ArtifactArchitecture,
+		"Kondisi repository yang dibaca dari bukti: layout, modul, data, API, auth, tes, dokumen, dan konvensi.", projectContextMarkdown(p))
+	add(core.ArtifactChangePlan, "Rencana Perubahan Fitur", core.ArtifactArchitecture,
+		"Delta terhadap sistem yang ada: add, modify, reuse, refactor, remove, dampak, dan file.", changePlanMarkdown(p))
 	add("technology", "Teknologi & Struktur", core.ArtifactPlatform,
 		"Keputusan teknologi dan struktur project.", techMarkdown(p))
 	add(core.ArtifactRepoStructure, "Struktur Repository", core.ArtifactArchitecture,

@@ -19,6 +19,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/agent"
 	"github.com/handrawanwdev/foundry/internal/modules/repoplan"
+	"github.com/handrawanwdev/foundry/internal/modules/scan"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/structure"
 	"github.com/handrawanwdev/foundry/internal/modules/techplan"
@@ -88,6 +89,9 @@ func (s *Service) Snapshot() (*core.Project, error) {
 	if p.Structure != nil {
 		structure.RefreshPlan(p.Structure, p)
 		repoplan.Refresh(p, p.Structure.Repo)
+		if p.Structure.Mode == core.StructureExisting && p.Structure.Context != nil {
+			scan.MarkStale(p.Dir, p.Structure.Context)
+		}
 	}
 	if p.Stack != nil && p.Stack.Plan != nil {
 		techplan.Refresh(p, p.Stack.Plan)
@@ -145,6 +149,12 @@ func (s *Service) SubmitStory(story string) (*core.Project, error) {
 }
 
 func (s *Service) SubmitStoryWith(story string, survey *core.Survey) (*core.Project, error) {
+	return s.SubmitStoryIntent(story, survey, "", "")
+}
+
+// SubmitStoryIntent is SubmitStoryWith plus the work intent and the user's
+// corrections of the repository scan.
+func (s *Service) SubmitStoryIntent(story string, survey *core.Survey, intent core.WorkIntent, corrections string) (*core.Project, error) {
 	story = strings.TrimSpace(story)
 	if len(story) < 10 {
 		return nil, errors.New("ceritakan idenya sedikit lebih lengkap")
@@ -153,6 +163,7 @@ func (s *Service) SubmitStoryWith(story string, survey *core.Survey) (*core.Proj
 	if err := survey.Check(); err != nil {
 		return nil, err
 	}
+	corrections = strings.TrimSpace(corrections)
 	p, err := s.Store.Update(func(p *core.Project) error {
 		if p.Busy() {
 			return ErrBusy
@@ -171,7 +182,15 @@ func (s *Service) SubmitStoryWith(story string, survey *core.Survey) (*core.Proj
 		unfinalize(p) // a new prompt reopens a finalized blueprint
 		p.Stage = core.StageDiscovery
 		p.FeatureMap = &core.FeatureMap{Request: &core.FeatureMapRequest{Action: core.FeatureMapGenerate}}
+		p.Change = nil
 		attachStructure(p)
+		p.Intent = core.ClampIntent(existingFolder(p), intent)
+		if corrections != "" && p.Structure != nil && p.Structure.Mode == core.StructureExisting {
+			if p.Structure.Context == nil {
+				p.Structure.Context = &core.ProjectContext{}
+			}
+			p.Structure.Context.Corrections = corrections
+		}
 		p.Log("ui", "Cerita diterima")
 		return nil
 	})
@@ -191,12 +210,33 @@ func (s *Service) DetectStructure() (*core.Project, error) {
 }
 
 // attachStructure scans the project dir. An existing codebase wins; a new
-// project's IR is kept if it is already there.
+// project's IR is kept if it is already there. User corrections of the
+// scan are kept when the context is rebuilt.
 func attachStructure(p *core.Project) {
-	d := structure.Detect(p.Dir, p.Platform)
-	if d.Mode == core.StructureExisting || p.Structure == nil {
+	var prev *core.ProjectContext
+	var corrections string
+	if p.Structure != nil && p.Structure.Context != nil {
+		prev = p.Structure.Context
+		corrections = prev.Corrections
+	}
+	d := structure.Detect(p.Dir, p.Platform, prev)
+	if d.Mode == core.StructureExisting {
+		if d.Context != nil {
+			d.Context.Corrections = corrections
+		} else if corrections != "" {
+			d.Context = &core.ProjectContext{Corrections: corrections}
+		}
+		p.Structure = d
+	} else if p.Structure == nil {
 		p.Structure = d
 	}
+	if p.Intent == "" {
+		p.Intent = core.ClampIntent(existingFolder(p), "")
+	}
+}
+
+func existingFolder(p *core.Project) bool {
+	return p.Structure != nil && p.Structure.Mode == core.StructureExisting
 }
 
 // SetPlatform lets the user override the suggested platforms.
@@ -250,6 +290,8 @@ func (s *Service) promptFor(p *core.Project, kind string) string {
 			return work.TechRevisePrompt(p)
 		}
 		return work.TechPlanPrompt(p)
+	case work.KindPlan:
+		return work.UnifiedPlanPrompt(p)
 	case work.KindArtifacts:
 		return work.ArtifactsPrompt(p, spec.Artifacts(p))
 	case work.KindWorkflow:
@@ -279,10 +321,17 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 			}
 		}
 		msg := jobMessage(kind)
+		if kind == work.KindPlan && planRepairing(p) {
+			msg = "Memperbaiki output Blueprint"
+		}
 		if isMCP {
 			status, msg = core.JobWaiting, msg+" — menunggu AI Host (MCP)"
 		}
-		p.Job = &core.Job{Kind: kind, Status: status, Message: batchLabel(p, msg), Started: time.Now().UTC()}
+		now := time.Now().UTC()
+		p.Job = &core.Job{
+			Kind: kind, Status: status, Message: batchLabel(p, msg), Started: now,
+			ETAMS: core.EstimateJobMS(p.JobHistory, kind),
+		}
 		return nil
 	})
 	if err != nil {
@@ -304,6 +353,7 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 			s.failJob(kind, err)
 			return
 		}
+		saveAIRaw(p.Dir, kind, out)
 		if err := s.applyAI(kind, out, "agent"); err != nil {
 			if s.noteRejection(kind, err) {
 				s.startAI(kind) // one retry with the rejection in the prompt
@@ -321,6 +371,10 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 			}
 			if kind == work.KindTech && s.techPending() {
 				s.dropTechRequest(err)
+				return
+			}
+			if kind == work.KindPlan && s.planPending() {
+				s.dropPlanRequest(err)
 				return
 			}
 			s.failJob(kind, err)
@@ -402,7 +456,7 @@ func jobMessage(kind string) string {
 	case work.KindFeatureMap:
 		return "Menyusun daftar fitur"
 	case work.KindDiscovery:
-		return "Memahami kebutuhan"
+		return "Merancang Blueprint"
 	case work.KindDesign:
 		return "Menyusun aturan desain & layout"
 	case work.KindStack:
@@ -413,6 +467,8 @@ func jobMessage(kind string) string {
 		return "Merancang struktur repository"
 	case work.KindTech:
 		return "Merancang teknologi"
+	case work.KindPlan:
+		return "Merancang Blueprint"
 	case work.KindArtifacts:
 		return "Merevisi blueprint"
 	case work.KindWorkflow:
@@ -455,13 +511,14 @@ func (s *Service) applyAI(kind, raw, source string) error {
 				return err
 			}
 			defer stampRefs(p)
-			p.Structure = structure.Detect(p.Dir, p.Platform)
+			var prev *core.ProjectContext
+			if p.Structure != nil {
+				prev = p.Structure.Context
+			}
+			p.Structure = structure.Detect(p.Dir, p.Platform, prev)
 			readExistingUI(p)
 			decideStack(p, "")
 			p.Stage = core.StageDesign
-			if p.HasUI() {
-				next = work.KindDesign
-			}
 		case work.KindDesign:
 			if err := work.ApplyDesign(p, raw); err != nil {
 				return err
@@ -510,6 +567,14 @@ func (s *Service) applyAI(kind, raw, source string) error {
 			}
 			landTech(p, v)
 			defer stampRefs(p)
+		case work.KindPlan:
+			if err := applyUnified(p, raw); err != nil {
+				return err
+			}
+			defer stampRefs(p)
+			if planRequestsOpen(p) {
+				next = work.KindPlan
+			}
 		case work.KindArtifacts:
 			if err := work.ApplyArtifacts(p, raw); err != nil {
 				return err
@@ -525,8 +590,19 @@ func (s *Service) applyAI(kind, raw, source string) error {
 		default:
 			return fmt.Errorf("jenis pekerjaan %q tidak dikenal", kind)
 		}
-		p.Job = &core.Job{Kind: kind, Status: core.JobDone, Message: jobMessage(kind) + " selesai", Started: time.Now().UTC()}
-		p.Log(source, jobMessage(kind)+" selesai")
+		doneAt := time.Now().UTC()
+		started := doneAt
+		if p.Job != nil && !p.Job.Started.IsZero() {
+			started = p.Job.Started
+		}
+		core.RecordJobTiming(p, kind, started, doneAt)
+		doneMsg := jobMessage(kind)
+		if p.BlueprintBatch > 0 {
+			doneMsg = "Merancang Blueprint"
+		}
+		p.Job = &core.Job{Kind: kind, Status: core.JobDone, Message: doneMsg + " selesai", Started: started, Steps: finishJobSteps(p.Job, doneAt)}
+		p.Log(source, doneMsg+" selesai")
+		clearAIRaw(p.Dir, kind)
 		return nil
 	})
 	if kind == work.KindStack && err != nil {
@@ -557,11 +633,20 @@ func (s *Service) applyAI(kind, raw, source string) error {
 		}
 		return s.dropTechRequest(err)
 	}
+	if kind == work.KindPlan && err != nil {
+		if s.planPending() {
+			return err
+		}
+		return s.dropPlanRequest(err)
+	}
 	if err != nil {
 		return err
 	}
 	if next != "" {
 		return s.startAI(next)
+	}
+	if kind == work.KindDiscovery {
+		return s.continueInitialBlueprint()
 	}
 	return s.advanceBlueprint(kind)
 }
@@ -607,6 +692,15 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			}
 			retry = p.Stack.PlanRequest.Rejected == ""
 			p.Stack.PlanRequest.Rejected = err.Error()
+			p.Log("system", err.Error())
+			return nil
+		})
+		return retry
+	}
+	if kind == work.KindPlan {
+		retry := false
+		s.Store.Update(func(p *core.Project) error {
+			retry = stampPlanRejection(p, err.Error())
 			p.Log("system", err.Error())
 			return nil
 		})
@@ -701,6 +795,8 @@ func (s *Service) DismissJob() error {
 			if p.Stack != nil {
 				p.Stack.PlanRequest = nil
 			}
+		case work.KindPlan:
+			clearPlanRequests(p)
 		}
 		p.BlueprintQueue = nil
 		p.BlueprintBatch = 0
@@ -742,6 +838,10 @@ func (s *Service) RetryJob() error {
 		}
 	case work.KindTech:
 		if p.Stack != nil && p.Stack.PlanRequest != nil {
+			return s.startAIIf(kind, failedJob(kind))
+		}
+	case work.KindPlan:
+		if s.planPending() {
 			return s.startAIIf(kind, failedJob(kind))
 		}
 	case work.KindArtifacts:

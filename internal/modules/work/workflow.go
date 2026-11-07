@@ -149,11 +149,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		}
 		b.WriteString("PLATFORM: " + strings.Join(kinds, ", ") + "\n")
 	}
-	if p.Structure != nil && p.Structure.Mode == core.StructureExisting {
-		b.WriteString("EXISTING CODEBASE: yes. Commands change it; the agent inspects it first.\n")
-	} else {
-		b.WriteString("EXISTING CODEBASE: no (new project).\n")
-	}
+	writeCodebaseBrief(&b, p)
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
 	writeStackBrief(&b, p)
@@ -335,11 +331,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		}
 		b.WriteString("PLATFORM: " + strings.Join(kinds, ", ") + "\n")
 	}
-	if p.Structure != nil && p.Structure.Mode == core.StructureExisting {
-		b.WriteString("EXISTING CODEBASE: yes. Commands change it; the agent inspects it first.\n")
-	} else {
-		b.WriteString("EXISTING CODEBASE: no (new project).\n")
-	}
+	writeCodebaseBrief(&b, p)
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
 	writeStackBrief(&b, p)
@@ -377,11 +369,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		}
 		b.WriteString("PLATFORM: " + strings.Join(kinds, ", ") + "\n")
 	}
-	if p.Structure != nil && p.Structure.Mode == core.StructureExisting {
-		b.WriteString("EXISTING CODEBASE: yes. Commands change it; the agent inspects it first.\n")
-	} else {
-		b.WriteString("EXISTING CODEBASE: no (new project).\n")
-	}
+	writeCodebaseBrief(&b, p)
 	b.WriteString("\n" + surveyWorkflowRules(p))
 	writeBinding(&b, p)
 	writeStackBrief(&b, p)

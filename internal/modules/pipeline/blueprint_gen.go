@@ -6,17 +6,34 @@ import (
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/repoplan"
+	"github.com/handrawanwdev/foundry/internal/modules/scan"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/stack"
 	"github.com/handrawanwdev/foundry/internal/modules/structure"
+	"github.com/handrawanwdev/foundry/internal/modules/techplan"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
-// GenerateBlueprint starts one sequential run of the missing blueprint
-// designs: remaining areas, UI design, technology plan, structure
-// analysis (adopted automatically), then the folder plan. Each step sees
-// the previous answer. Steps that already exist are skipped. Time is long
-// on purpose; accuracy and shared context beat parallel jobs.
+// continueInitialBlueprint runs the rest of the post-feature package:
+// remaining artifacts, UI design, then Unified Blueprint Planning.
+func (s *Service) continueInitialBlueprint() error {
+	p, err := s.Store.Load()
+	if err != nil {
+		return err
+	}
+	steps := missingBlueprintSteps(p)
+	if len(steps) == 0 {
+		return s.clearBlueprintBatch()
+	}
+	return s.startBlueprintQueue(steps, 1+len(steps))
+}
+
+// GenerateBlueprint starts the missing blueprint designs: remaining
+// areas, UI design, then Unified Blueprint Planning (technology,
+// architecture and folder structure in one AI job). Steps that already
+// exist and are current are skipped. Stale sections are redesigned with
+// the others frozen.
 func (s *Service) GenerateBlueprint() error {
 	p, err := s.Store.Load()
 	if err != nil {
@@ -33,7 +50,8 @@ func (s *Service) GenerateBlueprint() error {
 }
 
 // missingBlueprintSteps is the generate-all order. Stale plans are
-// regenerated so one click leaves a coherent set.
+// regenerated so one click leaves a coherent set. Technology, architecture
+// and folders are one unified job.
 func missingBlueprintSteps(p *core.Project) []string {
 	var steps []string
 	if work.ScopeRequest(p, spec.Artifacts(p)) != "" {
@@ -42,32 +60,57 @@ func missingBlueprintSteps(p *core.Project) []string {
 	if p.HasUI() && !p.UI.Written() {
 		steps = append(steps, work.KindDesign)
 	}
-	if !work.AppLike(p) {
-		return steps
-	}
-	if needTechPlan(p) {
-		steps = append(steps, work.KindTech)
-	}
-	st := p.Structure
-	if st == nil || st.Mode == core.StructureExisting {
-		return steps
-	}
-	if structure.PlanNeeded(st, p) {
-		steps = append(steps, work.KindStructure)
-	}
-	if needRepoPlan(p) {
-		steps = append(steps, work.KindRepo)
+	if len(unifiedParts(p)) > 0 {
+		steps = append(steps, work.KindPlan)
 	}
 	return steps
 }
 
+func unifiedParts(p *core.Project) []string {
+	if !work.AppLike(p) {
+		return nil
+	}
+	tech := needTechPlan(p)
+	st := p.Structure
+	existing := st != nil && st.Mode == core.StructureExisting
+	if existing {
+		if tech {
+			return []string{work.KindTech}
+		}
+		return nil
+	}
+	structNeed := st == nil || structure.PlanNeeded(st, p)
+	repoNeed := needRepoPlan(p)
+	if tech {
+		return []string{work.KindTech, work.KindStructure, work.KindRepo}
+	}
+	if structNeed {
+		return []string{work.KindStructure, work.KindRepo}
+	}
+	if repoNeed {
+		return []string{work.KindRepo}
+	}
+	return nil
+}
+
 func needTechPlan(p *core.Project) bool {
-	return p.Stack == nil || p.Stack.Plan == nil
+	if p.Stack == nil || p.Stack.Plan == nil {
+		return true
+	}
+	techplan.Refresh(p, p.Stack.Plan)
+	return p.Stack.Plan.Stale
 }
 
 func needRepoPlan(p *core.Project) bool {
 	st := p.Structure
-	return st != nil && st.Mode != core.StructureExisting && st.Repo == nil
+	if st == nil || st.Mode == core.StructureExisting {
+		return false
+	}
+	if st.Repo == nil {
+		return true
+	}
+	repoplan.Refresh(p, st.Repo)
+	return st.Repo.Stale
 }
 
 func (s *Service) startBlueprintQueue(steps []string, total int) error {
@@ -159,8 +202,62 @@ func prepareBlueprintStep(p *core.Project, kind string) error {
 		}
 		p.Structure.RepoRequest = &core.RepoRequest{Action: action, SourceHash: structure.SourceHash(p)}
 		return nil
+	case work.KindPlan:
+		return prepareUnifiedPlan(p)
 	}
 	return fmt.Errorf("langkah rancangan %q tidak dikenal", kind)
+}
+
+// prepareUnifiedPlan sets the section requests of one unified job and
+// refreshes the repository inventory once when it is stale.
+func prepareUnifiedPlan(p *core.Project) error {
+	parts := unifiedParts(p)
+	if len(parts) == 0 {
+		return ErrNothingToDo
+	}
+	refreshPlanningScan(p)
+	for _, part := range parts {
+		switch part {
+		case work.KindTech:
+			if err := stackEditable(p); err != nil {
+				return err
+			}
+			if p.Stack.Proposal != nil {
+				return stack.ErrPending
+			}
+			p.Stack.PlanRequest = &core.TechPlanRequest{Action: core.TechPlanGenerate}
+		case work.KindStructure:
+			if err := structureEditable(p); err != nil {
+				return err
+			}
+			if p.Structure.Proposal != nil {
+				return structure.ErrPending
+			}
+			p.Structure.Request = ""
+			p.Structure.PlanRequest = &core.StructurePlanRequest{SourceHash: structure.SourceHash(p)}
+		case work.KindRepo:
+			if err := structureEditable(p); err != nil {
+				return err
+			}
+			if p.Structure.Proposal != nil {
+				return structure.ErrPending
+			}
+			p.Structure.RepoRequest = &core.RepoRequest{Action: core.RepoGenerate, SourceHash: structure.SourceHash(p)}
+		}
+	}
+	return nil
+}
+
+func refreshPlanningScan(p *core.Project) {
+	st := p.Structure
+	if st == nil || st.Mode != core.StructureExisting {
+		return
+	}
+	c := st.Context
+	if c != nil && !c.Stale && !c.Empty() {
+		return
+	}
+	st.Context = scan.Refresh(p.Dir, c, st.Components)
 }
 
 // advanceBlueprint starts the next missing design after a batch step
@@ -232,13 +329,8 @@ func (s *Service) failBlueprintAdopt(cause error) error {
 }
 
 func batchLabel(p *core.Project, msg string) string {
-	n, q := p.BlueprintBatch, p.BlueprintQueue
-	if n <= 1 || len(q) == 0 {
-		return msg
+	if p.BlueprintBatch > 0 {
+		return "Merancang Blueprint"
 	}
-	i := n - len(q) + 1
-	if i < 1 {
-		i = 1
-	}
-	return fmt.Sprintf("%s (%d/%d)", msg, i, n)
+	return msg
 }

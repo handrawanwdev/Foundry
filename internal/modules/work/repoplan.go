@@ -304,7 +304,9 @@ func ApplyRepoPlan(p *core.Project, raw string) error {
 	}
 	var plan core.RepoPlan
 	if err := ExtractJSONFunc(raw, &plan, func() bool { return len(plan.Nodes) > 0 }); err != nil {
-		return err
+		if body := jsonObjectBytes(raw); len(body) == 0 || unmarshalLoose(body, &plan) != nil || len(plan.Nodes) == 0 {
+			return err
+		}
 	}
 	plan.Status, plan.Analysis, plan.History, plan.Stale = "", core.RepoAnalysis{}, nil, false
 	plan.Evaluation.Outdated = false

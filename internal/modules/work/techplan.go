@@ -39,6 +39,8 @@ PROJECT: `)
 	b.WriteString(p.Story)
 	b.WriteString("\n\n")
 	writeBinding(&b, p)
+	writeWorkIntent(&b, p)
+	writeExistingContext(&b, p)
 	writeTechContext(&b, p)
 	writeTechAnchors(&b, p)
 	writeTechPrevious(&b, p)
@@ -396,7 +398,9 @@ func ApplyTechPlan(p *core.Project, raw string) (v *core.TechVersion, err error)
 	}
 	var plan core.TechPlan
 	if err := ExtractJSONFunc(raw, &plan, func() bool { return len(plan.Items) > 0 }); err != nil {
-		return nil, err
+		if body := jsonObjectBytes(raw); len(body) == 0 || unmarshalLoose(body, &plan) != nil || len(plan.Items) == 0 {
+			return nil, err
+		}
 	}
 	plan.History, plan.Analysis, plan.Stale = nil, core.TechAnalysis{}, false
 	if err := techplan.Accept(p, &plan); err != nil {

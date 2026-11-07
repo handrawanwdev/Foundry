@@ -289,7 +289,9 @@ func ApplyStructurePlan(p *core.Project, raw string) error {
 	}
 	var plan core.StructurePlan
 	if err := ExtractJSONFunc(raw, &plan, func() bool { return len(plan.Alternatives) > 0 }); err != nil {
-		return err
+		if body := jsonObjectBytes(raw); len(body) == 0 || unmarshalLoose(body, &plan) != nil || len(plan.Alternatives) == 0 {
+			return err
+		}
 	}
 	if err := structure.NormalizePlan(p, &plan); err != nil {
 		return err

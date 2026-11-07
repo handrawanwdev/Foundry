@@ -156,6 +156,10 @@ func fakeAgent() {
 	switch {
 	case strings.HasPrefix(prompt, "Balas hanya"):
 		fmt.Println("OK")
+	case strings.Contains(prompt, "unified blueprint architect of Foundry"):
+		countRun("plan")
+		refused := strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED")
+		fmt.Println(fakeUnifiedAnswer(prompt, (mode == "tech_invalid_once" && !refused) || mode == "tech_invalid"))
 	case strings.Contains(prompt, "technology architect of Foundry"):
 		countRun("tech")
 		refused := strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED")
@@ -259,6 +263,105 @@ func fakeAgent() {
 	}
 }
 
+func unwrapJSONFence(s string) json.RawMessage {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "```json")
+	s = strings.TrimPrefix(s, "```")
+	s = strings.TrimSpace(strings.TrimSuffix(s, "```"))
+	return json.RawMessage(s)
+}
+
+func fakeUnifiedSections(prompt string) (tech, arch, repo bool) {
+	_, after, ok := strings.Cut(prompt, "SECTIONS TO PRODUCE:")
+	if !ok {
+		return true, true, true
+	}
+	line, _, _ := strings.Cut(after, "\n")
+	return strings.Contains(line, "technology"), strings.Contains(line, "architecture"), strings.Contains(line, "repository")
+}
+
+func fakeUnifiedAnswer(prompt string, invalid bool) string {
+	needTech, needArch, needRepo := fakeUnifiedSections(prompt)
+	body := map[string]any{}
+	var techHint string
+	if needTech {
+		raw := unwrapJSONFence(fakeTechPlanJSON(prompt, invalid))
+		body["technology"] = json.RawMessage(raw)
+		techHint = fakeTechArchHint(raw)
+	}
+	if needArch {
+		body["architecture"] = json.RawMessage(fakeStructurePlan(prompt+techHint, false))
+	}
+	if needRepo {
+		body["repository"] = unwrapJSONFence(fakeRepoAnswer(fakeUnifiedRepoPrompt(prompt, techHint), false))
+	}
+	if strings.Contains(prompt, "EXISTING PROJECT") {
+		body["adaptation"] = []map[string]any{{
+			"action": "reuse", "target": "existing layout", "reason": "Konvensi repository masih relevan",
+		}}
+	}
+	raw, _ := json.Marshal(body)
+	return "```json\n" + string(raw) + "\n```"
+}
+
+func fakeTechArchHint(raw json.RawMessage) string {
+	var plan struct {
+		Items []struct {
+			Area, Technology string
+		} `json:"items"`
+	}
+	if json.Unmarshal(raw, &plan) != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, it := range plan.Items {
+		if it.Area == core.TechArchitecture || it.Area == core.TechRepository {
+			fmt.Fprintf(&b, "\n- %s: %s", it.Area, it.Technology)
+		}
+	}
+	return b.String()
+}
+
+func fakeUnifiedRepoPrompt(prompt, techHint string) string {
+	var b strings.Builder
+	b.WriteString(fakeStructurePartsBlock(prompt + techHint))
+	b.WriteByte('\n')
+	for _, header := range []string{"PROJECT MODULES", "TARGET PLATFORM:", "DOMAINS THAT MUST APPEAR"} {
+		lines := promptLines(prompt, header)
+		if len(lines) == 0 {
+			continue
+		}
+		b.WriteString(header + "\n")
+		for _, l := range lines {
+			b.WriteString("- " + l + "\n")
+		}
+		b.WriteByte('\n')
+	}
+	b.WriteString(techHint)
+	return b.String()
+}
+
+func fakeStructurePartsBlock(prompt string) string {
+	domains := promptDomainList(prompt)
+	if len(domains) == 0 {
+		domains = promptSectionIDs(prompt, "DOMAIN MODULES")
+	}
+	var b strings.Builder
+	b.WriteString("STRUCTURE PARTS (exact refs; each must be linked to exactly one folder through part):\n")
+	for _, a := range promptPlatforms(prompt) {
+		fmt.Fprintf(&b, "- app:%s (default folder apps/%s/)\n", a, a)
+	}
+	root := "apps/api/"
+	if fakeStructureType(prompt) == core.StructMicroservices {
+		root = "services/api/"
+	}
+	fmt.Fprintf(&b, "- service:api (default folder %s)\n", root)
+	for _, d := range domains {
+		fmt.Fprintf(&b, "- module:%s (default folder %smodules/%s/)\n", d, root, d)
+	}
+	return b.String()
+}
+
 // fakeStructurePlan answers the structure analysis with a plan built from the
 // prompt's own domains and platforms. dropLast omits one domain, like an AI
 // that overlooks a blueprint module.
@@ -332,6 +435,9 @@ func promptDomainList(prompt string) []string {
 func fakeStructureType(prompt string) string {
 	monorepo, micro := false, false
 	for _, line := range strings.Split(prompt, "\n") {
+		if strings.Contains(line, "|") {
+			continue // catalog rows, not the decision
+		}
 		if strings.HasPrefix(line, "- repository:") && strings.Contains(line, "Monorepo") {
 			monorepo = true
 		}
@@ -529,9 +635,72 @@ func designReady(t *testing.T, s *pipeline.Service) *core.Project {
 		t.Fatal(err)
 	}
 	s.Wait()
+	clearLandedPlan(t, s)
 	p := load(t, s)
-	mustJob(t, p, work.KindDesign, core.JobDone)
+	if p.Stage != core.StageDesign || p.UI == nil || !p.UI.Written() {
+		t.Fatalf("design not ready: stage=%s ui=%v job=%+v", p.Stage, p.UI, p.Job)
+	}
 	return p
+}
+
+// clearLandedPlan drops the auto-chained unified plan so tests that
+// exercise standalone tech/structure/repo start from a blank slate.
+func clearLandedPlan(t *testing.T, s *pipeline.Service) {
+	t.Helper()
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		if st := p.Structure; st != nil {
+			st.Plan, st.Repo = nil, nil
+			st.PlanRequest, st.RepoRequest = nil, nil
+			st.Adaptation = nil
+			st.Approved, st.Recommended, st.Status = false, "", ""
+			st.Proposal = nil
+		}
+		if p.Stack != nil {
+			p.Stack.Plan = nil
+			p.Stack.PlanRequest = nil
+			p.Stack.Proposal = nil
+		}
+		if p.UI != nil && p.Stack != nil {
+			p.UI.TechVersion = p.Stack.Version()
+		}
+		p.BlueprintQueue = nil
+		p.BlueprintBatch = 0
+		p.Job = &core.Job{Kind: work.KindDesign, Status: core.JobDone, Message: "Menyusun aturan desain & layout selesai"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// holdAutoPlan cancels a waiting unified-plan job started after design
+// so MCP tests can drive GenerateBlueprint or standalone plans themselves.
+func holdAutoPlan(t *testing.T, s *pipeline.Service) {
+	t.Helper()
+	p := load(t, s)
+	if p.Job == nil || p.Job.Kind != work.KindPlan {
+		return
+	}
+	if p.Job.Status == core.JobFailed {
+		if err := s.DismissJob(); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		if p.Stack != nil {
+			p.Stack.PlanRequest = nil
+		}
+		if p.Structure != nil {
+			p.Structure.PlanRequest = nil
+			p.Structure.RepoRequest = nil
+		}
+		p.BlueprintQueue = nil
+		p.BlueprintBatch = 0
+		p.Job = &core.Job{Kind: work.KindDesign, Status: core.JobDone, Message: "Menyusun aturan desain & layout selesai", Started: p.Job.Started}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func mcpAfterStory(t *testing.T, s *pipeline.Service) {
@@ -802,6 +971,36 @@ func TestSubmitStoryDetectsExistingBeforeDiscovery(t *testing.T) {
 	if !strings.Contains(prompt, "EXISTING PROJECT COMPONENTS") || !strings.Contains(prompt, "package.json") {
 		t.Fatalf("discovery prompt misses existing project: %s", prompt)
 	}
+	if p.Intent != core.IntentExisting {
+		t.Fatalf("intent = %s", p.Intent)
+	}
+}
+
+func TestSubmitStoryIntentChangeOnExisting(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	dir := s.Store.Dir
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/app\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "internal", "billing"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "internal", "billing", "service.go"), []byte("package billing\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.SubmitStoryIntent("Saya ingin menambahkan notifikasi invoice", nil, core.IntentNewFeature, "billing sudah ada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Intent != core.IntentNewFeature {
+		t.Fatalf("intent = %s", p.Intent)
+	}
+	if p.Structure == nil || p.Structure.Context == nil || p.Structure.Context.Corrections != "billing sudah ada" {
+		t.Fatalf("context %+v", p.Structure)
+	}
+	if !strings.Contains(work.DiscoveryPrompt(p), "FEATURE CHANGE BLUEPRINT") {
+		t.Fatal("discovery prompt misses change blueprint")
+	}
 }
 
 func TestMCPHostFlow(t *testing.T) {
@@ -845,6 +1044,7 @@ func TestMCPHostFlow(t *testing.T) {
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 	if d := load(t, s).UI; d == nil || len(d.Layout.Pages) != 3 || d.Layout.Shells[0].ID != "admin" {
 		t.Fatalf("design = %+v", d)
 	}
@@ -893,6 +1093,7 @@ func TestMCPDesignSketchChainsToDetails(t *testing.T) {
 	if err := s.SubmitWork(work.KindDesign, detail); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 	p = load(t, s)
 	if work.DesignNeedsDetails(p) || p.Job.Status != core.JobDone || len(p.UI.Layout.Pages) != 2 {
 		t.Fatalf("after detail job=%+v pages=%d needs=%v", p.Job, len(p.UI.Layout.Pages), work.DesignNeedsDetails(p))
@@ -912,6 +1113,7 @@ func mcpDesigned(t *testing.T, s *pipeline.Service) {
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 }
 
 func TestDesignRevise(t *testing.T) {
@@ -1181,6 +1383,7 @@ func TestTechStack(t *testing.T) {
 	if err := s.SubmitWork(work.KindDesign, webDesignJSON); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 	if p = load(t, s); p.UI.TechVersion != 3 {
 		t.Fatalf("design tech version = %d", p.UI.TechVersion)
 	}
@@ -1268,6 +1471,7 @@ func TestStackRequest(t *testing.T) {
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 	if err := s.RequestStackChange("Ganti backend ke Rust. Tetap PostgreSQL."); err != nil {
 		t.Fatal(err)
 	}
@@ -1309,6 +1513,7 @@ func TestStructureDecision(t *testing.T) {
 	if err := s.SubmitWork(work.KindDesign, designJSON); err != nil {
 		t.Fatal(err)
 	}
+	holdAutoPlan(t, s)
 	// Recommendation: web + mobile + backend sharing code is a monorepo;
 	// domains are modules of one API, shared packages have a consumer.
 	p := load(t, s)
