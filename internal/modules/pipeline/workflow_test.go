@@ -436,3 +436,122 @@ func TestCommandChangeWithoutWorkflow(t *testing.T) {
 		t.Fatalf("review err = %v", err)
 	}
 }
+
+// A revision stopped between its rounds (server shut down after a round)
+// keeps blocking finalize and resumes with its request and earlier rounds.
+func TestStoppedRevisionBlocksAndResumes(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	req := &core.ChangeRequest{Text: "ganti nama", Handled: []string{"changed CMD-001"}, Rejected: "x"}
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Discovery, p.Platform, p.Stage = &core.Discovery{}, &core.PlatformPlan{}, core.StageDesign
+		p.Workflow = &core.Workflow{Version: 2, Commands: []core.Command{
+			{ID: "CMD-001", Name: "a", Objective: "a", Instructions: "isi"},
+			{ID: "CMD-002", Name: "b", Objective: "b", Instructions: "isi", DependsOn: []string{"CMD-001"}},
+		}, Request: req}
+		p.Job = &core.Job{Kind: work.KindWorkflow, Status: core.JobDone}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if b := pipeline.Blockers(load(t, s)); !slices.Contains(b, "revisi workflow belum selesai: 1 perubahan tersimpan, sisanya belum ditulis") {
+		t.Fatalf("blockers = %v", b)
+	}
+	if err := s.ContinueWorkflow(); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	if r := p.Workflow.Request; r == nil || r.Text != "ganti nama" || !slices.Equal(r.Handled, req.Handled) || r.Rejected != "" {
+		t.Fatalf("request after continue = %+v", r)
+	}
+	if p.Job == nil || p.Job.Kind != work.KindWorkflow || !strings.HasPrefix(p.Job.Message, "Merevisi workflow, command ke-2") {
+		t.Fatalf("job = %+v", p.Job)
+	}
+	item, err := s.NextWork()
+	if err != nil || !strings.Contains(item.Prompt, "EARLIER ROUNDS of this request (already saved in CURRENT COMMANDS): changed CMD-001.") {
+		t.Fatalf("resumed prompt misses the earlier rounds: %v", err)
+	}
+	if err := s.SubmitWork(work.KindWorkflow, `{"commands": [], "done": true}`); err != nil {
+		t.Fatal(err)
+	}
+	p = load(t, s)
+	if p.Workflow.Request != nil || slices.ContainsFunc(pipeline.Blockers(p), func(b string) bool { return strings.HasPrefix(b, "revisi workflow") }) {
+		t.Fatalf("finished revision still open: %+v", p.Workflow.Request)
+	}
+	if err := s.ContinueWorkflow(); !errors.Is(err, pipeline.ErrNothingToDo) {
+		t.Fatalf("continue with nothing left: %v", err)
+	}
+}
+
+// stoppedRevision is a revision whose first round is saved and whose job
+// ended before the next round started.
+func stoppedRevision(t *testing.T, s *pipeline.Service, job core.JobStatus) {
+	t.Helper()
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Discovery, p.Platform, p.Stage = &core.Discovery{}, &core.PlatformPlan{}, core.StageDesign
+		p.Workflow = &core.Workflow{Version: 2, Commands: []core.Command{
+			{ID: "CMD-001", Name: "a", Objective: "a", Instructions: "isi"},
+			{ID: "CMD-002", Name: "b", Objective: "b", Instructions: "isi", DependsOn: []string{"CMD-001"}},
+		}, Request: &core.ChangeRequest{Text: "ganti nama", Handled: []string{"changed CMD-001"}, Rejected: "x"}}
+		p.Job = &core.Job{Kind: work.KindWorkflow, Status: job, Error: "x"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Cancelling a stopped revision keeps its saved rounds and drops the rest;
+// it is refused while the AI host still owes the round.
+func TestCancelStoppedRevision(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	stoppedRevision(t, s, core.JobWaiting)
+	if err := s.CancelWorkflowRevision(); !errors.Is(err, pipeline.ErrBusy) {
+		t.Fatalf("cancel while the host owes a round: %v", err)
+	}
+	if err := s.ContinueWorkflow(); !errors.Is(err, pipeline.ErrBusy) {
+		t.Fatalf("continue while the host owes a round: %v", err)
+	}
+	stoppedRevision(t, s, core.JobDone)
+	if err := s.CancelWorkflowRevision(); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	if p.Workflow.Request != nil || p.Workflow.Version != 2 || len(p.Workflow.Commands) != 2 {
+		t.Fatalf("workflow after cancel = %+v", p.Workflow)
+	}
+	if slices.ContainsFunc(pipeline.Blockers(p), func(b string) bool { return strings.HasPrefix(b, "revisi workflow") }) {
+		t.Fatal("cancelled revision still blocks finalize")
+	}
+	if err := s.CancelWorkflowRevision(); !errors.Is(err, pipeline.ErrNothingToDo) {
+		t.Fatalf("second cancel: %v", err)
+	}
+}
+
+// A new request does not replace a stopped revision: its saved rounds would
+// lose their request.
+func TestReviseRefusedWhileRevisionStopped(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	stoppedRevision(t, s, core.JobDone)
+	if err := s.ReviseWorkflow("hal lain", nil); err == nil || !strings.Contains(err.Error(), "lanjutkan atau batalkan") {
+		t.Fatalf("revise over a stopped revision: %v", err)
+	}
+	if r := load(t, s).Workflow.Request; r == nil || r.Text != "ganti nama" {
+		t.Fatalf("request replaced: %+v", r)
+	}
+}
+
+// Dismissing the failed round of a revision keeps the revision open, so it
+// is continued or cancelled instead of being left half applied.
+func TestDismissKeepsStoppedRevision(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	stoppedRevision(t, s, core.JobFailed)
+	if err := s.DismissJob(); err != nil {
+		t.Fatal(err)
+	}
+	p := load(t, s)
+	if r := p.Workflow.Request; r == nil || !slices.Equal(r.Handled, []string{"changed CMD-001"}) || r.Rejected != "" {
+		t.Fatalf("request after dismiss = %+v", r)
+	}
+	if !slices.Contains(pipeline.Blockers(p), "revisi workflow belum selesai: 1 perubahan tersimpan, sisanya belum ditulis") {
+		t.Fatalf("blockers = %v", pipeline.Blockers(p))
+	}
+}

@@ -571,8 +571,11 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 	}
 	// The revision ends when the AI says so, repeats a change (no progress),
 	// runs out of rounds, or (sync) has no focused stale command left.
-	last := out.Done || slices.Contains(r.Handled, did) || len(r.Handled)+1 >= maxRevisionRounds ||
-		r.Sync && !focusStale(cmds, r.Focus, hashes)
+	// Only the AI's done (or nothing stale left) reviews the rest of a sync
+	// request; a revision cut off by a repeat or the round limit leaves the
+	// remaining stale commands marked for review.
+	reviewed := out.Done || r.Sync && !focusStale(cmds, r.Focus, hashes)
+	last := reviewed || slices.Contains(r.Handled, did) || len(r.Handled)+1 >= maxRevisionRounds
 	if last {
 		if issues := CheckUI(p, cmds); len(issues) > 0 {
 			return UIError(issues)
@@ -582,7 +585,7 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 	w.EnsureID()
 	w.Version++
 	switch {
-	case last && r.Sync:
+	case reviewed && r.Sync:
 		acceptStale(w, r.Focus, hashes) // the rest was reviewed: text stays valid
 		w.Request = nil
 	case last:

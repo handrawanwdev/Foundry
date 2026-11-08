@@ -459,17 +459,27 @@ func (s *Service) runWorkflow(runner *agent.Runner) {
 		s.failJob(kind, err)
 		return
 	}
-	if p, err = s.Store.Load(); err != nil || p.Workflow == nil || p.Workflow.Request == nil {
-		return
-	}
 	if s.context().Err() != nil {
 		return
 	}
-	// The request survived: some stale commands are still untouched. Start a
-	// new round; applyAI already closed this job, so the next one is clean.
-	if err := s.startAI(kind); err != nil {
-		s.failJob(kind, err)
+	// The request survived: the workflow still needs another round. applyAI
+	// already closed this job; the next one starts only if nothing else
+	// (a continue, a cancel) acted in between.
+	s.startNextWorkflowRound()
+}
+
+// startNextWorkflowRound starts the next round of a workflow job in the same
+// update that checks the round is still open, so a round is never started
+// twice nor after its request was cancelled.
+func (s *Service) startNextWorkflowRound() error {
+	err := s.startAIIf(work.KindWorkflow, workflowRoundOpen)
+	switch {
+	case errors.Is(err, ErrBusy), errors.Is(err, ErrNothingToDo):
+		return nil // started by someone else, or nothing left
+	case err != nil:
+		s.failJob(work.KindWorkflow, err)
 	}
+	return err
 }
 
 func jobMessage(kind string) string {
@@ -680,6 +690,9 @@ func (s *Service) applyAI(kind, raw, source string) error {
 	if err != nil {
 		return err
 	}
+	if next == work.KindWorkflow {
+		return s.startNextWorkflowRound()
+	}
 	if next != "" {
 		return s.startAI(next)
 	}
@@ -826,8 +839,12 @@ func (s *Service) DismissJob() error {
 				}
 			}
 		case work.KindWorkflow:
-			if p.Workflow != nil {
-				p.Workflow.Request = nil
+			// A revision with rounds already saved stays open: the user
+			// continues or cancels it, it is not half applied silently.
+			if w := p.Workflow; w.Revising() {
+				w.Request.Rejected = ""
+			} else if w != nil {
+				w.Request = nil
 			}
 		case work.KindStructure:
 			if p.Structure != nil {

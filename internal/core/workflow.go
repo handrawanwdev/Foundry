@@ -139,6 +139,12 @@ func (w *Workflow) Unfilled() int {
 	return n
 }
 
+// Revising reports a revision stopped between its rounds: earlier rounds
+// are saved, the rest of the request is not written yet.
+func (w *Workflow) Revising() bool {
+	return w != nil && w.Request != nil && len(w.Request.Handled) > 0
+}
+
 // EnsureID gives an older workflow its stable id. Called while loading a
 // project; it never changes an id that is already set.
 func (w *Workflow) EnsureID() {

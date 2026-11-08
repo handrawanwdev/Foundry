@@ -74,3 +74,20 @@ func TestMigrateStatusHashes(t *testing.T) {
 		t.Error("migration ran twice")
 	}
 }
+
+// A ref recorded before the plan was approved counted the old status in its
+// hash; only the status differs, so under the current hash it is up to date.
+func TestMigrateStatusHashesAcrossStatusChange(t *testing.T) {
+	p := planProject()
+	p.Stack.SetStatus(core.TechRecommended)
+	draft := techPlanDoc(t, p)
+	p.Stack.SetStatus(core.TechApproved)
+	approved := techPlanDoc(t, p)
+	p.Workflow = &core.Workflow{Commands: []core.Command{
+		{ID: "CMD-001", Artifacts: []core.ArtifactRef{{ID: draft.ID, Hash: draft.LegacyHash()}}},
+	}}
+	migrateStatusHashes(p)
+	if got := p.Workflow.Commands[0].Artifacts[0].Hash; got != approved.Hash() {
+		t.Errorf("ref recorded before approval stays stale: %s", got)
+	}
+}

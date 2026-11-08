@@ -89,43 +89,55 @@ func statusPrefix(body string) string {
 func init() { core.RegisterLoadMigration(migrateStatusHashes) }
 
 // migrateStatusHashes moves the refs recorded with the hash that still
-// counted the plan status (HashVersion 0) to the current hash. A ref that
-// matches neither was already stale and stays so.
+// counted the plan status (HashVersion 0) to the current hash. A ref
+// recorded under any status with the content unchanged is up to date (the
+// status is not content); a ref that matches none was already stale and
+// stays so.
 func migrateStatusHashes(p *core.Project) {
 	if p.HashVersion >= core.HashVersion {
 		return
 	}
 	p.HashVersion = core.HashVersion
-	moved := map[string][2]string{} // artifact id → legacy, current
+	legacy := map[string]map[string]bool{} // artifact id → its legacy hashes
+	current := map[string]string{}
 	for _, d := range Artifacts(p) {
 		if d.Status == "" {
 			continue
 		}
-		if old, cur := d.LegacyHash(), d.Hash(); old != cur {
-			moved[d.ID] = [2]string{old, cur}
+		rest := strings.TrimPrefix(d.Body, d.Status)
+		olds := map[string]bool{}
+		for _, st := range planStatuses {
+			c := d
+			c.Body = "Status: **" + string(st) + "**" + rest
+			olds[c.LegacyHash()] = true
 		}
+		olds[d.LegacyHash()] = true
+		legacy[d.ID], current[d.ID] = olds, d.Hash()
 	}
-	if len(moved) == 0 {
+	if len(legacy) == 0 {
 		return
 	}
 	if w := p.Workflow; w != nil {
 		for i := range w.Commands {
 			refs := w.Commands[i].Artifacts
 			for j := range refs {
-				if h, ok := moved[refs[j].ID]; ok && refs[j].Hash == h[0] {
-					refs[j].Hash = h[1]
+				if legacy[refs[j].ID][refs[j].Hash] {
+					refs[j].Hash = current[refs[j].ID]
 				}
 			}
 		}
 	}
 	for i := range p.Artifacts {
 		for id, seen := range p.Artifacts[i].Seen {
-			if h, ok := moved[id]; ok && seen == h[0] {
-				p.Artifacts[i].Seen[id] = h[1]
+			if legacy[id][seen] {
+				p.Artifacts[i].Seen[id] = current[id]
 			}
 		}
 	}
 }
+
+// planStatuses are the review statuses a plan artifact can start with.
+var planStatuses = []core.TechStatus{core.TechRecommended, core.TechReview, core.TechImpactChecked, core.TechApproved, core.TechChanged}
 
 // BlueprintHash identifies the whole blueprint: the same artifacts give
 // the same hash.

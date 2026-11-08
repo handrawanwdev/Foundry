@@ -289,3 +289,43 @@ func TestRevisionIsOneCommandPerRound(t *testing.T) {
 		t.Fatalf("done answer left request %+v", p.Workflow.Request)
 	}
 }
+
+// A sync revision that stops without the AI saying it is done (a repeated
+// change, or the round limit) has not reviewed the remaining stale commands:
+// they must stay marked for review, not be accepted as still valid.
+func TestSyncRevisionStoppedWithoutDoneKeepsStale(t *testing.T) {
+	p, docs := staleProject(t)
+	p.Workflow.Request = &core.ChangeRequest{Text: "Ikuti keputusan baru.", Sync: true}
+	one := `{"commands": [{"id": "CMD-001", "name": "satu baru", "objective": "o", "instructions": "i", "artifacts": ["requirements"]}], "done": false}`
+	if err := ApplyWorkflow(p, one, docs); err != nil {
+		t.Fatal(err)
+	}
+	if p.Workflow.Request == nil {
+		t.Fatal("request closed while CMD-002 is still stale")
+	}
+	if err := ApplyWorkflow(p, one, docs); err != nil { // the same change again: no progress
+		t.Fatal(err)
+	}
+	if p.Workflow.Request != nil {
+		t.Fatalf("revision without progress not ended: %+v", p.Workflow.Request)
+	}
+	h := docs[0].Hash()
+	if slices.ContainsFunc(p.Workflow.Command("CMD-002").Artifacts, func(r core.ArtifactRef) bool { return r.Hash == h }) {
+		t.Fatal("unreviewed stale command was accepted as up to date")
+	}
+}
+
+// The AI's done on a sync revision says the rest still matches: the
+// remaining stale commands get the new artifact versions.
+func TestSyncRevisionDoneAcceptsRest(t *testing.T) {
+	p, docs := staleProject(t)
+	p.Workflow.Request = &core.ChangeRequest{Text: "Ikuti keputusan baru.", Sync: true}
+	one := `{"commands": [{"id": "CMD-001", "name": "satu baru", "objective": "o", "instructions": "i", "artifacts": ["requirements"]}], "done": true}`
+	if err := ApplyWorkflow(p, one, docs); err != nil {
+		t.Fatal(err)
+	}
+	h := docs[0].Hash()
+	if p.Workflow.Request != nil || !slices.ContainsFunc(p.Workflow.Command("CMD-002").Artifacts, func(r core.ArtifactRef) bool { return r.Hash == h }) {
+		t.Fatalf("done sync revision did not accept the rest: %+v", p.Workflow)
+	}
+}

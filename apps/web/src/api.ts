@@ -121,6 +121,7 @@ export const api = {
   workflow: () => call<WorkflowView>("GET", "/project/workflow"),
   generateWorkflow: () => call("POST", "/project/workflow/generate", {}),
   continueWorkflow: () => call("POST", "/project/workflow/continue", {}),
+  cancelWorkflowRevision: () => call("POST", "/project/workflow/revision/cancel", {}),
   reviseWorkflow: (text: string, focus: string[] = [], sync = false) => call("POST", "/project/workflow/revise", { text, focus, sync }),
   editCommand: (id: string, edit: CommandEdit) => call<Project>("PUT", `/project/workflow/commands/${encodeURIComponent(id)}`, edit),
   // needs true marks it for review; false records it as reviewed.

@@ -99,22 +99,72 @@ func (s *Service) GenerateWorkflow() error {
 	})
 }
 
-// ContinueWorkflow resumes filling an outlined workflow whose rounds stopped
-// (agent killed, failure dismissed, server restarted). Commands that already
-// have their details are kept; only the empty ones are written.
+// ContinueWorkflow resumes a workflow job whose rounds stopped (agent
+// killed, failure dismissed, server restarted): the filling of an outlined
+// workflow, or a revision with rounds already saved. Commands that already
+// have their details are kept; a revision keeps its request and the rounds
+// it already did.
 func (s *Service) ContinueWorkflow() error {
 	return s.startAIIf(work.KindWorkflow, func(p *core.Project) error {
-		if err := blueprintEditable(p); err != nil {
+		if err := workflowIdle(p); err != nil {
 			return err
 		}
 		w := p.Workflow
-		if w.Unfilled() == 0 {
+		switch {
+		case w.Unfilled() > 0:
+			w.Request = &core.ChangeRequest{Text: fmt.Sprintf("Fill in details for remaining %d commands", w.Unfilled())}
+			p.Log("ui", "Lanjutkan mengisi detail command workflow")
+		case w.Revising():
+			w.Request.Rejected = ""
+			p.Log("ui", "Lanjutkan revisi workflow: "+w.Request.Text)
+		default:
 			return ErrNothingToDo
 		}
-		w.Request = &core.ChangeRequest{Text: fmt.Sprintf("Fill in details for remaining %d commands", w.Unfilled())}
-		p.Log("ui", "Lanjutkan mengisi detail command workflow")
 		return nil
 	})
+}
+
+// CancelWorkflowRevision drops a revision stopped between its rounds. The
+// rounds it already did stay saved (and in the history); the rest of the
+// request is not written.
+func (s *Service) CancelWorkflowRevision() error {
+	_, err := s.Store.Update(func(p *core.Project) error {
+		if err := workflowIdle(p); err != nil {
+			return err
+		}
+		w := p.Workflow
+		if !w.Revising() {
+			return ErrNothingToDo
+		}
+		p.Log("ui", fmt.Sprintf("Revisi workflow dibatalkan setelah %d perubahan: %s", len(w.Request.Handled), w.Request.Text))
+		w.Request = nil
+		return nil
+	})
+	return err
+}
+
+// workflowIdle refuses a workflow action while an AI job runs or an AI host
+// still owes the answer of a round: the action would replace its request.
+func workflowIdle(p *core.Project) error {
+	if err := blueprintEditable(p); err != nil {
+		return err
+	}
+	if p.Job != nil && p.Job.Status == core.JobWaiting {
+		return ErrBusy
+	}
+	return nil
+}
+
+// workflowRoundOpen is the precondition of the next round of a workflow job:
+// nothing else started it meanwhile and its request is still open.
+func workflowRoundOpen(p *core.Project) error {
+	if p.Job != nil && (p.Job.Status == core.JobRunning || p.Job.Status == core.JobWaiting) {
+		return ErrBusy
+	}
+	if p.Workflow == nil || p.Workflow.Request == nil {
+		return ErrNothingToDo
+	}
+	return nil
 }
 
 // ReviseWorkflow asks the AI to change the commands for a request; focus
@@ -131,8 +181,16 @@ func (s *Service) ReviseWorkflowSync(text string, focus []string) error {
 
 func (s *Service) reviseWorkflow(text string, focus []string, sync bool) error {
 	return s.startAIIf(work.KindWorkflow, func(p *core.Project) error {
-		if err := blueprintEditable(p); err != nil {
+		if err := workflowIdle(p); err != nil {
 			return err
+		}
+		// A new request would replace the open one and lose what its rounds
+		// did; the user continues or cancels it first.
+		switch w := p.Workflow; {
+		case w.Unfilled() > 0:
+			return fmt.Errorf("%w: detail command workflow belum lengkap; lanjutkan pengisian dulu", ErrWrongStage)
+		case w.Revising():
+			return fmt.Errorf("%w: revisi workflow sebelumnya belum selesai; lanjutkan atau batalkan dulu", ErrWrongStage)
 		}
 		if err := work.RequestWorkflowChange(p, text, focus, sync); err != nil {
 			return err
@@ -249,6 +307,9 @@ func workflowBlockers(p *core.Project) []string {
 		// workflow's problems yet
 		w := p.Workflow
 		return []string{fmt.Sprintf("command workflow belum lengkap: %d dari %d command belum berisi detail", w.Unfilled(), len(w.Commands))}
+	case p.Workflow.Revising():
+		// a revision applied only in part is not a consistent version
+		return []string{fmt.Sprintf("revisi workflow belum selesai: %d perubahan tersimpan, sisanya belum ditulis", len(p.Workflow.Request.Handled))}
 	case len(r.Issues) > 0:
 		return []string{fmt.Sprintf("workflow: %d masalah dependency/isi", len(r.Issues))}
 	case len(r.Review) > 0:

@@ -126,6 +126,26 @@ export function WorkflowPage() {
       <main className="ws-main">
         {prog && <ExecutionOverview progress={prog} onOpen={select} onReconcile={() => void run("reconcileProgress", () => api.reconcileProgress())} busy={pending === "reconcileProgress"} />}
         {filling && <FillProgress total={cmds.length} unfilled={unfilled} writing={writing} working={working} locked={locked} project={project} />}
+        {!filling && !writing && (w!.request?.handled?.length ?? 0) > 0 && (
+          <div className="notice warn" role="status">
+            <strong>Revisi workflow belum selesai</strong>
+            <p className="small">
+              {w!.request!.handled!.length} perubahan sudah tersimpan untuk permintaan “{w!.request!.text}”; sisanya belum ditulis.
+              Finalisasi menunggu revisi ini dilanjutkan atau dibatalkan; membatalkan menyimpan perubahan yang sudah ada.
+            </p>
+            {!locked && (
+              <div className="row">
+                <button className="primary" disabled={working || pending === "continueWorkflow"} onClick={() => void run("continueWorkflow", api.continueWorkflow)}>
+                  Lanjutkan revisi
+                </button>
+                <button disabled={working || pending === "cancelWorkflowRevision"} onClick={() => void run("cancelWorkflowRevision", api.cancelWorkflowRevision)}>
+                  Batalkan sisanya
+                </button>
+              </div>
+            )}
+            {working && <p className="small muted">Tunggu proses AI lain yang sedang berjalan selesai, lalu lanjutkan.</p>}
+          </div>
+        )}
         {!filling && r && r.issues.length > 0 && (
           <div className="notice bad">
             <strong>{r.issues.length} masalah workflow</strong>
