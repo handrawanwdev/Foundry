@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -25,12 +28,34 @@ func ExtractJSONFunc(out string, v any, match func() bool) error {
 		return DiagnoseJSON(out)
 	}
 	zero := reflect.Zero(ptr.Elem().Type())
-	try := func(raw []byte) bool {
+	// typeErr is the first object that is valid JSON but does not fit the
+	// schema; it is reported when nothing else matches.
+	var typeErr error
+	// decode reports whether raw fits the schema, strictly or after the
+	// value types models commonly get wrong are coerced.
+	decode := func(raw []byte) bool {
 		ptr.Elem().Set(zero)
-		if json.Unmarshal(raw, v) != nil {
+		err := json.Unmarshal(raw, v)
+		if err == nil {
+			return true
+		}
+		var te *json.UnmarshalTypeError
+		if !errors.As(err, &te) {
 			return false
 		}
-		return match == nil || match()
+		if fixed, ok := lenientJSON(raw, ptr.Elem().Type()); ok {
+			ptr.Elem().Set(zero)
+			if json.Unmarshal(fixed, v) == nil {
+				return true
+			}
+		}
+		if typeErr == nil {
+			typeErr = err
+		}
+		return false
+	}
+	try := func(raw []byte) bool {
+		return decode(raw) && (match == nil || match())
 	}
 	trySrc := func(src string) bool {
 		if try([]byte(src)) {
@@ -50,19 +75,187 @@ func ExtractJSONFunc(out string, v any, match func() bool) error {
 	for i := bytes.IndexByte(b, '{'); i >= 0; {
 		var raw json.RawMessage
 		dec := json.NewDecoder(bytes.NewReader(b[i:]))
-		if err := dec.Decode(&raw); err == nil && try(raw) {
-			return nil
-		}
-		next := bytes.IndexByte(b[i+1:], '{')
-		if next < 0 {
+		err := dec.Decode(&raw)
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			// The rest of the output is one cut-off object: the objects
+			// inside it are fragments of the answer, never the answer.
 			break
 		}
-		i += next + 1
+		next := i + 1
+		if err == nil {
+			if decode(raw) {
+				if match == nil || match() {
+					return nil
+				}
+			} else {
+				// Valid JSON that does not fit the schema: its inner objects
+				// are parts of that answer (a compatibility entry with a
+				// "note"), so they must not be taken for the answer.
+				next = i + int(dec.InputOffset())
+			}
+		}
+		j := bytes.IndexByte(b[next:], '{')
+		if j < 0 {
+			break
+		}
+		i = next + j
 	}
 	if i := bytes.IndexByte(b, '{'); i >= 0 && trySrc(string(b[i:])) {
 		return nil
 	}
+	if typeErr != nil {
+		return fmt.Errorf("output AI tidak sesuai format yang diminta: %v", typeErr)
+	}
 	return DiagnoseJSON(out)
+}
+
+// lenientJSON rewrites the values whose JSON type does not fit t the way
+// models commonly get them wrong: a number or bool as a string or the
+// reverse, a fraction for an integer, a list of strings for one string, one
+// value for a list. Values it cannot convert are left for Unmarshal to refuse.
+func lenientJSON(raw []byte, t reflect.Type) ([]byte, bool) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var val any
+	if dec.Decode(&val) != nil {
+		return nil, false
+	}
+	out, err := json.Marshal(coerceValue(val, t))
+	return out, err == nil
+}
+
+var unmarshalerType = reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()
+
+func coerceValue(val any, t reflect.Type) any {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	// A type with its own decoder decides what it tolerates; reshaping its
+	// value here (one object wrapped as a list) would hide the form it reads.
+	if val == nil || t == reflect.TypeOf(json.RawMessage(nil)) || reflect.PointerTo(t).Implements(unmarshalerType) {
+		return val
+	}
+	switch t.Kind() {
+	case reflect.Struct:
+		m, ok := val.(map[string]any)
+		if !ok {
+			return val
+		}
+		coerceFields(m, t)
+		return m
+	case reflect.Map:
+		m, ok := val.(map[string]any)
+		if !ok {
+			return val
+		}
+		for k, x := range m {
+			m[k] = coerceValue(x, t.Elem())
+		}
+		return m
+	case reflect.Slice, reflect.Array:
+		if t.Elem().Kind() == reflect.Uint8 {
+			return val
+		}
+		list, ok := val.([]any)
+		if !ok {
+			if s, isStr := val.(string); isStr && strings.TrimSpace(s) == "" {
+				return []any{}
+			}
+			list = []any{val}
+		}
+		for i, x := range list {
+			list[i] = coerceValue(x, t.Elem())
+		}
+		return list
+	case reflect.String:
+		switch x := val.(type) {
+		case json.Number:
+			return x.String()
+		case bool:
+			return strconv.FormatBool(x)
+		case []any:
+			parts := make([]string, 0, len(x))
+			for _, e := range x {
+				s, ok := e.(string)
+				if !ok {
+					return val
+				}
+				if s = strings.TrimSpace(s); s != "" {
+					parts = append(parts, s)
+				}
+			}
+			return strings.Join(parts, "; ")
+		}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		var f float64
+		var err error
+		switch x := val.(type) {
+		case json.Number:
+			f, err = x.Float64()
+		case string:
+			f, err = strconv.ParseFloat(strings.TrimSpace(x), 64)
+		default:
+			return val
+		}
+		if err != nil {
+			return val
+		}
+		return json.Number(strconv.FormatInt(int64(math.Round(f)), 10))
+	case reflect.Float32, reflect.Float64:
+		if s, ok := val.(string); ok {
+			if _, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+				return json.Number(strings.TrimSpace(s))
+			}
+		}
+	case reflect.Bool:
+		if s, ok := val.(string); ok {
+			if b, err := strconv.ParseBool(strings.TrimSpace(s)); err == nil {
+				return b
+			}
+		}
+	}
+	return val
+}
+
+// coerceFields coerces the members of m that name a field of struct t,
+// matching keys the way encoding/json does (exact first, then any case).
+func coerceFields(m map[string]any, t reflect.Type) {
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		tag := f.Tag.Get("json")
+		name := strings.Split(tag, ",")[0]
+		if f.Anonymous && tag == "" {
+			ft := f.Type
+			if ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				coerceFields(m, ft)
+				continue
+			}
+		}
+		if f.PkgPath != "" || name == "-" {
+			continue
+		}
+		if name == "" {
+			name = f.Name
+		}
+		key := name
+		if _, ok := m[key]; !ok {
+			key = ""
+			for k := range m {
+				if strings.EqualFold(k, name) {
+					key = k
+					break
+				}
+			}
+			if key == "" {
+				continue
+			}
+		}
+		m[key] = coerceValue(m[key], f.Type)
+	}
 }
 
 func fenceBodies(out string) []string {
@@ -285,6 +478,11 @@ func jsonLineCol(s string, offset int) (line, col int) {
 func unmarshalLoose(raw []byte, v any) error {
 	if json.Unmarshal(raw, v) == nil {
 		return nil
+	}
+	if t := reflect.TypeOf(v); t != nil && t.Kind() == reflect.Pointer {
+		if fixed, ok := lenientJSON(raw, t.Elem()); ok && json.Unmarshal(fixed, v) == nil {
+			return nil
+		}
 	}
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &m); err != nil {

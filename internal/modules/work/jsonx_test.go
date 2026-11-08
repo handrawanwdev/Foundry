@@ -51,8 +51,8 @@ type extractCase struct {
 
 func TestExtractJSONCases(t *testing.T) {
 	type obj struct {
-		A string `json:"a"`
-		B []int  `json:"b"`
+		A string            `json:"a"`
+		B []int             `json:"b"`
 		N map[string]string `json:"n"`
 	}
 	cases := []extractCase{
@@ -96,4 +96,60 @@ func TestExtractJSONCases(t *testing.T) {
 	}
 }
 
+func techRevisionMatch(a *techRevision) func() bool {
+	return func() bool {
+		return a.Set != nil || a.Remove != nil || a.Evaluation != nil || a.Compat != nil || a.Consistency != nil
+	}
+}
 
+// A mistyped value used to fail the whole answer, and the scan then took a
+// compatibility entry (it has a "note") for the answer: the revision was
+// refused for leaving out what it had included.
+func TestExtractJSONCoercesMistypedValues(t *testing.T) {
+	raw := "```json\n" + `{"set": {"area": "backend", "technology": "Go", "version": 1.22, "purpose": "api", "driver": "d", "reasoning": ["fast", "simple"]},
+	 "remove": "",
+	 "compatibility": [{"area": "backend", "status": "compatible", "note": "fine"}],
+	 "evaluation": {"summary": "s", "criteria": [{"name": "security", "score": 4.5, "reason": "r", "evidence": "backend"}, {"name": "performance", "score": "3", "reason": "r"}], "findings": []},
+	 "consistency": [{"area": "requirements", "status": "consistent", "note": "n"}],
+	 "note": "x"}` + "\n```"
+	var a techRevision
+	if err := ExtractJSONFunc(raw, &a, techRevisionMatch(&a)); err != nil {
+		t.Fatal(err)
+	}
+	if a.Note != "x" || a.Evaluation == nil || len(a.Compat) != 1 || len(a.Consistency) != 1 {
+		t.Fatalf("answer = %+v", a)
+	}
+	if len(a.Set) != 1 || a.Set[0].Version != "1.22" || a.Set[0].Reasoning != "fast; simple" || len(a.Remove) != 0 {
+		t.Fatalf("set = %+v remove = %v", a.Set, a.Remove)
+	}
+	c := a.Evaluation.Criteria
+	if len(c) != 2 || c[0].Score != 5 || len(c[0].Evidence) != 1 || c[1].Score != 3 {
+		t.Fatalf("criteria = %+v", c)
+	}
+}
+
+func TestExtractJSONNeverTakesPartOfABrokenAnswer(t *testing.T) {
+	for name, raw := range map[string]string{
+		// "set" cannot become decisions: the error must say so.
+		"mistyped":  `{"set": ["Go"], "compatibility": [{"area": "backend", "status": "compatible", "note": "fine"}], "note": "x"}`,
+		"truncated": `{"set": [], "compatibility": [{"area": "backend", "status": "compatible", "note": "fine"}], "evaluation": {"summary": "s", "crit`,
+	} {
+		var a techRevision
+		match := func() bool { return a.Set != nil || a.Note != "" }
+		err := ExtractJSONFunc(raw, &a, match)
+		if err == nil {
+			t.Fatalf("%s: took %+v as the answer", name, a)
+		}
+		if name == "mistyped" && !strings.Contains(err.Error(), "tidak sesuai format") {
+			t.Fatalf("%s: err = %v", name, err)
+		}
+	}
+}
+
+func TestExtractJSONStillUnwrapsEnvelope(t *testing.T) {
+	var a techRevision
+	raw := `{"answer": {"set": [], "compatibility": [{"area": "backend", "status": "compatible"}], "evaluation": {"criteria": []}, "consistency": [{"area": "requirements", "status": "consistent"}]}}`
+	if err := ExtractJSONFunc(raw, &a, techRevisionMatch(&a)); err != nil || a.Evaluation == nil {
+		t.Fatalf("err = %v answer = %+v", err, a)
+	}
+}

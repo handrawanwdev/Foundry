@@ -206,6 +206,16 @@ func TestAcceptValidPlan(t *testing.T) {
 	}
 }
 
+// Evidence written as a sentence counts when it names an area or a
+// requirement.
+func TestAcceptEvidenceSentence(t *testing.T) {
+	p := project(core.PlatformWeb, core.PlatformBackend)
+	plan := overlay(p, nil)
+	plan.Evaluation.Criteria[0].Evidence = []string{"REQ-001..REQ-034 dipetakan pada areas database, orm."}
+	plan.Evaluation.Criteria[1].Evidence = []string{"Areas: backend; module:iam."}
+	mustAccept(t, p, plan)
+}
+
 func TestAcceptRefusals(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -241,6 +251,9 @@ func TestAcceptRefusals(t *testing.T) {
 		}, "alasan skor terlalu singkat"},
 		{"unresolved evidence", func(_ *core.Project, pl *core.TechPlan) {
 			pl.Evaluation.Criteria[0].Evidence = []string{"tidak-ada-di-mana-pun"}
+		}, "skor tanpa evidence"},
+		{"evidence sentence naming nothing", func(_ *core.Project, pl *core.TechPlan) {
+			pl.Evaluation.Criteria[0].Evidence = []string{"Bagian compatibility: 21 entri, 0 conflict."}
 		}, "skor tanpa evidence"},
 		{"consistency missing area", func(_ *core.Project, pl *core.TechPlan) {
 			pl.Consistency = pl.Consistency[1:]

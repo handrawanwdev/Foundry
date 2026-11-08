@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/handrawanwdev/foundry/internal/core"
@@ -78,7 +79,7 @@ const techPlanRules = `Rules:
 - every decision (except "Tidak perlu"): technology (your own name, with its language or framework), language and runtime when they apply, version (only if known) with version_verified, purpose (what it is for), fulfills (the requirement ids, feature ids, module ids or technical needs it serves; at least one), driver (requirement | architecture | compatibility | engineering | operational | profile), reasoning (a technical reason that points at this system), pros, cons, tradeoffs, depends_on (areas it integrates with, only areas that are in items), integration (how it fits those), operational (what it asks from operations), confidence (high | medium | low) and the assumptions it rests on. Facts, assumptions, preferences and your recommendation are different things: say which one each reason is.
 - alternatives: only technologies that would genuinely work here. Each says why it is viable, how it differs from your choice, pros, cons, and its impact on architecture, maintenance and operational cost. No alternative when there is no other technically sensible option; never pad the list.
 - compatibility: check the whole stack — language, runtime, framework, package, database, api, authentication, storage, build, deployment, testing, operational. status is compatible (only with a basis), unverified (plausible but you could not verify), conflict (an incompatibility you could not fix; it blocks approval), resolved (found and fixed in this answer) or not_applicable. List what is redundant, incompatible or unnecessary in evaluation.findings. Check these conflicts in particular and resolve them with the simplest sufficient fix, not by adding components: transactions without a database or persistence; file upload without a storage strategy; a Modular Monolith or microservices whose deployment has no backend; an ORM that does not run on the backend's runtime; background processing with nothing that executes it; authentication without a session or token strategy; a frontend that does not fit the application.
-- evaluation: score EVERY criterion 1-5 with a concrete reason and evidence (areas of items, requirement ids or module ids it rests on): requirement_coverage, compatibility, maintainability, performance, scalability, security, reliability, developer_experience, sustainability (5 = best) and operational_complexity, total_cost (1 = low, 5 = high). A score without evidence is refused. A larger stack is not a better one; be honest.
+- evaluation: score EVERY criterion 1-5 with a concrete reason and evidence (a list of the ids it rests on: areas of items, requirement ids or module ids; a section name such as "compatibility" is not evidence): requirement_coverage, compatibility, maintainability, performance, scalability, security, reliability, developer_experience, sustainability (5 = best) and operational_complexity, total_cost (1 = low, 5 = high). A score without evidence is refused. A larger stack is not a better one; be honest.
 - consistency: check the plan against each of requirements, project_modules, architecture, folder_structure, data_architecture, security, deployment. status is consistent, resolved (conflict found and fixed in this answer) or conflict (not fixable; blocks approval). Resolve conflicts before answering.
 `
 
@@ -369,9 +370,9 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block:
  "meta": {"approach": "", "summary": "", "rationale": ""},
  "context": { optional: the complete technical context again, only when it changed },
  "constraints": [ optional: the complete list again, only when it changed ],
- "compatibility": [ the review of the stack AS IT IS AFTER your changes, every area again ],
- "evaluation": {"summary": "...", "criteria": [every criterion again, scored with a concrete reason and evidence], "findings": [...]},
- "consistency": [every area again: requirements, project_modules, architecture, folder_structure, data_architecture, security, deployment],
+ "compatibility": [{"area": "runtime", "status": "compatible", "between": ["backend", "database"], "note": "...", "basis": "..."}, ... the review of the stack AS IT IS AFTER your changes, every area again],
+ "evaluation": {"summary": "...", "criteria": [{"name": "requirement_coverage", "score": 4, "reason": "<concrete>", "evidence": ["backend", "REQ-002"]}, ... one object per criterion, all ` + strconv.Itoa(len(core.TechCriteria)) + `: ` + strings.Join(core.TechCriteria, ", ") + `], "findings": [{"category": "other", "severity": "info", "area": "...", "message": "...", "resolution": "..."}]},
+ "consistency": [{"area": "requirements", "status": "consistent", "note": "..."}, ... one object per area: ` + strings.Join(core.TechConsistencyAreas, ", ") + `],
  "note": "<one sentence on what you changed and why>"}
 "set" and "remove" may be empty only when nothing in the plan has to change; compatibility, evaluation and consistency are still required. Areas that depend on a change (for example the UI library on a frontend, or testing tools on a language) are yours to update in the same answer. meta fields are only the ones to change.`)
 	return b.String()
@@ -424,11 +425,26 @@ func ApplyTechRevision(p *core.Project, raw string) (v *core.TechVersion, err er
 		return nil, errors.New("tidak ada permintaan revisi teknologi")
 	}
 	var a techRevision
-	if err := ExtractJSONFunc(raw, &a, func() bool { return a.Set != nil || a.Remove != nil || a.Evaluation != nil || a.Note != "" }); err != nil {
+	// "note" alone is not a match: compatibility and consistency entries
+	// carry one too.
+	match := func() bool {
+		return a.Set != nil || a.Remove != nil || a.Evaluation != nil || a.Compat != nil || a.Consistency != nil
+	}
+	if err := ExtractJSONFunc(raw, &a, match); err != nil {
 		return nil, err
 	}
-	if a.Evaluation == nil || len(a.Consistency) == 0 || len(a.Compat) == 0 {
-		return nil, errors.New("jawaban harus menyertakan compatibility, evaluation, dan consistency untuk rencana setelah perubahan")
+	var missing []string
+	if len(a.Compat) == 0 {
+		missing = append(missing, "compatibility")
+	}
+	if a.Evaluation == nil {
+		missing = append(missing, "evaluation")
+	}
+	if len(a.Consistency) == 0 {
+		missing = append(missing, "consistency")
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("jawaban tidak menyertakan %s untuk rencana setelah perubahan; compatibility, evaluation, dan consistency wajib ada", strings.Join(missing, ", "))
 	}
 	plan := s.Plan.Clone()
 	for _, it := range a.Set {

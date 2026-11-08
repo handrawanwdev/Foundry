@@ -2,6 +2,7 @@ package techplan
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -277,8 +278,16 @@ func resolves(ref string, exact map[string]bool, names []string) bool {
 	if exact[AreaID(r)] {
 		return true
 	}
-	return slices.ContainsFunc(names, func(n string) bool { return strings.Contains(r, n) })
+	if slices.ContainsFunc(names, func(n string) bool { return strings.Contains(r, n) }) {
+		return true
+	}
+	// Evidence written as a sentence ("REQ-001..REQ-034 on areas database,
+	// orm") counts when it names a decision area, requirement, feature or
+	// module.
+	return slices.ContainsFunc(refWord.Split(r, -1), func(w string) bool { return w != "" && exact[w] })
 }
+
+var refWord = regexp.MustCompile(`[^a-z0-9_-]+`)
 
 func validateEvaluation(p *core.Project, c *collector, plan *core.TechPlan) {
 	ev := plan.Evaluation

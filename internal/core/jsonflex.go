@@ -3,6 +3,9 @@ package core
 import (
 	"bytes"
 	"encoding/json"
+	"math"
+	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -152,7 +155,7 @@ func coerceByString[T any](raw json.RawMessage, fromString func(string) T) []T {
 func (e *TechEvaluation) UnmarshalJSON(b []byte) error {
 	var aux struct {
 		Summary  string          `json:"summary"`
-		Criteria []TechCriterion `json:"criteria"`
+		Criteria json.RawMessage `json:"criteria"`
 		Findings json.RawMessage `json:"findings"`
 		Score    int             `json:"score"`
 		Outdated bool            `json:"outdated"`
@@ -160,8 +163,16 @@ func (e *TechEvaluation) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &aux); err != nil {
 		return err
 	}
+	crit, err := coerceCriteria[TechCriterion](aux.Criteria, func(c *TechCriterion, name string) {
+		if c.Name == "" {
+			c.Name = name
+		}
+	}, func(name string, score int) TechCriterion { return TechCriterion{Name: name, Score: score} })
+	if err != nil {
+		return err
+	}
 	e.Summary = aux.Summary
-	e.Criteria = aux.Criteria
+	e.Criteria = crit
 	e.Findings = coerceByString(aux.Findings, func(s string) TechFinding { return TechFinding{Message: s} })
 	e.Score = aux.Score
 	e.Outdated = aux.Outdated
@@ -195,7 +206,7 @@ func (d *RepoDependency) UnmarshalJSON(b []byte) error {
 func (e *RepoEvaluation) UnmarshalJSON(b []byte) error {
 	var aux struct {
 		Summary  string          `json:"summary"`
-		Criteria []RepoCriterion `json:"criteria"`
+		Criteria json.RawMessage `json:"criteria"`
 		Findings json.RawMessage `json:"findings"`
 		Score    int             `json:"score"`
 		Outdated bool            `json:"outdated"`
@@ -203,8 +214,16 @@ func (e *RepoEvaluation) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &aux); err != nil {
 		return err
 	}
+	crit, err := coerceCriteria[RepoCriterion](aux.Criteria, func(c *RepoCriterion, name string) {
+		if c.Name == "" {
+			c.Name = name
+		}
+	}, func(name string, score int) RepoCriterion { return RepoCriterion{Name: name, Score: score} })
+	if err != nil {
+		return err
+	}
 	e.Summary = aux.Summary
-	e.Criteria = aux.Criteria
+	e.Criteria = crit
 	e.Findings = coerceByString(aux.Findings, func(s string) RepoFinding { return RepoFinding{Message: s} })
 	e.Score = aux.Score
 	e.Outdated = aux.Outdated
@@ -247,5 +266,173 @@ func (n *RepoNode) UnmarshalJSON(b []byte) error {
 	n.Relations = coerceText(aux.Relations)
 	n.Boundary = aux.Boundary
 	n.Implied = aux.Implied
+	return nil
+}
+
+// coerceCriteria reads evaluation criteria as a list, or as an object keyed
+// by criterion name whose values are the criterion or only its score.
+func coerceCriteria[T any](raw json.RawMessage, named func(*T, string), scored func(string, int) T) ([]T, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil, nil
+	}
+	if raw[0] != '{' {
+		var list []T
+		if err := json.Unmarshal(raw, &list); err != nil {
+			return nil, err
+		}
+		return list, nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(m))
+	for k := range m {
+		names = append(names, k)
+	}
+	slices.Sort(names)
+	out := make([]T, 0, len(m))
+	for _, name := range names {
+		v := bytes.TrimSpace(m[name])
+		if len(v) > 0 && v[0] == '{' {
+			var c T
+			if err := json.Unmarshal(v, &c); err != nil {
+				return nil, err
+			}
+			named(&c, name)
+			out = append(out, c)
+			continue
+		}
+		score, ok := coerceInt(v)
+		if !ok {
+			return nil, &json.UnmarshalTypeError{Value: string(v), Field: "criteria." + name}
+		}
+		out = append(out, scored(name, score))
+	}
+	return out, nil
+}
+
+// coerceInt reads a number written as an integer, a fraction (rounded) or
+// a string.
+func coerceInt(raw json.RawMessage) (int, bool) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return 0, true
+	}
+	var s string
+	if raw[0] == '"' {
+		if json.Unmarshal(raw, &s) != nil {
+			return 0, false
+		}
+	} else {
+		s = string(raw)
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0, false
+	}
+	return int(math.Round(f)), true
+}
+
+// coerceList accepts a list of strings or one string.
+func coerceList(raw json.RawMessage) []string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil
+	}
+	var ss []string
+	if json.Unmarshal(raw, &ss) == nil {
+		return ss
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil && strings.TrimSpace(s) != "" {
+		return []string{s}
+	}
+	return nil
+}
+
+func firstText(texts ...string) string {
+	for _, t := range texts {
+		if t = strings.TrimSpace(t); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+// criterionJSON is a criterion as models write it: the name under "name"
+// or a synonym, the score as a number or string, text as a string or list.
+type criterionJSON struct {
+	Name      string          `json:"name"`
+	Criterion string          `json:"criterion"`
+	ID        string          `json:"id"`
+	Key       string          `json:"key"`
+	Score     json.RawMessage `json:"score"`
+	Reason    json.RawMessage `json:"reason"`
+	Evidence  json.RawMessage `json:"evidence"`
+}
+
+func (c *criterionJSON) decode(b []byte) (name string, score int, err error) {
+	if err := json.Unmarshal(b, c); err != nil {
+		return "", 0, err
+	}
+	score, ok := coerceInt(c.Score)
+	if !ok {
+		return "", 0, &json.UnmarshalTypeError{Value: string(c.Score), Field: "score"}
+	}
+	return firstText(c.Name, c.Criterion, c.ID, c.Key), score, nil
+}
+
+func (k *TechCriterion) UnmarshalJSON(b []byte) error {
+	var aux criterionJSON
+	name, score, err := aux.decode(b)
+	if err != nil {
+		return err
+	}
+	*k = TechCriterion{Name: name, Score: score, Reason: coerceText(aux.Reason), Evidence: coerceList(aux.Evidence)}
+	return nil
+}
+
+func (k *RepoCriterion) UnmarshalJSON(b []byte) error {
+	var aux criterionJSON
+	name, score, err := aux.decode(b)
+	if err != nil {
+		return err
+	}
+	*k = RepoCriterion{Name: name, Score: score, Reason: coerceText(aux.Reason)}
+	return nil
+}
+
+// checkJSON is a consistency check whose note may come as "detail" or
+// "reason".
+type checkJSON struct {
+	Area   string          `json:"area"`
+	Status string          `json:"status"`
+	Note   json.RawMessage `json:"note"`
+	Detail json.RawMessage `json:"detail"`
+	Reason json.RawMessage `json:"reason"`
+	Source string          `json:"source"`
+}
+
+func (c checkJSON) note() string {
+	return firstText(coerceText(c.Note), coerceText(c.Detail), coerceText(c.Reason))
+}
+
+func (k *TechCheck) UnmarshalJSON(b []byte) error {
+	var aux checkJSON
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	*k = TechCheck{Area: aux.Area, Status: aux.Status, Note: aux.note(), Source: aux.Source}
+	return nil
+}
+
+func (k *RepoCheck) UnmarshalJSON(b []byte) error {
+	var aux checkJSON
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	*k = RepoCheck{Area: aux.Area, Status: aux.Status, Note: aux.note(), Source: aux.Source}
 	return nil
 }
