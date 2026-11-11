@@ -211,6 +211,9 @@ func TestDeleteCleanupThroughMCP(t *testing.T) {
 		t.Fatalf("next = %+v, %v", item.Kind, err)
 	}
 	for item.Kind == work.KindWorkflow { // one command per round
+		if strings.Contains(item.Prompt, work.CacheBreak) { // the host gets one plain prompt
+			t.Fatal("cache break marker in the host prompt")
+		}
 		if err := s.SubmitWork(work.KindWorkflow, cleanupWorkflowJSON(item.Prompt)); err != nil {
 			t.Fatal(err)
 		}

@@ -314,7 +314,8 @@ func (r *Runner) run(ctx context.Context, dir string, p Prompt, lean bool) (runO
 		argv = append(argv, r.lean...)
 	}
 	prompt := p.Text()
-	if lean && r.systemFile != "" && p.Static != "" {
+	// A CLI fails on an empty prompt, so a body-less prompt stays one text.
+	if lean && r.systemFile != "" && p.Static != "" && strings.TrimSpace(p.Body) != "" {
 		f, err := writeTemp("foundry-system-*.txt", p.Static)
 		if err != nil {
 			return runOut{}, fmt.Errorf("%w: %v", ErrAgentFailed, err)

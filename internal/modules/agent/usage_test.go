@@ -103,6 +103,9 @@ func TestExecSplitsPrompt(t *testing.T) {
 	if res, _ := mk("--sys").Exec(context.Background(), t.TempDir(), Prompt{Body: "only"}); res.Text != "IN[only]" {
 		t.Fatalf("no static: %q", res.Text)
 	}
+	if res, _ := mk("--sys").Exec(context.Background(), t.TempDir(), Prompt{Static: "rules", Body: "\n"}); res.Text != "IN[rules]" {
+		t.Fatalf("empty body: %q", res.Text) // $(cat) drops the trailing newline
+	}
 	// The temp file is gone after the run.
 	left, _ := filepath.Glob(filepath.Join(os.TempDir(), "foundry-system-*.txt"))
 	for _, f := range left {

@@ -147,6 +147,10 @@ const revisedDesignJSON = `{"pages": [{"id": "profil", "name": "Profil", "platfo
 func fakeAgent() {
 	in, _ := io.ReadAll(os.Stdin)
 	prompt := string(in)
+	if strings.Contains(prompt, work.CacheBreak) { // the marker is for the runner, never for a model
+		fmt.Fprintln(os.Stderr, "cache break marker leaked into the prompt")
+		os.Exit(3)
+	}
 	mode := os.Getenv("FAKE_MODE")
 	if strings.HasPrefix(mode, "overloaded") {
 		runs, _ := os.ReadFile(os.Getenv("FAKE_RUNS"))
