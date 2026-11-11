@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -366,9 +367,26 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Sync {
 		cut = 0
 	}
-	writeDocs(&b, docs, cut)
 	w := p.Workflow
-	b.WriteString("CURRENT COMMANDS:\n" + mustJSON(w.Commands) + "\n\n")
+	scope := revisionScope(w)
+	if scope == nil {
+		writeDocs(&b, docs, cut)
+		b.WriteString("CURRENT COMMANDS:\n" + mustJSON(w.Commands) + "\n\n")
+	} else {
+		var full []core.Command
+		needed := map[string]bool{}
+		for _, c := range w.Commands {
+			if scope[c.ID] {
+				full = append(full, c)
+				for _, a := range c.Artifacts {
+					needed[a.ID] = true
+				}
+			}
+		}
+		writeScopedDocs(&b, docs, cut, needed)
+		b.WriteString("CURRENT COMMANDS (full text: the commands this request is about and their direct dependents):\n" + mustJSON(full) + "\n\n")
+		b.WriteString("OTHER COMMANDS (outline only, with the outputs the commands above build on; they stay as they are, never return them):\n" + mustJSON(skeletonCommands(outside(w.Commands, scope), full)) + "\n\n")
+	}
 	writeExecutionState(&b, p)
 	stale := workflow.Stale(w.Commands, workflow.Hashes(docs))
 	if len(stale) > 0 {
@@ -408,6 +426,64 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 Reply with ONLY one JSON object in a ` + "```json" + ` block:
 {"commands": [` + commandShape + `], "remove": [], "done": false}`)
 	return b.String()
+}
+
+// revisionScope is the set of commands a focused revision reads in full:
+// the focus and their direct dependents, the commands a change to the focus
+// can reach. Dependencies stay in the outline with their outputs, which is
+// all the focus reads from them. nil means every command: an unfocused
+// request (coverage, decision sync) has to read them all.
+func revisionScope(w *core.Workflow) map[string]bool {
+	if w == nil || w.Request == nil || len(w.Request.Focus) == 0 {
+		return nil
+	}
+	focus := map[string]bool{}
+	for _, id := range w.Request.Focus {
+		focus[id] = true
+	}
+	scope := maps.Clone(focus)
+	for _, c := range w.Commands {
+		for _, d := range c.DependsOn {
+			if focus[d] {
+				scope[c.ID] = true
+			}
+		}
+	}
+	if len(scope) >= len(w.Commands) {
+		return nil
+	}
+	return scope
+}
+
+func outside(cmds []core.Command, scope map[string]bool) []core.Command {
+	var out []core.Command
+	for _, c := range cmds {
+		if !scope[c.ID] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// writeScopedDocs is writeDocs for a focused revision: the artifacts the
+// scoped commands reference and the binding ones keep their body, the rest
+// are listed by summary.
+func writeScopedDocs(b *strings.Builder, docs []core.Artifact, cut int, needed map[string]bool) {
+	b.WriteString("BLUEPRINT ARTIFACTS (body only for the artifacts the commands below reference; the rest by summary):\n")
+	for _, d := range docs {
+		tag := fmt.Sprintf("=== %s (%s, %s%s) %s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary)
+		if !needed[d.ID] && !bindingDocs[d.ID] {
+			b.WriteString(tag)
+			continue
+		}
+		body := d.Body
+		if cut > 0 && len(body) > cut && !bindingDocs[d.ID] {
+			body = strings.ToValidUTF8(body[:cut], "") + "\n…(dipotong)"
+		}
+		b.WriteString(tag + body + "\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(precedenceRules)
 }
 
 // writeExecutionState tells a revision how far the agent got, so it does not

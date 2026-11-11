@@ -329,3 +329,41 @@ func TestSyncRevisionDoneAcceptsRest(t *testing.T) {
 		t.Fatalf("done sync revision did not accept the rest: %+v", p.Workflow)
 	}
 }
+
+// A focused revision reads the focus and its dependents in full, the rest as
+// an outline, and only the artifacts the full commands reference by body.
+func TestFocusedRevisionReadsOnlyAffectedCommands(t *testing.T) {
+	cmd := func(id, text string, deps []string, art string) core.Command {
+		return core.Command{ID: id, Name: "nama-" + id, Instructions: text, Outputs: []string{"out-" + id},
+			DependsOn: deps, Artifacts: []core.ArtifactRef{{ID: art}}}
+	}
+	p := &core.Project{Workflow: &core.Workflow{Commands: []core.Command{
+		cmd("C1", "teks-c1", nil, "data"),
+		cmd("C2", "teks-c2", []string{"C1"}, "api"),
+		cmd("C3", "teks-c3", []string{"C2"}, "ui"),
+		cmd("C4", "teks-c4", nil, "ops"),
+	}, Request: &core.ChangeRequest{Text: "ubah", Focus: []string{"C2"}}}}
+	docs := []core.Artifact{
+		{ID: "data", Body: "isi-data"}, {ID: "api", Body: "isi-api"}, {ID: "ui", Body: "isi-ui"},
+		{ID: "ops", Body: "isi-ops"}, {ID: "requirements", Body: "isi-req"},
+	}
+	prompt := WorkflowPrompt(p, docs)
+	for _, want := range []string{"teks-c2", "teks-c3", "nama-C1", "out-C1", "nama-C4", "isi-api", "isi-ui", "isi-req"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt tanpa %q", want)
+		}
+	}
+	for _, gone := range []string{"teks-c1", "teks-c4", "out-C4", "isi-data", "isi-ops"} {
+		if strings.Contains(prompt, gone) {
+			t.Errorf("prompt masih memuat %q", gone)
+		}
+	}
+
+	p.Workflow.Request.Focus = nil // unfocused: every command in full
+	prompt = WorkflowPrompt(p, docs)
+	for _, want := range []string{"teks-c1", "teks-c4", "isi-data", "isi-ops"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("unfocused prompt tanpa %q", want)
+		}
+	}
+}

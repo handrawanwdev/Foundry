@@ -5,9 +5,11 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -121,7 +123,7 @@ func (s *Server) handle(req request) (any, *rpcError) {
 			"serverInfo":      map[string]any{"name": "foundry", "version": s.Version},
 			"instructions": "Foundry is the orchestrator and source of truth. Loop: call next_work, do exactly what its prompt says, " +
 				"then hand the result back with the tool named in `submit`. Never mark work done yourself; Foundry validates what you submit. " +
-				"To implement a finalized blueprint, read get_blueprint and get_workflow and follow the commands wave by wave; screens follow the design-rules and layout-spec artifacts. " +
+				"To implement a finalized blueprint, take one command at a time with next_command (it carries the instructions and what its dependencies left) and read only the artifacts it references with get_blueprint ids; call get_workflow or the whole get_blueprint only when you need the full picture. Screens follow the design-rules and layout-spec artifacts. " +
 				"Report every command with report_progress when you start, finish, fail, get blocked, skip (with a reason), or hand work for review. " +
 				"A command is not done until Foundry verifies evidence against its acceptance criteria. Call get_progress for the next eligible commands; do not start a command before its dependencies are verified. Do not assume Foundry ran the work. " +
 				"After implementing screens, submit measured browser snapshots with record_visual_review; without snapshots and screenshots the UI is untested, and a build or unit test is not visual proof. Call create_visual_fixes to turn findings into a workflow command.",
@@ -145,10 +147,19 @@ func (s *Server) handle(req request) (any, *rpcError) {
 		if err != nil {
 			return toolResult(err.Error(), true), nil
 		}
-		b, _ := json.MarshalIndent(out, "", "  ")
-		return toolResult(string(b), false), nil
+		return toolResult(compactJSON(out), false), nil
 	}
 	return nil, &rpcError{Code: -32601, Message: "method not found: " + req.Method}
+}
+
+// compactJSON is a tool answer: no indentation and no HTML escaping, since
+// the reader is a model paying per token and Markdown is full of < > &.
+func compactJSON(v any) string {
+	var b bytes.Buffer
+	e := json.NewEncoder(&b)
+	e.SetEscapeHTML(false)
+	e.Encode(v)
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 func toolResult(text string, isErr bool) map[string]any {
@@ -187,10 +198,12 @@ var str = map[string]any{"type": "string"}
 var tools = []tool{
 	{Name: "get_project", perm: PermRead, Description: "Project summary: stage, story, feature map, discovery, architecture blueprint, platform, structure, technology stack, job, counts.", InputSchema: obj(nil)},
 	{Name: "get_requirements", perm: PermRead, Description: "Requirements with acceptance criteria, features, sub-features, use cases (flows) and the Definition of Done.", InputSchema: obj(nil)},
-	{Name: "get_blueprint", perm: PermRead, Description: "Blueprint: every artifact (requirements, architecture, technology, design rules, layout spec, use cases, acceptance criteria, decisions and the project's own documents) as Markdown, the structured architecture, area coverage, artifact states, the decision register and binding_decisions (decided entries that override every other artifact).", InputSchema: obj(nil)},
+	{Name: "get_blueprint", perm: PermRead, Description: "Blueprint: every artifact (requirements, architecture, technology, design rules, layout spec, use cases, acceptance criteria, decisions and the project's own documents) as Markdown, the structured architecture, area coverage, artifact states, the decision register and binding_decisions (decided entries that override every other artifact). Pass ids to get only those artifacts with their body, or outline true for the artifact list without bodies.",
+		InputSchema: obj(map[string]any{"ids": map[string]any{"type": "array", "items": str}, "outline": map[string]any{"type": "boolean"}})},
 	{Name: "get_workflow", perm: PermRead, Description: "Command workflow for the coding agent: commands with objective, instructions, dependencies, feature and subfeature links, blueprint references, expected outputs and acceptance criteria; the execution waves; validation issues, commands that need review, feature-to-command impact, and current execution progress.", InputSchema: obj(nil)},
 	{Name: "get_design", perm: PermRead, Description: "UI design as structured data: design rules (principles, UX guidelines, tokens, components, accessibility, responsive, interaction, platform rules) and layout spec (shells, pages, sections, hierarchy, grid, states, links), plus validation issues.", InputSchema: obj(nil)},
-	{Name: "get_spec", perm: PermRead, Description: "Whole spec for implementation outside Foundry (JSON: requirements, flows, stack, structure, blueprint, artifacts, design rules, layout spec, workflow) plus the same as Markdown.", InputSchema: obj(nil)},
+	{Name: "get_spec", perm: PermRead, Description: "Whole spec for implementation outside Foundry (JSON: requirements, flows, stack, structure, blueprint, artifacts, design rules, layout spec, workflow) plus the same as Markdown. format json or markdown returns only that one; both is the default.",
+		InputSchema: obj(map[string]any{"format": map[string]any{"type": "string", "enum": []string{"json", "markdown", "both"}}})},
 	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (feature_map, discovery, design, stack, tech, structure, repo, plan, blueprint or workflow).", InputSchema: obj(nil)},
 	{Name: "submit_work", perm: PermWrite, Description: "Hand back a result (the JSON object requested by next_work).",
 		InputSchema: obj(map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"feature_map", "discovery", "design", "stack", "tech", "structure", "repo", "plan", "blueprint", "workflow"}}, "result": str}, "kind", "result")},
@@ -268,6 +281,9 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		Session string          `json:"session"`
 		Claim   bool            `json:"claim"`
 		History bool            `json:"history"`
+		IDs     []string        `json:"ids"`
+		Outline bool            `json:"outline"`
+		Format  string          `json:"format"`
 	}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &args); err != nil {
@@ -293,6 +309,9 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 			"binding_decisions": p.BindingDecisions()}, nil
 	case "get_blueprint":
 		docs := spec.Artifacts(p)
+		if len(args.IDs) > 0 || args.Outline {
+			return selectArtifacts(p, docs, args.IDs, args.Outline)
+		}
 		areas, states := core.BlueprintChecks(p, docs)
 		return map[string]any{"artifacts": docs, "blueprint": p.Blueprint, "areas": areas,
 			"states": states, "decisions": p.Decisions, "binding_decisions": p.BindingDecisions()}, nil
@@ -308,7 +327,15 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 			"vocabulary": map[string]any{"patterns": core.LayoutPatterns, "states": core.UIStates, "required_states": core.RequiredStates,
 				"platforms": core.UIPlatform, "field_presentations": core.FieldPresentations, "decision_sources": core.DecisionSources}}, nil
 	case "get_spec":
-		return map[string]any{"spec": spec.Export(p), "markdown": spec.Markdown(p)}, nil
+		switch args.Format {
+		case "json":
+			return map[string]any{"spec": spec.Export(p)}, nil
+		case "markdown":
+			return map[string]any{"markdown": spec.Markdown(p)}, nil
+		case "", "both":
+			return map[string]any{"spec": spec.Export(p), "markdown": spec.Markdown(p)}, nil
+		}
+		return nil, fmt.Errorf("format %q tidak dikenal: json, markdown atau both", args.Format)
 	case "next_work":
 		return s.Svc.NextWork()
 	case "get_progress":
@@ -371,6 +398,31 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		return map[string]any{"accepted": true, "stage": np.Stage, "job": np.Job, "next": "Panggil next_work untuk pekerjaan berikutnya."}, nil
 	}
 	return nil, fmt.Errorf("tool %q tidak ada", name)
+}
+
+// selectArtifacts answers a selective get_blueprint: the named artifacts in
+// full, or every artifact without its body. An unknown id is an error, so a
+// typo never reads as an empty artifact. Binding decisions always come along:
+// they override every artifact.
+func selectArtifacts(p *core.Project, docs []core.Artifact, ids []string, outline bool) (any, error) {
+	want := map[string]bool{}
+	for _, id := range ids {
+		if !slices.ContainsFunc(docs, func(d core.Artifact) bool { return d.ID == id }) {
+			return nil, fmt.Errorf("artefak %q tidak ada", id)
+		}
+		want[id] = true
+	}
+	out := []core.Artifact{}
+	for _, d := range docs {
+		if len(want) > 0 && !want[d.ID] {
+			continue
+		}
+		if outline {
+			d.Body = ""
+		}
+		out = append(out, d)
+	}
+	return map[string]any{"artifacts": out, "binding_decisions": p.BindingDecisions()}, nil
 }
 
 // source names the connected host for reports that do not name themselves.

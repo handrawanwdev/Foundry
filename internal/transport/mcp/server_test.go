@@ -75,7 +75,7 @@ func TestProtocol(t *testing.T) {
 			t.Fatalf("tool %v has null required; MCP clients require an array", raw.(map[string]any)["name"])
 		}
 	}
-	if txt, isErr := text(res[2]); isErr || !strings.Contains(txt, `"stage": "TELL"`) {
+	if txt, isErr := text(res[2]); isErr || !strings.Contains(txt, `"stage":"TELL"`) {
 		t.Fatalf("get_project = %s", txt)
 	}
 	if txt, isErr := text(res[3]); !isErr || !strings.Contains(txt, "MODIFY") {
@@ -92,7 +92,7 @@ func TestProtocol(t *testing.T) {
 
 func TestNextWorkWithPermission(t *testing.T) {
 	res := run(t, "ALL", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"next_work","arguments":{}}}`)
-	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"kind": "none"`) {
+	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"kind":"none"`) {
 		t.Fatalf("next_work = %s", txt)
 	}
 }
@@ -127,16 +127,16 @@ func TestReportProgress(t *testing.T) {
 		json.Unmarshal(sc.Bytes(), &m)
 		res = append(res, m)
 	}
-	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"status": "started"`) {
+	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"status":"started"`) {
 		t.Fatalf("started = %s err=%v", txt, isErr)
 	}
-	if txt, isErr := text(res[1]); isErr || !strings.Contains(txt, `"duplicate": true`) {
+	if txt, isErr := text(res[1]); isErr || !strings.Contains(txt, `"duplicate":true`) {
 		t.Fatalf("dup = %s", txt)
 	}
-	if txt, isErr := text(res[2]); isErr || !strings.Contains(txt, `"applied_status": "verified"`) {
+	if txt, isErr := text(res[2]); isErr || !strings.Contains(txt, `"applied_status":"verified"`) {
 		t.Fatalf("done = %s", txt)
 	}
-	if txt, isErr := text(res[3]); isErr || !strings.Contains(txt, `"verified": 1`) || !strings.Contains(txt, `"complete": true`) {
+	if txt, isErr := text(res[3]); isErr || !strings.Contains(txt, `"verified":1`) || !strings.Contains(txt, `"complete":true`) {
 		t.Fatalf("progress = %s", txt)
 	}
 }
@@ -178,10 +178,10 @@ func TestVisualReviewTool(t *testing.T) {
 		json.Unmarshal(sc.Bytes(), &m)
 		res = append(res, m)
 	}
-	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"page": "detail"`) {
+	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"page":"detail"`) {
 		t.Fatalf("record = %s err=%v", txt, isErr)
 	}
-	if txt, isErr := text(res[1]); isErr || !strings.Contains(txt, `"pages": 1`) || !strings.Contains(txt, `"detail"`) {
+	if txt, isErr := text(res[1]); isErr || !strings.Contains(txt, `"pages":1`) || !strings.Contains(txt, `"detail"`) {
 		t.Fatalf("report = %s err=%v", txt, isErr)
 	}
 }
@@ -228,19 +228,48 @@ func TestCommandTools(t *testing.T) {
 		json.Unmarshal(sc.Bytes(), &m)
 		res = append(res, m)
 	}
-	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"command": "CMD-001"`) || !strings.Contains(txt, "buat skema") {
+	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"command":"CMD-001"`) || !strings.Contains(txt, "buat skema") {
 		t.Fatalf("claim = %s", txt)
 	}
 	if txt, isErr := text(res[1]); isErr || !strings.Contains(txt, "dikerjakan session lain") {
 		t.Fatalf("second session = %s", txt)
 	}
-	if txt, isErr := text(res[2]); isErr || !strings.Contains(txt, `"status": "started"`) {
+	if txt, isErr := text(res[2]); isErr || !strings.Contains(txt, `"status":"started"`) {
 		t.Fatalf("progress = %s", txt)
 	}
-	if txt, isErr := text(res[3]); isErr || !strings.Contains(txt, `"summary": "tabel"`) {
+	if txt, isErr := text(res[3]); isErr || !strings.Contains(txt, `"summary":"tabel"`) {
 		t.Fatalf("history = %s", txt)
 	}
 	if txt, isErr := text(res[4]); isErr || !strings.Contains(txt, "buat API") {
 		t.Fatalf("command = %s", txt)
+	}
+}
+
+func TestSelectiveReads(t *testing.T) {
+	res := run(t, "READ",
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_blueprint","arguments":{"outline":true}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_blueprint","arguments":{"ids":["nope"]}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_spec","arguments":{"format":"json"}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_spec","arguments":{"format":"x"}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_spec","arguments":{}}}`,
+	)
+	if txt, isErr := text(res[0]); isErr || !strings.Contains(txt, `"artifacts"`) || strings.Contains(txt, "\n  ") {
+		t.Fatalf("summary: %v %.200s", isErr, txt)
+	}
+	if txt, isErr := text(res[1]); !isErr || !strings.Contains(txt, "nope") {
+		t.Fatalf("unknown id: %v %s", isErr, txt)
+	}
+	var spec map[string]any
+	txt, _ := text(res[2])
+	if json.Unmarshal([]byte(txt), &spec); spec["spec"] == nil || spec["markdown"] != nil {
+		t.Fatalf("json only: %.200s", txt)
+	}
+	if _, isErr := text(res[3]); !isErr {
+		t.Fatal("unknown format accepted")
+	}
+	txt, _ = text(res[4])
+	spec = nil
+	if json.Unmarshal([]byte(txt), &spec); spec["spec"] == nil || spec["markdown"] == nil {
+		t.Fatalf("default keeps both: %.200s", txt)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -161,5 +162,33 @@ case "$*" in *good*) echo OK;; *) echo 'Error: Insufficient account funds' >&2; 
 	got, err := r.Connect(context.Background(), t.TempDir())
 	if err != nil || got != "p/good-free" {
 		t.Fatalf("Connect = %q, %v", got, err)
+	}
+}
+
+// The claude preset runs lean: no built-in tools, MCP servers, skills or hooks.
+func TestClaudePresetIsLean(t *testing.T) {
+	c, _ := PresetByID("claude")
+	for _, f := range []string{"--tools=", "--strict-mcp-config", "--disable-slash-commands"} {
+		if !slices.Contains(c.lean, f) {
+			t.Fatalf("lean %v misses %s", c.lean, f)
+		}
+	}
+}
+
+// A CLI that rejects a lean flag still answers: the runner drops lean once
+// and keeps it dropped.
+func TestRunDropsLeanOnUnknownFlag(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh tidak ada")
+	}
+	script := `cat >/dev/null; for a in "$@"; do [ "$a" = --lean ] && { echo "error: unknown option '--lean'" >&2; exit 1; }; done; echo ok`
+	r := &Runner{argv: []string{"sh", "-c", script, "sh"}, lean: []string{"--lean"}, noLean: new(atomic.Bool), Timeout: time.Minute}
+	out, err := r.Run(context.Background(), t.TempDir(), "hi")
+	if err != nil || out != "ok\n" || !r.noLean.Load() {
+		t.Fatalf("out=%q err=%v noLean=%v", out, err, r.noLean.Load())
+	}
+	r = &Runner{argv: []string{"sh", "-c", `cat >/dev/null; echo "$@"`, "sh"}, lean: []string{"--lean"}, noLean: new(atomic.Bool), Timeout: time.Minute}
+	if out, _ := r.Run(context.Background(), t.TempDir(), "hi"); out != "--lean\n" {
+		t.Fatalf("lean flag not passed: %q", out)
 	}
 }

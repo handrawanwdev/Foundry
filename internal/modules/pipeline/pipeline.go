@@ -406,6 +406,7 @@ func (s *Service) runAgent(runner *agent.Runner, kind, dir, prompt string) (stri
 
 // runAgentFor is runAgent for a named section; "" means the job's section.
 func (s *Service) runAgentFor(runner *agent.Runner, kind, section, dir, prompt string) (string, error) {
+	prompt = work.WithPolicy(prompt)
 	for attempt := 0; ; attempt++ {
 		t0 := time.Now()
 		out, err := runner.Run(s.context(), dir, prompt)

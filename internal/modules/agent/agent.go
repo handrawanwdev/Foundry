@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/proc"
@@ -35,7 +36,12 @@ type Preset struct {
 	sub        []string // subcommand, before the model/effort flags
 	// think: args after the model/effort flags. Every run is read-only:
 	// Foundry asks for designs, never for file edits.
-	think     []string
+	think []string
+	// lean: args that keep the CLI's own context out of a run (built-in
+	// tools, MCP servers, skills, hooks). Foundry prompts carry everything
+	// the answer needs, so a run never needs them. A CLI too old to know a
+	// flag rejects it; the runner then drops lean for good and retries.
+	lean      []string
 	effortArg func(string) []string
 	// listModels asks the CLI (or its API) which models exist; see ListModels.
 	listModels func(context.Context, Preset) ([]string, error)
@@ -51,7 +57,8 @@ var Presets = []Preset{
 		Efforts:    []string{"low", "medium", "high", "xhigh", "max"},
 		effortArg:  func(e string) []string { return []string{"--effort", e} },
 		unwrap:     claudeResult,
-		think:      []string{"-p", "--output-format", "json"}},
+		think:      []string{"-p", "--output-format", "json"},
+		lean:       []string{"--tools=", "--strict-mcp-config", "--disable-slash-commands", "--settings", `{"disableAllHooks":true}`}},
 	{ID: "codex", Name: "Codex", Binary: "codex", sub: []string{"exec"},
 		listModels: codexModels,
 		Efforts:    []string{"low", "medium", "high", "xhigh"},
@@ -123,6 +130,8 @@ type Runner struct {
 	ID         string // preset id; empty for a custom command
 	Name       string
 	argv       []string
+	lean       []string
+	noLean     *atomic.Bool // set once the CLI rejected a lean flag
 	promptFile string
 	Timeout    time.Duration
 	unwrap     func(raw string) (string, bool)
@@ -151,6 +160,8 @@ func NewRunner(id string, custom []string, opt Options) (*Runner, error) {
 		ID:         p.ID,
 		Name:       p.Name,
 		argv:       append(slices.Clone(head), p.think...),
+		lean:       p.lean,
+		noLean:     new(atomic.Bool),
 		promptFile: p.PromptFile,
 		unwrap:     p.unwrap,
 		Timeout:    30 * time.Minute,
@@ -209,17 +220,32 @@ func (w *watchBuf) String() string {
 	return w.buf.String()
 }
 
+var unknownFlag = regexp.MustCompile(`(?i)unknown (option|flag|argument)|unexpected argument`)
+
 // Run sends prompt to the agent with dir as working directory and returns
 // its answer.
 func (r *Runner) Run(ctx context.Context, dir, prompt string) (string, error) {
+	lean := len(r.lean) > 0 && r.noLean != nil && !r.noLean.Load()
+	out, stderr, err := r.run(ctx, dir, prompt, lean)
+	if lean && err != nil && unknownFlag.MatchString(stderr) {
+		r.noLean.Store(true)
+		out, _, err = r.run(ctx, dir, prompt, false)
+	}
+	return out, err
+}
+
+func (r *Runner) run(ctx context.Context, dir, prompt string, lean bool) (string, string, error) {
 	argv := append([]string{}, r.argv...)
+	if lean {
+		argv = append(argv, r.lean...)
+	}
 	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 	var cmd *exec.Cmd
 	if r.promptFile != "" {
 		f, err := os.CreateTemp("", "foundry-prompt-*.txt")
 		if err != nil {
-			return "", fmt.Errorf("%w: %v", ErrAgentFailed, err)
+			return "", "", fmt.Errorf("%w: %v", ErrAgentFailed, err)
 		}
 		defer os.Remove(f.Name())
 		_, err = f.WriteString(prompt)
@@ -227,7 +253,7 @@ func (r *Runner) Run(ctx context.Context, dir, prompt string) (string, error) {
 			err = cerr
 		}
 		if err != nil {
-			return "", fmt.Errorf("%w: %v", ErrAgentFailed, err)
+			return "", "", fmt.Errorf("%w: %v", ErrAgentFailed, err)
 		}
 		cmd = exec.CommandContext(ctx, argv[0], append(argv[1:], r.promptFile, f.Name())...)
 	} else {
@@ -264,24 +290,24 @@ func (r *Runner) Run(ctx context.Context, dir, prompt string) (string, error) {
 	why := reason
 	reasonMu.Unlock()
 	if why != nil {
-		return res, why
+		return res, errb.String(), why
 	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return res, fmt.Errorf("%w: timeout setelah %s", ErrAgentFailed, r.Timeout)
+		return res, errb.String(), fmt.Errorf("%w: timeout setelah %s", ErrAgentFailed, r.Timeout)
 	}
 	failed := err != nil && !errors.Is(err, exec.ErrWaitDelay) // ErrWaitDelay: the agent itself exited 0
 	// A CLI that hit its quota prints the notice and exits; stdout is only
 	// trusted when the run failed or produced almost nothing.
 	if limitHit(errb.String()) || ((failed || len(strings.TrimSpace(res)) < 400) && limitHit(res)) {
-		return res, fmt.Errorf("%w: %s", ErrLimit, tail(strings.TrimSpace(errb.String()+"\n"+res), 300))
+		return res, errb.String(), fmt.Errorf("%w: %s", ErrLimit, tail(strings.TrimSpace(errb.String()+"\n"+res), 300))
 	}
 	if failed && (overloadText.MatchString(errb.String()) || (len(strings.TrimSpace(res)) < 400 && overloadText.MatchString(res))) {
-		return res, fmt.Errorf("%w: %s", ErrOverloaded, tail(strings.TrimSpace(errb.String()+"\n"+res), 300))
+		return res, errb.String(), fmt.Errorf("%w: %s", ErrOverloaded, tail(strings.TrimSpace(errb.String()+"\n"+res), 300))
 	}
 	if failed {
-		return res, fmt.Errorf("%w: %v: %s", ErrAgentFailed, err, tail(errb.String(), 600))
+		return res, errb.String(), fmt.Errorf("%w: %v: %s", ErrAgentFailed, err, tail(errb.String(), 600))
 	}
-	return res, nil
+	return res, errb.String(), nil
 }
 
 // Ping runs a minimal probe to prove the agent works headless.

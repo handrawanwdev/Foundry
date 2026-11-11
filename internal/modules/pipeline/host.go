@@ -25,7 +25,7 @@ func (s *Service) NextWork() (*WorkItem, error) {
 	}
 	switch p.Job.Kind {
 	case work.KindFeatureMap, work.KindDiscovery, work.KindDesign, work.KindStack, work.KindTech, work.KindStructure, work.KindRepo, work.KindPlan, work.KindArtifacts, work.KindWorkflow:
-		return &WorkItem{Kind: p.Job.Kind, Prompt: s.promptFor(p, p.Job.Kind),
+		return &WorkItem{Kind: p.Job.Kind, Prompt: work.WithPolicy(s.promptFor(p, p.Job.Kind)),
 			Submit: fmt.Sprintf(`submit_work {"kind": %q, "result": "<the JSON object>"}`, p.Job.Kind)}, nil
 	}
 	return &WorkItem{Kind: "none", Prompt: nothingMessage(p)}, nil
