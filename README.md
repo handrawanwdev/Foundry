@@ -293,16 +293,16 @@ foundry mcp --print-config --project ~/work/clinic
 | ------------------ | ---------- | --------------------------------------------------------------------------- |
 | `get_project`      | `READ`     | Project summary: stage, discovery, architecture, platform, stack, job       |
 | `get_requirements` | `READ`     | Requirements, acceptance criteria, features, use cases, Definition of Done  |
-| `get_blueprint`    | `READ`     | All blueprint artifacts (Markdown), artifact states, decision register, binding decisions |
+| `get_blueprint`    | `READ`     | All blueprint artifacts (Markdown), artifact states, decision register, binding decisions; `ids` returns only those artifacts, `outline` the list without bodies |
 | `get_workflow`     | `READ`     | Commands, dependencies, execution waves, validation issues, `needs_review` commands, execution progress |
 | `get_design`       | `READ`     | Structured design rules & layout spec with validation issues                |
-| `get_spec`         | `READ`     | Full specification (JSON + Markdown) for implementation outside Foundry     |
+| `get_spec`         | `READ`     | Full specification (JSON + Markdown) for implementation outside Foundry; `format` `json` or `markdown` returns one copy |
 | `get_progress`     | `READ`     | Weighted project/module/feature/subfeature/workflow progress, dependency state, next eligible commands, warnings |
 | `get_visual_review` | `READ`    | Measured UI quality per page: pass/partial/fail/untested, findings, criteria |
 | `record_visual_review` | `WRITE` | Submit browser snapshots + screenshot evidence for one page |
 | `create_visual_fixes` | `WRITE` | Turn open visual findings into a correction command in the workflow |
-| `next_command`     | `WRITE`    | The command to do next with instructions and dependency results; `claim` marks it started for a session |
-| `get_command`      | `READ`     | One command in full, or with `history` its reports, status changes and earlier revisions |
+| `next_command`     | `WRITE`    | The command to do next with instructions and dependency results; `claim` marks it started for a session; `format` `json` or `markdown` returns one copy of the command |
+| `get_command`      | `READ`     | One command in full, or with `history` its reports, status changes and earlier revisions; `format` as for `next_command` |
 | `report_progress`  | `WRITE`    | Agent report for one command: started / progress / done / failed / blocked / skipped / review |
 | `next_work`        | `MODIFY`   | Fetch the next piece of design work Foundry needs                           |
 | `submit_work`      | `WRITE`    | Hand back a result; Foundry validates it                                    |

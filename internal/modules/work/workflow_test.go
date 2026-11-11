@@ -2,6 +2,7 @@ package work
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -364,6 +365,91 @@ func TestFocusedRevisionReadsOnlyAffectedCommands(t *testing.T) {
 	for _, want := range []string{"teks-c1", "teks-c4", "isi-data", "isi-ops"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("unfocused prompt tanpa %q", want)
+		}
+	}
+}
+
+func TestRevisionScope(t *testing.T) {
+	cmd := func(id string, deps ...string) core.Command { return core.Command{ID: id, DependsOn: deps} }
+	cases := []struct {
+		name    string
+		cmds    []core.Command
+		focus   []string
+		handled []string
+		want    []string // nil: every command in full
+	}{
+		{"direct dependent", []core.Command{cmd("A"), cmd("B", "A"), cmd("X")}, []string{"A"}, nil, []string{"A", "B"}},
+		{"transitive, multi-level", []core.Command{cmd("A"), cmd("B", "A"), cmd("C", "B"), cmd("D", "C"), cmd("X")}, []string{"A"}, nil, []string{"A", "B", "C", "D"}},
+		{"order does not matter", []core.Command{cmd("D", "C"), cmd("C", "B"), cmd("B", "A"), cmd("A"), cmd("X")}, []string{"A"}, nil, []string{"A", "B", "C", "D"}},
+		{"branching", []core.Command{cmd("A"), cmd("B", "A"), cmd("C", "A"), cmd("D", "B", "C"), cmd("X"), cmd("Y", "X")}, []string{"A"}, nil, []string{"A", "B", "C", "D"}},
+		{"cycle", []core.Command{cmd("A", "C"), cmd("B", "A"), cmd("C", "B"), cmd("X")}, []string{"B"}, nil, []string{"A", "B", "C"}},
+		{"upstream stays outline", []core.Command{cmd("A"), cmd("B", "A"), cmd("C", "B")}, []string{"C"}, nil, []string{"C"}},
+		{"no dependencies", []core.Command{cmd("A"), cmd("B"), cmd("C")}, []string{"B"}, nil, []string{"B"}},
+		{"several focus, several dependents", []core.Command{cmd("A"), cmd("B"), cmd("C", "A"), cmd("D", "A"), cmd("E", "B"), cmd("X")}, []string{"A", "B"}, nil, []string{"A", "B", "C", "D", "E"}},
+		{"earlier rounds join", []core.Command{cmd("A"), cmd("B", "A"), cmd("N"), cmd("M", "N"), cmd("X")}, []string{"A"}, []string{"added N", "removed Z"}, []string{"A", "B", "M", "N"}},
+		{"focus removed by an earlier round", []core.Command{cmd("B"), cmd("X")}, []string{"A"}, []string{"removed A"}, nil},
+		{"scope is everything", []core.Command{cmd("A"), cmd("B", "A")}, []string{"A"}, nil, nil},
+		{"unfocused", []core.Command{cmd("A"), cmd("B")}, nil, nil, nil},
+	}
+	for _, tc := range cases {
+		w := &core.Workflow{Commands: tc.cmds, Request: &core.ChangeRequest{Text: "x", Focus: tc.focus, Handled: tc.handled}}
+		got := revisionScope(w)
+		if tc.want == nil {
+			if got != nil {
+				t.Errorf("%s: scope = %v, want every command", tc.name, got)
+			}
+			continue
+		}
+		ids := slices.Sorted(maps.Keys(got))
+		if !slices.Equal(ids, tc.want) {
+			t.Errorf("%s: scope = %v, want %v", tc.name, ids, tc.want)
+		}
+	}
+}
+
+// A command referring to an artifact that was deleted or renamed still
+// gets its full text; the artifact is simply not there to send.
+func TestFocusedRevisionWithMissingArtifact(t *testing.T) {
+	p := &core.Project{Workflow: &core.Workflow{Commands: []core.Command{
+		{ID: "C1", Instructions: "teks-c1", Artifacts: []core.ArtifactRef{{ID: "gone", Hash: "h"}}},
+		{ID: "C2", Instructions: "teks-c2", Artifacts: []core.ArtifactRef{{ID: "api"}}},
+	}, Request: &core.ChangeRequest{Text: "ubah", Focus: []string{"C1"}}}}
+	docs := []core.Artifact{{ID: "api", Body: "isi-api"}, {ID: "requirements", Body: "isi-req"}}
+	prompt := WorkflowPrompt(p, docs)
+	if !strings.Contains(prompt, "teks-c1") || strings.Contains(prompt, "teks-c2") || strings.Contains(prompt, "isi-api") || !strings.Contains(prompt, "isi-req") {
+		t.Fatalf("prompt:\n%s", prompt)
+	}
+}
+
+// A focused revision never takes back a command it only saw as an outline.
+func TestFocusedRevisionRefusesOutlineCommand(t *testing.T) {
+	p := &core.Project{Workflow: &core.Workflow{Commands: []core.Command{
+		{ID: "C1", Name: "a", Instructions: "teks-c1"},
+		{ID: "C2", Name: "b", Instructions: "teks-c2", DependsOn: []string{"C1"}},
+		{ID: "C3", Name: "c", Instructions: "teks-c3"},
+	}, Request: &core.ChangeRequest{Text: "ubah", Focus: []string{"C1"}}}}
+	err := applyWorkflowRevisionFromParsed(p, workflowOut{Commands: []commandOut{{ID: "C3"}}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "di luar cakupan") {
+		t.Fatalf("err = %v", err)
+	}
+	if p.Workflow.Commands[2].Instructions != "teks-c3" {
+		t.Fatal("outline command changed")
+	}
+}
+
+// A command answered with the {"id","hash"} artifact objects the prompt
+// shows is read as ids, not refused (that refusal cost a whole extra round).
+func TestCommandArtifactsAsObjects(t *testing.T) {
+	var out workflowOut
+	if err := json.Unmarshal([]byte(`{"commands":[{"id":"C1","artifacts":[{"id":"api","hash":"x"},"ui"]}]}`), &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := []string(out.Commands[0].Artifacts); !slices.Equal(got, []string{"api", "ui"}) {
+		t.Fatalf("artifacts = %v", got)
+	}
+	for _, bad := range []string{`{"commands":[{"id":"C1","artifacts":[{"hash":"x"}]}]}`, `{"commands":[{"id":"C1","artifacts":[1]}]}`, `{"commands":[{"id":"C1","artifacts":"api"}]}`} {
+		if err := json.Unmarshal([]byte(bad), &out); err == nil {
+			t.Errorf("%s accepted", bad)
 		}
 	}
 }

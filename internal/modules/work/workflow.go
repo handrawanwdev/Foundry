@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -20,23 +19,51 @@ const KindWorkflow = "workflow"
 const MaxCommands = 60
 
 type commandOut struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	Objective     string   `json:"objective"`
-	Context       string   `json:"context"`
-	Inputs        []string `json:"inputs"`
-	Instructions  string   `json:"instructions"`
-	DependsOn     []string `json:"depends_on"`
-	Artifacts     []string `json:"artifacts"`
-	Covers        []string `json:"covers"`
-	FeatureIDs    []string `json:"feature_ids"`
-	SubFeatureIDs []string `json:"sub_feature_ids"`
-	Outputs       []string `json:"expected_outputs"`
-	Acceptance    []string `json:"acceptance_criteria"`
-	Constraints   []string `json:"constraints"`
-	Files         []string `json:"files"`
-	Priority      string   `json:"priority"`
-	Complexity    string   `json:"complexity"`
+	ID            string      `json:"id"`
+	Name          string      `json:"name"`
+	Objective     string      `json:"objective"`
+	Context       string      `json:"context"`
+	Inputs        []string    `json:"inputs"`
+	Instructions  string      `json:"instructions"`
+	DependsOn     []string    `json:"depends_on"`
+	Artifacts     artifactIDs `json:"artifacts"`
+	Covers        []string    `json:"covers"`
+	FeatureIDs    []string    `json:"feature_ids"`
+	SubFeatureIDs []string    `json:"sub_feature_ids"`
+	Outputs       []string    `json:"expected_outputs"`
+	Acceptance    []string    `json:"acceptance_criteria"`
+	Constraints   []string    `json:"constraints"`
+	Files         []string    `json:"files"`
+	Priority      string      `json:"priority"`
+	Complexity    string      `json:"complexity"`
+}
+
+// artifactIDs reads the artifacts of an answered command: ids, or the
+// {"id", "hash"} objects the prompt shows for the current commands, which a
+// model often copies back. Foundry sets the hash itself either way.
+type artifactIDs []string
+
+func (a *artifactIDs) UnmarshalJSON(b []byte) error {
+	var raw []json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	out := make(artifactIDs, 0, len(raw))
+	for _, r := range raw {
+		var id string
+		if err := json.Unmarshal(r, &id); err != nil {
+			var ref struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(r, &ref); err != nil || ref.ID == "" {
+				return fmt.Errorf("artefak harus id atau {\"id\": ...}, bukan %s", r)
+			}
+			id = ref.ID
+		}
+		out = append(out, id)
+	}
+	*a = out
+	return nil
 }
 
 type workflowOut struct {
@@ -208,6 +235,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		batch = []core.Command{*c}
 	}
 
+	b.WriteString(CacheBreak) // the rest changes with every round
 	b.WriteString("CURRENT COMMANDS (skeleton):\n" + mustJSON(skeletonCommands(w.Commands, batch)) + "\n\n")
 
 	b.WriteString(fmt.Sprintf("DETAIL PHASE - Fill in details for these %d commands:\n", len(batch)))
@@ -371,6 +399,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	scope := revisionScope(w)
 	if scope == nil {
 		writeDocs(&b, docs, cut)
+		b.WriteString(CacheBreak) // the commands below change with every round; the blueprint above does not
 		b.WriteString("CURRENT COMMANDS:\n" + mustJSON(w.Commands) + "\n\n")
 	} else {
 		var full []core.Command
@@ -384,7 +413,8 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 			}
 		}
 		writeScopedDocs(&b, docs, cut, needed)
-		b.WriteString("CURRENT COMMANDS (full text: the commands this request is about and their direct dependents):\n" + mustJSON(full) + "\n\n")
+		b.WriteString(CacheBreak)
+		b.WriteString("CURRENT COMMANDS (full text: the commands this request is about, the commands earlier rounds changed, and every command that depends on them):\n" + mustJSON(full) + "\n\n")
 		b.WriteString("OTHER COMMANDS (outline only, with the outputs the commands above build on; they stay as they are, never return them):\n" + mustJSON(skeletonCommands(outside(w.Commands, scope), full)) + "\n\n")
 	}
 	writeExecutionState(&b, p)
@@ -429,23 +459,42 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block:
 }
 
 // revisionScope is the set of commands a focused revision reads in full:
-// the focus and their direct dependents, the commands a change to the focus
-// can reach. Dependencies stay in the outline with their outputs, which is
-// all the focus reads from them. nil means every command: an unfocused
-// request (coverage, decision sync) has to read them all.
+// the focus, the commands earlier rounds of the request changed or added,
+// and every command that depends on them, directly or through others, since
+// a change can travel down that chain one round at a time. Dependencies stay
+// in the outline with their outputs, which is all the scope reads from them.
+// nil means every command: an unfocused request (coverage, decision sync), a
+// focus that no longer exists, or a scope that covers them all anyway.
 func revisionScope(w *core.Workflow) map[string]bool {
 	if w == nil || w.Request == nil || len(w.Request.Focus) == 0 {
 		return nil
 	}
-	focus := map[string]bool{}
-	for _, id := range w.Request.Focus {
-		focus[id] = true
-	}
-	scope := maps.Clone(focus)
+	exists := map[string]bool{}
 	for _, c := range w.Commands {
-		for _, d := range c.DependsOn {
-			if focus[d] {
-				scope[c.ID] = true
+		exists[c.ID] = true
+	}
+	scope := map[string]bool{}
+	for _, id := range w.Request.Focus {
+		if exists[id] {
+			scope[id] = true
+		}
+	}
+	if len(scope) == 0 {
+		return nil
+	}
+	for _, h := range w.Request.Handled { // "changed CMD-002", "added CMD-007"
+		if _, id, ok := strings.Cut(h, " "); ok && exists[id] {
+			scope[id] = true
+		}
+	}
+	for grew := true; grew; { // dependents to a fixed point; a cycle stops it too
+		grew = false
+		for _, c := range w.Commands {
+			if scope[c.ID] {
+				continue
+			}
+			if slices.ContainsFunc(c.DependsOn, func(d string) bool { return scope[d] }) {
+				scope[c.ID], grew = true, true
 			}
 		}
 	}
@@ -616,12 +665,18 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 		idMap[c.ID] = c.ID
 	}
 	next := nextCommandNumber(p, cmds)
+	// A focused revision sent the commands outside its scope as an outline
+	// only; returning one would replace its text with a guess.
+	scope := revisionScope(w)
 	for _, o := range out.Commands {
 		id := strings.TrimSpace(o.ID)
 		if id == "" {
 			return errors.New("id command kosong")
 		}
 		if _, kept := idMap[id]; kept {
+			if scope != nil && !scope[id] {
+				return fmt.Errorf("command %s di luar cakupan permintaan ini dan hanya dikirim sebagai outline; jangan kembalikan command itu. Ubah command dalam cakupan, tambahkan command baru, atau set done bila tidak ada yang tersisa", id)
+			}
 			did = "changed " + id
 			continue
 		}

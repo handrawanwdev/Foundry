@@ -276,16 +276,16 @@ foundry mcp --print-config --project ~/kerja/klinik
 | ------------------ | -------- | ---------------------------------------------------------------------- |
 | `get_project`      | `READ`   | Ringkasan proyek: stage, discovery, arsitektur, platform, stack, job   |
 | `get_requirements` | `READ`   | Requirement, acceptance criteria, feature, use case, Definition of Done |
-| `get_blueprint`    | `READ`   | Semua artefak blueprint (Markdown), state artefak, decision register, keputusan mengikat |
+| `get_blueprint`    | `READ`   | Semua artefak blueprint (Markdown), state artefak, decision register, keputusan mengikat; `ids` hanya artefak itu, `outline` daftar tanpa isi |
 | `get_workflow`     | `READ`   | Command, dependency, gelombang eksekusi, isu validasi, command `needs_review`, progres pengerjaan |
 | `get_design`       | `READ`   | Design rules & layout spec terstruktur beserta isu validasi            |
-| `get_spec`         | `READ`   | Spesifikasi lengkap (JSON + Markdown) untuk implementasi di luar Foundry |
+| `get_spec`         | `READ`   | Spesifikasi lengkap (JSON + Markdown) untuk implementasi di luar Foundry; `format` `json` atau `markdown` hanya satu salinan |
 | `get_progress`     | `READ`   | Progres pengerjaan workflow (hitungan, command siap, peringatan)       |
 | `get_visual_review` | `READ`  | Kualitas UI terukur per halaman: lulus/sebagian/gagal/belum diuji, temuan, kriteria |
 | `record_visual_review` | `WRITE` | Kirim snapshot browser + bukti screenshot untuk satu halaman |
 | `create_visual_fixes` | `WRITE` | Ubah temuan visual terbuka menjadi command koreksi di workflow |
-| `next_command`     | `WRITE`  | Command berikutnya beserta instruksi dan hasil dependency; `claim` menandainya mulai untuk satu session |
-| `get_command`      | `READ`   | Satu command lengkap, atau dengan `history` laporan, perubahan status, dan revisinya |
+| `next_command`     | `WRITE`  | Command berikutnya beserta instruksi dan hasil dependency; `claim` menandainya mulai untuk satu session; `format` `json` atau `markdown` hanya satu salinan command |
+| `get_command`      | `READ`   | Satu command lengkap, atau dengan `history` laporan, perubahan status, dan revisinya; `format` seperti `next_command` |
 | `report_progress`  | `WRITE`  | Laporan agen untuk satu command: started / progress / done / failed / blocked / skipped / review |
 | `next_work`        | `MODIFY` | Ambil pekerjaan rancangan berikutnya yang dibutuhkan Foundry           |
 | `submit_work`      | `WRITE`  | Serahkan hasil kerja; Foundry yang memvalidasi                         |

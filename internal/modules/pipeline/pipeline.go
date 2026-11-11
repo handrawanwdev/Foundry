@@ -23,6 +23,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/structure"
 	"github.com/handrawanwdev/foundry/internal/modules/techplan"
+	"github.com/handrawanwdev/foundry/internal/modules/usage"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
@@ -406,11 +407,14 @@ func (s *Service) runAgent(runner *agent.Runner, kind, dir, prompt string) (stri
 
 // runAgentFor is runAgent for a named section; "" means the job's section.
 func (s *Service) runAgentFor(runner *agent.Runner, kind, section, dir, prompt string) (string, error) {
-	prompt = work.WithPolicy(prompt)
+	static, body := work.SplitPrompt(work.WithPolicy(prompt))
 	for attempt := 0; ; attempt++ {
 		t0 := time.Now()
-		out, err := runner.Run(s.context(), dir, prompt)
-		s.logAgentTiming(kind, time.Since(t0), len(prompt), len(out))
+		res, err := runner.Exec(s.context(), dir, agent.Prompt{Static: static, Body: body})
+		out := res.Text
+		took := time.Since(t0)
+		s.logAgentTiming(kind, took, len(static)+len(body), len(out), res.Usage)
+		recordUsage(runner, dir, kind, attempt, took, static, body, res, err)
 		if !errors.Is(err, agent.ErrOverloaded) || attempt == len(s.RetryWait) {
 			return out, err
 		}
@@ -429,11 +433,48 @@ func (s *Service) runAgentFor(runner *agent.Runner, kind, section, dir, prompt s
 	}
 }
 
-func (s *Service) logAgentTiming(kind string, d time.Duration, promptBytes, outputBytes int) {
+func (s *Service) logAgentTiming(kind string, d time.Duration, promptBytes, outputBytes int, u *agent.Usage) {
+	msg := fmt.Sprintf("%s agent %s prompt=%dB output=%dB", kind, d.Round(time.Millisecond), promptBytes, outputBytes)
+	if u != nil && u.Total() != nil {
+		msg += fmt.Sprintf(" tokens in=%d out=%d cache_write=%d cache_read=%d", *u.InputTokens, *u.OutputTokens, *u.CacheCreationTokens, *u.CacheReadTokens)
+	}
 	s.Store.Update(func(p *core.Project) error {
-		p.Log("system", fmt.Sprintf("%s agent %s prompt=%dB output=%dB", kind, d.Round(time.Millisecond), promptBytes, outputBytes))
+		p.Log("system", msg)
 		return nil
 	})
+}
+
+// recordUsage appends one run to the project's usage log. It never fails
+// the job: a run whose usage cannot be stored is only missing from the log.
+func recordUsage(runner *agent.Runner, dir, kind string, attempt int, took time.Duration, static, body string, res agent.Result, err error) {
+	if dir == "" {
+		return
+	}
+	r := usage.Record{RunID: usage.NewRunID(), Project: usage.ProjectID(dir), Operation: kind, Agent: runner.ID,
+		Time: time.Now().UTC(), WallMS: took.Milliseconds(), PromptBytes: len(static) + len(body), StaticBytes: len(static),
+		OutputBytes: len(res.Text), Status: usage.StatusOK, Retry: attempt, CLICalls: res.Calls, Telemetry: usage.Unavailable}
+	if v := runner.Version(context.Background()); v != "" {
+		r.CLIVersion = &v
+	}
+	switch {
+	case err == nil:
+	case errors.Is(err, agent.ErrOverloaded):
+		r.Status = usage.StatusOverloaded
+	case errors.Is(err, agent.ErrLimit):
+		r.Status = usage.StatusLimit
+	default:
+		r.Status = usage.StatusFailed
+	}
+	if u := res.Usage; u != nil {
+		r.Model, r.InputTokens, r.OutputTokens = u.Model, u.InputTokens, u.OutputTokens
+		r.CacheCreationTokens, r.CacheReadTokens, r.TotalReported = u.CacheCreationTokens, u.CacheReadTokens, u.Total()
+		r.CacheWrite1h, r.CacheWrite5m = u.CacheWrite1h, u.CacheWrite5m
+		r.NumTurns, r.DurationMS, r.ServiceTier = u.NumTurns, u.DurationMS, u.ServiceTier
+		if r.InputTokens != nil || r.OutputTokens != nil {
+			r.Telemetry = usage.Reported
+		}
+	}
+	_ = usage.Append(dir, r)
 }
 
 // runWorkflow runs a workflow job in rounds. A long answer can be cut at the

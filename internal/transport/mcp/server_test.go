@@ -273,3 +273,108 @@ func TestSelectiveReads(t *testing.T) {
 		t.Fatalf("default keeps both: %.200s", txt)
 	}
 }
+
+// Tool answers are compact JSON that keeps Markdown and HTML characters as
+// they are, and stays valid JSON that decodes to the same value.
+func TestCompactJSON(t *testing.T) {
+	in := map[string]any{"body": "a <b> & \"c\"\n ", "n": 1}
+	got := compactJSON(in)
+	if !json.Valid([]byte(got)) || !strings.Contains(got, "a <b> &") || strings.HasSuffix(got, "\n") {
+		t.Fatalf("compactJSON = %q", got)
+	}
+	var back map[string]any
+	if err := json.Unmarshal([]byte(got), &back); err != nil || back["body"] != in["body"] {
+		t.Fatalf("round trip = %v %v", back, err)
+	}
+}
+
+func TestSelectArtifacts(t *testing.T) {
+	p := &core.Project{}
+	docs := []core.Artifact{{ID: "a", Title: "A", Body: "isi-a"}, {ID: "b", Title: "B", Body: "isi-b"}}
+	got, err := selectArtifacts(p, docs, []string{"b"}, false)
+	b, _ := json.Marshal(got)
+	if err != nil || !strings.Contains(string(b), "isi-b") || strings.Contains(string(b), "isi-a") || !strings.Contains(string(b), `"binding_decisions"`) {
+		t.Fatalf("ids = %s %v", b, err)
+	}
+	got, _ = selectArtifacts(p, docs, []string{"a"}, true)
+	b, _ = json.Marshal(got)
+	if strings.Contains(string(b), "isi-a") || !strings.Contains(string(b), `"title":"A"`) || strings.Contains(string(b), `"title":"B"`) {
+		t.Fatalf("ids+outline = %s", b)
+	}
+}
+
+func TestCommandBriefFormat(t *testing.T) {
+	t.Setenv("FOUNDRY_HOME", t.TempDir())
+	st, _ := core.NewStore(t.TempDir())
+	st.Init("Klinik")
+	st.Update(func(p *core.Project) error {
+		p.Workflow = &core.Workflow{Version: 1, Commands: []core.Command{
+			{ID: "CMD-001", Name: "Skema", Objective: "o", Instructions: "buat skema", Acceptance: []string{"ok"}},
+			{ID: "CMD-002", Name: "API", Objective: "o", Instructions: "buat API", DependsOn: []string{"CMD-001"}, Review: "cek ulang"},
+		}}
+		return nil
+	})
+	perms, _ := ParseAllow("READ,WRITE")
+	s := &Server{Svc: pipeline.New(st, hostAI{}), Allow: perms, Version: "test"}
+	lines := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_command","arguments":{"id":"CMD-002"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_command","arguments":{"id":"CMD-002","format":"both"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_command","arguments":{"id":"CMD-002","format":"json"}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_command","arguments":{"id":"CMD-002","format":"markdown"}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_command","arguments":{"id":"CMD-002","format":"yaml"}}}`,
+		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"next_command","arguments":{"session":"s1","claim":true,"format":"yaml"}}}`,
+		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"next_command","arguments":{"session":"s1","claim":true,"format":"json"}}}`,
+		`{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"next_command","arguments":{"session":"s2","format":"markdown"}}}`,
+		`{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"get_command","arguments":{"id":"CMD-404","format":"json"}}}`,
+	}
+	var out strings.Builder
+	if err := s.Serve(strings.NewReader(strings.Join(lines, "\n")), &out); err != nil {
+		t.Fatal(err)
+	}
+	var res []map[string]any
+	sc := bufio.NewScanner(strings.NewReader(out.String()))
+	sc.Buffer(nil, 1<<20)
+	for sc.Scan() {
+		var m map[string]any
+		json.Unmarshal(sc.Bytes(), &m)
+		res = append(res, m)
+	}
+	def, _ := text(res[0])
+	both, _ := text(res[1])
+	if def != both || !strings.Contains(def, `"markdown":"# CMD-002`) || !strings.Contains(def, `"instructions":"buat API"`) {
+		t.Fatalf("default must stay both: %s", def)
+	}
+	// json: decodes into the old type, Markdown copy gone, dependencies kept.
+	js, isErr := text(res[2])
+	var brief pipeline.CommandBrief
+	if err := json.Unmarshal([]byte(js), &brief); isErr || err != nil || brief.Command.Instructions != "buat API" || brief.Markdown != "" ||
+		strings.Contains(js, `"markdown"`) || len(brief.Dependencies) != 1 || brief.Dependencies[0].ID != "CMD-001" || brief.WorkflowVersion != 1 {
+		t.Fatalf("json: %s %v", js, err)
+	}
+	md, isErr := text(res[3])
+	if isErr || !strings.Contains(md, "buat API") || strings.Contains(md, `"instructions"`) || !strings.Contains(md, `"command":{"id":"CMD-002","review":"cek ulang"}`) ||
+		!strings.Contains(md, `"dependencies":[{"id":"CMD-001"`) {
+		t.Fatalf("markdown: %s", md)
+	}
+	if len(js) >= len(def) || len(md) >= len(def) {
+		t.Fatalf("one copy is not smaller: both=%d json=%d markdown=%d", len(def), len(js), len(md))
+	}
+	if txt, isErr := text(res[4]); !isErr || !strings.Contains(txt, "yaml") {
+		t.Fatalf("bad format: %s", txt)
+	}
+	if _, isErr := text(res[5]); !isErr {
+		t.Fatal("bad format accepted by next_command")
+	}
+	// The refused call took nothing: the next claim still gets CMD-001.
+	claim, isErr := text(res[6])
+	if isErr || !strings.Contains(claim, `"command":"CMD-001"`) || !strings.Contains(claim, `"instructions":"buat skema"`) || strings.Contains(claim, `"markdown"`) {
+		t.Fatalf("claim json: %s", claim)
+	}
+	// Nothing to hand out: the answer passes unchanged.
+	if txt, isErr := text(res[7]); isErr || strings.Contains(txt, `"brief"`) {
+		t.Fatalf("no brief: %s", txt)
+	}
+	if _, isErr := text(res[8]); !isErr {
+		t.Fatal("unknown command")
+	}
+}

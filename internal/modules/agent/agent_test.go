@@ -192,3 +192,34 @@ func TestRunDropsLeanOnUnknownFlag(t *testing.T) {
 		t.Fatalf("lean flag not passed: %q", out)
 	}
 }
+
+// Only the CLI refusing a lean flag drops lean mode; an auth, network or API
+// failure, or an unknown option that is not a lean flag, runs once.
+func TestRunKeepsLeanOnOtherFailures(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh tidak ada")
+	}
+	for _, stderr := range []string{
+		"Invalid API key · Please run /login",
+		"API Error: getaddrinfo ENOTFOUND api.anthropic.com",
+		"error: unknown option '--bogus'",
+		"API Error: 500 Internal server error",
+	} {
+		count := filepath.Join(t.TempDir(), "count")
+		script := `cat >/dev/null; echo x >> "$COUNT"; echo "$MSG" >&2; exit 1`
+		r := &Runner{argv: []string{"sh", "-c", script, "sh"}, lean: []string{"--tools=", "--strict-mcp-config"}, noLean: new(atomic.Bool), Timeout: time.Minute}
+		t.Setenv("COUNT", count)
+		t.Setenv("MSG", stderr)
+		if _, err := r.Run(context.Background(), t.TempDir(), "hi"); err == nil {
+			t.Fatalf("%q: want an error", stderr)
+		}
+		runs, _ := os.ReadFile(count)
+		if r.noLean.Load() || len(runs) != 2 {
+			t.Fatalf("%q: noLean=%v runs=%q, want lean kept and one run", stderr, r.noLean.Load(), runs)
+		}
+	}
+	if !rejectsLean("error: unknown option '--tools='", []string{"--tools=", "--settings"}) ||
+		!rejectsLean("error: unknown option '--strict-mcp-config'", []string{"--strict-mcp-config"}) {
+		t.Fatal("a refused lean flag must be recognised")
+	}
+}

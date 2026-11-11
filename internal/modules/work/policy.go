@@ -1,5 +1,7 @@
 package work
 
+import "strings"
+
 // ExecutionPolicy is prepended to every prompt Foundry sends to an AI, both
 // to the agent it runs itself and to an MCP host that pulls work.
 const ExecutionPolicy = `# FOUNDRY AUTONOMOUS EFFICIENCY POLICY
@@ -37,11 +39,35 @@ Kebijakan ini tidak mengubah tugas maupun format jawaban yang diminta di bawah.
 
 `
 
+// CacheBreak marks where a prompt stops being the same from run to run:
+// before it are the rules, briefs and blueprint a job reads every round, after
+// it the commands, request and state that change. A runner that can keep the
+// part before it in the provider's prompt cache sends it as system prompt; the
+// marker never reaches a model (see SplitPrompt and JoinPrompt).
+const CacheBreak = "\x1eFOUNDRY_CACHE_BREAK\x1e"
+
 // WithPolicy prepends ExecutionPolicy to prompt. An empty prompt stays empty
-// so callers can still tell "no work" apart.
+// so callers can still tell "no work" apart. A prompt without its own
+// CacheBreak gets one after the policy, the part every run shares.
 func WithPolicy(prompt string) string {
 	if prompt == "" {
 		return ""
 	}
+	if !strings.Contains(prompt, CacheBreak) {
+		return ExecutionPolicy + CacheBreak + prompt
+	}
 	return ExecutionPolicy + prompt
 }
+
+// SplitPrompt cuts prompt at its first CacheBreak into the static part and
+// the rest; other markers are dropped. Without a marker static is "".
+func SplitPrompt(prompt string) (static, body string) {
+	static, body, ok := strings.Cut(prompt, CacheBreak)
+	if !ok {
+		return "", prompt
+	}
+	return static, strings.ReplaceAll(body, CacheBreak, "")
+}
+
+// JoinPrompt is prompt as one text, for a reader that takes no split.
+func JoinPrompt(prompt string) string { return strings.ReplaceAll(prompt, CacheBreak, "") }

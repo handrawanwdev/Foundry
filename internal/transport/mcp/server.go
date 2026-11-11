@@ -123,7 +123,7 @@ func (s *Server) handle(req request) (any, *rpcError) {
 			"serverInfo":      map[string]any{"name": "foundry", "version": s.Version},
 			"instructions": "Foundry is the orchestrator and source of truth. Loop: call next_work, do exactly what its prompt says, " +
 				"then hand the result back with the tool named in `submit`. Never mark work done yourself; Foundry validates what you submit. " +
-				"To implement a finalized blueprint, take one command at a time with next_command (it carries the instructions and what its dependencies left) and read only the artifacts it references with get_blueprint ids; call get_workflow or the whole get_blueprint only when you need the full picture. Screens follow the design-rules and layout-spec artifacts. " +
+				"To implement a finalized blueprint, take one command at a time with next_command and format json (it carries the instructions and what its dependencies left; format json leaves out the Markdown copy of the same command) and read only the artifacts it references with get_blueprint ids; call get_workflow or the whole get_blueprint only when you need the full picture. Screens follow the design-rules and layout-spec artifacts. " +
 				"Report every command with report_progress when you start, finish, fail, get blocked, skip (with a reason), or hand work for review. " +
 				"A command is not done until Foundry verifies evidence against its acceptance criteria. Call get_progress for the next eligible commands; do not start a command before its dependencies are verified. Do not assume Foundry ran the work. " +
 				"After implementing screens, submit measured browser snapshots with record_visual_review; without snapshots and screenshots the UI is untested, and a build or unit test is not visual proof. Call create_visual_fixes to turn findings into a workflow command.",
@@ -233,9 +233,9 @@ var tools = []tool{
 	}, "page", "snapshots")},
 	{Name: "create_visual_fixes", perm: PermWrite, Description: "Turn the open visual findings into one concrete correction command in the existing workflow and reopen a finalized project for that revision. Use after get_visual_review shows findings; then implement the command wave and resubmit snapshots.", InputSchema: obj(nil)},
 	{Name: "next_command", perm: PermWrite, Description: "Get the command to work on next: instructions, dependencies and what they left, affected files, acceptance criteria. Commands with unmet dependencies are never handed out. With claim true the command is marked started for your session, so another agent does not get it; the session gets back the command it already holds. Failed, blocked and review commands are listed under attention and only move on by name.",
-		InputSchema: obj(map[string]any{"session": str, "claim": map[string]any{"type": "boolean"}})},
+		InputSchema: obj(map[string]any{"session": str, "claim": map[string]any{"type": "boolean"}, "format": briefFormatSchema})},
 	{Name: "get_command", perm: PermRead, Description: "One command in full with its execution state, or with history true its reports, status changes and earlier revisions.",
-		InputSchema: obj(map[string]any{"id": str, "history": map[string]any{"type": "boolean"}}, "id")},
+		InputSchema: obj(map[string]any{"id": str, "history": map[string]any{"type": "boolean"}, "format": briefFormatSchema}, "id")},
 	{Name: "report_progress", perm: PermWrite, Description: "Report execution progress for one command, by its id. Send started when you begin, progress while working (summary, percent, files), then done, failed, blocked, skipped (reason required) or review. Include a stable id for retries and your session. Done without required evidence is stored as review, not verified. Duplicate ids are idempotent. A warning in the answer means the report was stored but something is off, such as a revised command.",
 		InputSchema: obj(map[string]any{
 			"id":               str,
@@ -341,15 +341,32 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 	case "get_progress":
 		return s.Svc.ProgressOf(p), nil
 	case "next_command":
-		if args.Claim {
-			return s.Svc.ClaimCommand("", args.Session, s.source())
+		if err := checkBriefFormat(args.Format); err != nil {
+			return nil, err // before a claim, so a typo never takes a command
 		}
-		return s.Svc.NextCommand(args.Session)
+		var out any
+		var err error
+		if args.Claim {
+			out, err = s.Svc.ClaimCommand("", args.Session, s.source())
+		} else {
+			out, err = s.Svc.NextCommand(args.Session)
+		}
+		if err != nil {
+			return nil, err
+		}
+		return shapeBrief(out, args.Format)
 	case "get_command":
+		if err := checkBriefFormat(args.Format); err != nil {
+			return nil, err
+		}
 		if args.History {
 			return s.Svc.CommandDetail(args.ID)
 		}
-		return s.Svc.Command(args.ID)
+		out, err := s.Svc.Command(args.ID)
+		if err != nil {
+			return nil, err
+		}
+		return shapeBrief(out, args.Format)
 	case "get_visual_review":
 		summary, audit, err := s.Svc.VisualReport()
 		if err != nil {
@@ -423,6 +440,56 @@ func selectArtifacts(p *core.Project, docs []core.Artifact, ids []string, outlin
 		out = append(out, d)
 	}
 	return map[string]any{"artifacts": out, "binding_decisions": p.BindingDecisions()}, nil
+}
+
+var briefFormatSchema = map[string]any{"type": "string", "enum": []string{"json", "markdown", "both"},
+	"description": "json: the structured command only; markdown: the command as Markdown only; both (default): both copies."}
+
+func checkBriefFormat(f string) error {
+	switch f {
+	case "", "both", "json", "markdown":
+		return nil
+	}
+	return fmt.Errorf("format %q tidak dikenal: json, markdown atau both", f)
+}
+
+// shapeBrief keeps one copy of the command in a brief (a get_command answer,
+// or the brief inside a next_command answer); the brief carries it twice,
+// as structure and as Markdown. json drops the Markdown; markdown drops the
+// structure but keeps the command id and review reason. Progress,
+// dependency results, binding decisions and the rest stay as they are.
+func shapeBrief(v any, format string) (any, error) {
+	if format == "" || format == "both" {
+		return v, nil
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.UseNumber()
+	if err := d.Decode(&m); err != nil {
+		return nil, err
+	}
+	brief := m
+	if b, ok := m["brief"].(map[string]any); ok {
+		brief = b
+	}
+	cmd, ok := brief["command"].(map[string]any)
+	if !ok {
+		return m, nil // nothing handed out, no brief
+	}
+	if format == "json" {
+		delete(brief, "markdown")
+		return m, nil
+	}
+	ref := map[string]any{"id": cmd["id"]}
+	if r, ok := cmd["review"]; ok {
+		ref["review"] = r
+	}
+	brief["command"] = ref
+	return m, nil
 }
 
 // source names the connected host for reports that do not name themselves.

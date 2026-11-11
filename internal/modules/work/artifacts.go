@@ -58,6 +58,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	writeStackBrief(&b, p)
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies; keep every artifact consistent with it)")
 	writeRepoBrief(&b, p)
+	b.WriteString(CacheBreak) // the blueprint below changes from area to area
 	cut := promptBody
 	if len(p.DecisionSync) > 0 {
 		cut = 0 // the AI must see the full text to find what still contradicts the decisions

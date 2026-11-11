@@ -38,6 +38,9 @@ const usage = `Foundry — dari prompt ke rancangan aplikasi dan spesifikasi fin
   foundry version
       Cetak versi Foundry
 
+  foundry usage [--by operation|run|project|model|day] [--json] [folder-project...]
+      Pemakaian token tiap run agent seperti dilaporkan CLI (.foundry/usage.jsonl)
+
   foundry command <next|show|start|progress|done|fail|block|review|skip|status|ingest> [flag]
       Untuk coding agent: ambil command, baca instruksi, dan laporkan progres.
       Jalankan "foundry command help" untuk rinciannya.
@@ -61,6 +64,8 @@ func main() {
 		os.Exit(runCommand(os.Args[2:], os.Stdout, os.Stderr))
 	case "visual-verify":
 		visualVerify(os.Args[2:])
+	case "usage":
+		os.Exit(runUsage(os.Args[2:], os.Stdout, os.Stderr))
 	case "version":
 		fmt.Println(version)
 	default:
