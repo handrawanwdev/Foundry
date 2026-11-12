@@ -83,7 +83,7 @@ const commandRules = `Command rules:
 - when the blueprint has design-rules and layout-spec, every command that builds or changes screens lists both, and its instructions name the page and shell ids of layout-spec it implements; the design reaches the code only through these commands. Every page id of layout-spec must be named by at least one command that lists layout-spec.
 - an API, migration or backend command that does not build screens does not list the design artifacts; only commands that name page ids do.
 - covers lists the requirement ids (REQ-...) the command implements; every MUST requirement is covered by at least one command. The command's acceptance_criteria include the criterion ids (REQ-001-AC1) of the acceptance artifact it must prove, and add only command-specific checks.
-- feature_ids lists the feature ids (FEAT-...) this command implements; sub_feature_ids lists the specific subfeature ids (FEAT-001.1). Link every command to the feature it serves. A command that serves a whole feature may leave sub_feature_ids empty. Do not invent ids.
+- feature_ids lists the feature ids (FEAT-...) this command implements; sub_feature_ids lists the specific subfeature ids (FEAT-001.1). Link every command to the feature it serves. Every subfeature id belongs to a feature listed in the same command's feature_ids (FEAT-001.1 needs FEAT-001). A command that serves a whole feature may leave sub_feature_ids empty. Do not invent ids.
 - when the blueprint has threat-model, data-lifecycle, integrations, operations or migration artifacts, the commands that build the affected parts list them too, so their rules reach the code.
 - instructions are specific Markdown: what to build or change, behavior, edge cases, which artifact sections to follow. Never generic ("implement this well"). Understandable without this conversation.
 - never invent file paths, endpoints or tables of an existing codebase. When the repository structure is unknown the instruction starts with inspecting the repository.
@@ -109,7 +109,11 @@ func writeFeatureCatalog(b *strings.Builder, p *core.Project) {
 	}
 	b.WriteString("FEATURES (link commands with feature_ids and sub_feature_ids):\n")
 	for _, f := range p.Features {
-		fmt.Fprintf(b, "- %s %s\n", f.ID, f.Name)
+		fmt.Fprintf(b, "- %s %s", f.ID, f.Name)
+		if len(f.RequirementIDs) > 0 {
+			fmt.Fprintf(b, " (requirements %s)", strings.Join(f.RequirementIDs, ", "))
+		}
+		b.WriteString("\n")
 		for _, s := range f.SubFeatures {
 			fmt.Fprintf(b, "  - %s %s\n", s.ID, s.Name)
 		}
@@ -173,6 +177,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
 	writeRepoBrief(&b, p)
 	writeFeatureCatalog(&b, p)
+	writeRequirementRegistry(&b, p)
 
 	// A small blueprint is read whole (long artifacts cut); a large one by
 	// summaries only, so the outline stays within the context limit.
@@ -193,6 +198,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 
 	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Rejected != "" {
 		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + w.Request.Rejected + "\n\n")
+		writeCoverageRepair(&b, p, uncoveredRequirements(p, w.Request.Rejected))
 	}
 
 	b.WriteString(`SKETCH PHASE - Generate command skeleton only:
@@ -204,7 +210,8 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 - No cycles, no self dependency
 - artifacts lists the blueprint artifact IDs the command implements (from the list above)
 - covers lists the requirement IDs (REQ-...) the command implements; every MUST requirement must be covered
-- feature_ids lists the feature IDs (FEAT-...) the command implements; sub_feature_ids lists the specific subfeature IDs
+- before replying, check the REQUIREMENTS registry: every MUST id appears in the covers of a command that builds what its acceptance criteria check. A cross-cutting MUST (security, durability, recovery, observability) gets the command that implements it, not a mention
+- feature_ids lists the feature IDs (FEAT-...) the command implements; sub_feature_ids lists the specific subfeature IDs. Every subfeature belongs to a feature in the same command's feature_ids (FEAT-007.1 needs FEAT-007)
 
 ` + commandRules)
 	if HasUI(p) {
@@ -823,7 +830,7 @@ func applyWorkflowSketchFromParsed(p *core.Project, out workflowOut, docs []core
 		return err
 	}
 	if _, uncovered := workflow.Covers(cmds, p.Requirements); len(uncovered) > 0 {
-		return fmt.Errorf("workflow tidak valid: requirement MUST belum dicakup command mana pun (covers): %s", strings.Join(uncovered, ", "))
+		return fmt.Errorf("workflow tidak valid: %s%s", uncoveredMust, strings.Join(uncovered, ", "))
 	}
 	if p.Workflow == nil {
 		p.Workflow = &core.Workflow{}
