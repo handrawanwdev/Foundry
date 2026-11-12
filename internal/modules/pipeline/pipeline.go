@@ -407,11 +407,20 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 // answers the same prompt once it has room, so the job waits instead of
 // failing. Any other error returns at once.
 func (s *Service) runAgent(runner *agent.Runner, kind, dir, prompt string) (string, error) {
-	return s.runAgentFor(runner, kind, "", dir, prompt)
+	return s.runAgentFor(runner, kind, runTag{}, dir, prompt)
 }
 
-// runAgentFor is runAgent for a named section; "" means the job's section.
-func (s *Service) runAgentFor(runner *agent.Runner, kind, section, dir, prompt string) (string, error) {
+// runTag says which part of a job a run is, for its progress and usage
+// record: section is the job's section ("" the whole job), phase the step
+// of a multi-round job, requestRetry the automatic retries of its request.
+type runTag struct {
+	section, phase string
+	requestRetry   int
+}
+
+// runAgentFor is runAgent for a tagged part of the job.
+func (s *Service) runAgentFor(runner *agent.Runner, kind string, tag runTag, dir, prompt string) (string, error) {
+	section := tag.section
 	static, body := work.SplitPrompt(work.WithPolicy(prompt))
 	for attempt := 0; ; attempt++ {
 		t0 := time.Now()
@@ -419,7 +428,7 @@ func (s *Service) runAgentFor(runner *agent.Runner, kind, section, dir, prompt s
 		out := res.Text
 		took := time.Since(t0)
 		s.logAgentTiming(kind, took, len(static)+len(body), len(out), res.Usage)
-		recordUsage(runner, dir, kind, attempt, took, static, body, res, err)
+		recordUsage(runner, dir, kind, tag, attempt, took, static, body, res, err)
 		if !errors.Is(err, agent.ErrOverloaded) || attempt == len(s.RetryWait) {
 			return out, err
 		}
@@ -451,12 +460,14 @@ func (s *Service) logAgentTiming(kind string, d time.Duration, promptBytes, outp
 
 // recordUsage appends one run to the project's usage log. It never fails
 // the job: a run whose usage cannot be stored is only missing from the log.
-func recordUsage(runner *agent.Runner, dir, kind string, attempt int, took time.Duration, static, body string, res agent.Result, err error) {
+func recordUsage(runner *agent.Runner, dir, kind string, tag runTag, attempt int, took time.Duration, static, body string, res agent.Result, err error) {
 	if dir == "" {
 		return
 	}
+	size := len(static) + len(body)
 	r := usage.Record{RunID: usage.NewRunID(), Project: usage.ProjectID(dir), Operation: kind, Agent: runner.ID,
-		Time: time.Now().UTC(), WallMS: took.Milliseconds(), PromptBytes: len(static) + len(body), StaticBytes: len(static),
+		Time: time.Now().UTC(), WallMS: took.Milliseconds(), PromptBytes: size, StaticBytes: len(static),
+		DynamicBytes: len(body), EstInputTokens: usage.EstimateTokens(size), Phase: tag.phase, RequestRetry: tag.requestRetry,
 		OutputBytes: len(res.Text), Status: usage.StatusOK, Retry: attempt, CLICalls: res.Calls, Telemetry: usage.Unavailable}
 	if v := runner.Version(context.Background()); v != "" {
 		r.CLIVersion = &v
@@ -494,7 +505,11 @@ func (s *Service) runWorkflow(runner *agent.Runner) {
 		s.failJob(kind, err)
 		return
 	}
-	out, err := s.runAgent(runner, kind, p.Dir, s.promptFor(p, kind))
+	tag := runTag{phase: work.WorkflowPhase(p)}
+	if p.Workflow != nil && p.Workflow.Request != nil {
+		tag.requestRetry = p.Workflow.Request.Retries
+	}
+	out, err := s.runAgentFor(runner, kind, tag, p.Dir, s.promptFor(p, kind))
 	if err != nil {
 		s.failJob(kind, err)
 		return

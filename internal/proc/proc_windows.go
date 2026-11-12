@@ -28,3 +28,6 @@ func group(cmd *exec.Cmd) {
 // killRest does nothing on Windows: once cmd exited its tree can no longer
 // be found by pid, and guessing would risk killing unrelated processes.
 func killRest(cmd *exec.Cmd) {}
+
+// alive cannot tell a dead pid here without more access; see Alive.
+func alive(pid int) bool { return true }

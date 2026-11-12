@@ -120,7 +120,7 @@ func (s *Service) runArea(runner *agent.Runner, dir string, a waveArea) error {
 			return err
 		}
 		t0 := time.Now().UTC()
-		out, err := s.runAgentFor(runner, kind, a.id, dir, prompt)
+		out, err := s.runAgentFor(runner, kind, runTag{section: a.id}, dir, prompt)
 		if err != nil {
 			s.failArea(a.id, err)
 			return fmt.Errorf("%s: %w", a.id, err)

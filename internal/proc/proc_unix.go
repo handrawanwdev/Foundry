@@ -38,3 +38,9 @@ func killRest(cmd *exec.Cmd) {
 		kill(cmd)
 	}
 }
+
+// alive probes pid with signal 0: EPERM means it exists under another user.
+func alive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}

@@ -49,13 +49,14 @@ func runUsage(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(tw, *by+"\truns\treported\tfailed\tretries\tinput\toutput\tcache_write\tcache_read\ttotal_reported\tcache_read_ratio\tprompt_bytes\t")
+	fmt.Fprintln(tw, *by+"\truns\treported\tfailed\tretries\tinput\toutput\tcache_write\tcache_read\ttotal_reported\tcache_read_ratio\tprompt_bytes\tavg_prompt_bytes\tstatic_bytes\tdynamic_bytes\test_tokens\t")
 	for _, s := range sums {
-		fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.2f\t%d\t\n", s.Key, s.Runs, s.Reported, s.Failed, s.Retries,
-			s.InputTokens, s.OutputTokens, s.CacheCreationTokens, s.CacheReadTokens, s.TotalReported, s.CacheReadRatio, s.PromptBytes)
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.2f\t%d\t%d\t%d\t%d\t%d\t\n", s.Key, s.Runs, s.Reported, s.Failed, s.Retries,
+			s.InputTokens, s.OutputTokens, s.CacheCreationTokens, s.CacheReadTokens, s.TotalReported, s.CacheReadRatio, s.PromptBytes,
+			s.AvgPromptBytes, s.StaticBytes, s.DynamicBytes, s.EstInputTokens)
 	}
 	tw.Flush()
-	fmt.Fprintf(stdout, "\nToken = yang dilaporkan CLI; run tanpa laporan (reported < runs) tidak dihitung. prompt_bytes = ukuran terukur, bukan token.\n")
+	fmt.Fprintf(stdout, "\nToken = yang dilaporkan CLI; run tanpa laporan (reported < runs) tidak dihitung. prompt_bytes = ukuran terukur, bukan token; est_tokens = perkiraan Foundry (4 byte/token), bukan laporan CLI.\n")
 	if bad > 0 {
 		fmt.Fprintf(stdout, "%d baris log tidak terbaca dilewati.\n", bad)
 	}

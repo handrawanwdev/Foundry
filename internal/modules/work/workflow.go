@@ -142,6 +142,15 @@ func WorkflowPrompt(p *core.Project, docs []core.Artifact) string {
 // outline prompt carries the artifact bodies; above it, summaries only.
 const workflowSketchFullBody = 50_000
 
+// WorkflowPhase names the round the next workflow prompt asks for: sketch,
+// detail or revision.
+func WorkflowPhase(p *core.Project) string {
+	if m := detectWorkflowPromptMode(p); m != "" {
+		return m
+	}
+	return "revision"
+}
+
 // detectWorkflowPromptMode decides which prompt style to use: "sketch" for
 // a new workflow, "detail" while commands still lack instructions, and ""
 // for a revision of a complete workflow.
@@ -222,84 +231,6 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	return b.String()
 }
 
-// workflowDetailBatchPrompt generates a prompt for filling in details for a batch of commands
-func workflowDetailBatchPrompt(p *core.Project, docs []core.Artifact) string {
-	var b strings.Builder
-	b.WriteString(`You are the workflow planner of Foundry. Foundry designs software and writes instructions for an EXTERNAL coding agent (Claude Code, Codex, OpenCode, Qwen Code, ...). Foundry never runs them. Do not write application code. Do not modify files.
-Write every human-readable text in the same language as the story.
-
-PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
-
-	writeBinding(&b, p)
-	writeStackBrief(&b, p)
-	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
-	writeRepoBrief(&b, p)
-	writeFeatureCatalog(&b, p)
-	w := p.Workflow
-
-	// Commands are filled strictly one per round, in sequence.
-	var batch []core.Command
-	if c := nextFillCommand(w.Commands); c != nil {
-		batch = []core.Command{*c}
-	}
-
-	b.WriteString(CacheBreak) // the rest changes with every round
-	b.WriteString("CURRENT COMMANDS (skeleton):\n" + mustJSON(skeletonCommands(w.Commands, batch)) + "\n\n")
-
-	b.WriteString(fmt.Sprintf("DETAIL PHASE - Fill in details for these %d commands:\n", len(batch)))
-	for _, cmd := range batch {
-		b.WriteString(fmt.Sprintf("- %s: %s\n", cmd.ID, cmd.Name))
-	}
-	b.WriteString("\n")
-
-	// Include full artifact bodies only for artifacts referenced by this batch
-	neededArtifacts := make(map[string]bool)
-	for _, cmd := range batch {
-		for _, art := range cmd.Artifacts {
-			neededArtifacts[art.ID] = true
-		}
-	}
-
-	b.WriteString("BLUEPRINT ARTIFACTS (full details for this batch only):\n")
-	for _, d := range docs {
-		if neededArtifacts[d.ID] {
-			// Include full body for needed artifacts
-			fmt.Fprintf(&b, "=== %s (%s, %s%s) %s\n%s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary, d.Body)
-		} else {
-			// Include summary only for others
-			fmt.Fprintf(&b, "=== %s (%s, %s%s) %s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary)
-		}
-	}
-	b.WriteString("\n")
-	if !neededArtifacts[core.ArtifactAcceptance] {
-		writeBatchCriteria(&b, p, batch)
-	}
-	b.WriteString(precedenceRules)
-
-	b.WriteString(`For each command in the batch, provide:
-- context: background and why this command exists
-- instructions: specific Markdown instructions (what to build/change, behavior, edge cases, which artifact sections to follow). Never generic. Understandable without this conversation.
-- inputs: what the command needs (from dependencies)
-- expected_outputs: what the agent hands back (code, migration, test, document, report)
-- acceptance_criteria: checkable conditions (include criterion IDs like REQ-001-AC1)
-- constraints: limits that apply (technology, compatibility, performance, security)
-- files: files, folders or modules the command touches, only from the project structure; empty when unknown
-- feature_ids / sub_feature_ids: keep or complete the links from the skeleton; use only existing ids
-
-` + commandRules)
-	if HasUI(p) {
-		b.WriteString(VisualVerificationRules)
-	}
-	// The example carries the id this round asks for: an example id ("C1",
-	// the outline's) is copied back and the round is refused.
-	id := "CMD-001"
-	if len(batch) > 0 {
-		id = batch[0].ID
-	}
-	fmt.Fprintf(&b, "\nReply with ONLY one JSON object in a ```json block; \"id\" is exactly %s:\n{\"commands\": [{\"id\": %q, \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"], \"files\": [\"\"]}]}", id, id)
-	return b.String()
-}
-
 // nextFillCommand is the command the next detail round writes: the first
 // unfilled command, in workflow order, whose dependencies are all filled, so
 // every command is written after the commands it builds on. Without such a
@@ -332,34 +263,6 @@ func nextFillCommand(cmds []core.Command) *core.Command {
 		}
 	}
 	return first
-}
-
-// writeBatchCriteria lists the criteria of the requirements a detail batch
-// covers, for a batch that does not read the acceptance artifact. It is told
-// to cite criterion ids; without the real ones it can only make them up.
-func writeBatchCriteria(b *strings.Builder, p *core.Project, batch []core.Command) {
-	covered := map[string]bool{}
-	for _, c := range batch {
-		for _, id := range c.Covers {
-			covered[id] = true
-		}
-	}
-	wrote := false
-	for _, r := range p.Requirements {
-		if !covered[r.ID] {
-			continue
-		}
-		for _, c := range r.Acceptance {
-			if !wrote {
-				b.WriteString("ACCEPTANCE CRITERIA of the requirements this batch covers (cite these ids exactly; an id not listed here does not exist):\n")
-				wrote = true
-			}
-			fmt.Fprintf(b, "- %s (%s): %s\n", c.ID, c.Kind, c.Text)
-		}
-	}
-	if wrote {
-		b.WriteString("\n")
-	}
 }
 
 // skeletonCommands is the workflow a detail batch reads: what each command

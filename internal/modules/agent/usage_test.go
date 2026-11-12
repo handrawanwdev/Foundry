@@ -4,8 +4,6 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -84,6 +82,7 @@ func TestExecSplitsPrompt(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh tidak ada")
 	}
+	isolateTemp(t)
 	script := `in=$(cat); f=""; prev=""; for a in "$@"; do [ "$prev" = --sys ] && f="$a"; prev="$a"; done; if [ -n "$f" ]; then printf 'SYS[%s]' "$(cat "$f")"; fi; printf 'IN[%s]' "$in"`
 	mk := func(sys string) *Runner {
 		return &Runner{argv: []string{"sh", "-c", script, "sh"}, lean: []string{"--lean"}, noLean: new(atomic.Bool), systemFile: sys, Timeout: time.Minute}
@@ -106,12 +105,9 @@ func TestExecSplitsPrompt(t *testing.T) {
 	if res, _ := mk("--sys").Exec(context.Background(), t.TempDir(), Prompt{Static: "rules", Body: "\n"}); res.Text != "IN[rules]" {
 		t.Fatalf("empty body: %q", res.Text) // $(cat) drops the trailing newline
 	}
-	// The temp file is gone after the run.
-	left, _ := filepath.Glob(filepath.Join(os.TempDir(), "foundry-system-*.txt"))
-	for _, f := range left {
-		if b, _ := os.ReadFile(f); strings.Contains(string(b), "rules") {
-			t.Fatalf("system prompt file left behind: %s", f)
-		}
+	// The run folder is gone after the run.
+	if left := runDirs(t); len(left) > 0 {
+		t.Fatalf("run folders left behind: %v", left)
 	}
 }
 

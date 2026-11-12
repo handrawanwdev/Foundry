@@ -17,6 +17,7 @@ import (
 
 	web "github.com/handrawanwdev/foundry/apps/web"
 	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/agent"
 	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
 	"github.com/handrawanwdev/foundry/internal/modules/progress"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
@@ -89,10 +90,12 @@ func serve(args []string) {
 		}
 	}
 	hs := &http.Server{Addr: *addr, Handler: srv.Handler()}
+	agent.SweepTemp(time.Now(), agent.TempTTL)
 	onStop(func() {
 		if err := srv.Shutdown(shutdownTimeout); err != nil {
 			log.Printf("shutdown: %v", err)
 		}
+		agent.RemoveOwnTemp()
 		hs.Close()
 	})
 	log.Printf("Foundry: http://%s", *addr)
@@ -132,10 +135,12 @@ func runMCP(args []string) {
 	log.SetOutput(os.Stderr)
 	svc := pipeline.New(st, pipeline.ConfigAI{})
 	s := &mcp.Server{Svc: svc, Allow: perms, Version: version}
+	agent.SweepTemp(time.Now(), agent.TempTTL)
 	stop := func() {
 		if err := svc.Shutdown(shutdownTimeout); err != nil {
 			log.Printf("shutdown: %v", err)
 		}
+		agent.RemoveOwnTemp()
 	}
 	onStop(func() { stop(); os.Exit(1) })
 	err = s.Serve(os.Stdin, os.Stdout)

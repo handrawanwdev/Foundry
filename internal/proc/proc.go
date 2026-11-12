@@ -14,3 +14,7 @@ func Group(cmd *exec.Cmd) { group(cmd) }
 // processes it started. It only reaches cmd's own group, never a process
 // Foundry did not start. Call it after cmd.Run or cmd.Wait.
 func KillGroup(cmd *exec.Cmd) { killRest(cmd) }
+
+// Alive reports whether a process with this pid exists. Where that cannot be
+// told it answers true, so a caller never treats a live process as gone.
+func Alive(pid int) bool { return pid > 0 && alive(pid) }

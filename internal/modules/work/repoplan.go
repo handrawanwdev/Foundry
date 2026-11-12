@@ -126,9 +126,32 @@ func writeRepoPlan(b *strings.Builder, plan *core.RepoPlan, limit, text int) {
 		return s
 	}
 	fmt.Fprintf(b, "approach: %s\ntopology: %s\nsummary: %s\n", plan.Approach, plan.Topology, plan.Summary)
-	b.WriteString("nodes (path | owner | part | responsibility):\n")
 	start := b.Len()
+	if text <= 0 {
+		// Every path, grouped by owner; no responsibility.
+		b.WriteString("nodes by owner (owner: path [part], ...):\n")
+		var owners []string
+		paths := map[string][]string{}
+		for _, n := range plan.Nodes {
+			if _, ok := paths[n.Owner]; !ok {
+				owners = append(owners, n.Owner)
+			}
+			p := n.Path
+			if n.Part != "" {
+				p += " [" + n.Part + "]"
+			}
+			paths[n.Owner] = append(paths[n.Owner], p)
+		}
+		for _, o := range owners {
+			fmt.Fprintf(b, "- %s: %s\n", o, strings.Join(paths[o], ", "))
+		}
+	} else {
+		b.WriteString("nodes (path | owner | part | responsibility):\n")
+	}
 	for i, n := range plan.Nodes {
+		if text <= 0 {
+			break
+		}
 		fmt.Fprintf(b, "- %s | %s | %s | %s\n", n.Path, n.Owner, n.Part, cut(n.Responsibility))
 		if b.Len()-start > limit {
 			fmt.Fprintf(b, "…(dipotong, %d node lagi)\n", len(plan.Nodes)-i-1)
@@ -166,7 +189,11 @@ func writeRepoPlan(b *strings.Builder, plan *core.RepoPlan, limit, text int) {
 // writeRepoBrief is the approved repository plan as a source of truth for
 // other prompts (blueprint, workflow): where code goes and what may depend
 // on what.
-func writeRepoBrief(b *strings.Builder, p *core.Project) {
+func writeRepoBrief(b *strings.Builder, p *core.Project) { writeRepoBriefText(b, p, 90) }
+
+// writeRepoBriefText is writeRepoBrief with node responsibilities cut to
+// text runes; 0 leaves them out (paths, owners and rules stay).
+func writeRepoBriefText(b *strings.Builder, p *core.Project, text int) {
 	s := p.Structure
 	if s == nil || s.Mode == core.StructureExisting || s.Repo == nil {
 		return
@@ -180,7 +207,7 @@ func writeRepoBrief(b *strings.Builder, p *core.Project) {
 		status = "approved but stale; sources changed"
 	}
 	fmt.Fprintf(b, "REPOSITORY PLAN (%s; source of truth for exact folders, files, module locations and dependency rules; the coding agent must not invent another layout):\n", status)
-	writeRepoPlan(b, plan, 14000, 90)
+	writeRepoPlan(b, plan, 14000, text)
 	b.WriteString("\n")
 }
 

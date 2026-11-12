@@ -29,12 +29,15 @@ func TestDetailPromptListsCoveredCriteria(t *testing.T) {
 		t.Error("kriteria di luar batch ikut masuk")
 	}
 
-	// The acceptance artifact already gives the batch every criterion.
+	// The criteria stay listed when the command reads the acceptance
+	// artifact; its sections per requirement are not repeated, the rest
+	// (Definition of Done) is.
 	p.Workflow.Commands[1].Artifacts = []core.ArtifactRef{{ID: core.ArtifactAcceptance}}
-	docs := []core.Artifact{{ID: core.ArtifactAcceptance, Body: "isi-acceptance"}}
+	docs := []core.Artifact{{ID: core.ArtifactAcceptance, Body: "isi-acceptance\n## REQ-001 (MUST)\nsalinan-kriteria\n## REQ-002 (MUST)\nkriteria-lain\n## Definition of Done\nisi-dod\n"}}
 	prompt = WorkflowPrompt(p, docs)
-	if !strings.Contains(prompt, "isi-acceptance") || strings.Contains(prompt, "kriteria-tercakup") {
-		t.Errorf("kriteria digandakan:\n%s", prompt)
+	if !strings.Contains(prompt, "isi-acceptance") || !strings.Contains(prompt, "isi-dod") ||
+		strings.Count(prompt, "kriteria-tercakup") != 1 || strings.Contains(prompt, "salinan-kriteria") || strings.Contains(prompt, "kriteria-lain") {
+		t.Errorf("kriteria digandakan atau hilang:\n%s", prompt)
 	}
 }
 

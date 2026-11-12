@@ -69,13 +69,31 @@ type Record struct {
 	WallMS      int64 `json:"wall_ms"`
 	PromptBytes int   `json:"prompt_bytes"`
 	StaticBytes int   `json:"static_prompt_bytes"`
-	OutputBytes int   `json:"output_bytes"`
+	// DynamicBytes is the part of the prompt after the cache break: what
+	// changes from run to run (PromptBytes - StaticBytes).
+	DynamicBytes int `json:"dynamic_prompt_bytes"`
+	// EstInputTokens is Foundry's estimate of the prompt's tokens
+	// (EstimateTokens), for runs whose CLI reports none; never a reported
+	// count.
+	EstInputTokens int `json:"est_input_tokens"`
+	OutputBytes    int `json:"output_bytes"`
+	// Phase is the step of a multi-round operation (workflow: sketch,
+	// detail, revision); empty for single-round operations.
+	Phase string `json:"phase,omitempty"`
+	// RequestRetry counts the automatic retries of the request this run
+	// answers after a refused answer (0: first answer); Retry counts the
+	// reruns of the same prompt on a busy server.
+	RequestRetry int `json:"request_retry,omitempty"`
 
 	Status    string `json:"status"`
 	Retry     int    `json:"retry_count"` // 0 for the first attempt
 	CLICalls  int    `json:"cli_calls"`
 	Telemetry string `json:"telemetry"`
 }
+
+// EstimateTokens estimates the tokens of a prompt: about 4 bytes per token.
+// It is for comparing prompt sizes, never a reported count.
+func EstimateTokens(bytes int) int { return (bytes + 3) / 4 }
 
 // ProjectID names a project folder without revealing it.
 func ProjectID(dir string) string {
@@ -178,21 +196,33 @@ type Sum struct {
 	CacheReadTokens     int64  `json:"cache_read_input_tokens"`
 	TotalReported       int64  `json:"total_reported_tokens"`
 	PromptBytes         int64  `json:"prompt_bytes"`
-	WallMS              int64  `json:"wall_ms"`
+	StaticBytes         int64  `json:"static_prompt_bytes"`
+	DynamicBytes        int64  `json:"dynamic_prompt_bytes"`
+	EstInputTokens      int64  `json:"est_input_tokens"`
+	// AvgPromptBytes is PromptBytes over Runs.
+	AvgPromptBytes int64 `json:"avg_prompt_bytes"`
+	WallMS         int64 `json:"wall_ms"`
 	// CacheReadRatio is cache reads over all input the reporting runs sent
 	// (plain input + cache writes + cache reads); 0 without any.
 	CacheReadRatio float64 `json:"cache_read_ratio"`
 }
 
 // Groupings Summarize knows.
-var Groupings = []string{"run", "operation", "project", "model", "day"}
+var Groupings = []string{"run", "operation", "phase", "retry", "project", "model", "day"}
 
 // Summarize groups recs by one of Groupings, in key order.
 func Summarize(recs []Record, by string) ([]Sum, error) {
 	key := map[string]func(Record) string{
 		"run":       func(r Record) string { return r.RunID },
 		"operation": func(r Record) string { return r.Operation },
-		"project":   func(r Record) string { return r.Project },
+		"phase": func(r Record) string {
+			if r.Phase == "" {
+				return r.Operation
+			}
+			return r.Operation + "/" + r.Phase
+		},
+		"retry":   func(r Record) string { return fmt.Sprintf("%s/retry-%d", r.Operation, r.RequestRetry) },
+		"project": func(r Record) string { return r.Project },
 		"model": func(r Record) string {
 			if r.Model == nil {
 				return "(tidak dilaporkan)"
@@ -220,6 +250,9 @@ func Summarize(recs []Record, by string) ([]Sum, error) {
 			s.Retries++
 		}
 		s.PromptBytes += int64(r.PromptBytes)
+		s.StaticBytes += int64(r.StaticBytes)
+		s.DynamicBytes += int64(r.PromptBytes - r.StaticBytes)
+		s.EstInputTokens += int64(EstimateTokens(r.PromptBytes))
 		s.WallMS += r.WallMS
 		if r.Telemetry != Reported {
 			continue
@@ -233,6 +266,9 @@ func Summarize(recs []Record, by string) ([]Sum, error) {
 	}
 	out := make([]Sum, 0, len(sums))
 	for _, s := range sums {
+		if s.Runs > 0 {
+			s.AvgPromptBytes = s.PromptBytes / int64(s.Runs)
+		}
 		if in := s.InputTokens + s.CacheCreationTokens + s.CacheReadTokens; in > 0 {
 			s.CacheReadRatio = float64(s.CacheReadTokens) / float64(in)
 		}

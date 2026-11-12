@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -314,13 +315,27 @@ func (r *Runner) run(ctx context.Context, dir string, p Prompt, lean bool) (runO
 		argv = append(argv, r.lean...)
 	}
 	prompt := p.Text()
+	// Files handed to the CLI live in this run's own folder, removed when
+	// the run returns; one a killed process left is swept (see SweepTemp).
+	var tmp string
+	defer func() { removeRunDir(tmp) }()
+	writeFile := func(name, text string) (string, error) {
+		if tmp == "" {
+			d, err := newRunDir()
+			if err != nil {
+				return "", err
+			}
+			tmp = d
+		}
+		f := filepath.Join(tmp, name)
+		return f, os.WriteFile(f, []byte(text), 0o600)
+	}
 	// A CLI fails on an empty prompt, so a body-less prompt stays one text.
 	if lean && r.systemFile != "" && p.Static != "" && strings.TrimSpace(p.Body) != "" {
-		f, err := writeTemp("foundry-system-*.txt", p.Static)
+		f, err := writeFile("system.txt", p.Static)
 		if err != nil {
 			return runOut{}, fmt.Errorf("%w: %v", ErrAgentFailed, err)
 		}
-		defer os.Remove(f)
 		argv = append(argv, r.systemFile, f)
 		prompt = p.Body
 	}
@@ -328,11 +343,10 @@ func (r *Runner) run(ctx context.Context, dir string, p Prompt, lean bool) (runO
 	defer cancel()
 	var cmd *exec.Cmd
 	if r.promptFile != "" {
-		f, err := writeTemp("foundry-prompt-*.txt", prompt)
+		f, err := writeFile("prompt.txt", prompt)
 		if err != nil {
 			return runOut{}, fmt.Errorf("%w: %v", ErrAgentFailed, err)
 		}
-		defer os.Remove(f)
 		cmd = exec.CommandContext(ctx, argv[0], append(argv[1:], r.promptFile, f)...)
 	} else {
 		cmd = exec.CommandContext(ctx, argv[0], argv[1:]...)
@@ -388,23 +402,6 @@ func (r *Runner) run(ctx context.Context, dir string, p Prompt, lean bool) (runO
 		return o, fmt.Errorf("%w: %v: %s", ErrAgentFailed, err, tail(o.stderr, 600))
 	}
 	return o, nil
-}
-
-// writeTemp writes text to a new private temp file and returns its path.
-func writeTemp(pattern, text string) (string, error) {
-	f, err := os.CreateTemp("", pattern)
-	if err != nil {
-		return "", err
-	}
-	_, err = f.WriteString(text)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		os.Remove(f.Name())
-		return "", err
-	}
-	return f.Name(), nil
 }
 
 // Ping runs a minimal probe to prove the agent works headless.

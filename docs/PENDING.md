@@ -1,7 +1,7 @@
 # Pekerjaan yang Belum Selesai
 
-Per 2026-11-12 (diperbarui 22:05 WIB). Mencakup Phase 7 (keandalan Step 9 Teknologi) dan perbaikan coverage workflow (REQ-025/REQ-031 ParkOS).
-Kode sudah di-commit user: `2d490fa` (Phase 7) dan `9c9fa86` (coverage workflow). Perbaikan kelemahan workflow (retry, ID, raw, batas pesan, contoh ID detail) belum di-commit.
+Per 2026-11-12 (diperbarui 23:30 WIB). Mencakup Phase 7 (keandalan Step 9 Teknologi) dan perbaikan coverage workflow (REQ-025/REQ-031 ParkOS).
+Kode sudah di-commit user: `2d490fa` (Phase 7), `9c9fa86` (coverage workflow), `87b9efe` (retry, ID, raw, batas pesan). Optimasi prompt detail, lifecycle file sementara, dan telemetry belum di-commit.
 
 ## A. Workflow — perbaikan coverage MUST
 
@@ -17,15 +17,16 @@ Kode sudah di-commit user: `2d490fa` (Phase 7) dan `9c9fa86` (coverage workflow)
 - [x] **ID pada pesan penolakan outline.** Diperbaiki: `answerIDs` menulis ulang `CMD-xxx` ke ID jawaban (`C2`).
 - [x] **Raw output workflow.** Diperbaiki: `ai-raw/workflow.txt` (jawaban terakhir) dan `ai-raw/workflow-rejected.txt` (jawaban terakhir yang ditolak).
 - [x] **Pesan penolakan dipotong 5 masalah.** Diperbaiki: `invalidWorkflow`, batas 40 (`maxIssuesShown`), dipakai sketch dan validasi penuh.
-- [ ] **Fase detail lambat dan mahal.** Sekitar 82 detik per command (25 command sekitar 34 menit), prompt 50–240 KB per putaran. Artefak yang dirujuk dimuat utuh (`technology-plan` 72 KB, `repository-structure` 64 KB). Biaya sekitar $0,05 per command dengan Haiku.
-- [x] **Putaran detail menjawab ID yang salah.** Akar masalah: contoh balasan prompt detail memakai `"id": "C1"` (ID outline); AI menyalinnya. Bench terakhir: 4 dari 25 putaran ditolak karena ini, semua pulih dengan retry. Diperbaiki: contoh memakai ID putaran + `"id" is exactly CMD-xxx`. Belum dibuktikan live.
-- [ ] **File sementara tertinggal** (`/tmp/foundry-system-*.txt`) saat proses agent dibunuh. `TestExecSplitsPrompt` (agent) memeriksa glob `/tmp` global, sehingga gagal bila ada run live bersamaan atau file sisa.
+- [x] **Fase detail lambat dan mahal.** Diperbaiki (`workflowdetail.go`, `sections.go`): artefak dipotong ke section relevan (BM25 + ID), anggaran 14 KB per putaran; aturan dipindah ke bagian statis (cache); outline ringkas; repo plan statis tanpa responsibility (node relevan di bagian dinamis). Replay 25 putaran: rata-rata 141,4 → 72,3 KB (−48,9%), dinamis 89,1 → 25,9 KB (−70,9%), maks 238,9 → 79,5 KB. Live Haiku: biaya $0,667 → $0,270, input token per run 68,9k → 36,8k, wall 43 → 26 menit. Target −50% total belum tercapai (−48,9%); sisa terbesar konteks statis (cerita 12 KB, keputusan binding 7 KB, repo plan 6 KB).
+- [x] **Putaran detail menjawab ID yang salah.** Diperbaiki: contoh memakai ID putaran + `"id" is exactly CMD-xxx`. Terbukti live: 0 penolakan ID dalam 52 putaran (2 run), sebelumnya 5 dari 30.
+- [x] **File sementara tertinggal.** Diperbaiki (`agent/tempfiles.go`): folder per run `$TMPDIR/foundry-agent/run-<pid>-*`, dihapus saat run selesai (sukses, error, timeout, cancel, panic); sweep saat start (`serve`, `mcp`, run pertama) menghapus folder milik PID mati dan semua yang > 6 jam; shutdown menghapus folder proses sendiri. Test memakai TMPDIR terisolasi.
+- [x] **Criterion ID karangan** (muncul setelah optimasi, run 1: 11 ID seperti `REQ-031-AC9`). Diperbaiki dengan aturan prompt; run 2: 0.
 
 ## B. Phase 7 — Step 9 Teknologi
 
 ### Butuh keputusan user
-- [ ] **distra: mobile dinilai "Tidak perlu"** (DEC-001 PWA) oleh Haiku dan Sonnet. Status `PLATFORM_DECLINED` memblokir approval. Pilih: hapus target mobile, atau minta revisi teknologi.
-- [ ] **Parking: backend Python + FastAPI** padahal story menyebut "Backend: Go". Terjadi sebelum dan sesudah perbaikan. Perlu revisi teknologi atau keputusan eksplisit.
+- [ ] **distra: mobile dinilai "Tidak perlu"** (DEC-001 PWA). Rekomendasi: web responsif + PWA, hapus target android/ios (REQ-031 menyebut browser Chrome/Safari; REQ-017 foto/tanda tangan/lokasi bisa lewat browser; tidak ada requirement offline, push, atau barcode). Menunggu persetujuan user.
+- [x] **Parking: backend Python + FastAPI.** Sudah selesai di proyek asli: stack v2 (2026-11-12 01:18) Go + Gin, approved. Python tidak dibutuhkan sekarang (ANPR lewat kamera vendor; AI = REQ-033 COULD, fase akhir).
 
 ### Belum terbukti / belum dikerjakan
 - [ ] **Eskalasi alami Haiku → Sonnet** (dipicu stall/regress) belum pernah terjadi live. Hanya terbukti lewat test. Runner Sonnet terbukti live lewat model paksa.
@@ -38,10 +39,11 @@ Kode sudah di-commit user: `2d490fa` (Phase 7) dan `9c9fa86` (coverage workflow)
 - [ ] **Sampel benchmark kecil**: 3 proyek sebelum/sesudah, 9 run repair (1–2 run per skenario).
 
 ### Teknis
-- [ ] Race test `internal/modules/pipeline` butuh `-timeout 40m` (default 10m timeout; terakhir PASS 649,6 detik, 0 data race).
+- [ ] Race test `internal/modules/pipeline` butuh `-timeout 40m` (default 10m timeout; terakhir PASS 649,3 detik, 0 data race, 2026-11-12).
 - [ ] gofmt lama (bukan dari Phase 7): `learning.go`, `remove.go`, `context_test.go`.
 
 ## Bukti
+- Ukuran prompt detail: `go test -tags foundrybench -run TestBenchDetailPromptSize` (BENCH_PROJECT=…/project.json). Live: `/tmp/claude-1000/-home-handrawan-Project-Foundry/6e73f342-d3ad-4d96-bbb4-925a76766846/scratchpad/wf/parking-detail2`
 - Benchmark Step 9: `<scratchpad>/bench/SUMMARY.md`, `out/`, `out2/`, `logs2/`
 - Workflow lolos penuh: `/tmp/claude-1000/-home-handrawan-Project-Foundry/6e73f342-d3ad-4d96-bbb4-925a76766846/scratchpad/wf/parking`
 - Workflow lama: `<scratchpad>/wf/parking` (detail 14/25), `<scratchpad>/wf/parking-outline` (outline lolos), `<scratchpad>/wf/parking-run1` (gagal aturan subfitur)
