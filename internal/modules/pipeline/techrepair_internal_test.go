@@ -128,3 +128,23 @@ func TestDiagnosisReportsAttemptsModelAndIssues(t *testing.T) {
 		}
 	}
 }
+
+// A refusal retries on its own while it names a new problem, up to the
+// bound; the same problem twice stops.
+func TestAutoRetryWhileRefusalChanges(t *testing.T) {
+	r := &core.ChangeRequest{}
+	for i, c := range []struct {
+		msg  string
+		want bool
+	}{{"coverage", true}, {"coverage", false}, {"subfitur", true}, {"cycle", true}, {"lain", false}} {
+		if got := autoRetry(r, c.msg); got != c.want {
+			t.Fatalf("%d %q: retry=%v", i, c.msg, got)
+		}
+		r.Rejected = c.msg
+	}
+	// After "Coba lagi" the request keeps its last refusal: a new one retries.
+	r = &core.ChangeRequest{Rejected: "coverage"}
+	if !autoRetry(r, "subfitur") || autoRetry(&core.ChangeRequest{Rejected: "coverage"}, "coverage") {
+		t.Fatal("retry after Coba lagi")
+	}
+}

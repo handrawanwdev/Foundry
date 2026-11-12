@@ -499,9 +499,13 @@ func (s *Service) runWorkflow(runner *agent.Runner) {
 		s.failJob(kind, err)
 		return
 	}
+	saveAIRaw(p.Dir, kind, out)
 	if err := s.applyAI(kind, out, "agent"); err != nil {
+		// The last refused answer stays for audit: the next round overwrites
+		// the plain copy.
+		saveAIRaw(p.Dir, kind+"-rejected", out)
 		if s.noteRejection(kind, err) {
-			s.startAI(kind) // one retry with the rejection in the prompt
+			s.startAI(kind) // retry with the rejection in the prompt
 			return
 		}
 		s.failJob(kind, err)
@@ -751,8 +755,8 @@ func (s *Service) applyAI(kind, raw, source string) error {
 }
 
 // noteRejection keeps why a design, workflow, blueprint or structure
-// analysis answer was refused on its request, for the retry prompt. Only the
-// first refusal retries automatically.
+// analysis answer was refused on its request, for the retry prompt. It
+// reports whether the job retries automatically.
 func (s *Service) noteRejection(kind string, err error) bool {
 	if err == nil {
 		return false
@@ -847,13 +851,29 @@ func (s *Service) noteRejection(kind string, err error) bool {
 		if *r == nil {
 			*r = &core.ChangeRequest{}
 		}
-		retry = (*r).Rejected == ""
+		retry = autoRetry(*r, err.Error())
 		(*r).Rejected = err.Error()
 		p.Log("system", err.Error())
 		trackRejection(p, kind, err)
 		return nil
 	})
 	return retry
+}
+
+// maxAutoRetries bounds the automatic retries of one request.
+const maxAutoRetries = 3
+
+// autoRetry reports whether a refusal retries on its own, and counts it. The
+// first refusal retries; a later one retries only when it names a different
+// problem than the last, so a fixed problem followed by a new one (coverage
+// passes, a subfeature rule fails) is not left to the user, while the same
+// problem twice stops.
+func autoRetry(r *core.ChangeRequest, msg string) bool {
+	if r.Retries >= maxAutoRetries || (r.Rejected != "" && r.Rejected == msg) {
+		return false
+	}
+	r.Retries++
+	return true
 }
 
 // RetryJob reruns the last failed AI job.
@@ -989,6 +1009,25 @@ func failedJob(kind string) func(*core.Project) error {
 		if p.Job == nil || p.Job.Status != core.JobFailed || p.Job.Kind != kind {
 			return ErrNothingToDo
 		}
+		// "Coba lagi" gives the request a fresh retry budget; its last
+		// refusal stays, so the same problem again still stops.
+		if r := changeRequestOf(p, kind); r != nil {
+			r.Retries = 0
+		}
 		return nil
 	}
+}
+
+// changeRequestOf is the change request a design, artifacts or workflow job
+// answers; nil for any other job.
+func changeRequestOf(p *core.Project, kind string) *core.ChangeRequest {
+	switch {
+	case kind == work.KindWorkflow && p.Workflow != nil:
+		return p.Workflow.Request
+	case kind == work.KindArtifacts:
+		return p.ArtifactRequest
+	case kind == work.KindDesign && p.UI != nil:
+		return p.UI.Request
+	}
+	return nil
 }

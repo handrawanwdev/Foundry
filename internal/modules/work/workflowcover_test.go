@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/workflow"
 )
 
 // bigDocs is a blueprint above workflowSketchFullBody: the outline prompt
@@ -130,5 +131,39 @@ func TestWorkflowPromptsStateTheSubfeatureParentRule(t *testing.T) {
 	}
 	if !strings.Contains(commandRules, "Every subfeature id belongs to a feature listed in the same command's feature_ids") {
 		t.Fatal("command rules lack the subfeature rule")
+	}
+}
+
+// An outline refusal names the ids the answer used, not the renumbered ones
+// the AI never wrote.
+func TestAnswerIDsNamesOutlineIDs(t *testing.T) {
+	idMap := map[string]string{"C1": "CMD-001", "C2": "CMD-002", "CMD-1": "CMD-003"}
+	err := answerIDs(fmt.Errorf("workflow tidak valid: CMD-002 tanpa covers; CMD-003 bergantung pada CMD-001; CMD-099 x"), idMap)
+	if want := "workflow tidak valid: C2 tanpa covers; CMD-1 bergantung pada C1; CMD-099 x"; err.Error() != want {
+		t.Fatalf("got %q", err)
+	}
+}
+
+// Every problem reaches the retry prompt, up to the bound.
+func TestInvalidWorkflowListsAllIssues(t *testing.T) {
+	var issues []workflow.Issue
+	for i := range 12 {
+		issues = append(issues, workflow.Issue{Command: fmt.Sprintf("CMD-%03d", i+1), Message: "x"})
+	}
+	if msg := invalidWorkflow(issues).Error(); !strings.Contains(msg, "CMD-012 x") || strings.Contains(msg, "lagi") {
+		t.Fatalf("got %q", msg)
+	}
+}
+
+// The detail reply example names the command the round asks for: the
+// outline's "C1" was copied back and the round refused.
+func TestDetailPromptExampleNamesRoundID(t *testing.T) {
+	p := &core.Project{Name: "x", Story: "y", Workflow: &core.Workflow{Commands: []core.Command{
+		{ID: "CMD-001", Name: "a", Instructions: "done"},
+		{ID: "CMD-002", Name: "b"},
+	}}}
+	prompt := workflowDetailBatchPrompt(p, nil)
+	if !strings.Contains(prompt, `"id": "CMD-002", "context"`) || strings.Contains(prompt, `"id": "C1"`) {
+		t.Fatalf("reply example: %s", prompt[strings.LastIndex(prompt, "Reply with"):])
 	}
 }

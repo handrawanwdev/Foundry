@@ -122,6 +122,10 @@ type ChangeRequest struct {
 	// Rejected is why the AI's last answer was refused; the retry prompt
 	// shows it.
 	Rejected string `json:"rejected,omitempty"`
+	// Retries counts the automatic retries this request had since its last
+	// accepted answer; it bounds retrying while each refusal names a new
+	// problem.
+	Retries int `json:"retries,omitempty"`
 	// Cascade marks a request made by deleting a document or by changed
 	// decisions: the artifact request is followed by the workflow request.
 	Cascade bool `json:"cascade,omitempty"`

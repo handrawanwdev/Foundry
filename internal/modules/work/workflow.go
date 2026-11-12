@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -289,7 +290,13 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	if HasUI(p) {
 		b.WriteString(VisualVerificationRules)
 	}
-	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"], \"files\": [\"\"]}]}")
+	// The example carries the id this round asks for: an example id ("C1",
+	// the outline's) is copied back and the round is refused.
+	id := "CMD-001"
+	if len(batch) > 0 {
+		id = batch[0].ID
+	}
+	fmt.Fprintf(&b, "\nReply with ONLY one JSON object in a ```json block; \"id\" is exactly %s:\n{\"commands\": [{\"id\": %q, \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"], \"files\": [\"\"]}]}", id, id)
 	return b.String()
 }
 
@@ -730,7 +737,7 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 		w.Request = nil
 	case w.Request != nil:
 		w.Request.Handled = append(w.Request.Handled, did)
-		w.Request.Rejected = "" // the next round gets its own retry
+		w.Request.Rejected, w.Request.Retries = "", 0 // the next round gets its own retries
 	}
 	return nil
 }
@@ -815,7 +822,7 @@ func applyWorkflowSketchFromParsed(p *core.Project, out workflowOut, docs []core
 	for _, o := range out.Commands {
 		c, err := commandFrom(o, idMap, hashes)
 		if err != nil {
-			return err
+			return answerIDs(err, idMap)
 		}
 		// Instructions are empty — will be filled in detail phase
 		c.Instructions = ""
@@ -827,7 +834,7 @@ func applyWorkflowSketchFromParsed(p *core.Project, out workflowOut, docs []core
 	}
 	// Validate sketch (structure only — no instructions required)
 	if err := checkSketchCommands(cmds, hashes, p.Requirements, p.Features); err != nil {
-		return err
+		return answerIDs(err, idMap)
 	}
 	if _, uncovered := workflow.Covers(cmds, p.Requirements); len(uncovered) > 0 {
 		return fmt.Errorf("workflow tidak valid: %s%s", uncoveredMust, strings.Join(uncovered, ", "))
@@ -1100,6 +1107,41 @@ func validateSketch(cmds []core.Command, hashes map[string]string) []workflow.Is
 	return issues
 }
 
+// maxIssuesShown bounds the problems one refusal lists; the retry prompt
+// must show the AI every problem it can fix in one answer.
+const maxIssuesShown = 40
+
+// invalidWorkflow is the refusal listing the check's problems.
+func invalidWorkflow(issues []workflow.Issue) error {
+	var msgs []string
+	for i, is := range issues {
+		if i == maxIssuesShown {
+			msgs = append(msgs, fmt.Sprintf("… %d lagi", len(issues)-maxIssuesShown))
+			break
+		}
+		msgs = append(msgs, strings.TrimSpace(is.Command+" "+is.Message))
+	}
+	return fmt.Errorf("workflow tidak valid: %s", strings.Join(msgs, "; "))
+}
+
+var commandID = regexp.MustCompile(`CMD-\d+`)
+
+// answerIDs writes an outline refusal with the ids the answer used: the
+// outline is renumbered before the check, and an id the AI never wrote
+// cannot be fixed.
+func answerIDs(err error, idMap map[string]string) error {
+	back := make(map[string]string, len(idMap))
+	for orig, id := range idMap {
+		back[id] = orig
+	}
+	return errors.New(commandID.ReplaceAllStringFunc(err.Error(), func(id string) string {
+		if orig, ok := back[id]; ok {
+			return orig
+		}
+		return id
+	}))
+}
+
 // checkSketchCommands validates sketch phase commands (no instructions required)
 func checkSketchCommands(cmds []core.Command, hashes map[string]string, reqs []core.Requirement, feats []core.Feature) error {
 	issues := validateSketch(cmds, hashes)
@@ -1109,15 +1151,7 @@ func checkSketchCommands(cmds []core.Command, hashes map[string]string, reqs []c
 	if len(issues) == 0 {
 		return nil
 	}
-	var msgs []string
-	for i, is := range issues {
-		if i == 5 {
-			msgs = append(msgs, fmt.Sprintf("… %d lagi", len(issues)-5))
-			break
-		}
-		msgs = append(msgs, strings.TrimSpace(is.Command+" "+is.Message))
-	}
-	return fmt.Errorf("workflow tidak valid: %s", strings.Join(msgs, "; "))
+	return invalidWorkflow(issues)
 }
 
 // checkCommands refuses a workflow that fails the check.
@@ -1133,15 +1167,7 @@ func checkCommands(cmds []core.Command, hashes map[string]string, reqs []core.Re
 	if len(issues) == 0 {
 		return nil
 	}
-	var msgs []string
-	for i, is := range issues {
-		if i == 5 {
-			msgs = append(msgs, fmt.Sprintf("… %d lagi", len(issues)-5))
-			break
-		}
-		msgs = append(msgs, strings.TrimSpace(is.Command+" "+is.Message))
-	}
-	return fmt.Errorf("workflow tidak valid: %s", strings.Join(msgs, "; "))
+	return invalidWorkflow(issues)
 }
 
 // CommandEdit is a user's edit of one command.
