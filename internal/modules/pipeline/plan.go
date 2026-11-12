@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
@@ -14,6 +15,25 @@ import (
 )
 
 func applyUnified(p *core.Project, raw string) error {
+	if work.PlanStrategy(p) == core.TechAttemptRepair {
+		// A targeted repair answers the technology section only; the later
+		// sections run in their own rounds afterwards.
+		v, err := work.ApplyTechPlan(p, work.TechSection(raw))
+		if err != nil {
+			return err
+		}
+		landTech(p, v)
+		if p.Structure != nil && p.Structure.PlanRequest != nil {
+			p.Structure.PlanRequest.SourceHash = structure.SourceHash(p)
+		}
+		if p.Structure != nil && p.Structure.RepoRequest != nil {
+			p.Structure.RepoRequest.SourceHash = structure.SourceHash(p)
+		}
+		if !planRequestsOpen(p) {
+			work.SyncUnifiedSources(p)
+		}
+		return nil
+	}
 	ans, err := work.ParseUnified(raw)
 	if err != nil {
 		return err
@@ -161,9 +181,15 @@ func (s *Service) dropPlanRequest(cause error) error {
 			return nil
 		}
 		msg := fmt.Sprintf("Perancangan Blueprint gagal: %v. Keputusan sebelumnya tidak diubah; tekan Coba lagi.", cause)
+		report := safeProgressError(cause)
+		if techRequestOf(p, work.KindPlan) != nil {
+			report = techDiagnosis(p, work.KindPlan, cause, true)
+			first, _, _ := strings.Cut(report, "\n")
+			msg = fmt.Sprintf("Perancangan Blueprint gagal: %s. Keputusan sebelumnya tidak diubah dan keputusan teknologi yang sudah valid disimpan; tekan Coba lagi untuk melanjutkan perbaikan.", first)
+		}
 		p.Job = &core.Job{Kind: work.KindPlan, Status: core.JobFailed, Message: "Merancang Blueprint", Error: msg, Started: time.Now().UTC()}
 		p.Log("system", msg)
-		trackFail(p, work.KindPlan, cause)
+		trackFailMsg(p, work.KindPlan, cause, report)
 		return nil
 	})
 	return err

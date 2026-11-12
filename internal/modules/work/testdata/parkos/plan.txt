@@ -1,0 +1,1133 @@
+```json
+{
+  "technology": {
+    "approach": "Satu bahasa Go untuk cloud dan Edge agar paket domain yang sama dipakai di kedua sisi. Modular Monolith dengan tiga deployable (API, worker, Edge). PostgreSQL sebagai sumber kebenaran cloud, SQLite WAL sebagai penyimpanan durable di Edge, NATS JetStream untuk antrean.",
+    "summary": "Stack ringkas: React + Vite untuk web, Go + Gin untuk API cloud dan Edge, PostgreSQL, SQLite di Edge, Redis untuk rate limit, NATS JetStream, S3-compatible storage, Kubernetes untuk cloud dan systemd untuk Edge.",
+    "rationale": "Keputusan baseline Python + FastAPI diganti Go karena cerita menetapkan backend dan Edge dalam Go dan Edge perlu kode domain yang sama. Structure decision Microservices diganti Modular Monolith karena DEC-009 mengikat dan skala belum diketahui. Keduanya dicatat di consistency.",
+    "context": {
+      "summary": "ParkOS adalah SaaS multi-tenant untuk operasional parkir dengan Edge Controller offline per lokasi dan perangkat multi-vendor.",
+      "facts": [
+        "Cerita menetapkan backend REST cloud dan Edge Controller dalam Go (bagian Platform dan Arsitektur Teknologi).",
+        "Cerita menetapkan PostgreSQL, Redis, object storage, Docker, dan CI/CD.",
+        "OPERATIONS menetapkan deployment Kubernetes.",
+        "Platform yang wajib: web responsif. Mobile saat ini responsif (DEC-003). Desktop belum jelas (DEC-002).",
+        "Perangkat berada di LAN lokasi, sehingga perintah perangkat harus dieksekusi di Edge.",
+        "Kendali barrier tidak boleh hanya lewat cloud (cerita bagian Security)."
+      ],
+      "unknowns": [
+        "Angka latency, throughput, timeout, dan retry (DEC-001).",
+        "Skala tenant, lokasi, gerbang, dan transaksi per hari (DEC-009).",
+        "RPO, RTO, dan retensi (DEC-010, DEC-022).",
+        "Penyedia pembayaran (DEC-005) dan protokol vendor perangkat (DEC-008).",
+        "Model autentikasi offline dan kredensial Edge (DEC-004, DEC-018).",
+        "Penyedia cloud, produk object storage (S3 atau MinIO), penyedia SMTP, dan penyedia secret manager belum dipilih.",
+        "Host repository belum diketahui."
+      ],
+      "assumptions": [
+        "Asumsi: Go menggantikan Python + FastAPI dari baseline karena profil AI Product hanya petunjuk lemah.",
+        "Asumsi: Edge menggunakan SQLite WAL dengan synchronous FULL (DEC-021).",
+        "Asumsi: plat nomor disimpan tanpa enkripsi kolom agar bisa dicari dan divalidasi, dilindungi RBAC dan masking log. Kolom PII lain dienkripsi.",
+        "Asumsi: Edge hanya membuka koneksi HTTPS keluar dan menarik perintah perangkat dari cloud.",
+        "Asumsi: repository di GitHub.",
+        "Asumsi: Redis tidak pernah menjadi sumber kebenaran.",
+        "Asumsi: tidak ada layanan search terpisah. Pencarian plat memakai indeks PostgreSQL."
+      ]
+    },
+    "items": [
+      {
+        "area": "frontend",
+        "group": "stack",
+        "technology": "React + TypeScript + Vite",
+        "language": "TypeScript",
+        "runtime": "Browser (SPA)",
+        "version_verified": false,
+        "purpose": "Dashboard admin, Pusat Kendali, dan UI responsif untuk supervisor dan petugas.",
+        "fulfills": ["FEAT-001", "FEAT-017", "REQ-002", "REQ-034"],
+        "driver": "requirement",
+        "reasoning": "Fakta: target web wajib dan UI interaktif realtime. Rekomendasi: React + TypeScript + Vite sesuai baseline. SPA internal tidak membutuhkan SSR.",
+        "pros": ["Ekosistem komponen dan tipe kuat", "Build cepat"],
+        "cons": ["Routing dan state perlu dipilih sendiri", "Tidak ada SSR bawaan"],
+        "tradeoffs": ["Data hanya tersedia saat terhubung ke cloud, sehingga indikator offline wajib"],
+        "depends_on": ["api", "ui", "state_management", "charting"],
+        "integration": "Mengonsumsi REST dan WebSocket dari kontrak OpenAPI.",
+        "operational": "Build statis disajikan dari container nginx di Kubernetes.",
+        "alternatives": [
+          {
+            "technology": "Next.js + TypeScript",
+            "why": "Viable jika SSR atau routing berbasis file dibutuhkan.",
+            "difference": "Menambah runtime Node di production. ParkOS tidak membutuhkan SSR."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "ui",
+        "group": "stack",
+        "technology": "Tailwind CSS + shadcn/ui",
+        "language": "TypeScript",
+        "version_verified": false,
+        "purpose": "Design system dengan komponen reusable dan token desain, mengikuti pola UX Duralux tanpa menyalin.",
+        "fulfills": ["REQ-034", "FEAT-001"],
+        "driver": "requirement",
+        "reasoning": "Fakta: cerita meminta design system dan state loading, empty, error, dan offline. Rekomendasi: shadcn/ui menyalin komponen ke repo sehingga bisa diubah tanpa menunggu vendor.",
+        "pros": ["Komponen dapat diubah penuh", "Token desain terpusat"],
+        "cons": ["Pembaruan komponen dilakukan manual"],
+        "tradeoffs": ["Kontrol penuh atas komponen dengan biaya pemeliharaan"],
+        "depends_on": ["frontend"],
+        "integration": "Dipakai dari React melalui Tailwind.",
+        "operational": "Tidak ada.",
+        "alternatives": [
+          {
+            "technology": "MUI (Material UI)",
+            "why": "Viable dengan komponen lengkap.",
+            "difference": "Theming lebih berat dan tampilan default berbeda dari pola Duralux."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "state_management",
+        "group": "stack",
+        "technology": "TanStack Query",
+        "language": "TypeScript",
+        "version_verified": false,
+        "purpose": "State data server, cache, status loading, error, dan empty, serta invalidasi dari update WebSocket.",
+        "fulfills": ["REQ-034", "FEAT-001", "FEAT-015"],
+        "driver": "requirement",
+        "reasoning": "Rekomendasi: data dari server dikelola cache query, bukan state global manual. Update realtime memicu invalidasi.",
+        "pros": ["Status loading dan error konsisten", "Sinkron dengan WebSocket lewat invalidasi"],
+        "cons": ["Menambah konsep cache query"],
+        "tradeoffs": ["Tidak cocok untuk state UI murni, yang tetap memakai React state"],
+        "depends_on": ["frontend", "api"],
+        "integration": "Client OpenAPI dipanggil dari hook query.",
+        "operational": "Tidak ada.",
+        "alternatives": [
+          {
+            "technology": "Redux Toolkit",
+            "why": "Viable untuk state global kompleks.",
+            "difference": "Lebih banyak boilerplate dan tidak menangani cache server secara bawaan."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "charting",
+        "group": "stack",
+        "technology": "Recharts (melalui komponen chart shadcn)",
+        "language": "TypeScript",
+        "version_verified": false,
+        "purpose": "Grafik okupansi, jam sibuk, pendapatan, dan perbandingan periode.",
+        "fulfills": ["REQ-020", "FEAT-013", "FEAT-001"],
+        "driver": "requirement",
+        "reasoning": "Rekomendasi: Recharts sudah dibungkus komponen shadcn, sehingga tidak menambah library kedua.",
+        "pros": ["Terintegrasi dengan shadcn", "API deklaratif React"],
+        "cons": ["Kurang cocok untuk data sangat besar di satu grafik"],
+        "tradeoffs": ["Data besar diagregasi di backend"],
+        "depends_on": ["ui", "frontend"],
+        "integration": "Data dari endpoint analytics dan revenue.",
+        "operational": "Tidak ada.",
+        "alternatives": [
+          {
+            "technology": "Apache ECharts",
+            "why": "Viable untuk tipe grafik dan volume data lebih besar.",
+            "difference": "Bundle lebih besar dan API berbeda dari komponen shadcn."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "backend",
+        "group": "stack",
+        "technology": "Go + Gin",
+        "language": "Go",
+        "runtime": "Go (binary statis, CGO nonaktif)",
+        "version_verified": false,
+        "purpose": "REST API cloud dan worker. Paket domain yang sama dipakai oleh Edge.",
+        "fulfills": ["REQ-001", "REQ-031", "REQ-035", "FEAT-003", "FEAT-004", "FEAT-005", "FEAT-015"],
+        "driver": "requirement",
+        "reasoning": "Fakta: cerita menetapkan backend dan Edge dalam Go, dan Edge butuh kode domain yang sama. Rekomendasi: Go untuk keduanya. Baseline Python + FastAPI ditinggalkan karena hanya petunjuk profil AI yang lemah.",
+        "pros": ["Satu bahasa untuk cloud dan Edge", "Binary statis mudah di-deploy", "Konkurensi bawaan untuk banyak koneksi perangkat"],
+        "cons": ["Ekosistem AI dan data kurang lengkap", "Validasi dan middleware perlu disusun dari library"],
+        "tradeoffs": ["Gin lebih ringan dari framework penuh tetapi tidak menyediakan semua fitur bawaan"],
+        "depends_on": ["database", "data_access", "cache", "messaging", "storage", "authentication", "authorization", "integrations", "logging", "observability", "edge_storage"],
+        "integration": "Handler Gin dibangkitkan dari OpenAPI. Middleware auth, RBAC, dan rate limit ada di jalur request.",
+        "operational": "Entrypoint api dan worker dibuild menjadi image terpisah. Health check di /healthz dan /readyz. Graceful shutdown wajib.",
+        "alternatives": [
+          {
+            "technology": "Go net/http (stdlib)",
+            "why": "Viable tanpa dependensi framework.",
+            "difference": "Validasi dan middleware ditulis sendiri dan lebih sedikit dependensi jangka panjang."
+          },
+          {
+            "technology": "Python + FastAPI",
+            "why": "Viable untuk AI nanti (REQ-033).",
+            "difference": "Tidak berbagi kode domain dengan Edge Go. Dua bahasa untuk satu domain."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "api",
+        "group": "stack",
+        "technology": "REST + OpenAPI 3 + WebSocket",
+        "language": "Go dan TypeScript",
+        "version_verified": false,
+        "purpose": "Kontrak API tunggal untuk web, klien eksternal (API key), dan batch Edge. WebSocket untuk update Pusat Kendali dan status perangkat.",
+        "fulfills": ["REQ-018", "REQ-022", "REQ-027", "REQ-030", "FEAT-001", "FEAT-014"],
+        "driver": "requirement",
+        "reasoning": "Fakta: dashboard realtime dan integrasi REST. Rekomendasi: OpenAPI sebagai sumber tunggal. oapi-codegen membangkitkan stub dan validasi request untuk Go. openapi-typescript dan openapi-fetch membangkitkan klien web. WebSocket memakai coder/websocket.",
+        "pros": ["Kontrak dan validasi skema dari satu sumber", "Klien web bertipe"],
+        "cons": ["Perubahan kontrak perlu regenerasi"],
+        "tradeoffs": ["Kontrak OpenAPI harus dijaga sinkron dengan kode"],
+        "depends_on": ["backend", "frontend", "repository"],
+        "integration": "Spesifikasi OpenAPI di monorepo dipakai untuk generate Go dan TypeScript.",
+        "operational": "Dokumentasi OpenAPI dipublikasikan dari CI.",
+        "alternatives": [
+          {
+            "technology": "gRPC",
+            "why": "Viable untuk komunikasi Edge ke cloud.",
+            "difference": "Tidak langsung dipakai browser dan menambah tooling. Batch HTTPS sudah cukup untuk outbox Edge."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "database",
+        "group": "data",
+        "technology": "PostgreSQL",
+        "language": "SQL",
+        "version_verified": false,
+        "purpose": "Sumber kebenaran cloud: tenant, identity, parkir, tarif, pembayaran, audit. Row-Level Security per tenant. Indeks pencarian plat.",
+        "fulfills": ["REQ-001", "REQ-027", "REQ-029", "REQ-004", "DEC-011"],
+        "driver": "requirement",
+        "reasoning": "Fakta: data relasional dan transaksi. Rekomendasi: constraint unik untuk idempotensi, RLS sebagai lapisan kedua isolasi tenant, pg_trgm untuk pencarian plat prefix. Ini menggantikan search engine terpisah.",
+        "pros": ["ACID", "RLS native", "Constraint kuat untuk idempotensi"],
+        "cons": ["RLS menambah kehati-hatian pada query", "Penskalaan tulis butuh partisi nanti"],
+        "tradeoffs": ["Satu primary perlu HA dan failover yang diuji"],
+        "depends_on": ["data_access", "data_migration", "backup", "authorization"],
+        "integration": "Akses lewat pgx. Setiap transaksi menetapkan tenant lewat set_config LOCAL. Role aplikasi bukan pemilik tabel.",
+        "operational": "Replika standby, backup (lihat backup), monitor koneksi dan lock.",
+        "alternatives": [
+          {
+            "technology": "MySQL",
+            "why": "Viable untuk ACID.",
+            "difference": "Tidak punya RLS setara. Isolasi tenant hanya di aplikasi."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "data_access",
+        "group": "data",
+        "technology": "sqlc + pgx",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Query SQL bertipe dan eksplisit. Setiap query wajib memfilter tenant_id.",
+        "fulfills": ["REQ-001", "DEC-011"],
+        "driver": "engineering",
+        "reasoning": "Rekomendasi: sqlc membangkitkan kode Go dari SQL sehingga filter tenant terlihat dan dapat diaudit. Tidak ada ORM berbasis reflection.",
+        "pros": ["SQL eksplisit", "Error dicek saat generate"],
+        "cons": ["Query ditulis manual"],
+        "tradeoffs": ["Lebih banyak SQL daripada ORM"],
+        "depends_on": ["database", "backend"],
+        "integration": "Repository adapter cloud memakai kode generated.",
+        "operational": "Tidak ada.",
+        "alternatives": [
+          {
+            "technology": "GORM",
+            "why": "Viable dan populer.",
+            "difference": "Query builder implisit membuat filter tenant lebih sulit diaudit."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "data_migration",
+        "group": "data",
+        "technology": "golang-migrate",
+        "language": "SQL",
+        "version_verified": false,
+        "purpose": "Migrasi skema versi (up dan down) untuk cloud dan Edge.",
+        "fulfills": ["REQ-032", "DEC-023"],
+        "driver": "operational",
+        "reasoning": "Rekomendasi: migrasi SQL eksplisit dengan rollback. Rollback diuji di staging (DEC-023).",
+        "pros": ["Sederhana", "Berbasis file SQL"],
+        "cons": ["Tidak ada perencanaan diff otomatis"],
+        "tradeoffs": ["Migrasi ditulis manual"],
+        "depends_on": ["database", "ci_cd"],
+        "integration": "Dijalankan sebagai job sebelum rollout API.",
+        "operational": "Setiap migrasi punya uji up dan down di CI.",
+        "alternatives": [
+          {
+            "technology": "Atlas",
+            "why": "Viable dengan diff deklaratif.",
+            "difference": "Tooling lebih besar."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "edge_storage",
+        "group": "data",
+        "technology": "SQLite (WAL, synchronous FULL) via modernc.org/sqlite",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Penyimpanan durable Edge: outbox dengan sequence, salinan kredensial hash, tiket dan sesi lokal, spool foto ANPR.",
+        "fulfills": ["REQ-024", "REQ-025", "REQ-026", "REQ-027"],
+        "driver": "requirement",
+        "reasoning": "Asumsi DEC-021: commit durable dengan fsync. Rekomendasi: SQLite WAL dengan synchronous FULL memberi commit durable dalam satu file dengan transaksi ACID. modernc.org/sqlite tanpa CGO memudahkan build Edge.",
+        "pros": ["Tanpa server", "Transaksi ACID", "Aman saat restart"],
+        "cons": ["Satu writer", "Tidak ada HA lokal"],
+        "tradeoffs": ["Kerusakan disk berarti kehilangan data lokal, sehingga butuh salinan backup (DEC-021)"],
+        "depends_on": ["backend", "backup"],
+        "integration": "Perubahan state dan outbox ditulis dalam satu transaksi SQLite.",
+        "operational": "Backup file berkala. Monitor ukuran WAL dan outbox (DEC-016).",
+        "alternatives": [
+          {
+            "technology": "bbolt",
+            "why": "Viable sebagai key-value durable dengan fsync.",
+            "difference": "Tidak relasional dan sqlc tidak bisa dipakai."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "cache",
+        "group": "data",
+        "technology": "Redis",
+        "language": "Go (go-redis)",
+        "version_verified": false,
+        "purpose": "Penghitung rate limit dan kunci gagal login (DEC-017). Cache read model ringan dengan TTL.",
+        "fulfills": ["REQ-031", "DEC-017", "REQ-002"],
+        "driver": "requirement",
+        "reasoning": "Rekomendasi: INCR dengan TTL memberi batas yang konsisten antar replika. Redis tidak menyimpan data bisnis.",
+        "pros": ["Penghitung atomik", "Cepat"],
+        "cons": ["Komponen tambahan"],
+        "tradeoffs": ["Kehilangan counter tidak merusak data bisnis"],
+        "depends_on": ["deployment"],
+        "integration": "Middleware rate limit dan service autentikasi.",
+        "operational": "Persistence minimal. Monitor memori.",
+        "alternatives": [
+          {
+            "technology": "Rate limit di PostgreSQL",
+            "why": "Viable pada beban rendah.",
+            "difference": "Menambah beban tulis di database dan latency per request."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "storage",
+        "group": "data",
+        "technology": "S3-compatible object storage (S3 atau MinIO, belum dipilih)",
+        "language": "Go (AWS SDK v2)",
+        "version_verified": false,
+        "purpose": "Foto ANPR, dokumen tiket hilang, dan bukti pembayaran. Akses lewat signed URL berumur pendek.",
+        "fulfills": ["REQ-005", "REQ-007", "REQ-013", "DEC-022"],
+        "driver": "requirement",
+        "reasoning": "Fakta: cerita meminta object storage untuk foto dan dokumen. Rekomendasi: API S3 agar pindah antara S3 cloud dan MinIO tanpa mengubah kode.",
+        "pros": ["Standar API", "Signed URL"],
+        "cons": ["Biaya bertambah dengan volume"],
+        "tradeoffs": ["Pilihan S3 atau MinIO memengaruhi operasi"],
+        "depends_on": ["backend", "backup"],
+        "integration": "Upload lewat signed URL. Prefix per tenant_id dengan kebijakan akses per prefix.",
+        "operational": "Lifecycle per tenant (DEC-022), enkripsi at rest, versioning.",
+        "alternatives": [
+          {
+            "technology": "Disk server lokal",
+            "why": "Viable untuk pilot.",
+            "difference": "Tidak ada durabilitas multi-node dan tidak ada standar signed URL."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "messaging",
+        "group": "app_infra",
+        "technology": "NATS JetStream",
+        "language": "Go (nats.go)",
+        "version_verified": false,
+        "purpose": "Antrean durable worker cloud (payment-webhook, notification, report, snapshot, edge-sync-apply) dan fan-out event untuk WebSocket.",
+        "fulfills": ["REQ-023", "REQ-026", "REQ-027", "REQ-028", "FEAT-016"],
+        "driver": "architecture",
+        "reasoning": "Rekomendasi: JetStream menyediakan persistensi, ack, redelivery, dan dedupe dengan Msg-Id dalam jendela waktu. Satu sistem untuk antrean dan event lebih sederhana. Idempotensi tetap dijamin constraint database.",
+        "pros": ["Persistensi dan ack", "Ringan", "Redelivery dan dead-letter"],
+        "cons": ["Cluster NATS perlu dioperasikan", "Ekosistem lebih kecil dari Kafka"],
+        "tradeoffs": ["Jendela dedupe terbatas sehingga idempotensi tetap di database"],
+        "depends_on": ["backend", "workers", "deployment"],
+        "integration": "Publish dari API setelah commit. Consumer di worker dengan ack eksplisit.",
+        "operational": "Cluster tiga node (asumsi HA). Metrik panjang antrean, redelivery, dan dead-letter.",
+        "alternatives": [
+          {
+            "technology": "RabbitMQ",
+            "why": "Viable dengan routing matang.",
+            "difference": "Tidak punya replay stream seperti JetStream."
+          },
+          {
+            "technology": "Redis Streams",
+            "why": "Viable untuk antrean sederhana.",
+            "difference": "Durabilitas dan operasi lebih lemah. Redis dihindari sebagai antrean."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "workers",
+        "group": "app_infra",
+        "technology": "Worker cloud (binary Go konsumen JetStream) dan worker device-command di Edge",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Cloud: webhook pembayaran, notifikasi, laporan, snapshot, edge-sync-apply. Edge: eksekusi perintah perangkat dengan timeout dan retry.",
+        "fulfills": ["REQ-023", "REQ-026", "REQ-028", "FEAT-009", "FEAT-014"],
+        "driver": "architecture",
+        "reasoning": "Fakta: perangkat ada di LAN lokasi, tidak bisa dijangkau cloud. Rekomendasi: perintah perangkat dieksekusi di Edge. Cloud menyimpan DeviceCommand dan Edge menariknya lewat HTTPS keluar.",
+        "pros": ["Perintah tetap berjalan saat internet putus", "Tidak perlu port masuk ke LAN"],
+        "cons": ["Dua lokasi eksekusi worker"],
+        "tradeoffs": ["Latency perintah dari cloud bergantung pada interval tarik"],
+        "depends_on": ["messaging", "database", "backend", "device_io", "edge_storage"],
+        "integration": "Worker cloud konsumsi JetStream. Worker Edge membaca outbox SQLite dan menjalankan adapter.",
+        "operational": "Replika per antrean. Graceful shutdown menyelesaikan ack. Metrik retry dan dead-letter.",
+        "alternatives": [
+          {
+            "technology": "Job in-process di API",
+            "why": "Viable untuk beban kecil.",
+            "difference": "Pekerjaan bersaing dengan request dan hilang saat API restart."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "scheduler",
+        "group": "app_infra",
+        "technology": "Kubernetes CronJob",
+        "language": "YAML",
+        "version_verified": false,
+        "purpose": "Snapshot okupansi, agregasi harian pendapatan, dan pemicu backup terjadwal.",
+        "fulfills": ["REQ-020", "REQ-032"],
+        "driver": "operational",
+        "reasoning": "Rekomendasi: CronJob menghindari eksekusi ganda antar replika dan memakai concurrencyPolicy Forbid.",
+        "pros": ["Tanpa kode penjadwal", "Eksekusi ganda dicegah"],
+        "cons": ["Granularitas menit"],
+        "tradeoffs": ["Tiap job menjalankan container baru"],
+        "depends_on": ["deployment", "workers"],
+        "integration": "Job memanggil binary worker.",
+        "operational": "Monitor job gagal dan durasi.",
+        "alternatives": [
+          {
+            "technology": "robfig/cron di worker",
+            "why": "Viable dengan leader lock.",
+            "difference": "Butuh lock terdistribusi dan lebih banyak kode."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "authentication",
+        "group": "app_infra",
+        "technology": "Argon2id untuk kata sandi, sesi server-side dengan token opak di cookie HttpOnly Secure, API key dengan hash SHA-256",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Login staf tanpa pendaftaran publik, pencabutan sesi langsung, dan autentikasi API key.",
+        "fulfills": ["REQ-002", "REQ-030", "DEC-004", "DEC-018"],
+        "driver": "requirement",
+        "reasoning": "Rekomendasi: sesi di database memungkinkan pencabutan (Session.revoked_at). API key bernilai acak tinggi sehingga SHA-256 cukup. Kata sandi memakai argon2id. Kredensial Edge per-Edge (DEC-018, asumsi).",
+        "pros": ["Pencabutan langsung", "Hash sesuai jenis rahasia"],
+        "cons": ["Lookup sesi per request"],
+        "tradeoffs": ["Cookie butuh perlindungan CSRF (SameSite dan token CSRF)"],
+        "depends_on": ["database", "cache", "backend"],
+        "integration": "Middleware membaca cookie sesi atau header API key, lalu memuat izin.",
+        "operational": "Parameter argon2id dari konfigurasi. Ambang kunci gagal login dari konfigurasi (DEC-017).",
+        "alternatives": [
+          {
+            "technology": "JWT stateless",
+            "why": "Viable tanpa lookup database.",
+            "difference": "Pencabutan butuh denylist sehingga tidak langsung."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "authorization",
+        "group": "app_infra",
+        "technology": "RBAC aplikasi (permission resource:action) dengan PostgreSQL Row-Level Security untuk tenant",
+        "language": "Go dan SQL",
+        "version_verified": false,
+        "purpose": "Izin per peran dan scope lokasi. Lapisan kedua isolasi tenant di database.",
+        "fulfills": ["REQ-001", "REQ-002", "REQ-008", "REQ-012", "DEC-020"],
+        "driver": "requirement",
+        "reasoning": "Fakta: cerita meminta pemeriksaan di setiap endpoint dan layer domain. Rekomendasi: RLS menjadi jaring pengaman jika ada query yang lupa tenant_id.",
+        "pros": ["Dua lapisan isolasi", "Sederhana"],
+        "cons": ["RLS perlu uji khusus"],
+        "tradeoffs": ["Policy RLS dan kode aplikasi harus sinkron"],
+        "depends_on": ["database", "authentication"],
+        "integration": "Middleware memuat izin. Setiap transaksi menetapkan tenant untuk RLS.",
+        "operational": "Role aplikasi bukan pemilik tabel dan tanpa BYPASSRLS.",
+        "alternatives": [
+          {
+            "technology": "Casbin atau OPA",
+            "why": "Viable sebagai policy engine.",
+            "difference": "Komponen tambahan dan tidak diperlukan untuk tabel izin sederhana."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "integrations",
+        "group": "app_infra",
+        "technology": "Port Go (interface) dan adapter per penyedia: PaymentProvider, DeviceAdapter, Notifier",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Memisahkan logika bisnis dari kontrak vendor. Verifikasi webhook per penyedia.",
+        "fulfills": ["REQ-011", "REQ-012", "REQ-021", "FEAT-009"],
+        "driver": "architecture",
+        "reasoning": "Fakta: cerita meminta hardware-agnostic dan tidak membangun payment gateway sendiri. Rekomendasi: port di domain dan adapter di paket integrasi. Penyedia belum dipilih (DEC-005).",
+        "pros": ["Vendor bisa diganti", "Domain bisa diuji dengan fake"],
+        "cons": ["Abstraksi perlu dijaga"],
+        "tradeoffs": ["Fitur khusus vendor perlu adapter khusus"],
+        "depends_on": ["backend", "workers"],
+        "integration": "Adapter diregistrasi lewat konfigurasi.",
+        "operational": "Kredensial penyedia dari secret management.",
+        "alternatives": [],
+        "confidence": "high"
+      },
+      {
+        "area": "device_io",
+        "group": "app_infra",
+        "technology": "Go stdlib net (TCP/IP, HTTP) dan go.bug.st/serial (RS485 dan serial), adapter per vendor, simulator",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Komunikasi perangkat LAN dan serial dengan timeout. Simulator diberi tanda adapter_verified=false.",
+        "fulfills": ["REQ-005", "REQ-021", "REQ-022", "REQ-023"],
+        "driver": "requirement",
+        "reasoning": "Fakta: protokol vendor belum diketahui (DEC-008). Rekomendasi: hanya library netral vendor. Tidak membuat driver vendor sebelum dokumentasi tersedia. Wiegand, relay, dan USB lewat gateway I/O yang punya protokol LAN atau serial (asumsi).",
+        "pros": ["Netral vendor", "Tanpa cgo"],
+        "cons": ["SDK vendor C sulit dipakai"],
+        "tradeoffs": ["Simulator bisa menutupi perilaku nyata, sehingga status verifikasi wajib"],
+        "depends_on": ["integrations", "backend"],
+        "integration": "Adapter dipanggil worker Edge dengan timeout dari konfigurasi.",
+        "operational": "Akses LAN dan port serial di Edge. Timeout dan retry dari konfigurasi.",
+        "alternatives": [
+          {
+            "technology": "Wrapper SDK vendor lewat cgo",
+            "why": "Viable jika vendor hanya menyediakan SDK C.",
+            "difference": "Build lintas platform lebih sulit."
+          }
+        ],
+        "confidence": "low"
+      },
+      {
+        "area": "notification",
+        "group": "app_infra",
+        "technology": "Email via SMTP (penyedia relay belum dipilih)",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Alert operasional dikirim oleh worker dengan retry backoff.",
+        "fulfills": ["REQ-028", "FEAT-002"],
+        "driver": "requirement",
+        "reasoning": "Asumsi DEC-012: kanal awal email. SMTP netral penyedia.",
+        "pros": ["Netral penyedia", "Standar"],
+        "cons": ["Deliverability bergantung pada konfigurasi DNS"],
+        "tradeoffs": ["Kanal lain menambah adapter"],
+        "depends_on": ["workers", "messaging"],
+        "integration": "Worker notifikasi memanggil Notifier.",
+        "operational": "SPF dan DKIM untuk domain pengirim. Kredensial SMTP dari secret management.",
+        "alternatives": [
+          {
+            "technology": "API email transaksional",
+            "why": "Viable dengan deliverability lebih baik.",
+            "difference": "Terikat vendor API."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "field_encryption",
+        "group": "app_infra",
+        "technology": "AES-256-GCM envelope encryption dengan kunci dari secret management",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Enkripsi kolom PII (data member, kontak) dan isi backup. Plat nomor tidak dienkripsi kolom agar bisa dicari.",
+        "fulfills": ["DEC-024", "DEC-019", "REQ-031"],
+        "driver": "requirement",
+        "reasoning": "Asumsi DEC-024: enkripsi at rest untuk kolom sensitif. Rekomendasi: kunci di aplikasi dengan key id per baris untuk rotasi.",
+        "pros": ["Kunci terpisah dari database"],
+        "cons": ["Kolom terenkripsi tidak bisa dicari langsung"],
+        "tradeoffs": ["Pencarian exact pada PII memakai HMAC indeks terpisah jika diperlukan"],
+        "depends_on": ["database", "secret_management"],
+        "integration": "Repository membungkus kolom PII saat tulis dan baca.",
+        "operational": "Rotasi kunci terdokumentasi. Kunci tidak ada di repo.",
+        "alternatives": [
+          {
+            "technology": "pgcrypto di PostgreSQL",
+            "why": "Viable dan sederhana.",
+            "difference": "Kunci berada dekat data sehingga pemisahan kunci lebih lemah."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "architecture",
+        "group": "architecture",
+        "technology": "Modular Monolith (satu codebase Go, modul domain dengan batas package, tiga deployable: api, worker, edge)",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Batas 13 modul domain dengan deployment yang sederhana.",
+        "fulfills": ["FEAT-003", "FEAT-004", "FEAT-005", "FEAT-006", "FEAT-008", "FEAT-010", "FEAT-012", "FEAT-015"],
+        "driver": "architecture",
+        "reasoning": "Keputusan DEC-009 mengikat: modular monolith dan ukur sebelum memecah. Structure decision Microservices ditolak untuk sekarang. Batas modul dijaga dengan aturan impor (depguard).",
+        "pros": ["Transaksi lokal sederhana", "Kode domain dipakai ulang di Edge"],
+        "cons": ["Skala per modul tidak independen"],
+        "tradeoffs": ["Pemecahan nanti dimungkinkan karena batas modul jelas"],
+        "depends_on": ["backend", "edge_storage"],
+        "integration": "Modul berkomunikasi lewat interface Go dan event JetStream.",
+        "operational": "Tiga image dan tiga deployment. Metrik per deployable.",
+        "alternatives": [
+          {
+            "technology": "Microservices",
+            "why": "Viable setelah skala dan batas terukur.",
+            "difference": "Menambah network call, transaksi terdistribusi, dan operasi."
+          },
+          {
+            "technology": "Simple",
+            "why": "Viable untuk prototipe.",
+            "difference": "Tidak cukup untuk 13 modul dan tiga deployable."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "repository",
+        "group": "architecture",
+        "technology": "Monorepo (pnpm workspace untuk web, modul Go untuk API, worker, dan Edge, OpenAPI bersama)",
+        "language": "TypeScript dan Go",
+        "version_verified": false,
+        "purpose": "Satu sumber kontrak OpenAPI dan kode bersama.",
+        "fulfills": ["REQ-034", "FEAT-017"],
+        "driver": "architecture",
+        "reasoning": "Rekomendasi: kontrak OpenAPI dan kode domain dipakai bersama tanpa sinkronisasi antar repo.",
+        "pros": ["Kontrak selalu sinkron", "Satu CI"],
+        "cons": ["Repo membesar"],
+        "tradeoffs": ["Build perlu filter per paket"],
+        "depends_on": ["architecture", "package_manager"],
+        "integration": "OpenAPI di root dipakai generator untuk Go dan TypeScript.",
+        "operational": "CI menjalankan job per paket yang berubah.",
+        "alternatives": [
+          {
+            "technology": "Multi-repo",
+            "why": "Viable dengan tim terpisah.",
+            "difference": "Sinkronisasi kontrak OpenAPI lebih sulit."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "deployment",
+        "group": "operations",
+        "technology": "Kubernetes (cloud)",
+        "language": "YAML",
+        "version_verified": false,
+        "purpose": "Deployment API, worker, CronJob, NATS, Redis, dan frontend statis.",
+        "fulfills": ["REQ-032", "REQ-035", "FEAT-016"],
+        "driver": "operational",
+        "reasoning": "Fakta: OPERATIONS menetapkan Kubernetes. Penyedia cluster belum diketahui (asumsi tersedia). PostgreSQL dipilih managed jika tersedia, operator bila tidak.",
+        "pros": ["Rolling update", "Skala horizontal"],
+        "cons": ["Operasi dan kurva belajar tinggi"],
+        "tradeoffs": ["Biaya minimum cluster"],
+        "depends_on": ["containerization", "networking", "secret_management", "observability"],
+        "integration": "Ingress mengarah ke frontend dan API.",
+        "operational": "Probe liveness dan readiness. Resource limit.",
+        "alternatives": [
+          {
+            "technology": "Docker Compose di satu server",
+            "why": "Viable untuk pilot.",
+            "difference": "Tanpa HA dan rollout bertahap."
+          },
+          {
+            "technology": "Managed PaaS container",
+            "why": "Viable untuk skala kecil.",
+            "difference": "Kontrol NATS dan CronJob terbatas."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "edge_deployment",
+        "group": "operations",
+        "technology": "systemd service untuk binary Go di server lokal",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Menjalankan Edge: API lokal, worker device-command, dan sinkronisasi.",
+        "fulfills": ["REQ-024", "REQ-025", "REQ-026", "FEAT-015"],
+        "driver": "requirement",
+        "reasoning": "Fakta: Edge harus hidup saat internet putus dan restart cepat. Rekomendasi: systemd (Restart=always, start saat boot) lebih sederhana daripada Kubernetes di lokasi. Hardware lokal disediakan operator (asumsi).",
+        "pros": ["Sederhana", "Start otomatis saat boot"],
+        "cons": ["Update per lokasi perlu mekanisme"],
+        "tradeoffs": ["Tanpa orkestrasi multi-node"],
+        "depends_on": ["edge_storage", "backend"],
+        "integration": "Edge membaca konfigurasi dari file lokal dan secret dari provisioning.",
+        "operational": "Binary versioned dengan rollback lokal (DEC-023). Metrik dikirim saat online.",
+        "alternatives": [
+          {
+            "technology": "Docker Compose di server lokal",
+            "why": "Viable dengan isolasi container.",
+            "difference": "Menambah daemon container."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "containerization",
+        "group": "operations",
+        "technology": "Docker (multi-stage, image distroless untuk binary Go)",
+        "language": "Dockerfile",
+        "version_verified": false,
+        "purpose": "Image untuk API, worker, dan frontend statis.",
+        "fulfills": ["REQ-032", "FEAT-016"],
+        "driver": "operational",
+        "reasoning": "Rekomendasi: CGO nonaktif agar binary statis dan image kecil.",
+        "pros": ["Image kecil", "Permukaan serangan kecil"],
+        "cons": ["Debugging di dalam image lebih sulit"],
+        "tradeoffs": ["Tidak ada shell di image"],
+        "depends_on": ["deployment", "ci_cd"],
+        "integration": "Image di-push dari CI.",
+        "operational": "Pemindaian image di CI.",
+        "alternatives": [
+          {
+            "technology": "Cloud Native Buildpacks",
+            "why": "Viable tanpa Dockerfile.",
+            "difference": "Kontrol lapisan lebih sedikit."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "networking",
+        "group": "operations",
+        "technology": "Kubernetes Ingress dengan TLS (cert-manager); Edge hanya HTTPS keluar; perangkat di LAN terpisah",
+        "language": "YAML",
+        "version_verified": false,
+        "purpose": "Enkripsi in transit, perlindungan batas Edge dan perangkat.",
+        "fulfills": ["REQ-031", "DEC-018"],
+        "driver": "requirement",
+        "reasoning": "Fakta: cerita meminta enkripsi koneksi. Rekomendasi: Edge tidak menerima koneksi masuk dari internet. Perintah ditarik lewat HTTPS keluar.",
+        "pros": ["Tanpa port masuk ke LAN", "TLS terkelola"],
+        "cons": ["Long-poll perlu timeout yang tepat"],
+        "tradeoffs": ["Latency perintah bergantung interval tarik"],
+        "depends_on": ["deployment", "edge_deployment"],
+        "integration": "Edge memakai TLS dengan kredensial per-Edge.",
+        "operational": "Rotasi sertifikat otomatis.",
+        "alternatives": [
+          {
+            "technology": "Service mesh (Istio atau Linkerd)",
+            "why": "Viable untuk mTLS antar pod.",
+            "difference": "Terlalu berat untuk satu modular monolith."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "secret_management",
+        "group": "operations",
+        "technology": "Kubernetes Secrets dengan encryption at rest; sumber secret cloud belum dipilih",
+        "language": "YAML",
+        "version_verified": false,
+        "purpose": "Kredensial penyedia, kunci enkripsi, SMTP, dan API key internal. Tidak ada secret di repo.",
+        "fulfills": ["REQ-031", "DoD secret"],
+        "driver": "operational",
+        "reasoning": "Rekomendasi: secret disuntikkan ke pod. Edge menyimpan secret dengan izin file terbatas.",
+        "pros": ["Sederhana", "Terintegrasi K8s"],
+        "cons": ["Rotasi manual kecuali ada sumber eksternal"],
+        "tradeoffs": ["Secret manager eksternal menambah komponen"],
+        "depends_on": ["deployment", "edge_deployment"],
+        "integration": "Aplikasi membaca secret dari environment atau file.",
+        "operational": "Rotasi dan audit akses secret.",
+        "alternatives": [
+          {
+            "technology": "HashiCorp Vault",
+            "why": "Viable dengan rotasi dinamis.",
+            "difference": "Operasi lebih berat."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "backup",
+        "group": "operations",
+        "technology": "pgBackRest ke object storage (WAL archiving dan base backup harian), uji restore terjadwal",
+        "language": "Konfigurasi",
+        "version_verified": false,
+        "purpose": "Backup cloud dengan PITR. Salinan SQLite Edge ke tujuan terpisah.",
+        "fulfills": ["REQ-032", "DEC-010", "DEC-021"],
+        "driver": "requirement",
+        "reasoning": "Asumsi DEC-010: backup harian. Rekomendasi: pgBackRest memberi PITR, sedangkan pg_dump hanya memberi RPO sebesar interval.",
+        "pros": ["PITR", "Backup inkremental"],
+        "cons": ["Setup lebih kompleks"],
+        "tradeoffs": ["Biaya penyimpanan WAL"],
+        "depends_on": ["database", "storage", "scheduler"],
+        "integration": "Backup dienkripsi (DEC-024).",
+        "operational": "Uji restore berkala dan catat waktu pulih (RTO).",
+        "alternatives": [
+          {
+            "technology": "pg_dump harian",
+            "why": "Viable untuk volume kecil.",
+            "difference": "Tanpa PITR dan RPO sebesar interval."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "ci_cd",
+        "group": "operations",
+        "technology": "GitHub Actions (asumsi repository di GitHub)",
+        "language": "YAML",
+        "version_verified": false,
+        "purpose": "Pipeline lint, test, pemindaian keamanan, build image, dan deploy.",
+        "fulfills": ["REQ-032", "DoD"],
+        "driver": "operational",
+        "reasoning": "Asumsi: host repository di GitHub. Pipeline menjalankan gate yang diminta Definition of Done.",
+        "pros": ["Terintegrasi repo", "Runner Docker tersedia"],
+        "cons": ["Bergantung pada host"],
+        "tradeoffs": ["Biaya menit runner"],
+        "depends_on": ["testing", "quality", "security_scan", "containerization", "deployment"],
+        "integration": "Job per paket yang berubah.",
+        "operational": "Laporan test dan scan disimpan sebagai artefak.",
+        "alternatives": [
+          {
+            "technology": "GitLab CI",
+            "why": "Viable jika repo di GitLab.",
+            "difference": "Konfigurasi berbeda."
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "area": "logging",
+        "group": "operations",
+        "technology": "Go log/slog (handler JSON)",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Log terstruktur dengan field wajib (timestamp, level, service, trace_id, tenant_id, location_id, device_id).",
+        "fulfills": ["REQ-035"],
+        "driver": "requirement",
+        "reasoning": "Rekomendasi: library standar tanpa dependensi tambahan. Secret dan plat di-mask sesuai kebijakan.",
+        "pros": ["Stdlib", "Terstruktur"],
+        "cons": ["Fitur lebih sedikit dari zerolog"],
+        "tradeoffs": ["Tidak ada logger zero-allocation"],
+        "depends_on": ["observability"],
+        "integration": "Logger membawa trace_id dari context.",
+        "operational": "Retensi log dari kebijakan data-lifecycle.",
+        "alternatives": [
+          {
+            "technology": "zerolog",
+            "why": "Viable dan lebih cepat.",
+            "difference": "Dependensi pihak ketiga."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "observability",
+        "group": "operations",
+        "technology": "OpenTelemetry (trace dan metrik via OTLP) + Prometheus + Grafana + Alertmanager",
+        "language": "Go",
+        "version_verified": false,
+        "purpose": "Trace FLOW-002 lintas HTTP dan NATS, metrik minimum, dan alert.",
+        "fulfills": ["REQ-035", "DEC-016"],
+        "driver": "requirement",
+        "reasoning": "Fakta: cerita meminta trace dengan trace_id di HTTP dan NATS. Rekomendasi: OpenTelemetry sebagai standar; ambang alert dari konfigurasi.",
+        "pros": ["Standar vendor-netral", "Trace lintas layanan"],
+        "cons": ["Operasi beberapa komponen"],
+        "tradeoffs": ["Sampling untuk menekan biaya"],
+        "depends_on": ["logging", "deployment"],
+        "integration": "Trace context diteruskan lewat header HTTP dan header pesan NATS.",
+        "operational": "Retensi metrik. Ambang dari konfigurasi (DEC-016).",
+        "alternatives": [
+          {
+            "technology": "Sentry",
+            "why": "Viable untuk pelacakan error.",
+            "difference": "Bukan pengganti metrik dan trace penuh. Hanya pelengkap."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "testing",
+        "group": "standards",
+        "technology": "go test + testcontainers-go (PostgreSQL, NATS, Redis nyata); Vitest untuk frontend",
+        "language": "Go dan TypeScript",
+        "version_verified": false,
+        "purpose": "Uji lintas tenant, uji permission, uji webhook, uji buka barrier tanpa sukses palsu, uji restart Edge.",
+        "fulfills": ["REQ-001", "REQ-023", "REQ-025", "REQ-027", "DoD"],
+        "driver": "engineering",
+        "reasoning": "Rekomendasi: integrasi dengan kontainer nyata agar tidak ada integrasi palsu (DoD). Vitest untuk unit UI.",
+        "pros": ["Dependensi nyata di uji", "Satu tool per bahasa"],
+        "cons": ["Membutuhkan Docker di CI"],
+        "tradeoffs": ["Lebih lambat dari mock"],
+        "depends_on": ["backend", "frontend", "ci_cd"],
+        "integration": "Setiap endpoint diuji lintas tenant dan per peran.",
+        "operational": "Laporan test disimpan. Kegagalan dilaporkan apa adanya.",
+        "alternatives": [
+          {
+            "technology": "Playwright (E2E)",
+            "why": "Viable untuk alur login, masuk, dan keluar.",
+            "difference": "Ditambahkan sebelum pilot, belum dipilih sekarang."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "quality",
+        "group": "standards",
+        "technology": "ESLint + Prettier (TypeScript), golangci-lint (gofmt, go vet)",
+        "language": "TypeScript dan Go",
+        "version_verified": false,
+        "purpose": "Lint dan format untuk setiap bahasa yang dipakai.",
+        "fulfills": ["REQ-031"],
+        "driver": "engineering",
+        "reasoning": "Rekomendasi: satu tool per bahasa. Aturan depguard dipakai untuk menjaga batas modul.",
+        "pros": ["Standar umum"],
+        "cons": ["Konfigurasi perlu dijaga"],
+        "tradeoffs": ["Dua set aturan"],
+        "depends_on": ["frontend", "backend"],
+        "integration": "Dijalankan di CI.",
+        "operational": "Tidak ada.",
+        "alternatives": [
+          {
+            "technology": "Biome",
+            "why": "Viable satu tool untuk TypeScript.",
+            "difference": "Ekosistem plugin lebih kecil."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "security_scan",
+        "group": "standards",
+        "technology": "gitleaks (secret), govulncheck dan gosec (Go), pnpm audit (TypeScript), Trivy (image)",
+        "language": "Go dan TypeScript",
+        "version_verified": false,
+        "purpose": "Pemindaian secret, kerentanan dependensi, dan image.",
+        "fulfills": ["REQ-031", "DoD secret"],
+        "driver": "requirement",
+        "reasoning": "Fakta: DoD mewajibkan pemindaian secret lulus di CI. Rekomendasi: alat di atas mencakup secret, dependensi, dan image.",
+        "pros": ["Gate di CI"],
+        "cons": ["False positive perlu ditinjau"],
+        "tradeoffs": ["Waktu CI bertambah"],
+        "depends_on": ["ci_cd", "containerization"],
+        "integration": "Gate CI sebelum deploy.",
+        "operational": "Hasil scan disimpan. Kegagalan dilaporkan.",
+        "alternatives": [
+          {
+            "technology": "Semgrep",
+            "why": "Viable untuk SAST multi-bahasa.",
+            "difference": "Aturan dan biaya berbeda."
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "area": "package_manager",
+        "group": "standards",
+        "technology": "pnpm (workspace frontend) dan Go modules",
+        "language": "TypeScript dan Go",
+        "version_verified": false,
+        "purpose": "Dependensi frontend dan Go.",
+        "fulfills": ["REQ-034"],
+        "driver": "architecture",
+        "reasoning": "Rekomendasi: pnpm workspace untuk paket web dan Go modules untuk backend dan Edge.",
+        "pros": ["Workspace efisien", "Lockfile"],
+        "cons": ["Konfigurasi workspace"],
+        "tradeoffs": ["Dua ekosistem"],
+        "depends_on": ["repository", "frontend"],
+        "integration": "Lockfile di repo.",
+        "operational": "Cache dependensi di CI.",
+        "alternatives": [
+          {
+            "technology": "npm",
+            "why": "Viable tanpa workspace khusus.",
+            "difference": "Instalasi lebih lambat."
+          }
+        ],
+        "confidence": "high"
+      }
+    ],
+    "compatibility": [
+      {
+        "area": "runtime",
+        "status": "compatible",
+        "between": ["backend", "database"],
+        "note": "Go dengan pgx dan PostgreSQL.",
+        "basis": "Driver pgx didukung umum. Versi belum diuji."
+      },
+      {
+        "area": "data_access",
+        "status": "compatible",
+        "between": ["data_access", "database"],
+        "note": "sqlc menghasilkan kode Go untuk PostgreSQL.",
+        "basis": "Dialek PostgreSQL didukung sqlc."
+      },
+      {
+        "area": "data_access",
+        "status": "compatible",
+        "between": ["data_access", "edge_storage"],
+        "note": "sqlc juga mendukung dialek SQLite. Dua konfigurasi sqlc dan dua dialek SQL.",
+        "basis": "Dialek SQLite didukung sqlc. Dialek dipisah per adapter."
+      },
+      {
+        "area": "runtime",
+        "status": "compatible",
+        "between": ["backend", "edge_storage"],
+        "note": "modernc.org/sqlite tanpa CGO sehingga image distroless dan build Edge tetap statis.",
+        "basis": "Driver pure Go. Belum diuji di repo."
+      },
+      {
+        "area": "messaging",
+        "status": "compatible",
+        "between": ["backend", "messaging"],
+        "note": "nats.go mendukung JetStream.",
+        "basis": "Client resmi NATS."
+      },
+      {
+        "area": "cache",
+        "status": "compatible",
+        "between": ["backend", "cache"],
+        "note": "go-redis untuk counter dengan TTL.",
+        "basis": "Client Go umum."
+      },
+      {
+        "area": "storage",
+        "status": "compatible",
+        "between": ["backend", "storage"],
+        "note": "AWS SDK v2 bekerja dengan API S3 dan MinIO.",
+        "basis": "Kesesuaian API S3 umum. Belum diuji dengan MinIO."
+      },
+      {
+        "area": "api",
+        "status": "unverified",
+        "between": ["api", "backend"],
+        "note": "oapi-codegen perlu membangkitkan wrapper untuk Gin.",
+        "basis": "Belum diverifikasi versi generator di repo."
+      },
+      {
+        "area": "api",
+        "status": "compatible",
+        "between": ["api", "frontend"],
+        "note": "openapi-fetch mengonsumsi spesifikasi OpenAPI 3.",
+        "basis": "Standar OpenAPI."
+      },
+      {
+        "area": "ui",
+        "status": "compatible",
+        "between": ["ui", "frontend"],
+        "note": "Tailwind dan shadcn/ui berjalan di React + Vite.",
+        "basis": "Setup resmi shadcn untuk Vite."
+      },
+      {
+        "area": "charting",
+        "status": "compatible",
+        "between": ["charting", "ui"],
+        "note": "Chart shadcn dibangun di atas Recharts.",
+        "basis": "Komponen shadcn chart."
+      },
+      {
+        "area": "authentication",
+        "status": "compatible",
+        "between": ["authentication", "database"],
+        "note": "Tabel sesi di PostgreSQL mendukung pencabutan.",
+        "basis": "Desain Session dari cerita (revoked_at)."
+      },
+      {
+        "area": "deployment",
+        "status": "unverified",
+        "between": ["messaging", "deployment"],
+        "note": "NATS JetStream di Kubernetes dengan Helm dan cluster tiga node.",
+        "basis": "Belum diverifikasi versi chart dan penyedia cluster."
+      },
+      {
+        "area": "deployment",
+        "status": "compatible",
+        "between": ["deployment", "edge_deployment"],
+        "note": "Edge berjalan di luar Kubernetes dengan systemd. Tidak ada runtime bersama.",
+        "basis": "Desain Edge dari cerita."
+      },
+      {
+        "area": "containerization",
+        "status": "unverified",
+        "between": ["containerization", "device_io"],
+        "note": "go.bug.st/serial harus bekerja dengan CGO nonaktif agar image distroless.",
+        "basis": "Belum diverifikasi di repo."
+      },
+      {
+        "area": "testing",
+        "status": "unverified",
+        "between": ["testing", "ci_cd"],
+        "note": "testcontainers-go membutuhkan Docker di runner.",
+        "basis": "Asumsi GitHub Actions dengan Docker."
+      },
+      {
+        "area": "runtime",
+        "status": "resolved",
+        "between": ["backend", "edge_storage"],
+        "note": "Baseline Python + FastAPI bertentangan dengan Go di cerita dan Edge. Diselesaikan dengan Go.",
+        "basis": "Cerita bagian Platform dan Arsitektur Teknologi."
+      },
+      {
+        "area": "architecture",
+        "status": "resolved",
+        "between": ["architecture", "deployment"],
+        "note": "Structure decision Microservices bertentangan dengan DEC-009 (mengikat) dan cerita. Diselesaikan dengan Modular Monolith.",
+        "basis": "DEC-009 dan Arsitektur Teknologi di cerita."
+      },
+      {
+        "area": "workers",
+        "status": "resolved",
+        "between": ["workers", "device_io"],
+        "note": "Device-command di cloud tidak bisa mencapai LAN. Dipindah ke worker Edge dengan tarik perintah lewat HTTPS keluar.",
+        "basis": "Cerita: kontrol barrier tidak boleh hanya lewat cloud, perangkat di LAN."
+      },
+      {
+        "area": "data_access",
+        "status": "resolved",
+        "between": ["database", "field_encryption"],
+        "note": "Enkripsi plat bertentangan dengan pencarian prefix pg_trgm. Plat tidak dienkripsi kolom dan dilindungi RBAC serta masking log.",
+        "basis": "Asumsi di context dan DEC-019."
+      }
+    ],
+    "evaluation": {
+      "summary": "Stack ringkas dan konsisten. Kompleksitas operasi tinggi karena Kubernetes, NATS, Redis, dan Edge lokal, tetapi dibutuhkan oleh kebutuhan offline dan perangkat.",
+      "criteria": [
+        {"name": "requirement_coverage", "score": 4, "reason": "Semua MUST terpenuhi oleh item yang dipilih. Sebagian angka (DEC-001, DEC-016, DEC-017) masih menunggu konfirmasi.", "evidence": ["REQ-024", "REQ-025", "REQ-026", "REQ-023", "edge_storage", "messaging"]},
+        {"name": "compatibility", "score": 4, "reason": "Tidak ada konflik terbuka. Beberapa versi belum diverifikasi.", "evidence": ["compatibility", "backend", "data_access", "edge_storage"]},
+        {"name": "maintainability", "score": 4, "reason": "Satu bahasa cloud dan Edge, kontrak OpenAPI bersama, dan batas modul dijaga aturan impor.", "evidence": ["architecture", "backend", "repository", "api"]},
+        {"name": "performance", "score": 4, "reason": "Go dan koneksi perangkat konkuren. Latency target belum ada angkanya (DEC-001).", "evidence": ["backend", "database", "cache", "device_io"]},
+        {"name": "scalability", "score": 3, "reason": "Modular monolith dengan worker terpisah dan NATS. Pemecahan lebih lanjut menunggu pengukuran (DEC-009).", "evidence": ["architecture", "workers", "messaging", "deployment"]},
+        {"name": "security", "score": 4, "reason": "RLS, RBAC, argon2id, hash API key, enkripsi kolom PII, dan secret di Kubernetes. Belum ada MFA.", "evidence": ["authorization", "authentication", "field_encryption", "security_scan", "networking"]},
+        {"name": "reliability", "score": 4, "reason": "Outbox SQLite dengan fsync, JetStream dengan ack, dan pgBackRest dengan PITR. Belum diuji restart dan rollback.", "evidence": ["edge_storage", "messaging", "backup", "edge_deployment"]},
+        {"name": "developer_experience", "score": 4, "reason": "Tooling standar dan satu tool per bahasa. Testcontainers memerlukan Docker lokal.", "evidence": ["testing", "quality", "package_manager", "repository"]},
+        {"name": "sustainability", "score": 4, "reason": "Teknologi matang dan umum. Tidak ada vendor tunggal yang mengunci.", "evidence": ["backend", "frontend", "database", "messaging"]},
+        {"name": "operational_complexity", "score": 4, "reason": "Kubernetes, NATS, Redis, PostgreSQL, dan Edge lokal perlu operasi. Dapat dikurangi nanti dengan managed service.", "evidence": ["deployment", "messaging", "cache", "backup", "observability"]},
+        {"name": "total_cost", "score": 3, "reason": "Biaya cluster dan operasi, tanpa lisensi berbayar di stack utama.", "evidence": ["deployment", "storage", "observability"]}
+      ],
+      "findings": [
+        "Baseline Python + FastAPI diganti Go: profil AI Product hanya petunjuk lemah dan cerita menetapkan Go.",
+        "Structure decision Microservices diganti Modular Monolith sesuai DEC-009.",
+        "Redis tidak dipakai sebagai antrean atau sumber kebenaran.",
+        "PostgreSQL full-text search dan search engine dihilangkan karena pencarian plat cukup dengan pg_trgm.",
+        "Desktop (Tauri), mobile (React Native dan Expo), dan CLI dihilangkan karena belum ada kebutuhan yang jelas (DEC-002, DEC-003).",
+        "Vitest dipertahankan untuk frontend. pytest dan Ruff dihilangkan karena tidak ada Python di stack.",
+        "Komponen yang tidak punya kebutuhan bernama: hosting cloud belum dipilih dan tidak dicantumkan.",
+        "Simulator perangkat harus diberi tanda adapter_verified=false (DEC-008)."
+      ]
+    },
+    "consistency": [
+      {"area": "requirements", "status": "consistent", "note": "Setiap MUST punya item yang memenuhinya. Mekanisme offline dan perintah perangkat ada di Edge."},
+      {"area": "project_modules", "status": "consistent", "note": "13 modul domain menjadi batas package Go dalam Modular Monolith."},
+      {"area": "architecture", "status": "resolved", "note": "Structure decision Microservices ditolak sesuai DEC-009 (mengikat). Modular Monolith dipakai dengan tiga deployable. Perlu konfirmasi user terhadap structure decision."},
+      {"area": "folder_structure", "status": "consistent", "note": "Monorepo dan Modular Monolith tidak bertentangan. Struktur folder dirancang di ronde repository."},
+      {"area": "data_architecture", "status": "consistent", "note": "PostgreSQL sebagai sumber kebenaran cloud, SQLite Edge sebagai outbox durable, Redis hanya counter. Sesuai DEC-011 dan data-lifecycle."},
+      {"area": "security", "status": "consistent", "note": "RLS, RBAC, argon2id, hash API key, enkripsi kolom PII, dan networking outbound-only. Belum ada MFA dan belum ada angka rate limit (DEC-017)."},
+      {"area": "deployment", "status": "consistent", "note": "Kubernetes untuk cloud sesuai OPERATIONS. Edge dengan systemd di lokasi. Penyedia cluster belum diketahui."}
+    ]
+  }
+}
+```

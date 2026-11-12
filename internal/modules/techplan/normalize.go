@@ -202,7 +202,8 @@ func normalizeItem(it *core.TechItem) {
 		a.Technology, a.Why, a.Difference = clean(a.Technology, maxName), clean(a.Why, maxText), clean(a.Difference, maxText)
 		a.Pros, a.Cons = cleanList(a.Pros, maxText), cleanList(a.Cons, maxText)
 		a.ArchitectureImpact, a.MaintenanceImpact, a.CostImpact = clean(a.ArchitectureImpact, maxText), clean(a.MaintenanceImpact, maxText), clean(a.CostImpact, maxText)
-		if a.Technology != "" && !strings.EqualFold(a.Technology, it.Technology) && len(alts) < maxAlts {
+		dup := slices.ContainsFunc(alts, func(x core.TechAlternative) bool { return strings.EqualFold(x.Technology, a.Technology) })
+		if a.Technology != "" && !dup && !strings.EqualFold(a.Technology, it.Technology) && len(alts) < maxAlts {
 			alts = append(alts, a)
 		}
 	}

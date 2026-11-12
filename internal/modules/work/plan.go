@@ -57,8 +57,11 @@ func hasPlanPart(parts []string, kind string) bool {
 // structure in one answer. Shared context is written once. Sections the
 // project already decided stay frozen and are not redesigned.
 func UnifiedPlanPrompt(p *core.Project) string {
-	if raw := lastPlanOutput(p); raw != "" && planRejection(p) != "" {
-		return unifiedRepairPrompt(p, raw)
+	switch PlanStrategy(p) {
+	case core.TechAttemptRepair:
+		return TechRepairPrompt(p, true)
+	case core.TechAttemptSyntax:
+		return unifiedRepairPrompt(p, lastPlanOutput(p))
 	}
 	open := PlanParts(p)
 	parts := open
@@ -108,6 +111,7 @@ PROJECT: `)
 	if hasPlanPart(parts, KindTech) {
 		b.WriteString("TECHNOLOGY RULES:\n")
 		b.WriteString(techPlanRules)
+		b.WriteString(techplan.Contract(p.Stack))
 		b.WriteString("\n")
 		if existingProject(p) {
 			b.WriteString("For an existing project every technology item sets action: reuse | add | modify | refactor | remove. Keep existing technologies as reuse unless the story or the user asked to change them.\n\n")
@@ -119,7 +123,7 @@ PROJECT: `)
 	if hasPlanPart(parts, KindRepo) {
 		b.WriteString(unifiedRepoRules)
 	}
-	b.WriteString("Reply with ONLY JSON in ```json fences. No prose before or after. No trailing commas. Omit a top-level key you were not asked to produce. Do not invent JSON keys. One technology item per area the system actually needs; omit unused areas. Keep each string to one sentence, no line breaks inside strings, escape quotes. Keep the answer compact: no filler nodes, no duplicated text.\n")
+	b.WriteString("Reply with ONLY JSON in ```json fences. No prose before or after. No trailing commas. Omit a top-level key you were not asked to produce. Do not invent JSON keys. One technology item per area the system actually needs; omit unused areas, except the MANDATORY AREAS of the contract. Compact means short sentences, never a missing required field. Keep each string to one sentence, no line breaks inside strings, escape quotes. Keep the answer compact: no filler nodes, no duplicated text.\n")
 	b.WriteString("Preferred: one object with those keys. Also accepted: one complete json block per section, in order, each the inner object (not wrapped in the key name).\n")
 	b.WriteString("{\n")
 	needComma := false
@@ -131,7 +135,7 @@ PROJECT: `)
 		needComma = true
 	}
 	if hasPlanPart(parts, KindTech) {
-		writeKey(`  "technology": { "approach": "...", "summary": "...", "rationale": "...", "context": {"summary":"...","facts":[],"unknowns":[],"assumptions":[]}, "items": [{"area":"backend","group":"stack","technology":"...","purpose":"...","fulfills":["REQ-001"],"driver":"requirement","reasoning":"...","pros":["..."],"cons":["..."],"tradeoffs":["..."],"depends_on":["database"],"integration":"...","operational":"...","alternatives":[{"technology":"...","why":"...","difference":"..."}],"confidence":"medium"` + existingActionHint(p) + `}], "compatibility": [{"area":"runtime","status":"compatible","between":["backend","database"],"note":"...","basis":"..."}], "evaluation": {"summary":"...","criteria":[{"name":"requirement_coverage","score":4,"reason":"...","evidence":["backend"]}], "findings":[]}, "consistency": [{"area":"requirements","status":"consistent","note":"..."}] }`)
+		writeKey(`  "technology": { "approach": "...", "summary": "...", "rationale": "...", "context": {"summary":"...","facts":[],"unknowns":[],"assumptions":[]}, "items": [{"area":"backend","group":"stack","technology":"...","purpose":"...","fulfills":["REQ-001"],"driver":"requirement","reasoning":"...","pros":["..."],"cons":["..."],"tradeoffs":["..."],"depends_on":["database"],"integration":"...","operational":"...","alternatives":[{"technology":"...","why":"...","difference":"...","pros":["..."],"cons":["..."]}],"confidence":"medium"` + existingActionHint(p) + `}], "compatibility": [{"area":"runtime","status":"compatible","between":["backend","database"],"note":"...","basis":"..."}], "evaluation": {"summary":"...","criteria":[{"name":"requirement_coverage","score":4,"reason":"...","evidence":["backend"]}], "findings":[]}, "consistency": [{"area":"requirements","status":"consistent","note":"..."}] }`)
 	}
 	if hasPlanPart(parts, KindStructure) {
 		writeKey(`  "architecture": { "summary": "...", "drivers": ["..."], "domains": [{"name":"booking","responsibility":"..."}], "dependency_rules": ["..."], "recommendation": "recommended", "reason": "...", "alternatives": [{"id":"recommended","name":"...","summary":"...","type":"modular","ir":{"type":"modular","apps":[{"name":"web","reason":"..."}],"services":[{"name":"api","reason":"...","modules":["booking"],"module_reasons":{"booking":"..."}}],"workers":[],"packages":[],"docs":"docs/","rules":["..."]},"evaluation":{"maintainability":5,"simplicity":5,"extensibility":3,"testability":4,"separation_of_concerns":4,"complexity":2}}] }`)

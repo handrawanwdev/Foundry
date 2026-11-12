@@ -535,3 +535,28 @@ func (r *Runner) Version(ctx context.Context) string {
 	versions[bin] = v
 	return v
 }
+
+// Model is the model the runner asks for; "" is the CLI default.
+func (r *Runner) Model() string { return r.opt.Model }
+
+// WithModel is a runner of the same preset and effort on another model. A
+// custom command has no model flag to change.
+func (r *Runner) WithModel(model string) (*Runner, error) {
+	if r.ID == "" {
+		return nil, fmt.Errorf("%s: model tidak bisa diganti untuk perintah kustom", r.Name)
+	}
+	return NewRunner(r.ID, nil, Options{Model: model, Effort: r.opt.Effort})
+}
+
+// EscalationModel is the stronger model to retry a stuck job on, "" when
+// there is none Foundry knows: only a configured small model escalates, so a
+// user's default (unknown) or a model already strong is never overridden.
+func EscalationModel(r *Runner) string {
+	if r == nil || r.ID != "claude" {
+		return ""
+	}
+	if strings.Contains(strings.ToLower(r.opt.Model), "haiku") {
+		return "sonnet"
+	}
+	return ""
+}

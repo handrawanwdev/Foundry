@@ -26,6 +26,9 @@ const MaxTechRequest = 6000
 // alternatives it weighed, a compatibility review of the stack, an honest
 // evaluation and the consistency checks.
 func TechPlanPrompt(p *core.Project) string {
+	if techRepairing(p) {
+		return TechRepairPrompt(p, false)
+	}
 	var b strings.Builder
 	b.WriteString(`You are the technology architect of Foundry. Foundry designs software and writes instructions for an external coding agent; it never implements and you must not write application code or touch files.
 Decide the TECHNOLOGY of the system below. First understand what it needs, then choose, area by area, what it needs and nothing more.
@@ -46,6 +49,7 @@ PROJECT: `)
 	writeTechAnchors(&b, p)
 	writeTechPrevious(&b, p)
 	b.WriteString(techPlanRules)
+	b.WriteString(techplan.Contract(p.Stack))
 	b.WriteString(`
 Reply with ONLY one JSON object in a ` + "```json" + ` block:
 {
@@ -259,10 +263,30 @@ func writeTechPrevious(b *strings.Builder, p *core.Project) {
 		if t := strings.TrimSpace(r.Text); t != "" {
 			b.WriteString("USER REQUEST:\n" + t + "\n\n")
 		}
-		if r.Rejected != "" {
-			b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + r.Rejected + "\n\n")
-		}
+		writeTechRefusal(b, r)
 	}
+}
+
+// writeTechRefusal tells the AI why its last answer was refused: every
+// issue with its path and fix when the validator listed them, else the
+// refusal text.
+func writeTechRefusal(b *strings.Builder, r *core.TechPlanRequest) {
+	if r.Rejected == "" {
+		return
+	}
+	if len(r.Issues) == 0 {
+		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + r.Rejected + "\n\n")
+		return
+	}
+	fmt.Fprintf(b, "YOUR LAST ANSWER WAS REFUSED, fix this: %d problems (%s)\n", len(r.Issues), techplan.GroupSummary(r.Issues))
+	for _, is := range r.Issues {
+		fmt.Fprintf(b, "- [%s] %s: %s", is.Code, orNo(is.Path, "plan"), is.Message)
+		if is.Hint != "" {
+			fmt.Fprintf(b, " → %s", is.Hint)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
 }
 
 // writeTechPlan writes the plan compactly: the exact areas and choices the AI
@@ -358,11 +382,10 @@ PROJECT: `)
 			b.WriteString("REASON GIVEN BY THE USER:\n" + r.Reason + "\n")
 		}
 		b.WriteString("\n")
-		if r.Rejected != "" {
-			b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + r.Rejected + "\n\n")
-		}
+		writeTechRefusal(&b, r)
 	}
 	b.WriteString(techPlanRules)
+	b.WriteString(techplan.Contract(p.Stack))
 	b.WriteString(`
 Reply with ONLY one JSON object in a ` + "```json" + ` block:
 {"set": [ complete decisions to add or replace, same shape as items of a fresh plan ],
@@ -399,18 +422,29 @@ func ApplyTechPlan(p *core.Project, raw string) (v *core.TechVersion, err error)
 	if s == nil || s.PlanRequest == nil || s.PlanRequest.Action != core.TechPlanGenerate {
 		return nil, errors.New("tidak ada permintaan rancangan teknologi")
 	}
-	var plan core.TechPlan
-	if err := ExtractJSONFunc(raw, &plan, func() bool { return len(plan.Items) > 0 }); err != nil {
-		if body := jsonObjectBytes(raw); len(body) == 0 || unmarshalLoose(body, &plan) != nil || len(plan.Items) == 0 {
+	req := s.PlanRequest
+	var plan *core.TechPlan
+	if techRepairing(p) {
+		fixed, res, err := repairTechPlan(p, raw)
+		if err != nil {
+			return nil, err
+		}
+		plan = fixed
+		p.Log("system", fmt.Sprintf("Perbaikan terarah rencana teknologi lolos validasi: %d masalah selesai, %d area ditulis ulang, %d keputusan valid dipertahankan",
+			len(req.Issues), len(res.Repaired), len(plan.Items)-len(res.Repaired)))
+	} else {
+		plan = &core.TechPlan{}
+		if err := ExtractJSONFunc(raw, plan, func() bool { return len(plan.Items) > 0 }); err != nil {
+			if body := jsonObjectBytes(raw); len(body) == 0 || unmarshalLoose(body, plan) != nil || len(plan.Items) == 0 {
+				return nil, err
+			}
+		}
+		plan.History, plan.Analysis, plan.Stale = nil, core.TechAnalysis{}, false
+		if err := techplan.Accept(p, plan); err != nil {
 			return nil, err
 		}
 	}
-	plan.History, plan.Analysis, plan.Stale = nil, core.TechAnalysis{}, false
-	if err := techplan.Accept(p, &plan); err != nil {
-		return nil, err
-	}
-	req := s.PlanRequest
-	if v, err = techplan.Land(p, &plan, "generate", strings.TrimSpace(req.Text), req.Reason, ""); err != nil {
+	if v, err = techplan.Land(p, plan, "generate", strings.TrimSpace(req.Text), req.Reason, ""); err != nil {
 		return nil, err
 	}
 	s.PlanRequest = nil

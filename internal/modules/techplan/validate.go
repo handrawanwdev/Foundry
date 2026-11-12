@@ -26,7 +26,22 @@ type finding struct {
 type collector struct{ out []finding }
 
 func (c *collector) add(level, area, check string, refuse bool, f string, a ...any) {
-	c.out = append(c.out, finding{TechIssue: core.TechIssue{Level: level, Area: area, Message: fmt.Sprintf(f, a...)}, Refuse: refuse, Check: check})
+	code := CodeConflict
+	if level != "error" {
+		code = CodeWarning
+	}
+	c.issue(level, area, check, refuse, code, "", "", f, a...)
+}
+
+// issue is add with the code, the path in the plan and the fix hint that a
+// targeted repair and the diagnosis need.
+func (c *collector) issue(level, area, check string, refuse bool, code, path, hint string, f string, a ...any) {
+	c.out = append(c.out, finding{TechIssue: core.TechIssue{Level: level, Area: area, Message: fmt.Sprintf(f, a...), Code: code, Path: path, Hint: hint},
+		Refuse: refuse, Check: check})
+}
+
+func itemPath(area string, rest ...string) string {
+	return strings.Join(append([]string{"items." + area}, rest...), ".")
 }
 
 // Refresh recomputes everything Foundry derives from the plan and the
@@ -131,44 +146,53 @@ func analyze(p *core.Project, plan *core.TechPlan, st *core.TechStack) []finding
 
 func validatePlan(c *collector, plan *core.TechPlan, st *core.TechStack) {
 	if len(plan.Items) == 0 {
-		c.add("error", "", "requirements", true, "rencana tidak memuat keputusan teknologi")
+		c.issue("error", "", "requirements", true, CodeEmptyPlan, "items", "tulis satu item per area yang dibutuhkan sistem", "rencana tidak memuat keputusan teknologi")
 		return
 	}
 	if plan.Approach == "" || plan.Summary == "" {
-		c.add("error", "", "requirements", true, "approach dan summary rencana wajib diisi")
+		c.issue("error", "", "requirements", true, CodePlanMeta, "approach", "isi approach dan summary", "approach dan summary rencana wajib diisi")
 	}
 	if plan.Context.Summary == "" || len(plan.Context.Facts) == 0 {
-		c.add("error", "", "requirements", true, "context teknis wajib diisi: summary dan fakta kebutuhan yang dipahami (facts)")
+		c.issue("error", "", "requirements", true, CodeContext, "context", "isi context.summary dan minimal satu context.facts {category, statement, source}",
+			"context teknis wajib diisi: summary dan fakta kebutuhan yang dipahami (facts)")
 	}
-	pl := st.Platform
-	for _, need := range []struct {
-		on   bool
-		area string
-		name string
-	}{
-		{pl.Web, core.TechFrontend, "web"}, {pl.Mobile, core.TechMobile, "mobile"}, {pl.Desktop, core.TechDesktop, "desktop"},
-		{pl.Backend, core.TechBackend, "backend"}, {pl.CLI, core.TechCLI, "CLI"},
-	} {
-		if it := plan.Item(need.area); need.on && (it == nil || it.None()) {
-			c.add("error", need.area, "requirements", true, "platform %s dipilih, tetapi rencana tidak menentukan teknologi %s", need.name, need.area)
+	for _, need := range PlatformAreas(st.Platform) {
+		it := plan.Item(need.Area)
+		switch {
+		case it == nil || it.Technology == "":
+			c.issue("error", need.Area, "requirements", true, CodePlatformMissing, itemPath(need.Area),
+				fmt.Sprintf("tambahkan item %s dengan teknologi implementasi untuk target %s", need.Area, need.Targets),
+				"platform %s dipilih, tetapi rencana tidak menentukan teknologi %s", need.Platform, need.Area)
+		case it.None():
+			// The plan states, with its reason, that the selected platform is
+			// not needed. That is a conflict with the platform decision, not
+			// a defect of the answer: it lands and blocks approval until the
+			// user changes the platform or the decision.
+			c.issue("error", need.Area, "requirements", false, CodePlatformDeclined, itemPath(need.Area, "technology"),
+				"ubah platform target, atau minta revisi teknologi untuk platform ini",
+				"platform %s dipilih, tetapi rencana menilai %s tidak perlu: %s", need.Platform, need.Area, orDash(it.Reasoning))
 		}
 	}
-	for _, area := range []string{core.TechArchitecture, core.TechRepository} {
+	for _, area := range StructureAreas {
 		it := plan.Item(area)
 		switch {
 		case it == nil || it.None():
-			c.add("error", area, "architecture", true, "rencana harus menentukan %s", area)
+			c.issue("error", area, "architecture", true, CodeStructureValue, itemPath(area), "tambahkan item "+area+" dengan nilai yang diizinkan",
+				"rencana harus menentukan %s", area)
 		case st.Mode == core.StructureExisting:
 		case area == core.TechArchitecture && !slices.Contains([]string{core.ArchSimple, core.ArchModular, core.ArchMicroservices}, it.Technology):
-			c.add("error", area, "architecture", true, "arsitektur harus salah satu dari: %s, %s, %s (bukan %q)", core.ArchSimple, core.ArchModular, core.ArchMicroservices, it.Technology)
+			c.issue("error", area, "architecture", true, CodeStructureValue, itemPath(area, "technology"), "pakai tepat salah satu nilai yang diizinkan",
+				"arsitektur harus salah satu dari: %s, %s, %s (bukan %q)", core.ArchSimple, core.ArchModular, core.ArchMicroservices, it.Technology)
 		case area == core.TechRepository && !slices.Contains([]string{core.RepoSimple, core.RepoMonorepo}, it.Technology):
-			c.add("error", area, "architecture", true, "repository harus salah satu dari: %s, %s (bukan %q)", core.RepoSimple, core.RepoMonorepo, it.Technology)
+			c.issue("error", area, "architecture", true, CodeStructureValue, itemPath(area, "technology"), "pakai tepat salah satu nilai yang diizinkan",
+				"repository harus salah satu dari: %s, %s (bukan %q)", core.RepoSimple, core.RepoMonorepo, it.Technology)
 		}
 	}
 	seen := map[string]bool{}
 	for _, it := range plan.Items {
 		if seen[it.Area] {
-			c.add("error", it.Area, "requirements", true, "area %s muncul lebih dari sekali; satu keputusan per area", it.Area)
+			c.issue("error", it.Area, "requirements", true, CodeDuplicateArea, itemPath(it.Area), "gabungkan menjadi satu keputusan",
+				"area %s muncul lebih dari sekali; satu keputusan per area", it.Area)
 		}
 		seen[it.Area] = true
 	}
@@ -181,38 +205,30 @@ func validateItems(c *collector, plan *core.TechPlan) {
 	}
 	for _, it := range plan.Items {
 		if it.Technology == "" {
-			c.add("error", it.Area, "requirements", true, "%s: technology kosong; tulis \"%s\" bila area ini tidak butuh teknologi", it.Area, core.TechNone)
+			c.issue("error", it.Area, "requirements", true, CodeTechnologyEmpty, itemPath(it.Area, "technology"), "tulis teknologinya, atau \""+core.TechNone+"\" dengan alasan",
+				"%s: technology kosong; tulis \"%s\" bila area ini tidak butuh teknologi", it.Area, core.TechNone)
 			continue
 		}
 		if !slices.Contains(core.TechPlanGroups, it.Group) {
-			c.add("error", it.Area, "requirements", true, "%s: group harus salah satu dari %s", it.Area, strings.Join(core.TechPlanGroups, ", "))
+			c.issue("error", it.Area, "requirements", true, CodeInvalidGroup, itemPath(it.Area, "group"), "pakai salah satu group yang diizinkan",
+				"%s: group harus salah satu dari %s", it.Area, strings.Join(core.TechPlanGroups, ", "))
 		}
-		var missing []string
-		need := func(ok bool, field string) {
-			if !ok {
-				missing = append(missing, field)
-			}
-		}
-		need(it.Reasoning != "", "reasoning")
-		need(slices.Contains(core.TechDrivers, it.Driver), "driver ("+strings.Join(core.TechDrivers, "|")+")")
-		need(slices.Contains(core.TechConfidence, it.Confidence), "confidence (high|medium|low)")
-		if !it.None() {
-			need(it.Purpose != "", "purpose")
-			need(len(it.Fulfills) > 0, "fulfills")
-			need(len(it.Pros) > 0, "pros")
-			need(len(it.Cons) > 0, "cons")
-		}
-		if len(missing) > 0 {
-			c.add("error", it.Area, "requirements", true, "%s: field wajib belum diisi: %s", it.Area, strings.Join(missing, ", "))
+		if missing := MissingItem(it); len(missing) > 0 {
+			first, _, _ := strings.Cut(missing[0], " ")
+			c.issue("error", it.Area, "requirements", true, CodeRequiredField, itemPath(it.Area, first), "isi "+strings.Join(missing, ", ")+" untuk keputusan ini",
+				"%s: field wajib belum diisi: %s", it.Area, strings.Join(missing, ", "))
 		}
 		for _, d := range it.DependsOn {
 			if !areas[d] {
-				c.add("error", it.Area, "requirements", true, "%s: depends_on mengacu ke area %q yang tidak ada di rencana", it.Area, d)
+				c.issue("error", it.Area, "requirements", true, CodeUnknownDepend, itemPath(it.Area, "depends_on"), "hapus "+d+" dari depends_on atau tambahkan item "+d,
+					"%s: depends_on mengacu ke area %q yang tidak ada di rencana", it.Area, d)
 			}
 		}
-		for _, a := range it.Alternatives {
-			if a.Why == "" || a.Difference == "" || len(a.Pros) == 0 || len(a.Cons) == 0 {
-				c.add("error", it.Area, "requirements", true, "%s: alternatif %q harus menjelaskan why, difference, pros, dan cons", it.Area, a.Technology)
+		for i, a := range it.Alternatives {
+			if missing := MissingAlternative(a); len(missing) > 0 {
+				c.issue("error", it.Area, "requirements", true, CodeAltIncomplete, itemPath(it.Area, fmt.Sprintf("alternatives[%d].%s", i, missing[0])),
+					"lengkapi "+strings.Join(missing, ", ")+" khusus sistem ini, atau hapus alternatif yang tidak sungguh layak",
+					"%s: alternatif %q harus menjelaskan why, difference, pros, dan cons; yang kosong: %s", it.Area, a.Technology, strings.Join(missing, ", "))
 			}
 		}
 		if it.None() {
@@ -316,14 +332,15 @@ func validateEvaluation(p *core.Project, c *collector, plan *core.TechPlan) {
 	for _, g := range []struct {
 		list []string
 		msg  string
+		hint string
 	}{
-		{missing, "evaluasi belum menilai: %s"},
-		{badScore, "skor evaluasi harus 1-5: %s"},
-		{shortReason, "alasan skor terlalu singkat (jelaskan secara konkret): %s"},
-		{noEvidence, "skor tanpa evidence: %s; evidence harus mengacu ke area keputusan, teknologi, requirement, fitur atau modul"},
+		{missing, "evaluasi belum menilai: %s", "tambahkan kriteria yang belum dinilai"},
+		{badScore, "skor evaluasi harus 1-5: %s", "pakai skor bulat 1-5"},
+		{shortReason, "alasan skor terlalu singkat (jelaskan secara konkret): %s", "tulis alasan konkret minimal 20 karakter"},
+		{noEvidence, "skor tanpa evidence: %s; evidence harus mengacu ke area keputusan, teknologi, requirement, fitur atau modul", "isi evidence dengan area item, id requirement, fitur atau modul"},
 	} {
 		if len(g.list) > 0 {
-			c.add("error", "", "requirements", true, g.msg, strings.Join(g.list, ", "))
+			c.issue("error", "", "requirements", true, CodeEvaluation, "evaluation.criteria", g.hint, g.msg, strings.Join(g.list, ", "))
 		}
 	}
 	for _, f := range ev.Findings {
@@ -355,10 +372,12 @@ func validateConsistency(c *collector, plan *core.TechPlan) {
 		}
 	}
 	if len(missing) > 0 {
-		c.add("error", "", "requirements", true, "pemeriksaan konsistensi belum lengkap: %s", strings.Join(missing, ", "))
+		c.issue("error", "", "requirements", true, CodeConsistency, "consistency", "tambahkan satu entri per area yang belum diperiksa",
+			"pemeriksaan konsistensi belum lengkap: %s", strings.Join(missing, ", "))
 	}
 	if len(plan.Compatibility) == 0 {
-		c.add("error", "", "requirements", true, "pemeriksaan kompatibilitas stack belum ada (compatibility)")
+		c.issue("error", "", "requirements", true, CodeCompatibility, "compatibility", "periksa kompatibilitas seluruh stack",
+			"pemeriksaan kompatibilitas stack belum ada (compatibility)")
 	}
 }
 

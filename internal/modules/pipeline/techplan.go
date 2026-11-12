@@ -138,6 +138,7 @@ func (s *Service) dropTechRequest(cause error) error {
 			return nil
 		}
 		req := p.Stack.PlanRequest
+		report := techDiagnosis(p, work.KindTech, cause, true)
 		p.Stack.PlanRequest = nil
 		what := "Perancangan teknologi"
 		if req.Action == core.TechPlanRevise {
@@ -146,7 +147,7 @@ func (s *Service) dropTechRequest(cause error) error {
 		msg := fmt.Sprintf("%s gagal: %v. Rencana dan keputusan teknologi tidak diubah; tulis permintaan yang lebih spesifik atau coba lagi.", what, cause)
 		p.Job = &core.Job{Kind: work.KindTech, Status: core.JobFailed, Message: what, Error: msg, Started: time.Now().UTC()}
 		p.Log("system", msg)
-		trackFail(p, work.KindTech, cause)
+		trackFailMsg(p, work.KindTech, cause, report)
 		return nil
 	})
 	return err

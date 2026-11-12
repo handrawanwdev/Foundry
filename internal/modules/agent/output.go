@@ -48,6 +48,9 @@ type Usage struct {
 	NumTurns     *int64  `json:"num_turns"`
 	DurationMS   *int64  `json:"duration_ms"`
 	ServiceTier  *string `json:"service_tier"`
+	// CostUSD is the cost the CLI itself reports for the run, nil when it
+	// reports none. Foundry never computes it.
+	CostUSD *float64 `json:"total_cost_usd"`
 }
 
 // claudeUsage reads the usage of `claude -p --output-format json` (fields
@@ -60,6 +63,7 @@ func claudeUsage(raw string) *Usage {
 		NumTurns   *int64         `json:"num_turns"`
 		DurationMS *int64         `json:"duration_ms"`
 		ModelUsage map[string]any `json:"modelUsage"`
+		CostUSD    *float64       `json:"total_cost_usd"`
 		Usage      *struct {
 			InputTokens         *int64  `json:"input_tokens"`
 			OutputTokens        *int64  `json:"output_tokens"`
@@ -75,7 +79,7 @@ func claudeUsage(raw string) *Usage {
 	if json.Unmarshal([]byte(strings.TrimSpace(raw)), &o) != nil || o.Type != "result" {
 		return nil
 	}
-	u := &Usage{NumTurns: o.NumTurns, DurationMS: o.DurationMS}
+	u := &Usage{NumTurns: o.NumTurns, DurationMS: o.DurationMS, CostUSD: o.CostUSD}
 	if o.Usage != nil {
 		u.InputTokens, u.OutputTokens = o.Usage.InputTokens, o.Usage.OutputTokens
 		u.CacheCreationTokens, u.CacheReadTokens = o.Usage.CacheCreationTokens, o.Usage.CacheReadTokens

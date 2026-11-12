@@ -116,7 +116,7 @@ const (
 
 const (
 	maxBPEvents   = 512
-	maxBPIssues   = 12
+	maxBPIssues   = 24
 	maxCauseRunes = 140
 )
 

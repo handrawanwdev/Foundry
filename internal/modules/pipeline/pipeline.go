@@ -67,6 +67,10 @@ type Service struct {
 	// overloaded; its length bounds the attempts.
 	RetryWait []time.Duration
 
+	// Repair bounds the automatic repair of a refused technology plan and
+	// names the model a stuck repair escalates to.
+	Repair RepairPolicy
+
 	// AreaParallel bounds the blueprint areas an agent writes at once.
 	// 0 uses the default, 1 runs them one after another.
 	AreaParallel int
@@ -356,6 +360,7 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 		return nil
 	}
 	prompt := s.promptFor(p, kind)
+	runner = s.techRunner(p, kind, runner)
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -470,6 +475,7 @@ func recordUsage(runner *agent.Runner, dir, kind string, attempt int, took time.
 		r.CacheCreationTokens, r.CacheReadTokens, r.TotalReported = u.CacheCreationTokens, u.CacheReadTokens, u.Total()
 		r.CacheWrite1h, r.CacheWrite5m = u.CacheWrite1h, u.CacheWrite5m
 		r.NumTurns, r.DurationMS, r.ServiceTier = u.NumTurns, u.DurationMS, u.ServiceTier
+		r.CostUSD = u.CostUSD
 		if r.InputTokens != nil || r.OutputTokens != nil {
 			r.Telemetry = usage.Reported
 		}
@@ -779,26 +785,21 @@ func (s *Service) noteRejection(kind string, err error) bool {
 		})
 		return retry
 	}
-	if kind == work.KindTech {
+	if kind == work.KindTech || kind == work.KindPlan {
+		escFrom, escTo := s.escalation()
 		retry := false
 		s.Store.Update(func(p *core.Project) error {
-			if p.Stack == nil || p.Stack.PlanRequest == nil {
+			if techRequestOf(p, kind) == nil {
+				if kind == work.KindPlan {
+					retry = stampPlanRejection(p, err.Error())
+					p.Log("system", err.Error())
+					trackRejection(p, kind, err)
+				}
 				return nil
 			}
-			retry = p.Stack.PlanRequest.Rejected == ""
-			p.Stack.PlanRequest.Rejected = err.Error()
+			retry = recordTechAttempt(p, kind, err, escFrom, escTo, s.maxTechAttempts())
 			p.Log("system", err.Error())
-			trackRejection(p, kind, err)
-			return nil
-		})
-		return retry
-	}
-	if kind == work.KindPlan {
-		retry := false
-		s.Store.Update(func(p *core.Project) error {
-			retry = stampPlanRejection(p, err.Error())
-			p.Log("system", err.Error())
-			trackRejection(p, kind, err)
+			trackRejectionMsg(p, kind, err, techDiagnosis(p, kind, err, false))
 			return nil
 		})
 		return retry
@@ -945,11 +946,11 @@ func (s *Service) RetryJob() error {
 		}
 	case work.KindTech:
 		if p.Stack != nil && p.Stack.PlanRequest != nil {
-			return s.startAIIf(kind, failedJob(kind))
+			return s.startAIIf(kind, retryTech(kind))
 		}
 	case work.KindPlan:
 		if s.planPending() {
-			return s.startAIIf(kind, failedJob(kind))
+			return s.startAIIf(kind, retryTech(kind))
 		}
 	case work.KindArtifacts:
 		if p.ArtifactRequest != nil {
@@ -962,6 +963,21 @@ func (s *Service) RetryJob() error {
 		return s.GenerateBlueprint()
 	}
 	return ErrNothingToDo
+}
+
+// retryTech is failedJob for a technology job: a retry the user asked for
+// starts a new automatic repair chain on the draft kept so far.
+func retryTech(kind string) func(*core.Project) error {
+	check := failedJob(kind)
+	return func(p *core.Project) error {
+		if err := check(p); err != nil {
+			return err
+		}
+		if techRequestOf(p, kind) != nil {
+			newTechChain(p)
+		}
+		return nil
+	}
 }
 
 // failedJob holds while the project's job is still the failed job of kind.

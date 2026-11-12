@@ -66,12 +66,14 @@ func binding(old *core.TechStack, plan *core.TechPlan) []core.TechIssue {
 		switch {
 		case d.Override != nil:
 			if it == nil || !strings.EqualFold(it.Technology, d.Override.Value) {
-				out = append(out, core.TechIssue{Level: "error", Area: d.Area,
+				out = append(out, core.TechIssue{Level: "error", Area: d.Area, Code: CodeBinding, Path: itemPath(d.Area, "technology"),
+					Hint:    fmt.Sprintf("pakai tepat %q untuk %s", d.Override.Value, d.Area),
 					Message: fmt.Sprintf("pilihan user untuk %s adalah %q dan wajib dipakai; jelaskan dan nilai pilihan itu di rencana, jangan menggantinya", d.Area, d.Override.Value)})
 			}
 		case d.Source == core.SourceExisting || d.Source == "" && old.Mode == core.StructureExisting:
 			if it == nil || !strings.EqualFold(it.Technology, d.Recommended) {
-				out = append(out, core.TechIssue{Level: "error", Area: d.Area,
+				out = append(out, core.TechIssue{Level: "error", Area: d.Area, Code: CodeBinding, Path: itemPath(d.Area, "technology"),
+					Hint:    fmt.Sprintf("pakai tepat %q untuk %s", d.Recommended, d.Area),
 					Message: fmt.Sprintf("%s sudah dipakai di kode project (%q) dan harus tetap; mengganti teknologi yang sudah dipakai adalah migrasi yang diminta user, bukan keputusan rencana", d.Area, d.Recommended)})
 			}
 		}
@@ -90,15 +92,7 @@ func Accept(p *core.Project, plan *core.TechPlan) error {
 	refresh(p, plan, cand)
 	blocking := append(binding(p.Stack, plan), Blocking(p, plan, cand)...)
 	if len(blocking) > 0 {
-		var msgs []string
-		for i, is := range blocking {
-			if i == 8 {
-				msgs = append(msgs, fmt.Sprintf("dan %d masalah lain", len(blocking)-8))
-				break
-			}
-			msgs = append(msgs, is.Message)
-		}
-		return fmt.Errorf("rencana teknologi ditolak, %d masalah: %s", len(blocking), strings.Join(msgs, "; "))
+		return &RejectError{Plan: plan, Issues: blocking}
 	}
 	if p.Stack != nil {
 		for _, d := range p.Stack.Decisions {

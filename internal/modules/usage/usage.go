@@ -62,6 +62,9 @@ type Record struct {
 	NumTurns            *int64  `json:"num_turns"`
 	DurationMS          *int64  `json:"duration_ms"`
 	ServiceTier         *string `json:"service_tier,omitempty"`
+	// CostUSD is the cost the agent CLI reported for the run (Claude Code's
+	// total_cost_usd); absent when it reports none.
+	CostUSD *float64 `json:"cost_usd,omitempty"`
 
 	WallMS      int64 `json:"wall_ms"`
 	PromptBytes int   `json:"prompt_bytes"`

@@ -170,7 +170,8 @@ func TestUnifiedRepairPromptUsesPreviousOutput(t *testing.T) {
 	if err := os.WriteFile(rawDir+"/plan.txt", []byte(broken), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	p.Stack.PlanRequest.Rejected = "sintaks rusak di baris 1"
+	// A JSON syntax repair is only for an answer that could not be read.
+	p.Stack.PlanRequest.Rejected = "output AI tidak berisi JSON yang valid (sintaks rusak di baris 1)"
 	got := UnifiedPlanPrompt(p)
 	if !strings.Contains(got, "Repair JSON syntax only") || !strings.Contains(got, broken) {
 		t.Fatalf("repair prompt missing previous output: %s", got[:min(len(got), 400)])

@@ -192,7 +192,7 @@ func prepareBlueprintStep(p *core.Project, kind string) error {
 		if p.Stack.Plan != nil {
 			action = core.TechPlanRevise
 		}
-		p.Stack.PlanRequest = &core.TechPlanRequest{Action: action}
+		p.Stack.PlanRequest = keepTechDraft(p, &core.TechPlanRequest{Action: action})
 		return nil
 	case work.KindStructure:
 		if err := structureEditable(p); err != nil {
@@ -240,7 +240,7 @@ func prepareUnifiedPlan(p *core.Project) error {
 			if p.Stack.Proposal != nil {
 				return stack.ErrPending
 			}
-			p.Stack.PlanRequest = &core.TechPlanRequest{Action: core.TechPlanGenerate}
+			p.Stack.PlanRequest = keepTechDraft(p, &core.TechPlanRequest{Action: core.TechPlanGenerate})
 		case work.KindStructure:
 			if err := structureEditable(p); err != nil {
 				return err

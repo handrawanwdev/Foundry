@@ -21,7 +21,7 @@ func TestClaudeUsage(t *testing.T) {
 	u := claudeUsage(string(raw))
 	if u == nil || *u.InputTokens != 2 || *u.OutputTokens != 4 || *u.CacheCreationTokens != 1235 || *u.CacheReadTokens != 3173 ||
 		*u.NumTurns != 1 || *u.DurationMS != 1007 || *u.Model != "claude-haiku-5-5" || *u.ServiceTier != "standard" ||
-		*u.CacheWrite1h != 1235 || *u.CacheWrite5m != 0 {
+		*u.CacheWrite1h != 1235 || *u.CacheWrite5m != 0 || u.CostUSD == nil || *u.CostUSD != 0.00028093 {
 		t.Fatalf("usage = %+v", u)
 	}
 	if *u.Total() != 2+4+1235+3173 {

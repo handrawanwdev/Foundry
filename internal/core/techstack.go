@@ -146,6 +146,12 @@ type TechIssue struct {
 	Level   string `json:"level"` // error | warning
 	Area    string `json:"area,omitempty"`
 	Message string `json:"message"`
+	// Code, Path and Hint make a technology plan issue actionable for a
+	// targeted repair: what kind of defect, where in the plan, how to fix.
+	// Empty for issues that predate them.
+	Code string `json:"code,omitempty"`
+	Path string `json:"path,omitempty"`
+	Hint string `json:"hint,omitempty"`
 }
 
 // TechImpact is what a change of one area affects downstream.

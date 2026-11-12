@@ -319,6 +319,52 @@ type TechPlanRequest struct {
 	// Rejected is why the AI's last answer was refused; the retry prompt
 	// shows it.
 	Rejected string `json:"rejected,omitempty"`
+
+	// Draft is the best refused plan so far (generate only): every decision
+	// in it that passed validation is kept, and a targeted repair rewrites
+	// only what Issues name. Issues are the blocking problems of Draft.
+	Draft  *TechPlan   `json:"draft,omitempty"`
+	Issues []TechIssue `json:"issues,omitempty"`
+	// Attempts is the history of refused answers; ChainStart is where the
+	// current automatic repair chain begins (a user retry starts a new one).
+	Attempts   []TechAttempt `json:"attempts,omitempty"`
+	ChainStart int           `json:"chain_start,omitempty"`
+	// Model is the model the next attempt runs on; "" is the configured one.
+	// EscalatedFrom and Escalation say why it changed.
+	Model         string `json:"model,omitempty"`
+	EscalatedFrom string `json:"escalated_from,omitempty"`
+	Escalation    string `json:"escalation,omitempty"`
+}
+
+// Strategies of a technology plan attempt.
+const (
+	TechAttemptGenerate = "generate" // a full design
+	TechAttemptRepair   = "repair"   // only the parts the validator named
+	TechAttemptSyntax   = "syntax"   // the previous JSON, syntax repaired
+)
+
+// Progress of an attempt against the one before it in the same chain.
+const (
+	TechProgressFirst     = "first"
+	TechProgressImproved  = "improved"
+	TechProgressStalled   = "stalled"
+	TechProgressRegressed = "regressed"
+)
+
+// TechAttempt is one refused answer to a technology plan request. Errors is
+// the number of blocking issues, -1 when the answer could not be read.
+type TechAttempt struct {
+	N        int            `json:"n"`
+	At       time.Time      `json:"at"`
+	Strategy string         `json:"strategy"`
+	Model    string         `json:"model,omitempty"`
+	Errors   int            `json:"errors"`
+	Codes    map[string]int `json:"codes,omitempty"`
+	Progress string         `json:"progress"`
+	// Repaired are the areas a targeted repair rewrote; Ignored the changes
+	// it refused to merge, with the reason.
+	Repaired []string `json:"repaired,omitempty"`
+	Ignored  []string `json:"ignored,omitempty"`
 }
 
 const (

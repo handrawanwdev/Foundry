@@ -1,0 +1,2577 @@
+{
+ "version": 58,
+ "name": "ParkOS",
+ "stage": "DESIGN",
+ "story": "# ParkOS — Enterprise Parking Management & Intelligence Platform\n\n## 1. Visi Produk\n\nBangun ParkOS, sebuah platform software enterprise untuk manajemen dan otomasi operasional parkir yang dapat mengintegrasikan berbagai perangkat parkir dari banyak vendor tanpa harus memproduksi hardware sendiri.\n\nParkOS harus menjadi platform terpusat untuk mengelola operasional parkir secara real-time, mulai dari kendaraan masuk, validasi akses, pencatatan transaksi, pembayaran, kendaraan keluar, monitoring perangkat, hingga analisis pendapatan.\n\nProduk ditujukan untuk:\n- Operator parkir profesional.\n- Mall dan pusat perbelanjaan.\n- Rumah sakit.\n- Hotel dan gedung perkantoran.\n- Apartemen dan kawasan residensial.\n- Kampus dan kawasan industri.\n- Bandara dan fasilitas publik.\n- Pemilik gedung yang mengelola parkir sendiri.\n\n## 2. Konsep Bisnis\n\nParkOS dikembangkan sebagai SaaS multi-tenant, multi-operator, dan multi-location.\n\nSatu platform harus dapat mengelola banyak perusahaan operator parkir, banyak pelanggan, banyak gedung, banyak lokasi, dan banyak gerbang dalam satu sistem dengan isolasi data yang ketat.\n\nParkOS adalah software-only platform. Tidak memproduksi barrier gate, kamera ANPR, ticket dispenser, RFID reader, controller, atau perangkat keras lainnya.\n\nNilai utama produk adalah kemampuan mengintegrasikan hardware berbagai vendor melalui satu platform yang konsisten.\n\n## 3. Platform\n\nPrioritaskan:\n- Web application sebagai dashboard administrasi dan monitoring.\n- REST API untuk integrasi eksternal.\n- Local Edge Controller untuk operasional di lokasi parkir.\n- Mobile-responsive interface untuk supervisor dan petugas.\n- Mobile application dapat dikembangkan pada fase berikutnya.\n\n## 4. Modul Utama\n\n### A. Parking Command Center\n- Dashboard seluruh lokasi parkir.\n- Monitoring kendaraan masuk dan keluar.\n- Jumlah kendaraan yang sedang parkir.\n- Kapasitas dan okupansi.\n- Pendapatan hari ini.\n- Transaksi berhasil dan gagal.\n- Status seluruh gerbang.\n- Status konektivitas perangkat.\n- Alert dan notifikasi operasional.\n\n### B. Multi-Tenant & Organization Management\n- Manajemen perusahaan.\n- Manajemen operator parkir.\n- Manajemen pelanggan.\n- Manajemen gedung dan lokasi.\n- Manajemen area parkir.\n- Manajemen gerbang.\n- Isolasi data antar-tenant.\n\n### C. Parking Operations\n- Pencatatan kendaraan masuk dan keluar.\n- Manajemen sesi parkir.\n- Nomor polisi dan jenis kendaraan.\n- Tiket parkir digital dan fisik.\n- QR code validation.\n- RFID validation.\n- ANPR/LPR recognition.\n- Validasi pembayaran sebelum kendaraan keluar.\n- Penanganan tiket hilang.\n- Manual override dengan otorisasi dan audit log.\n\n### D. Parking Tariff Management\n- Tarif flat.\n- Tarif progresif.\n- Tarif per jam.\n- Tarif per jenis kendaraan.\n- Tarif berdasarkan lokasi.\n- Tarif khusus member.\n- Grace period.\n- Maksimum tarif harian.\n- Tarif khusus event.\n- Riwayat perubahan tarif.\n\n### E. Payment Management\n- Tunai.\n- QRIS melalui penyedia jasa pembayaran resmi.\n- E-wallet.\n- Kartu uang elektronik melalui integrasi penyedia yang mendukung.\n- Pembayaran member dan langganan.\n- Payment reconciliation.\n- Refund dan void dengan otorisasi.\n- Riwayat transaksi dan bukti pembayaran.\n\nJangan membangun payment gateway sendiri. Gunakan integrasi penyedia pembayaran yang memiliki izin dan dokumentasi resmi.\n\n### F. Membership Management\n- Member individu.\n- Member perusahaan.\n- Kendaraan langganan bulanan.\n- Reserved parking.\n- Whitelist dan blacklist kendaraan.\n- Masa berlaku membership.\n- Riwayat akses member.\n\n### G. Staff & Shift Management\n- Manajemen petugas.\n- Supervisor.\n- Kasir.\n- Petugas gerbang.\n- Jadwal shift.\n- Serah terima kas.\n- Laporan per shift.\n- Aktivitas dan performa petugas.\n\n### H. Revenue Intelligence\n- Pendapatan per lokasi.\n- Pendapatan per gerbang.\n- Pendapatan per shift.\n- Pendapatan berdasarkan jenis kendaraan.\n- Rekonsiliasi transaksi.\n- Deteksi transaksi mencurigakan.\n- Deteksi potensi kebocoran pendapatan.\n- Audit trail.\n\n### I. Parking Analytics\n- Grafik okupansi.\n- Jam sibuk.\n- Durasi parkir rata-rata.\n- Jumlah kendaraan harian.\n- Perbandingan pendapatan.\n- Performa setiap lokasi.\n- Prediksi okupansi.\n- Analisis pola penggunaan parkir.\n\n### J. Hardware & Device Management\n- Registrasi perangkat.\n- Vendor dan model perangkat.\n- Device ID.\n- IP address dan port.\n- Lokasi pemasangan.\n- Status online/offline.\n- Monitoring koneksi.\n- Device health.\n- Device logs.\n- Integrasi firmware atau SDK jika tersedia.\n- Manajemen adapter per vendor.\n\n### K. System Administration\n- User management.\n- Role-based access control.\n- Permission management.\n- Audit log.\n- API keys.\n- Integration settings.\n- Notification settings.\n- System configuration.\n\n## 5. Hardware Integration Architecture\n\nIni merupakan salah satu komponen paling penting dalam ParkOS.\n\nParkOS harus menggunakan arsitektur Hardware-Agnostic Integration.\n\nSistem harus mampu mengintegrasikan perangkat dari berbagai vendor dengan protokol yang berbeda.\n\nJenis komunikasi yang harus dipertimbangkan:\n\n1. LAN / Ethernet.\n2. TCP/IP.\n3. HTTP / HTTPS API.\n4. WebSocket jika didukung perangkat.\n5. RS485.\n6. Serial communication.\n7. Relay / Digital I/O.\n8. Wiegand.\n9. USB.\n10. Vendor SDK dan protokol proprietary.\n\nPerangkat yang menjadi target integrasi:\n- ANPR/LPR camera.\n- CCTV.\n- Parking controller.\n- Barrier gate.\n- Loop detector.\n- RFID reader.\n- Ticket dispenser.\n- Ticket validator.\n- LED display.\n- Payment terminal.\n\nJangan mengasumsikan semua perangkat mendukung seluruh protokol tersebut.\n\nSetiap vendor harus memiliki adapter tersendiri berdasarkan dokumentasi resmi, SDK, API, atau protokol yang benar-benar tersedia.\n\nPisahkan hardware integration layer dari parking business logic.\n\nSediakan:\n- Device Adapter Interface.\n- Vendor-specific adapter.\n- Device simulator.\n- Connection manager.\n- Device health monitoring.\n- Command timeout.\n- Retry policy.\n- Event handling.\n- Device logs.\n- Integration testing.\n\nJangan membuat integrasi hardware palsu yang hanya mengembalikan status sukses tanpa komunikasi nyata.\n\nJika dokumentasi perangkat belum tersedia, buat adapter interface dan simulator terlebih dahulu. Tandai integrasi tersebut sebagai belum terverifikasi.\n\n## 6. Local Edge Controller & Offline-First Architecture\n\nParkOS tidak boleh bergantung sepenuhnya pada internet untuk operasional parkir.\n\nSetiap lokasi harus dapat menggunakan Local Edge Controller.\n\nTanggung jawab Edge Controller:\n- Menjalankan proses masuk dan keluar kendaraan.\n- Menyimpan transaksi sementara secara lokal.\n- Menjalankan validasi tiket.\n- Menjalankan perhitungan tarif berdasarkan konfigurasi lokal.\n- Berkomunikasi dengan hardware melalui LAN atau interface yang tersedia.\n- Menjalankan aturan akses kendaraan.\n- Menyimpan event dan audit log.\n- Melakukan sinkronisasi ke cloud ketika koneksi tersedia.\n\nKetika internet terputus:\n- Kendaraan tetap dapat masuk dan keluar sesuai kebijakan lokal.\n- Transaksi disimpan secara lokal.\n- Sistem memberikan indikator offline.\n- Data tidak boleh hilang ketika aplikasi atau perangkat restart.\n- Sinkronisasi dilakukan kembali setelah koneksi pulih.\n- Konflik data harus memiliki mekanisme penyelesaian yang jelas.\n\nGunakan durable local storage, idempotency key, event sequence, retry mechanism, dan mekanisme recovery.\n\nJangan mengandalkan Redis sebagai satu-satunya penyimpanan transaksi penting.\n\n## 7. Arsitektur Teknologi\n\nGunakan arsitektur modular dan API-first.\n\nRekomendasi:\n- Frontend: React + TypeScript.\n- UI: Design System berbasis reusable components.\n- Backend: Go.\n- API: REST API dengan OpenAPI documentation.\n- Database utama: PostgreSQL.\n- Cache: Redis.\n- Messaging: message queue sesuai kebutuhan.\n- Local Edge: service Go.\n- Authentication: secure authentication dan RBAC.\n- Storage: object storage untuk foto kendaraan dan dokumen.\n- Deployment: Docker dan CI/CD.\n\nMulai dengan modular monolith yang memiliki batas domain jelas. Jangan langsung memecah seluruh sistem menjadi microservices tanpa kebutuhan terukur.\n\nDomain utama:\n- Identity & Access.\n- Tenant Management.\n- Parking Operations.\n- Tariff Engine.\n- Payment Integration.\n- Hardware Integration.\n- Edge Synchronization.\n- Revenue Management.\n- Analytics.\n- Notification.\n- Audit.\n\n## 8. Security & Reliability\n\nWajib menerapkan:\n- Tenant data isolation.\n- RBAC dan permission checks.\n- Secure API authentication.\n- Encryption in transit.\n- Secret management.\n- Input validation.\n- Rate limiting.\n- Audit logging.\n- Database backup.\n- Disaster recovery.\n- Idempotent transaction processing.\n- Safe command execution untuk perangkat.\n- Protection terhadap replay dan duplicate events.\n- Monitoring dan alerting.\n\nPerintah pembukaan barrier harus memiliki validasi akses, aturan keselamatan, timeout, serta pencatatan audit. Jangan menjadikan cloud sebagai satu-satunya jalur kontrol barrier.\n\n## 9. AI Intelligence\n\nAI dikembangkan setelah operasional inti stabil.\n\nFitur potensial:\n- Anomaly detection.\n- Revenue leakage detection.\n- Occupancy forecasting.\n- Traffic prediction.\n- Peak-hour prediction.\n- Revenue forecasting.\n- Operational recommendations.\n\nAI tidak boleh menentukan sendiri pembukaan barrier atau mengabaikan aturan keselamatan dan otorisasi.\n\n## 10. UI/UX Design Standard\n\nGunakan referensi:\nhttps://duralux-react-dashboard.vercel.app/\n\nGunakan sebagai standar visual dan pola UX, bukan menyalin secara mentah.\n\nKarakteristik:\n- Modern enterprise SaaS.\n- Clean dashboard.\n- Professional administration interface.\n- Responsive desktop dan tablet.\n- Sidebar navigation.\n- Top navigation.\n- KPI cards.\n- Data tables.\n- Search dan advanced filtering.\n- Charts dan analytics.\n- Consistent spacing.\n- Reusable components.\n- Loading, empty, error, dan offline states.\n\nHalaman utama:\n1. Overview.\n2. Parking Locations.\n3. Parking Areas.\n4. Gate Management.\n5. Vehicle Transactions.\n6. Parking Sessions.\n7. Tariff Management.\n8. Payment Management.\n9. Membership.\n10. Hardware Devices.\n11. Device Monitoring.\n12. Staff & Shifts.\n13. Revenue Reports.\n14. Analytics.\n15. Audit Logs.\n16. Settings.\n\n## 11. Implementation Strategy\n\nBangun bertahap dan pastikan setiap fase benar-benar selesai sebelum lanjut.\n\nPhase 1 — Foundation:\n- Project architecture.\n- Design system.\n- Authentication.\n- RBAC.\n- Tenant management.\n- Location management.\n- Database schema.\n\nPhase 2 — Core Parking Engine:\n- Parking areas.\n- Gate management.\n- Vehicle entry.\n- Parking sessions.\n- Tariff calculation.\n- Vehicle exit.\n- Transaction history.\n\nPhase 3 — Payments & Revenue:\n- Payment integration abstraction.\n- Payment transactions.\n- Cash management.\n- Reconciliation.\n- Revenue reports.\n\nPhase 4 — Operations:\n- Staff management.\n- Shift management.\n- Membership.\n- Whitelist and blacklist.\n- Audit logs.\n\nPhase 5 — Hardware Integration:\n- Device management.\n- Hardware adapter interface.\n- Device simulator.\n- LAN/TCP-IP integration.\n- RS485/serial gateway integration.\n- ANPR integration.\n- Barrier gate integration.\n- Local Edge Controller.\n- Offline synchronization.\n\nPhase 6 — Analytics & Intelligence:\n- Parking analytics.\n- Occupancy monitoring.\n- Revenue anomaly detection.\n- Forecasting.\n- Operational insights.\n\nPhase 7 — Production Readiness:\n- Security audit.\n- Performance testing.\n- Integration testing.\n- Failure recovery testing.\n- Backup and restore testing.\n- Deployment automation.\n- Monitoring.\n- Documentation.\n- Pilot deployment.\n\n## 12. Definition of Done\n\nSetiap fase wajib memiliki:\n- Implementasi yang benar-benar berfungsi.\n- Automated tests.\n- Integration tests sesuai kebutuhan.\n- Database migration.\n- API documentation.\n- Error handling.\n- Security validation.\n- Logging.\n- Dokumentasi teknis.\n- Acceptance criteria.\n\nJangan menandai fitur selesai jika baru berupa UI mockup, placeholder, atau simulasi yang belum dibedakan dari integrasi nyata.\n\nJangan menghapus atau merusak implementasi yang sudah ada tanpa alasan dan persetujuan yang sesuai.\n\nPrioritaskan reliability, data consistency, security, maintainability, dan production readiness.\n\nHasil akhir harus menjadi platform enterprise parking management yang dapat digunakan secara nyata dan dikembangkan secara komersial.",
+ "intent": "new_project",
+ "survey": {
+  "what": "# ParkOS — Enterprise Parking Management & Intelligence Platform\n\n## 1. Visi Produk\n\nBangun ParkOS, sebuah platform software enterprise untuk manajemen dan otomasi operasional parkir yang dapat mengintegrasikan berbagai perangkat parkir dari banyak vendor tanpa harus memproduksi hardware sendiri.\n\nParkOS harus menjadi platform terpusat untuk mengelola operasional parkir secara real-time, mulai dari kendaraan masuk, validasi akses, pencatatan transaksi, pembayaran, kendaraan keluar, monitoring perangkat, hingga analisis pendapatan.\n\nProduk ditujukan untuk:\n- Operator parkir profesional.\n- Mall dan pusat perbelanjaan.\n- Rumah sakit.\n- Hotel dan gedung perkantoran.\n- Apartemen dan kawasan residensial.\n- Kampus dan kawasan industri.\n- Bandara dan fasilitas publik.\n- Pemilik gedung yang mengelola parkir sendiri.\n\n## 2. Konsep Bisnis\n\nParkOS dikembangkan sebagai SaaS multi-tenant, multi-operator, dan multi-location.\n\nSatu platform harus dapat mengelola banyak perusahaan operator parkir, banyak pelanggan, banyak gedung, banyak lokasi, dan banyak gerbang dalam satu sistem dengan isolasi data yang ketat.\n\nParkOS adalah software-only platform. Tidak memproduksi barrier gate, kamera ANPR, ticket dispenser, RFID reader, controller, atau perangkat keras lainnya.\n\nNilai utama produk adalah kemampuan mengintegrasikan hardware berbagai vendor melalui satu platform yang konsisten.\n\n## 3. Platform\n\nPrioritaskan:\n- Web application sebagai dashboard administrasi dan monitoring.\n- REST API untuk integrasi eksternal.\n- Local Edge Controller untuk operasional di lokasi parkir.\n- Mobile-responsive interface untuk supervisor dan petugas.\n- Mobile application dapat dikembangkan pada fase berikutnya.\n\n## 4. Modul Utama\n\n### A. Parking Command Center\n- Dashboard seluruh lokasi parkir.\n- Monitoring kendaraan masuk dan keluar.\n- Jumlah kendaraan yang sedang parkir.\n- Kapasitas dan okupansi.\n- Pendapatan hari ini.\n- Transaksi berhasil dan gagal.\n- Status seluruh gerbang.\n- Status konektivitas perangkat.\n- Alert dan notifikasi operasional.\n\n### B. Multi-Tenant & Organization Management\n- Manajemen perusahaan.\n- Manajemen operator parkir.\n- Manajemen pelanggan.\n- Manajemen gedung dan lokasi.\n- Manajemen area parkir.\n- Manajemen gerbang.\n- Isolasi data antar-tenant.\n\n### C. Parking Operations\n- Pencatatan kendaraan masuk dan keluar.\n- Manajemen sesi parkir.\n- Nomor polisi dan jenis kendaraan.\n- Tiket parkir digital dan fisik.\n- QR code validation.\n- RFID validation.\n- ANPR/LPR recognition.\n- Validasi pembayaran sebelum kendaraan keluar.\n- Penanganan tiket hilang.\n- Manual override dengan otorisasi dan audit log.\n\n### D. Parking Tariff Management\n- Tarif flat.\n- Tarif progresif.\n- Tarif per jam.\n- Tarif per jenis kendaraan.\n- Tarif berdasarkan lokasi.\n- Tarif khusus member.\n- Grace period.\n- Maksimum tarif harian.\n- Tarif khusus event.\n- Riwayat perubahan tarif.\n\n### E. Payment Management\n- Tunai.\n- QRIS melalui penyedia jasa pembayaran resmi.\n- E-wallet.\n- Kartu uang elektronik melalui integrasi penyedia yang mendukung.\n- Pembayaran member dan langganan.\n- Payment reconciliation.\n- Refund dan void dengan otorisasi.\n- Riwayat transaksi dan bukti pembayaran.\n\nJangan membangun payment gateway sendiri. Gunakan integrasi penyedia pembayaran yang memiliki izin dan dokumentasi resmi.\n\n### F. Membership Management\n- Member individu.\n- Member perusahaan.\n- Kendaraan langganan bulanan.\n- Reserved parking.\n- Whitelist dan blacklist kendaraan.\n- Masa berlaku membership.\n- Riwayat akses member.\n\n### G. Staff & Shift Management\n- Manajemen petugas.\n- Supervisor.\n- Kasir.\n- Petugas gerbang.\n- Jadwal shift.\n- Serah terima kas.\n- Laporan per shift.\n- Aktivitas dan performa petugas.\n\n### H. Revenue Intelligence\n- Pendapatan per lokasi.\n- Pendapatan per gerbang.\n- Pendapatan per shift.\n- Pendapatan berdasarkan jenis kendaraan.\n- Rekonsiliasi transaksi.\n- Deteksi transaksi mencurigakan.\n- Deteksi potensi kebocoran pendapatan.\n- Audit trail.\n\n### I. Parking Analytics\n- Grafik okupansi.\n- Jam sibuk.\n- Durasi parkir rata-rata.\n- Jumlah kendaraan harian.\n- Perbandingan pendapatan.\n- Performa setiap lokasi.\n- Prediksi okupansi.\n- Analisis pola penggunaan parkir.\n\n### J. Hardware & Device Management\n- Registrasi perangkat.\n- Vendor dan model perangkat.\n- Device ID.\n- IP address dan port.\n- Lokasi pemasangan.\n- Status online/offline.\n- Monitoring koneksi.\n- Device health.\n- Device logs.\n- Integrasi firmware atau SDK jika tersedia.\n- Manajemen adapter per vendor.\n\n### K. System Administration\n- User management.\n- Role-based access control.\n- Permission management.\n- Audit log.\n- API keys.\n- Integration settings.\n- Notification settings.\n- System configuration.\n\n## 5. Hardware Integration Architecture\n\nIni merupakan salah satu komponen paling penting dalam ParkOS.\n\nParkOS harus menggunakan arsitektur Hardware-Agnostic Integration.\n\nSistem harus mampu mengintegrasikan perangkat dari berbagai vendor dengan protokol yang berbeda.\n\nJenis komunikasi yang harus dipertimbangkan:\n\n1. LAN / Ethernet.\n2. TCP/IP.\n3. HTTP / HTTPS API.\n4. WebSocket jika didukung perangkat.\n5. RS485.\n6. Serial communication.\n7. Relay / Digital I/O.\n8. Wiegand.\n9. USB.\n10. Vendor SDK dan protokol proprietary.\n\nPerangkat yang menjadi target integrasi:\n- ANPR/LPR camera.\n- CCTV.\n- Parking controller.\n- Barrier gate.\n- Loop detector.\n- RFID reader.\n- Ticket dispenser.\n- Ticket validator.\n- LED display.\n- Payment terminal.\n\nJangan mengasumsikan semua perangkat mendukung seluruh protokol tersebut.\n\nSetiap vendor harus memiliki adapter tersendiri berdasarkan dokumentasi resmi, SDK, API, atau protokol yang benar-benar tersedia.\n\nPisahkan hardware integration layer dari parking business logic.\n\nSediakan:\n- Device Adapter Interface.\n- Vendor-specific adapter.\n- Device simulator.\n- Connection manager.\n- Device health monitoring.\n- Command timeout.\n- Retry policy.\n- Event handling.\n- Device logs.\n- Integration testing.\n\nJangan membuat integrasi hardware palsu yang hanya mengembalikan status sukses tanpa komunikasi nyata.\n\nJika dokumentasi perangkat belum tersedia, buat adapter interface dan simulator terlebih dahulu. Tandai integrasi tersebut sebagai belum terverifikasi.\n\n## 6. Local Edge Controller & Offline-First Architecture\n\nParkOS tidak boleh bergantung sepenuhnya pada internet untuk operasional parkir.\n\nSetiap lokasi harus dapat menggunakan Local Edge Controller.\n\nTanggung jawab Edge Controller:\n- Menjalankan proses masuk dan keluar kendaraan.\n- Menyimpan transaksi sementara secara lokal.\n- Menjalankan validasi tiket.\n- Menjalankan perhitungan tarif berdasarkan konfigurasi lokal.\n- Berkomunikasi dengan hardware melalui LAN atau interface yang tersedia.\n- Menjalankan aturan akses kendaraan.\n- Menyimpan event dan audit log.\n- Melakukan sinkronisasi ke cloud ketika koneksi tersedia.\n\nKetika internet terputus:\n- Kendaraan tetap dapat masuk dan keluar sesuai kebijakan lokal.\n- Transaksi disimpan secara lokal.\n- Sistem memberikan indikator offline.\n- Data tidak boleh hilang ketika aplikasi atau perangkat restart.\n- Sinkronisasi dilakukan kembali setelah koneksi pulih.\n- Konflik data harus memiliki mekanisme penyelesaian yang jelas.\n\nGunakan durable local storage, idempotency key, event sequence, retry mechanism, dan mekanisme recovery.\n\nJangan mengandalkan Redis sebagai satu-satunya penyimpanan transaksi penting.\n\n## 7. Arsitektur Teknologi\n\nGunakan arsitektur modular dan API-first.\n\nRekomendasi:\n- Frontend: React + TypeScript.\n- UI: Design System berbasis reusable components.\n- Backend: Go.\n- API: REST API dengan OpenAPI documentation.\n- Database utama: PostgreSQL.\n- Cache: Redis.\n- Messaging: message queue sesuai kebutuhan.\n- Local Edge: service Go.\n- Authentication: secure authentication dan RBAC.\n- Storage: object storage untuk foto kendaraan dan dokumen.\n- Deployment: Docker dan CI/CD.\n\nMulai dengan modular monolith yang memiliki batas domain jelas. Jangan langsung memecah seluruh sistem menjadi microservices tanpa kebutuhan terukur.\n\nDomain utama:\n- Identity & Access.\n- Tenant Management.\n- Parking Operations.\n- Tariff Engine.\n- Payment Integration.\n- Hardware Integration.\n- Edge Synchronization.\n- Revenue Management.\n- Analytics.\n- Notification.\n- Audit.\n\n## 8. Security & Reliability\n\nWajib menerapkan:\n- Tenant data isolation.\n- RBAC dan permission checks.\n- Secure API authentication.\n- Encryption in transit.\n- Secret management.\n- Input validation.\n- Rate limiting.\n- Audit logging.\n- Database backup.\n- Disaster recovery.\n- Idempotent transaction processing.\n- Safe command execution untuk perangkat.\n- Protection terhadap replay dan duplicate events.\n- Monitoring dan alerting.\n\nPerintah pembukaan barrier harus memiliki validasi akses, aturan keselamatan, timeout, serta pencatatan audit. Jangan menjadikan cloud sebagai satu-satunya jalur kontrol barrier.\n\n## 9. AI Intelligence\n\nAI dikembangkan setelah operasional inti stabil.\n\nFitur potensial:\n- Anomaly detection.\n- Revenue leakage detection.\n- Occupancy forecasting.\n- Traffic prediction.\n- Peak-hour prediction.\n- Revenue forecasting.\n- Operational recommendations.\n\nAI tidak boleh menentukan sendiri pembukaan barrier atau mengabaikan aturan keselamatan dan otorisasi.\n\n## 10. UI/UX Design Standard\n\nGunakan referensi:\nhttps://duralux-react-dashboard.vercel.app/\n\nGunakan sebagai standar visual dan pola UX, bukan menyalin secara mentah.\n\nKarakteristik:\n- Modern enterprise SaaS.\n- Clean dashboard.\n- Professional administration interface.\n- Responsive desktop dan tablet.\n- Sidebar navigation.\n- Top navigation.\n- KPI cards.\n- Data tables.\n- Search dan advanced filtering.\n- Charts dan analytics.\n- Consistent spacing.\n- Reusable components.\n- Loading, empty, error, dan offline states.\n\nHalaman utama:\n1. Overview.\n2. Parking Locations.\n3. Parking Areas.\n4. Gate Management.\n5. Vehicle Transactions.\n6. Parking Sessions.\n7. Tariff Management.\n8. Payment Management.\n9. Membership.\n10. Hardware Devices.\n11. Device Monitoring.\n12. Staff & Shifts.\n13. Revenue Reports.\n14. Analytics.\n15. Audit Logs.\n16. Settings.\n\n## 11. Implementation Strategy\n\nBangun bertahap dan pastikan setiap fase benar-benar selesai sebelum lanjut.\n\nPhase 1 — Foundation:\n- Project architecture.\n- Design system.\n- Authentication.\n- RBAC.\n- Tenant management.\n- Location management.\n- Database schema.\n\nPhase 2 — Core Parking Engine:\n- Parking areas.\n- Gate management.\n- Vehicle entry.\n- Parking sessions.\n- Tariff calculation.\n- Vehicle exit.\n- Transaction history.\n\nPhase 3 — Payments & Revenue:\n- Payment integration abstraction.\n- Payment transactions.\n- Cash management.\n- Reconciliation.\n- Revenue reports.\n\nPhase 4 — Operations:\n- Staff management.\n- Shift management.\n- Membership.\n- Whitelist and blacklist.\n- Audit logs.\n\nPhase 5 — Hardware Integration:\n- Device management.\n- Hardware adapter interface.\n- Device simulator.\n- LAN/TCP-IP integration.\n- RS485/serial gateway integration.\n- ANPR integration.\n- Barrier gate integration.\n- Local Edge Controller.\n- Offline synchronization.\n\nPhase 6 — Analytics & Intelligence:\n- Parking analytics.\n- Occupancy monitoring.\n- Revenue anomaly detection.\n- Forecasting.\n- Operational insights.\n\nPhase 7 — Production Readiness:\n- Security audit.\n- Performance testing.\n- Integration testing.\n- Failure recovery testing.\n- Backup and restore testing.\n- Deployment automation.\n- Monitoring.\n- Documentation.\n- Pilot deployment.\n\n## 12. Definition of Done\n\nSetiap fase wajib memiliki:\n- Implementasi yang benar-benar berfungsi.\n- Automated tests.\n- Integration tests sesuai kebutuhan.\n- Database migration.\n- API documentation.\n- Error handling.\n- Security validation.\n- Logging.\n- Dokumentasi teknis.\n- Acceptance criteria.\n\nJangan menandai fitur selesai jika baru berupa UI mockup, placeholder, atau simulasi yang belum dibedakan dari integrasi nyata.\n\nJangan menghapus atau merusak implementasi yang sudah ada tanpa alasan dan persetujuan yang sesuai.\n\nPrioritaskan reliability, data consistency, security, maintainability, dan production readiness.\n\nHasil akhir harus menjadi platform enterprise parking management yang dapat digunakan secara nyata dan dikembangkan secara komersial.",
+  "kinds": [
+   "web",
+   "mobile",
+   "api",
+   "desktop"
+  ],
+  "stage": "production",
+  "priorities": [
+   "security",
+   "performance",
+   "reliability",
+   "scalability",
+   "testing",
+   "operations"
+  ],
+  "design_reference": "https://duralux-react-dashboard.vercel.app/?utm_source=chatgpt.com"
+ },
+ "discovery": {
+  "summary": "Platform SaaS multi-tenant untuk mengelola operasional parkir (masuk/keluar, tarif, pembayaran, member, shift, pendapatan, analitik) lintas lokasi, dengan integrasi perangkat keras multi-vendor dan Edge Controller yang tetap berjalan saat internet putus.",
+  "business": "Software-only. Nilai utama: satu platform konsisten untuk banyak vendor perangkat. Pembayaran lewat penyedia resmi, bukan payment gateway sendiri. Target: operator parkir profesional dan pemilik gedung di mall, rumah sakit, hotel, perkantoran, apartemen, kampus, kawasan industri, bandara.",
+  "users": [
+   "Admin perusahaan operator",
+   "Supervisor",
+   "Kasir",
+   "Petugas gerbang",
+   "Klien sistem (integrasi eksternal, machine client)"
+  ],
+  "roles": [
+   {
+    "name": "admin-perusahaan",
+    "description": "Kelola pengguna, lokasi, gerbang, tarif, integrasi, pengaturan. Akses lintas lokasi dalam satu tenant.",
+    "platform": "web"
+   },
+   {
+    "name": "supervisor",
+    "description": "Pantau Pusat Kendali, laporan, analitik, approval buka manual, refund/void, performa petugas.",
+    "platform": "web"
+   },
+   {
+    "name": "kasir",
+    "description": "Terima pembayaran tunai dan non-tunai, serah terima kas per shift.",
+    "platform": "web"
+   },
+   {
+    "name": "petugas-gerbang",
+    "description": "Validasi akses, buka manual dengan otorisasi, tangani tiket hilang. Antarmuka responsif.",
+    "platform": "web"
+   },
+   {
+    "name": "klien-sistem",
+    "description": "Pemanggil REST API dengan kredensial layanan (API key). Tidak ada layar manusia.",
+    "platform": "backend"
+   }
+  ],
+  "data": [
+   "Tenant: id, nama, status",
+   "Customer/Location/Area/Gate: hierarki gedung-lokasi-area-gerbang dengan tenant_id",
+   "User/Role/Session/ApiKey: akun staf, peran, sesi, kunci integrasi (hanya hash)",
+   "Vehicle/ParkingSession/VehicleEvent/Ticket: plat, jenis, sesi masuk-keluar, tiket",
+   "Tariff/TariffRevision: aturan tarif dan riwayat perubahan",
+   "Payment/Refund: transaksi, status, referensi penyedia, approval",
+   "Member/Subscription/ListEntry/Reservation: membership dan daftar putih/hitam",
+   "Shift/ShiftAssignment/CashHandover: shift dan serah terima kas",
+   "Device/DeviceEvent/DeviceCommand: perangkat, kejadian, perintah dengan status",
+   "AuditLog: siapa, aksi, sumber daya, sebelum/sesudah, kapan",
+   "Notification/AlertRule: peringatan operasional",
+   "Read model: revenue daily summary, occupancy snapshot",
+   "Edge OutboxEvent/SyncBatch/ConflictCase: data lokal dan sinkronisasi"
+  ],
+  "integrations": [
+   "Penyedia pembayaran resmi (QRIS, e-wallet, kartu uang elektronik): belum ditentukan, via webhook",
+   "Perangkat: ANPR/LPR, barrier, RFID reader, ticket dispenser/validator, loop detector, LED display, payment terminal, CCTV",
+   "Protokol: LAN/TCP-IP, HTTP/HTTPS, WebSocket (jika didukung), RS485, serial, relay/digital I/O, Wiegand, USB, SDK vendor",
+   "Klien eksternal via REST API dengan API key"
+  ],
+  "security": [
+   "Isolasi data antar tenant",
+   "Autentikasi staf internal tanpa pendaftaran publik",
+   "RBAC dengan scope lokasi",
+   "Buka barrier hanya setelah cek akses, dengan timeout dan audit",
+   "Otorisasi untuk buka manual, refund, void, perubahan tarif",
+   "Enkripsi in transit, rate limit, validasi input, pengelolaan secret, pencegahan replay dan duplikasi event"
+  ],
+  "workflows": [
+   "Masuk: validasi akses (QR/RFID/ANPR) lalu buka barrier, buat sesi",
+   "Keluar: hitung tarif, cek sudah bayar, buka barrier, tutup sesi",
+   "Pembayaran: tunai di kasir atau QRIS/e-wallet via penyedia, konfirmasi lewat webhook",
+   "Offline: Edge tetap melayani masuk/keluar, simpan lokal, sinkron saat online",
+   "Perintah perangkat: kirim, tunggu ack, timeout, retry terbatas, catat hasil"
+  ],
+  "tech_needs": [
+   "realtime",
+   "offline",
+   "transactions",
+   "enterprise",
+   "files",
+   "search",
+   "webhook"
+  ]
+ },
+ "requirements": [
+  {
+   "id": "REQ-001",
+   "text": "Data setiap perusahaan operator terisolasi. Pengguna tenant lain tidak dapat membaca atau mengubahnya.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-001-AC1",
+     "kind": "security",
+     "text": "Given pengguna tenant A, When meminta sumber daya tenant B lewat UI atau API dengan ID yang valid, Then respons tidak berisi data dan berupa 404.",
+     "evidence": "Automated test lintas-tenant untuk semua endpoint"
+    },
+    {
+     "id": "REQ-001-AC2",
+     "kind": "negative",
+     "text": "Given query daftar tanpa filter tenant, When dijalankan dari API, Then hasil hanya berisi tenant pengguna.",
+     "evidence": "Test repository dan API"
+    }
+   ]
+  },
+  {
+   "id": "REQ-002",
+   "text": "Staf masuk dengan akun internal. Tidak ada pendaftaran publik. Hak akses per peran dan scope lokasi.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-002-AC1",
+     "kind": "behavior",
+     "text": "Given akun aktif, When login dengan kredensial benar, Then sesi dibuat dan hanya menu sesuai peran yang tampil.",
+     "evidence": "Test E2E login dan uji permission per peran"
+    },
+    {
+     "id": "REQ-002-AC2",
+     "kind": "negative",
+     "text": "Given kredensial salah atau akun nonaktif, When login, Then tidak ada sesi dan pesan tidak membocorkan apakah email terdaftar.",
+     "evidence": "Test API login"
+    }
+   ]
+  },
+  {
+   "id": "REQ-003",
+   "text": "Kelola hierarki perusahaan, pelanggan, gedung, lokasi, area, dan gerbang.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-003-AC1",
+     "kind": "behavior",
+     "text": "Given lokasi dan area milik tenant yang sama, When gerbang dibuat, Then gerbang tersimpan di area tersebut.",
+     "evidence": "Test API"
+    },
+    {
+     "id": "REQ-003-AC2",
+     "kind": "negative",
+     "text": "Given area dari tenant lain, When gerbang dibuat di area itu, Then ditolak.",
+     "evidence": "Test API"
+    }
+   ]
+  },
+  {
+   "id": "REQ-004",
+   "text": "Catat setiap kendaraan masuk dan keluar dengan nomor polisi, jenis kendaraan, dan sesi parkir.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-004-AC1",
+     "kind": "behavior",
+     "text": "Given kendaraan valid masuk, When entry diproses, Then sesi aktif dibuat dan keluar menutup sesi dengan waktu keluar.",
+     "evidence": "Test integrasi alur masuk-keluar"
+    },
+    {
+     "id": "REQ-004-AC2",
+     "kind": "edge",
+     "text": "Given kendaraan yang sudah punya sesi aktif di lokasi yang sama, When masuk lagi, Then tidak dibuat sesi kedua dan kejadian ditandai.",
+     "evidence": "Test domain"
+    }
+   ]
+  },
+  {
+   "id": "REQ-005",
+   "text": "Validasi akses lewat QR, RFID, dan ANPR melalui adapter perangkat.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-005-AC1",
+     "kind": "behavior",
+     "text": "Given kode QR, kartu RFID, atau plat ANPR yang valid, When divalidasi lewat adapter simulator, Then akses diizinkan dan perintah buka dikirim melalui REQ-023.",
+     "evidence": "Test integrasi dengan simulator"
+    },
+    {
+     "id": "REQ-005-AC2",
+     "kind": "negative",
+     "text": "Given kode tidak dikenal, When divalidasi, Then akses ditolak dengan alasan dan kejadian tercatat.",
+     "evidence": "Test domain"
+    }
+   ],
+   "untestable": "Integrasi nyata ke vendor ANPR/RFID belum terverifikasi. Uji hanya lewat simulator sampai dokumentasi tersedia."
+  },
+  {
+   "id": "REQ-006",
+   "text": "Kendaraan yang belum bayar tidak bisa keluar kecuali lewat buka manual yang diotorisasi.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-006-AC1",
+     "kind": "negative",
+     "text": "Given sesi belum lunas, When keluar diminta, Then barrier tidak dibuka dan kendaraan diminta bayar.",
+     "evidence": "Test integrasi keluar"
+    },
+    {
+     "id": "REQ-006-AC2",
+     "kind": "behavior",
+     "text": "Given sesi sudah lunas dan payment.completed diterima, When keluar, Then barrier dibuka dan sesi ditutup.",
+     "evidence": "Test integrasi"
+    }
+   ]
+  },
+  {
+   "id": "REQ-007",
+   "text": "Tangani tiket hilang sebagai kasus yang tercatat.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-007-AC1",
+     "kind": "behavior",
+     "text": "Given kendaraan tanpa tiket, When kasus tiket hilang dibuat, Then LostTicketCase tercatat dan penutupan butuh verifikasi petugas.",
+     "evidence": "Test domain dan audit"
+    },
+    {
+     "id": "REQ-007-AC2",
+     "kind": "negative",
+     "text": "Given kasus tiket hilang belum selesai, When keluar tanpa otorisasi, Then barrier tidak dibuka.",
+     "evidence": "Test integrasi"
+    }
+   ],
+   "untestable": "Aturan biaya tiket hilang belum ditentukan (lihat DEC-013)."
+  },
+  {
+   "id": "REQ-008",
+   "text": "Buka manual hanya oleh peran berizin, dengan alasan dan audit.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-008-AC1",
+     "kind": "security",
+     "text": "Given petugas tanpa permission gate:open_manual, When buka manual diminta, Then ditolak dan tidak ada perintah ke perangkat.",
+     "evidence": "Test permission"
+    },
+    {
+     "id": "REQ-008-AC2",
+     "kind": "behavior",
+     "text": "Given pengguna berizin, When buka manual dengan alasan, Then ManualOverride dan AuditLog tercatat.",
+     "evidence": "Test integrasi dan audit"
+    }
+   ]
+  },
+  {
+   "id": "REQ-009",
+   "text": "Hitung tarif flat, per jam, dan progresif per jenis kendaraan dan lokasi, dengan masa tenggang dan batas harian.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-009-AC1",
+     "kind": "behavior",
+     "text": "Given aturan tarif dan durasi, When dihitung, Then hasil sesuai rumus skema untuk flat, per jam, dan progresif.",
+     "evidence": "Unit test per skema"
+    },
+    {
+     "id": "REQ-009-AC2",
+     "kind": "edge",
+     "text": "Given durasi tepat sama dengan masa tenggang atau melewati batas harian, When dihitung, Then biaya sesuai aturan tenggang dan tidak melewati batas harian.",
+     "evidence": "Unit test batas"
+    }
+   ]
+  },
+  {
+   "id": "REQ-010",
+   "text": "Catat setiap perubahan tarif beserta siapa, kapan, sebelum, dan sesudah.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-010-AC1",
+     "kind": "behavior",
+     "text": "Given tarif diubah, When disimpan, Then TariffRevision tercatat dengan nilai sebelum dan sesudah.",
+     "evidence": "Test domain"
+    },
+    {
+     "id": "REQ-010-AC2",
+     "kind": "negative",
+     "text": "Given pengguna tanpa tariff:manage, When mengubah tarif, Then ditolak dan tidak ada revisi.",
+     "evidence": "Test permission"
+    }
+   ]
+  },
+  {
+   "id": "REQ-011",
+   "text": "Pembayaran tunai, QRIS, dan e-wallet lewat penyedia resmi. Sistem tidak membangun payment gateway sendiri.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-011-AC1",
+     "kind": "behavior",
+     "text": "Given pembayaran non-tunai, When penyedia mengirim webhook sukses dengan tanda tangan valid, Then Payment berstatus sukses dan payment.completed dikirim sekali.",
+     "evidence": "Test webhook dengan sandbox penyedia"
+    },
+    {
+     "id": "REQ-011-AC2",
+     "kind": "security",
+     "text": "Given webhook dengan tanda tangan tidak valid atau duplikat, When diterima, Then tidak ada perubahan status ganda.",
+     "evidence": "Test negatif webhook"
+    }
+   ],
+   "untestable": "Penyedia pembayaran belum dipilih (lihat DEC-005)."
+  },
+  {
+   "id": "REQ-012",
+   "text": "Refund dan void butuh izin dan tercatat.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-012-AC1",
+     "kind": "security",
+     "text": "Given pengguna tanpa payment:refund atau payment:void, When refund diminta, Then ditolak.",
+     "evidence": "Test permission"
+    },
+    {
+     "id": "REQ-012-AC2",
+     "kind": "behavior",
+     "text": "Given refund disetujui, When diproses, Then status refund tercatat, jumlah tidak melebihi pembayaran, dan audit tercatat.",
+     "evidence": "Test domain dan audit"
+    }
+   ]
+  },
+  {
+   "id": "REQ-013",
+   "text": "Riwayat transaksi dan bukti pembayaran dapat dilihat.",
+   "priority": "SHOULD",
+   "acceptance": [
+    {
+     "id": "REQ-013-AC1",
+     "kind": "behavior",
+     "text": "Given transaksi tersimpan, When riwayat dibuka dengan filter tanggal, Then daftar berurutan dan dapat dipaginasi.",
+     "evidence": "Test API dan UI"
+    }
+   ]
+  },
+  {
+   "id": "REQ-014",
+   "text": "Member individu dan perusahaan, langganan bulanan, dan masa berlaku.",
+   "priority": "SHOULD",
+   "acceptance": [
+    {
+     "id": "REQ-014-AC1",
+     "kind": "behavior",
+     "text": "Given langganan aktif, When kendaraan masuk dalam masa berlaku, Then akses diizinkan sesuai aturan member.",
+     "evidence": "Test integrasi membership"
+    },
+    {
+     "id": "REQ-014-AC2",
+     "kind": "negative",
+     "text": "Given langganan sudah lewat masa berlaku, When kendaraan masuk, Then tidak diberi tarif member.",
+     "evidence": "Test domain"
+    }
+   ]
+  },
+  {
+   "id": "REQ-015",
+   "text": "Reserved parking dapat dibooking untuk area tertentu.",
+   "priority": "COULD",
+   "acceptance": [
+    {
+     "id": "REQ-015-AC1",
+     "kind": "edge",
+     "text": "Given reservasi yang bertabrakan dengan reservasi lain, When dibuat, Then ditolak.",
+     "evidence": "Test domain"
+    }
+   ]
+  },
+  {
+   "id": "REQ-016",
+   "text": "Daftar putih dan hitam dipatuhi saat validasi akses.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-016-AC1",
+     "kind": "behavior",
+     "text": "Given plat ada di daftar putih, When masuk, Then akses diizinkan tanpa pembayaran tarif.",
+     "evidence": "Test integrasi"
+    },
+    {
+     "id": "REQ-016-AC2",
+     "kind": "negative",
+     "text": "Given plat ada di daftar hitam, When masuk, Then akses ditolak dan kejadian dikirim ke notifikasi.",
+     "evidence": "Test integrasi"
+    }
+   ]
+  },
+  {
+   "id": "REQ-017",
+   "text": "Jadwal shift, serah terima kas, dan laporan per shift.",
+   "priority": "SHOULD",
+   "acceptance": [
+    {
+     "id": "REQ-017-AC1",
+     "kind": "behavior",
+     "text": "Given serah terima kas, When jumlah dihitung, Then selisih antara harapan dan hitungan tercatat.",
+     "evidence": "Test domain"
+    },
+    {
+     "id": "REQ-017-AC2",
+     "kind": "negative",
+     "text": "Given shift belum ditutup, When serah terima diminta, Then ditolak.",
+     "evidence": "Test domain"
+    }
+   ]
+  },
+  {
+   "id": "REQ-018",
+   "text": "Pusat Kendali menampilkan pendapatan hari ini serta transaksi sukses dan gagal per lokasi dan gerbang.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-018-AC1",
+     "kind": "behavior",
+     "text": "Given transaksi sukses dan gagal, When dashboard dibuka, Then total sesuai read model.",
+     "evidence": "Test read model dan E2E"
+    },
+    {
+     "id": "REQ-018-AC2",
+     "kind": "edge",
+     "text": "Given tidak ada transaksi hari ini, When dashboard dibuka, Then tampil keadaan kosong, bukan angka salah.",
+     "evidence": "Test UI"
+    }
+   ]
+  },
+  {
+   "id": "REQ-019",
+   "text": "Rekonsiliasi transaksi dengan uang masuk dan tandai transaksi mencurigakan.",
+   "priority": "SHOULD",
+   "acceptance": [
+    {
+     "id": "REQ-019-AC1",
+     "kind": "behavior",
+     "text": "Given pembayaran tanpa pasangan sesi atau uang masuk, When rekonsiliasi dijalankan, Then ditandai dalam daftar.",
+     "evidence": "Test domain"
+    }
+   ],
+   "untestable": "Aturan kriteria mencurigakan belum ditetapkan."
+  },
+  {
+   "id": "REQ-020",
+   "text": "Grafik okupansi, jam sibuk, dan durasi rata-rata.",
+   "priority": "SHOULD",
+   "acceptance": [
+    {
+     "id": "REQ-020-AC1",
+     "kind": "behavior",
+     "text": "Given snapshot okupansi, When grafik dipilih rentang waktu, Then data sesuai snapshot.",
+     "evidence": "Test API dan UI"
+    }
+   ]
+  },
+  {
+   "id": "REQ-021",
+   "text": "Registrasi perangkat: vendor, model, ID, IP, port, lokasi. Adapter per vendor dan simulator.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-021-AC1",
+     "kind": "behavior",
+     "text": "Given perangkat terdaftar dengan adapter simulator, When tes koneksi dijalankan, Then status koneksi nyata dari simulator dan bukan status hardcoded.",
+     "evidence": "Test integrasi dengan simulator"
+    },
+    {
+     "id": "REQ-021-AC2",
+     "kind": "negative",
+     "text": "Given adapter belum terverifikasi, When perangkat ditandai aktif, Then ditandai adapter_verified=false di UI dan API.",
+     "evidence": "Test API"
+    }
+   ]
+  },
+  {
+   "id": "REQ-022",
+   "text": "Status online/offline, health, dan log kejadian per perangkat.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-022-AC1",
+     "kind": "behavior",
+     "text": "Given perangkat berhenti merespons, When melewati batas pengecekan, Then status offline tampil dan notifikasi dibuat.",
+     "evidence": "Test integrasi"
+    },
+    {
+     "id": "REQ-022-AC2",
+     "kind": "edge",
+     "text": "Given perangkat kembali online, When kejadian diterima, Then status berubah dan log tercatat.",
+     "evidence": "Test integrasi"
+    }
+   ],
+   "untestable": "Interval pengecekan belum ditentukan (lihat DEC-001)."
+  },
+  {
+   "id": "REQ-023",
+   "text": "Perintah ke perangkat dengan timeout, retry terbatas, dan hasil yang tercatat. Tidak ada sukses palsu.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-023-AC1",
+     "kind": "negative",
+     "text": "Given perangkat tidak mengirim ack sampai timeout, When perintah diproses, Then status timeout tercatat dan barrier dianggap tidak terbuka.",
+     "evidence": "Test timeout"
+    },
+    {
+     "id": "REQ-023-AC2",
+     "kind": "edge",
+     "text": "Given percobaan gagal sampai batas retry, When berhenti, Then status failed dan event device.command_failed dikirim.",
+     "evidence": "Test retry"
+    }
+   ],
+   "untestable": "Jumlah retry dan durasi timeout belum ditetapkan (lihat DEC-001)."
+  },
+  {
+   "id": "REQ-024",
+   "text": "Operasi di lokasi saat internet putus: masuk dan keluar tetap berjalan, transaksi disimpan lokal, dan status offline tampil.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-024-AC1",
+     "kind": "behavior",
+     "text": "Given Edge tanpa koneksi cloud, When masuk dan keluar diproses, Then transaksi tersimpan lokal dan barrier mengikuti aturan lokal.",
+     "evidence": "Test integrasi Edge offline"
+    },
+    {
+     "id": "REQ-024-AC2",
+     "kind": "negative",
+     "text": "Given Edge offline, When batas akses cloud dicek, Then indikator offline tampil di UI petugas.",
+     "evidence": "Test E2E"
+    }
+   ]
+  },
+  {
+   "id": "REQ-025",
+   "text": "Data lokal tidak hilang saat aplikasi atau perangkat restart.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-025-AC1",
+     "kind": "behavior",
+     "text": "Given transaksi tersimpan lokal, When Edge dihentikan paksa dan dinyalakan lagi, Then transaksi tetap ada dan urutan sequence utuh.",
+     "evidence": "Test crash recovery"
+    }
+   ]
+  },
+  {
+   "id": "REQ-026",
+   "text": "Sinkronisasi ke cloud saat internet pulih dengan aturan penyelesaian konflik yang jelas.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-026-AC1",
+     "kind": "behavior",
+     "text": "Given batch lokal dan cloud sudah berubah, When sinkron berjalan, Then event fisik diterapkan dan konflik masuk ConflictCase sesuai aturan.",
+     "evidence": "Test integrasi sinkron"
+    },
+    {
+     "id": "REQ-026-AC2",
+     "kind": "edge",
+     "text": "Given koneksi putus di tengah sinkron, When dilanjutkan, Then tidak ada event ganda.",
+     "evidence": "Test retry sinkron"
+    }
+   ],
+   "untestable": "Aturan pemenang konflik belum dikonfirmasi (lihat DEC-011)."
+  },
+  {
+   "id": "REQ-027",
+   "text": "Cegah transaksi dan data yang masuk dua kali atau diulang.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-027-AC1",
+     "kind": "negative",
+     "text": "Given request dengan idempotency_key yang sama, When dikirim dua kali, Then hanya satu efek tersimpan dan respons pertama diulang.",
+     "evidence": "Test idempotency"
+    },
+    {
+     "id": "REQ-027-AC2",
+     "kind": "security",
+     "text": "Given event atau webhook yang sudah diproses, When diterima ulang, Then tidak ada perubahan ganda.",
+     "evidence": "Test replay"
+    }
+   ]
+  },
+  {
+   "id": "REQ-028",
+   "text": "Notifikasi operasional saat ada masalah di lokasi.",
+   "priority": "SHOULD",
+   "acceptance": [
+    {
+     "id": "REQ-028-AC1",
+     "kind": "behavior",
+     "text": "Given aturan peringatan aktif dan kondisi terpenuhi, When kondisi terjadi, Then notifikasi terkirim ke kanal yang dikonfigurasi.",
+     "evidence": "Test integrasi notifikasi"
+    }
+   ],
+   "untestable": "Kanal notifikasi belum ditentukan (lihat DEC-012)."
+  },
+  {
+   "id": "REQ-029",
+   "text": "Audit log mencatat siapa melakukan apa dan kapan untuk aksi sensitif.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-029-AC1",
+     "kind": "behavior",
+     "text": "Given aksi sensitif (buka manual, refund, void, tarif, izin, API key), When dilakukan, Then AuditLog berisi aktor, aksi, sumber daya, waktu, dan nilai sebelum/sesudah.",
+     "evidence": "Test audit"
+    },
+    {
+     "id": "REQ-029-AC2",
+     "kind": "security",
+     "text": "Given pengguna biasa, When mengubah AuditLog lewat API, Then ditolak.",
+     "evidence": "Test permission"
+    }
+   ]
+  },
+  {
+   "id": "REQ-030",
+   "text": "API key untuk integrasi eksternal; dapat dicabut; hanya hash yang disimpan.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-030-AC1",
+     "kind": "security",
+     "text": "Given API key dibuat, When ditampilkan sekali, Then database hanya menyimpan hash.",
+     "evidence": "Test database dan API"
+    },
+    {
+     "id": "REQ-030-AC2",
+     "kind": "negative",
+     "text": "Given API key dicabut, When dipakai, Then request ditolak.",
+     "evidence": "Test API"
+    }
+   ]
+  },
+  {
+   "id": "REQ-031",
+   "text": "Keamanan dasar: enkripsi koneksi, batas permintaan, validasi input, pengelolaan secret.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-031-AC1",
+     "kind": "security",
+     "text": "Given koneksi tanpa TLS, When diminta, Then ditolak atau dialihkan sesuai konfigurasi.",
+     "evidence": "Test konfigurasi"
+    },
+    {
+     "id": "REQ-031-AC2",
+     "kind": "negative",
+     "text": "Given input tidak valid atau melebihi batas request, When dikirim, Then ditolak dengan kode yang sesuai.",
+     "evidence": "Test API"
+    },
+    {
+     "id": "REQ-031-AC3",
+     "kind": "security",
+     "text": "Given pemindaian repositori, When dijalankan, Then tidak ada secret di kode.",
+     "evidence": "Output pemindai secret di CI"
+    }
+   ]
+  },
+  {
+   "id": "REQ-032",
+   "text": "Backup terjadwal dan pemulihan yang diuji.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-032-AC1",
+     "kind": "behavior",
+     "text": "Given backup terjadwal, When restore dijalankan ke lingkungan uji, Then data hasil restore cocok dengan sumber.",
+     "evidence": "Log uji restore"
+    }
+   ],
+   "untestable": "Target RPO dan RTO belum diberikan (lihat DEC-010)."
+  },
+  {
+   "id": "REQ-033",
+   "text": "Deteksi anomali dan prediksi okupansi serta pendapatan.",
+   "priority": "COULD",
+   "untestable": "Fase 6. Model, data latih, dan metrik evaluasi belum ditentukan. AI tidak boleh membuka barrier atau melewati aturan keselamatan."
+  },
+  {
+   "id": "REQ-034",
+   "text": "UI responsif desktop dan tablet, mobile-responsive, dengan state loading, empty, error, dan offline.",
+   "priority": "SHOULD",
+   "acceptance": [
+    {
+     "id": "REQ-034-AC1",
+     "kind": "accessibility",
+     "text": "Given layar lebar 768 px dan 1280 px, When halaman utama dibuka, Then navigasi dan tabel dapat dipakai tanpa scroll horizontal yang merusak.",
+     "evidence": "Screenshot dan uji responsif"
+    },
+    {
+     "id": "REQ-034-AC2",
+     "kind": "behavior",
+     "text": "Given Edge offline, When status dimuat, Then state offline tampil dan tombol aksi yang butuh cloud dinonaktifkan.",
+     "evidence": "Test E2E"
+    }
+   ]
+  },
+  {
+   "id": "REQ-035",
+   "text": "Observabilitas: log terstruktur, metrik, health check, dan tracing untuk operasi.",
+   "priority": "MUST",
+   "acceptance": [
+    {
+     "id": "REQ-035-AC1",
+     "kind": "behavior",
+     "text": "Given layanan berjalan, When GET /health dan GET /ready dipanggil, Then respons sesuai status dependensi.",
+     "evidence": "Test health dan output"
+    },
+    {
+     "id": "REQ-035-AC2",
+     "kind": "negative",
+     "text": "Given database tidak tersedia, When GET /ready dipanggil, Then respons gagal dan tercatat di log.",
+     "evidence": "Test integrasi"
+    }
+   ]
+  }
+ ],
+ "features": [
+  {
+   "id": "FEAT-001",
+   "name": "Ringkasan Operasional Real-time",
+   "description": "Dashboard seluruh lokasi dengan kendaraan, okupansi, pendapatan, dan status.",
+   "requirement_ids": [
+    "REQ-018",
+    "REQ-020",
+    "REQ-034"
+   ],
+   "platforms": [
+    "web"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-001.1",
+     "name": "Lihat semua lokasi",
+     "feature_id": "FEAT-001"
+    },
+    {
+     "id": "FEAT-001.2",
+     "name": "Kendaraan masuk dan keluar live",
+     "feature_id": "FEAT-001"
+    },
+    {
+     "id": "FEAT-001.3",
+     "name": "Isi parkir dan sisa slot",
+     "feature_id": "FEAT-001"
+    },
+    {
+     "id": "FEAT-001.4",
+     "name": "Pendapatan dan transaksi hari ini",
+     "feature_id": "FEAT-001"
+    },
+    {
+     "id": "FEAT-001.5",
+     "name": "Status gerbang",
+     "feature_id": "FEAT-001"
+    },
+    {
+     "id": "FEAT-001.6",
+     "name": "Status perangkat",
+     "feature_id": "FEAT-001"
+    }
+   ],
+   "source_id": "status-gerbang"
+  },
+  {
+   "id": "FEAT-002",
+   "name": "Peringatan Operasional",
+   "description": "Aturan dan pengiriman peringatan saat ada masalah.",
+   "requirement_ids": [
+    "REQ-028"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-002.1",
+     "name": "Aturan peringatan per lokasi",
+     "feature_id": "FEAT-002"
+    },
+    {
+     "id": "FEAT-002.2",
+     "name": "Pengiriman notifikasi",
+     "feature_id": "FEAT-002"
+    },
+    {
+     "id": "FEAT-002.3",
+     "name": "Riwayat peringatan",
+     "feature_id": "FEAT-002"
+    }
+   ],
+   "source_id": "peringatan-operasional"
+  },
+  {
+   "id": "FEAT-003",
+   "name": "Perusahaan dan Lokasi",
+   "description": "Hierarki organisasi dan lokasi dengan isolasi tenant.",
+   "requirement_ids": [
+    "REQ-001",
+    "REQ-003"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-003.1",
+     "name": "Perusahaan dan operator",
+     "feature_id": "FEAT-003"
+    },
+    {
+     "id": "FEAT-003.2",
+     "name": "Pelanggan",
+     "feature_id": "FEAT-003"
+    },
+    {
+     "id": "FEAT-003.3",
+     "name": "Gedung dan lokasi",
+     "feature_id": "FEAT-003"
+    },
+    {
+     "id": "FEAT-003.4",
+     "name": "Area parkir",
+     "feature_id": "FEAT-003"
+    },
+    {
+     "id": "FEAT-003.5",
+     "name": "Gerbang",
+     "feature_id": "FEAT-003"
+    },
+    {
+     "id": "FEAT-003.6",
+     "name": "Isolasi data antar perusahaan",
+     "feature_id": "FEAT-003"
+    }
+   ],
+   "source_id": "perusahaan-operator"
+  },
+  {
+   "id": "FEAT-004",
+   "name": "Masuk, Keluar, dan Sesi",
+   "description": "Pencatatan masuk dan keluar serta sesi parkir.",
+   "requirement_ids": [
+    "REQ-004"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-004.1",
+     "name": "Catat masuk dan keluar",
+     "feature_id": "FEAT-004"
+    },
+    {
+     "id": "FEAT-004.2",
+     "name": "Sesi parkir",
+     "feature_id": "FEAT-004"
+    },
+    {
+     "id": "FEAT-004.3",
+     "name": "Plat dan jenis kendaraan",
+     "feature_id": "FEAT-004"
+    },
+    {
+     "id": "FEAT-004.4",
+     "name": "Tiket digital dan fisik",
+     "feature_id": "FEAT-004"
+    }
+   ],
+   "source_id": "masuk-keluar"
+  },
+  {
+   "id": "FEAT-005",
+   "name": "Validasi Akses dan Kontrol Keluar",
+   "description": "Validasi QR/RFID/ANPR, cek bayar, tiket hilang, buka manual.",
+   "requirement_ids": [
+    "REQ-005",
+    "REQ-006",
+    "REQ-007",
+    "REQ-008"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-005.1",
+     "name": "Validasi akses QR, RFID, ANPR",
+     "feature_id": "FEAT-005"
+    },
+    {
+     "id": "FEAT-005.2",
+     "name": "Cek bayar sebelum keluar",
+     "feature_id": "FEAT-005"
+    },
+    {
+     "id": "FEAT-005.3",
+     "name": "Tiket hilang",
+     "feature_id": "FEAT-005"
+    },
+    {
+     "id": "FEAT-005.4",
+     "name": "Buka manual dengan otorisasi",
+     "feature_id": "FEAT-005"
+    }
+   ],
+   "source_id": "validasi-akses"
+  },
+  {
+   "id": "FEAT-006",
+   "name": "Struktur Tarif",
+   "description": "Skema tarif dan aturan per kendaraan, lokasi, dan member.",
+   "requirement_ids": [
+    "REQ-009",
+    "REQ-010"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-006.1",
+     "name": "Jenis tarif",
+     "feature_id": "FEAT-006"
+    },
+    {
+     "id": "FEAT-006.2",
+     "name": "Tarif flat",
+     "feature_id": "FEAT-006",
+     "source_id": "tarif-flat"
+    },
+    {
+     "id": "FEAT-006.3",
+     "name": "Tarif per jam",
+     "feature_id": "FEAT-006",
+     "source_id": "tarif-per-jam"
+    },
+    {
+     "id": "FEAT-006.4",
+     "name": "Tarif progresif",
+     "feature_id": "FEAT-006",
+     "source_id": "tarif-progresif"
+    },
+    {
+     "id": "FEAT-006.5",
+     "name": "Tarif per kendaraan dan lokasi",
+     "feature_id": "FEAT-006"
+    },
+    {
+     "id": "FEAT-006.6",
+     "name": "Tarif member",
+     "feature_id": "FEAT-006"
+    }
+   ],
+   "source_id": "jenis-tarif"
+  },
+  {
+   "id": "FEAT-007",
+   "name": "Aturan Tarif Khusus",
+   "description": "Masa tenggang, batas harian, tarif event, dan riwayat perubahan.",
+   "requirement_ids": [
+    "REQ-009",
+    "REQ-010"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-007.1",
+     "name": "Masa tenggang dan batas harian",
+     "feature_id": "FEAT-007"
+    },
+    {
+     "id": "FEAT-007.2",
+     "name": "Tarif event",
+     "feature_id": "FEAT-007"
+    },
+    {
+     "id": "FEAT-007.3",
+     "name": "Riwayat perubahan tarif",
+     "feature_id": "FEAT-007"
+    }
+   ],
+   "source_id": "masa-tenggang-batas"
+  },
+  {
+   "id": "FEAT-008",
+   "name": "Metode Bayar",
+   "description": "Tunai, QRIS, e-wallet, dan kartu uang elektronik.",
+   "requirement_ids": [
+    "REQ-011"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-008.1",
+     "name": "Pilihan metode bayar",
+     "feature_id": "FEAT-008"
+    },
+    {
+     "id": "FEAT-008.2",
+     "name": "Pembayaran tunai",
+     "feature_id": "FEAT-008",
+     "source_id": "bayar-tunai"
+    },
+    {
+     "id": "FEAT-008.3",
+     "name": "Pembayaran QRIS",
+     "feature_id": "FEAT-008",
+     "source_id": "bayar-qris"
+    },
+    {
+     "id": "FEAT-008.4",
+     "name": "E-wallet dan kartu uang elektronik",
+     "feature_id": "FEAT-008",
+     "source_id": "bayar-ewallet-kartu"
+    }
+   ],
+   "source_id": "metode-bayar"
+  },
+  {
+   "id": "FEAT-009",
+   "name": "Integrasi Penyedia dan Refund",
+   "description": "Integrasi penyedia resmi, webhook, refund, void, riwayat.",
+   "requirement_ids": [
+    "REQ-011",
+    "REQ-012",
+    "REQ-013"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-009.1",
+     "name": "Integrasi penyedia pembayaran",
+     "feature_id": "FEAT-009"
+    },
+    {
+     "id": "FEAT-009.2",
+     "name": "Bayar member dan langganan",
+     "feature_id": "FEAT-009"
+    },
+    {
+     "id": "FEAT-009.3",
+     "name": "Refund dan void",
+     "feature_id": "FEAT-009"
+    },
+    {
+     "id": "FEAT-009.4",
+     "name": "Riwayat dan bukti bayar",
+     "feature_id": "FEAT-009"
+    }
+   ],
+   "source_id": "integrasi-penyedia"
+  },
+  {
+   "id": "FEAT-010",
+   "name": "Member dan Daftar Akses",
+   "description": "Member, langganan, reservasi, daftar putih dan hitam.",
+   "requirement_ids": [
+    "REQ-014",
+    "REQ-015",
+    "REQ-016"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-010.1",
+     "name": "Member individu dan perusahaan",
+     "feature_id": "FEAT-010"
+    },
+    {
+     "id": "FEAT-010.2",
+     "name": "Langganan bulanan",
+     "feature_id": "FEAT-010"
+    },
+    {
+     "id": "FEAT-010.3",
+     "name": "Reserved parking",
+     "feature_id": "FEAT-010"
+    },
+    {
+     "id": "FEAT-010.4",
+     "name": "Daftar putih dan hitam",
+     "feature_id": "FEAT-010"
+    },
+    {
+     "id": "FEAT-010.5",
+     "name": "Masa berlaku member",
+     "feature_id": "FEAT-010"
+    },
+    {
+     "id": "FEAT-010.6",
+     "name": "Riwayat akses member",
+     "feature_id": "FEAT-010"
+    }
+   ],
+   "source_id": "member"
+  },
+  {
+   "id": "FEAT-011",
+   "name": "Petugas dan Shift",
+   "description": "Petugas, jadwal shift, serah terima kas, laporan, performa.",
+   "requirement_ids": [
+    "REQ-017"
+   ],
+   "platforms": [
+    "web"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-011.1",
+     "name": "Kelola petugas",
+     "feature_id": "FEAT-011"
+    },
+    {
+     "id": "FEAT-011.2",
+     "name": "Jadwal shift",
+     "feature_id": "FEAT-011"
+    },
+    {
+     "id": "FEAT-011.3",
+     "name": "Serah terima kas",
+     "feature_id": "FEAT-011"
+    },
+    {
+     "id": "FEAT-011.4",
+     "name": "Laporan per shift",
+     "feature_id": "FEAT-011"
+    },
+    {
+     "id": "FEAT-011.5",
+     "name": "Performa petugas",
+     "feature_id": "FEAT-011"
+    }
+   ],
+   "source_id": "kelola-petugas"
+  },
+  {
+   "id": "FEAT-012",
+   "name": "Laporan Pendapatan dan Rekonsiliasi",
+   "description": "Pendapatan per lokasi, gerbang, shift, dan jenis kendaraan, serta deteksi kebocoran.",
+   "requirement_ids": [
+    "REQ-018",
+    "REQ-019"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-012.1",
+     "name": "Laporan pendapatan",
+     "feature_id": "FEAT-012"
+    },
+    {
+     "id": "FEAT-012.2",
+     "name": "Rekonsiliasi transaksi",
+     "feature_id": "FEAT-012"
+    },
+    {
+     "id": "FEAT-012.3",
+     "name": "Transaksi mencurigakan",
+     "feature_id": "FEAT-012"
+    },
+    {
+     "id": "FEAT-012.4",
+     "name": "Potensi kebocoran pendapatan",
+     "feature_id": "FEAT-012"
+    }
+   ],
+   "source_id": "laporan-pendapatan"
+  },
+  {
+   "id": "FEAT-013",
+   "name": "Analitik Parkir",
+   "description": "Okupansi, jam sibuk, durasi, dan perbandingan.",
+   "requirement_ids": [
+    "REQ-020"
+   ],
+   "platforms": [
+    "web"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-013.1",
+     "name": "Grafik okupansi",
+     "feature_id": "FEAT-013"
+    },
+    {
+     "id": "FEAT-013.2",
+     "name": "Jam sibuk dan durasi rata-rata",
+     "feature_id": "FEAT-013"
+    },
+    {
+     "id": "FEAT-013.3",
+     "name": "Jumlah kendaraan harian",
+     "feature_id": "FEAT-013"
+    },
+    {
+     "id": "FEAT-013.4",
+     "name": "Perbandingan pendapatan",
+     "feature_id": "FEAT-013"
+    },
+    {
+     "id": "FEAT-013.5",
+     "name": "Performa lokasi",
+     "feature_id": "FEAT-013"
+    }
+   ],
+   "source_id": "grafik-okupansi"
+  },
+  {
+   "id": "FEAT-014",
+   "name": "Registrasi dan Kontrol Perangkat",
+   "description": "Registrasi, adapter, status, dan perintah perangkat.",
+   "requirement_ids": [
+    "REQ-021",
+    "REQ-022",
+    "REQ-023"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-014.1",
+     "name": "Registrasi perangkat",
+     "feature_id": "FEAT-014"
+    },
+    {
+     "id": "FEAT-014.2",
+     "name": "Adapter vendor dan simulator",
+     "feature_id": "FEAT-014"
+    },
+    {
+     "id": "FEAT-014.3",
+     "name": "Jenis koneksi",
+     "feature_id": "FEAT-014"
+    },
+    {
+     "id": "FEAT-014.4",
+     "name": "Status dan kesehatan perangkat",
+     "feature_id": "FEAT-014"
+    },
+    {
+     "id": "FEAT-014.5",
+     "name": "Log dan perintah perangkat",
+     "feature_id": "FEAT-014"
+    }
+   ],
+   "source_id": "registrasi-perangkat"
+  },
+  {
+   "id": "FEAT-015",
+   "name": "Edge Controller dan Mode Offline",
+   "description": "Pengendali lokal dengan operasi offline dan sinkronisasi.",
+   "requirement_ids": [
+    "REQ-024",
+    "REQ-025",
+    "REQ-026"
+   ],
+   "platforms": [
+    "backend",
+    "web"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-015.1",
+     "name": "Edge Controller",
+     "feature_id": "FEAT-015"
+    },
+    {
+     "id": "FEAT-015.2",
+     "name": "Operasi saat offline",
+     "feature_id": "FEAT-015"
+    },
+    {
+     "id": "FEAT-015.3",
+     "name": "Sinkronisasi ke cloud",
+     "feature_id": "FEAT-015"
+    }
+   ],
+   "source_id": "edge-controller"
+  },
+  {
+   "id": "FEAT-016",
+   "name": "Keamanan Operasi dan Keandalan",
+   "description": "Kontrol barrier, idempotensi, keamanan dasar, backup, dan observabilitas.",
+   "requirement_ids": [
+    "REQ-027",
+    "REQ-031",
+    "REQ-032",
+    "REQ-035"
+   ],
+   "platforms": [
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-016.1",
+     "name": "Kontrol barrier aman",
+     "feature_id": "FEAT-016"
+    },
+    {
+     "id": "FEAT-016.2",
+     "name": "Anti duplikat dan anti ulang",
+     "feature_id": "FEAT-016"
+    },
+    {
+     "id": "FEAT-016.3",
+     "name": "Keamanan dasar",
+     "feature_id": "FEAT-016"
+    },
+    {
+     "id": "FEAT-016.4",
+     "name": "Backup dan pemulihan",
+     "feature_id": "FEAT-016"
+    }
+   ],
+   "source_id": "kontrol-barrier-aman"
+  },
+  {
+   "id": "FEAT-017",
+   "name": "Pengguna, Hak Akses, dan Administrasi",
+   "description": "Akun, peran, audit, API key, dan pengaturan.",
+   "requirement_ids": [
+    "REQ-002",
+    "REQ-029",
+    "REQ-030"
+   ],
+   "platforms": [
+    "web",
+    "backend"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-017.1",
+     "name": "Pengguna dan hak akses",
+     "feature_id": "FEAT-017"
+    },
+    {
+     "id": "FEAT-017.2",
+     "name": "Audit log",
+     "feature_id": "FEAT-017"
+    },
+    {
+     "id": "FEAT-017.3",
+     "name": "Kunci API dan integrasi",
+     "feature_id": "FEAT-017"
+    },
+    {
+     "id": "FEAT-017.4",
+     "name": "Pengaturan sistem dan notifikasi",
+     "feature_id": "FEAT-017"
+    }
+   ],
+   "source_id": "pengguna-hak-akses"
+  },
+  {
+   "id": "FEAT-018",
+   "name": "Kecerdasan Otomatis",
+   "description": "Deteksi anomali, prediksi, dan rekomendasi (fase akhir).",
+   "requirement_ids": [
+    "REQ-033"
+   ],
+   "platforms": [
+    "backend",
+    "web"
+   ],
+   "sub_features": [
+    {
+     "id": "FEAT-018.1",
+     "name": "Deteksi anomali",
+     "feature_id": "FEAT-018"
+    },
+    {
+     "id": "FEAT-018.2",
+     "name": "Prediksi okupansi dan pendapatan",
+     "feature_id": "FEAT-018"
+    },
+    {
+     "id": "FEAT-018.3",
+     "name": "Rekomendasi operasional",
+     "feature_id": "FEAT-018"
+    }
+   ],
+   "source_id": "deteksi-anomali"
+  }
+ ],
+ "platform": {
+  "targets": [
+   {
+    "kind": "web",
+    "rationale": "Dashboard admin, pusat kendali, dan UI responsif untuk supervisor dan petugas. Mobile saat ini dilayani lewat UI responsif."
+   },
+   {
+    "kind": "backend",
+    "rationale": "REST API cloud dan Edge Controller (Go) di lokasi."
+   },
+   {
+    "kind": "desktop",
+    "rationale": "Target dari pilihan user. Bentuk dan peran belum ditentukan (lihat DEC-002)."
+   },
+   {
+    "kind": "android",
+    "rationale": "survey"
+   },
+   {
+    "kind": "ios",
+    "rationale": "survey"
+   }
+  ],
+  "reason": "Dashboard untuk pengelolaan, API untuk integrasi, Edge untuk operasi lokal. Desktop dan mobile native menunggu keputusan.",
+  "approved": false
+ },
+ "structure": {
+  "mode": "new",
+  "components": null,
+  "template": "microservices",
+  "layout": [
+   "apps/web/",
+   "apps/mobile/",
+   "apps/desktop/",
+   "services/tenant/",
+   "services/identity/",
+   "services/audit/",
+   "services/notification/",
+   "services/hardware/",
+   "services/membership/",
+   "services/tariff/",
+   "services/parking-ops/",
+   "services/payment/",
+   "services/staff-shift/",
+   "services/revenue/",
+   "services/analytics/",
+   "services/edge-sync/",
+   "services/files/",
+   "apps/worker/",
+   "packages/domain/",
+   "packages/contracts/",
+   "packages/ui/",
+   "packages/config/",
+   "docs/"
+  ],
+  "reason": "Microservices: Kebutuhan skala dan deployment independen per layanan.",
+  "ir": {
+   "type": "microservices",
+   "apps": [
+    {
+     "name": "web",
+     "path": "apps/web/",
+     "reason": "Aplikasi web ada di platform yang dipilih."
+    },
+    {
+     "name": "mobile",
+     "path": "apps/mobile/",
+     "reason": "Aplikasi mobile (Android/iOS) ada di platform yang dipilih."
+    },
+    {
+     "name": "desktop",
+     "path": "apps/desktop/",
+     "reason": "Aplikasi desktop ada di platform yang dipilih."
+    }
+   ],
+   "services": [
+    {
+     "name": "tenant",
+     "path": "services/tenant/",
+     "reason": "Domain tenant di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "identity",
+     "path": "services/identity/",
+     "reason": "Domain identity di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "audit",
+     "path": "services/audit/",
+     "reason": "Domain audit di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "notification",
+     "path": "services/notification/",
+     "reason": "Domain notification di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "hardware",
+     "path": "services/hardware/",
+     "reason": "Domain hardware di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "membership",
+     "path": "services/membership/",
+     "reason": "Domain membership di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "tariff",
+     "path": "services/tariff/",
+     "reason": "Domain tariff di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "parking-ops",
+     "path": "services/parking-ops/",
+     "reason": "Domain parking-ops di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "payment",
+     "path": "services/payment/",
+     "reason": "Domain payment di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "staff-shift",
+     "path": "services/staff-shift/",
+     "reason": "Domain staff-shift di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "revenue",
+     "path": "services/revenue/",
+     "reason": "Domain revenue di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "analytics",
+     "path": "services/analytics/",
+     "reason": "Domain analytics di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "edge-sync",
+     "path": "services/edge-sync/",
+     "reason": "Domain edge-sync di-deploy dan diskalakan sendiri."
+    },
+    {
+     "name": "files",
+     "path": "services/files/",
+     "reason": "Domain files di-deploy dan diskalakan sendiri."
+    }
+   ],
+   "workers": [
+    {
+     "name": "worker",
+     "path": "apps/worker/",
+     "reason": "payment-webhook: Proses webhook penyedia: verifikasi tanda tangan, idempotency, update Payment, emit payment.completed; device-command: Kirim perintah ke adapter, tunggu ack, timeout, retry terbatas, catat hasil; notification: Kirim alert ke kanal yang dikonfigurasi, retry dengan backoff; report: Ekspor laporan dan rekonsiliasi besar; snapshot: Snapshot okupansi dan agregasi harian pendapatan; edge-sync-apply: Terapkan batch Edge dengan urutan sequence dan idempotency; backup: Backup database dan object storage terjadwal"
+    }
+   ],
+   "packages": [
+    {
+     "name": "domain",
+     "path": "packages/domain/",
+     "reason": "Entity, rule, dan kalkulasi murni tanpa I/O."
+    },
+    {
+     "name": "contracts",
+     "path": "packages/contracts/",
+     "reason": "Skema input/output dan event; satu sumber kebenaran."
+    },
+    {
+     "name": "ui",
+     "path": "packages/ui/",
+     "reason": "Komponen dan design tokens dipakai bersama oleh web, mobile, desktop."
+    },
+    {
+     "name": "config",
+     "path": "packages/config/",
+     "reason": "Lint, tsconfig, dan tooling bersama."
+    }
+   ],
+   "docs": "docs/"
+  },
+  "recommended": "microservices",
+  "status": "recommended",
+  "issues": [
+   {
+    "level": "warning",
+    "area": "service",
+    "message": "14 service: biaya deploy, observability dan koordinasi tinggi. Gabungkan domain yang selalu berubah bersama."
+   }
+  ],
+  "plan_request": {
+   "source_hash": "6f504f79e3a0f715"
+  },
+  "repo_request": {
+   "action": "generate",
+   "source_hash": "6f504f79e3a0f715"
+  },
+  "history": [
+   {
+    "version": 1,
+    "at": "2026-11-11T23:39:11.804459463Z",
+    "source": "recommend",
+    "status": "recommended",
+    "ir": {
+     "type": "microservices",
+     "apps": [
+      {
+       "name": "web",
+       "path": "apps/web/",
+       "reason": "Aplikasi web ada di platform yang dipilih."
+      },
+      {
+       "name": "mobile",
+       "path": "apps/mobile/",
+       "reason": "Aplikasi mobile (Android/iOS) ada di platform yang dipilih."
+      },
+      {
+       "name": "desktop",
+       "path": "apps/desktop/",
+       "reason": "Aplikasi desktop ada di platform yang dipilih."
+      }
+     ],
+     "services": [
+      {
+       "name": "tenant",
+       "path": "services/tenant/",
+       "reason": "Domain tenant di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "identity",
+       "path": "services/identity/",
+       "reason": "Domain identity di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "audit",
+       "path": "services/audit/",
+       "reason": "Domain audit di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "notification",
+       "path": "services/notification/",
+       "reason": "Domain notification di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "hardware",
+       "path": "services/hardware/",
+       "reason": "Domain hardware di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "membership",
+       "path": "services/membership/",
+       "reason": "Domain membership di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "tariff",
+       "path": "services/tariff/",
+       "reason": "Domain tariff di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "parking-ops",
+       "path": "services/parking-ops/",
+       "reason": "Domain parking-ops di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "payment",
+       "path": "services/payment/",
+       "reason": "Domain payment di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "staff-shift",
+       "path": "services/staff-shift/",
+       "reason": "Domain staff-shift di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "revenue",
+       "path": "services/revenue/",
+       "reason": "Domain revenue di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "analytics",
+       "path": "services/analytics/",
+       "reason": "Domain analytics di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "edge-sync",
+       "path": "services/edge-sync/",
+       "reason": "Domain edge-sync di-deploy dan diskalakan sendiri."
+      },
+      {
+       "name": "files",
+       "path": "services/files/",
+       "reason": "Domain files di-deploy dan diskalakan sendiri."
+      }
+     ],
+     "workers": [
+      {
+       "name": "worker",
+       "path": "apps/worker/",
+       "reason": "payment-webhook: Proses webhook penyedia: verifikasi tanda tangan, idempotency, update Payment, emit payment.completed; device-command: Kirim perintah ke adapter, tunggu ack, timeout, retry terbatas, catat hasil; notification: Kirim alert ke kanal yang dikonfigurasi, retry dengan backoff; report: Ekspor laporan dan rekonsiliasi besar; snapshot: Snapshot okupansi dan agregasi harian pendapatan; edge-sync-apply: Terapkan batch Edge dengan urutan sequence dan idempotency; backup: Backup database dan object storage terjadwal"
+      }
+     ],
+     "packages": [
+      {
+       "name": "domain",
+       "path": "packages/domain/",
+       "reason": "Entity, rule, dan kalkulasi murni tanpa I/O."
+      },
+      {
+       "name": "contracts",
+       "path": "packages/contracts/",
+       "reason": "Skema input/output dan event; satu sumber kebenaran."
+      },
+      {
+       "name": "ui",
+       "path": "packages/ui/",
+       "reason": "Komponen dan design tokens dipakai bersama oleh web, mobile, desktop."
+      },
+      {
+       "name": "config",
+       "path": "packages/config/",
+       "reason": "Lint, tsconfig, dan tooling bersama."
+      }
+     ],
+     "docs": "docs/"
+    }
+   }
+  ],
+  "approved": false
+ },
+ "stack": {
+  "mode": "new",
+  "profile": "ai-product",
+  "needs": [
+   "realtime",
+   "offline",
+   "ai",
+   "transactions",
+   "independent_scaling",
+   "enterprise",
+   "files",
+   "search",
+   "webhook"
+  ],
+  "platform": {
+   "web": true,
+   "mobile": true,
+   "android": true,
+   "ios": true,
+   "desktop": true,
+   "backend": true
+  },
+  "decisions": [
+   {
+    "area": "frontend",
+    "recommended": "React + TypeScript + Vite",
+    "language": "TypeScript",
+    "reason": "Kebijakan profil AI Product: UI interaktif untuk hasil AI dan alur kerja.",
+    "source": "profile",
+    "alternatives": [
+     "Next.js + TypeScript",
+     "Vue + TypeScript + Vite"
+    ]
+   },
+   {
+    "area": "ui",
+    "recommended": "Tailwind CSS + shadcn/ui",
+    "reason": "Mengikuti frontend React: komponen dapat diubah dan tetap memakai token desain project.",
+    "source": "dependency",
+    "alternatives": [
+     "Ant Design",
+     "MUI (Material UI)",
+     "Tailwind CSS"
+    ]
+   },
+   {
+    "area": "mobile",
+    "recommended": "React Native + TypeScript + Expo",
+    "language": "TypeScript",
+    "runtime": "Hermes (JavaScript engine)",
+    "reason": "Kebijakan profil AI Product: Berbagi bahasa dan pengetahuan dengan tim web.",
+    "source": "profile",
+    "alternatives": [
+     "Flutter"
+    ]
+   },
+   {
+    "area": "desktop",
+    "recommended": "Tauri + React + TypeScript",
+    "language": "TypeScript",
+    "runtime": "WebView sistem + core Rust",
+    "reason": "Kebijakan profil AI Product: Memakai ulang UI web dengan aplikasi desktop yang ringan.",
+    "source": "profile",
+    "alternatives": [
+     "Electron + React + TypeScript"
+    ]
+   },
+   {
+    "area": "backend",
+    "recommended": "Python + FastAPI",
+    "language": "Python",
+    "runtime": "CPython (server ASGI, mis. Uvicorn)",
+    "reason": "Kebijakan profil AI Product: Ekosistem AI dan data processing paling lengkap ada di Python.",
+    "source": "profile",
+    "alternatives": [
+     "NestJS + TypeScript",
+     "Spring Boot + Java",
+     "Go + Gin"
+    ]
+   },
+   {
+    "area": "api",
+    "recommended": "REST + OpenAPI + WebSocket",
+    "reason": "Kebutuhan realtime: update dikirim ke klien lewat WebSocket.",
+    "source": "need",
+    "alternatives": [
+     "gRPC",
+     "REST + OpenAPI",
+     "GraphQL"
+    ]
+   },
+   {
+    "area": "database",
+    "recommended": "PostgreSQL",
+    "language": "SQL",
+    "reason": "Kebijakan profil AI Product: Data aplikasi relasional; bisa ditambah pgvector untuk embedding.",
+    "source": "profile",
+    "alternatives": [
+     "MySQL",
+     "MongoDB",
+     "SQLite"
+    ]
+   },
+   {
+    "area": "cache",
+    "recommended": "Redis",
+    "reason": "Kebutuhan realtime: state dan pub/sub bersama antar instance.",
+    "source": "need"
+   },
+   {
+    "area": "messaging",
+    "recommended": "NATS",
+    "reason": "Layanan terpisah berkomunikasi lewat event.",
+    "source": "dependency",
+    "alternatives": [
+     "Redis Pub/Sub",
+     "Redis Streams",
+     "RabbitMQ"
+    ]
+   },
+   {
+    "area": "workers",
+    "recommended": "Worker terpisah + antrean",
+    "reason": "Dikerjakan di luar request: panggilan AI yang lama, penerimaan dan pengiriman webhook.",
+    "source": "need",
+    "alternatives": [
+     "Job in-process"
+    ]
+   },
+   {
+    "area": "storage",
+    "recommended": "S3-compatible (S3 / MinIO)",
+    "reason": "Ada upload file; disimpan di object storage dengan signed URL.",
+    "source": "need",
+    "alternatives": [
+     "Disk server lokal"
+    ]
+   },
+   {
+    "area": "search",
+    "recommended": "PostgreSQL full-text search",
+    "reason": "Pencarian teks memakai database yang sama; tanpa layanan tambahan.",
+    "source": "dependency",
+    "alternatives": [
+     "Meilisearch",
+     "Elasticsearch / OpenSearch"
+    ]
+   },
+   {
+    "area": "architecture",
+    "recommended": "Microservices",
+    "reason": "Kebutuhan skala dan deployment independen per layanan.",
+    "source": "need",
+    "alternatives": [
+     "Simple",
+     "Modular Monolith"
+    ]
+   },
+   {
+    "area": "repository",
+    "recommended": "Monorepo",
+    "reason": "Beberapa aplikasi klien berbagi tipe dan komponen dalam satu repo.",
+    "source": "need",
+    "alternatives": [
+     "Simple"
+    ]
+   },
+   {
+    "area": "deployment",
+    "recommended": "Kubernetes",
+    "reason": "Layanan di-deploy dan diskalakan sendiri-sendiri.",
+    "source": "dependency",
+    "alternatives": [
+     "Docker Compose (satu server)",
+     "Managed PaaS (container)",
+     "Node server / Vercel"
+    ]
+   },
+   {
+    "area": "observability",
+    "recommended": "OpenTelemetry + Prometheus + Grafana",
+    "reason": "Beban tinggi atau banyak layanan butuh tracing dan metrics terpusat.",
+    "source": "need",
+    "alternatives": [
+     "Log terstruktur + health check",
+     "Sentry"
+    ]
+   },
+   {
+    "area": "testing",
+    "recommended": "Vitest, pytest",
+    "reason": "Satu tool per bahasa yang dipakai: TypeScript → Vitest, Python → pytest.",
+    "source": "dependency",
+    "alternatives": [
+     "Vitest",
+     "Jest",
+     "go test"
+    ]
+   },
+   {
+    "area": "quality",
+    "recommended": "ESLint + Prettier, Ruff",
+    "reason": "Satu tool per bahasa yang dipakai: TypeScript → ESLint + Prettier, Python → Ruff.",
+    "source": "dependency",
+    "alternatives": [
+     "ESLint + Prettier",
+     "Biome",
+     "gofmt + go vet + golangci-lint"
+    ]
+   }
+  ],
+  "approved": false,
+  "status": "recommended",
+  "issues": [
+   {
+    "level": "warning",
+    "area": "repository",
+    "message": "packages/types (TypeScript) tidak bisa dipakai backend Python; pakai kontrak API (OpenAPI) dan generate type."
+   }
+  ],
+  "history": [
+   {
+    "version": 1,
+    "at": "2026-11-11T23:39:11.804378112Z",
+    "source": "recommend",
+    "status": "recommended",
+    "decisions": [
+     {
+      "area": "frontend",
+      "recommended": "React + TypeScript + Vite",
+      "language": "TypeScript",
+      "reason": "Kebijakan profil AI Product: UI interaktif untuk hasil AI dan alur kerja.",
+      "source": "profile",
+      "alternatives": [
+       "Next.js + TypeScript",
+       "Vue + TypeScript + Vite"
+      ]
+     },
+     {
+      "area": "ui",
+      "recommended": "Tailwind CSS + shadcn/ui",
+      "reason": "Mengikuti frontend React: komponen dapat diubah dan tetap memakai token desain project.",
+      "source": "dependency",
+      "alternatives": [
+       "Ant Design",
+       "MUI (Material UI)",
+       "Tailwind CSS"
+      ]
+     },
+     {
+      "area": "mobile",
+      "recommended": "React Native + TypeScript + Expo",
+      "language": "TypeScript",
+      "runtime": "Hermes (JavaScript engine)",
+      "reason": "Kebijakan profil AI Product: Berbagi bahasa dan pengetahuan dengan tim web.",
+      "source": "profile",
+      "alternatives": [
+       "Flutter"
+      ]
+     },
+     {
+      "area": "desktop",
+      "recommended": "Tauri + React + TypeScript",
+      "language": "TypeScript",
+      "runtime": "WebView sistem + core Rust",
+      "reason": "Kebijakan profil AI Product: Memakai ulang UI web dengan aplikasi desktop yang ringan.",
+      "source": "profile",
+      "alternatives": [
+       "Electron + React + TypeScript"
+      ]
+     },
+     {
+      "area": "backend",
+      "recommended": "Python + FastAPI",
+      "language": "Python",
+      "runtime": "CPython (server ASGI, mis. Uvicorn)",
+      "reason": "Kebijakan profil AI Product: Ekosistem AI dan data processing paling lengkap ada di Python.",
+      "source": "profile",
+      "alternatives": [
+       "NestJS + TypeScript",
+       "Spring Boot + Java",
+       "Go + Gin"
+      ]
+     },
+     {
+      "area": "api",
+      "recommended": "REST + OpenAPI + WebSocket",
+      "reason": "Kebutuhan realtime: update dikirim ke klien lewat WebSocket.",
+      "source": "need",
+      "alternatives": [
+       "gRPC",
+       "REST + OpenAPI",
+       "GraphQL"
+      ]
+     },
+     {
+      "area": "database",
+      "recommended": "PostgreSQL",
+      "language": "SQL",
+      "reason": "Kebijakan profil AI Product: Data aplikasi relasional; bisa ditambah pgvector untuk embedding.",
+      "source": "profile",
+      "alternatives": [
+       "MySQL",
+       "MongoDB",
+       "SQLite"
+      ]
+     },
+     {
+      "area": "cache",
+      "recommended": "Redis",
+      "reason": "Kebutuhan realtime: state dan pub/sub bersama antar instance.",
+      "source": "need"
+     },
+     {
+      "area": "messaging",
+      "recommended": "NATS",
+      "reason": "Layanan terpisah berkomunikasi lewat event.",
+      "source": "dependency",
+      "alternatives": [
+       "Redis Pub/Sub",
+       "Redis Streams",
+       "RabbitMQ"
+      ]
+     },
+     {
+      "area": "workers",
+      "recommended": "Worker terpisah + antrean",
+      "reason": "Dikerjakan di luar request: panggilan AI yang lama, penerimaan dan pengiriman webhook.",
+      "source": "need",
+      "alternatives": [
+       "Job in-process"
+      ]
+     },
+     {
+      "area": "storage",
+      "recommended": "S3-compatible (S3 / MinIO)",
+      "reason": "Ada upload file; disimpan di object storage dengan signed URL.",
+      "source": "need",
+      "alternatives": [
+       "Disk server lokal"
+      ]
+     },
+     {
+      "area": "search",
+      "recommended": "PostgreSQL full-text search",
+      "reason": "Pencarian teks memakai database yang sama; tanpa layanan tambahan.",
+      "source": "dependency",
+      "alternatives": [
+       "Meilisearch",
+       "Elasticsearch / OpenSearch"
+      ]
+     },
+     {
+      "area": "architecture",
+      "recommended": "Microservices",
+      "reason": "Kebutuhan skala dan deployment independen per layanan.",
+      "source": "need",
+      "alternatives": [
+       "Simple",
+       "Modular Monolith"
+      ]
+     },
+     {
+      "area": "repository",
+      "recommended": "Monorepo",
+      "reason": "Beberapa aplikasi klien berbagi tipe dan komponen dalam satu repo.",
+      "source": "need",
+      "alternatives": [
+       "Simple"
+      ]
+     },
+     {
+      "area": "deployment",
+      "recommended": "Kubernetes",
+      "reason": "Layanan di-deploy dan diskalakan sendiri-sendiri.",
+      "source": "dependency",
+      "alternatives": [
+       "Docker Compose (satu server)",
+       "Managed PaaS (container)",
+       "Node server / Vercel"
+      ]
+     },
+     {
+      "area": "observability",
+      "recommended": "OpenTelemetry + Prometheus + Grafana",
+      "reason": "Beban tinggi atau banyak layanan butuh tracing dan metrics terpusat.",
+      "source": "need",
+      "alternatives": [
+       "Log terstruktur + health check",
+       "Sentry"
+      ]
+     },
+     {
+      "area": "testing",
+      "recommended": "Vitest, pytest",
+      "reason": "Satu tool per bahasa yang dipakai: TypeScript → Vitest, Python → pytest.",
+      "source": "dependency",
+      "alternatives": [
+       "Vitest",
+       "Jest",
+       "go test"
+      ]
+     },
+     {
+      "area": "quality",
+      "recommended": "ESLint + Prettier, Ruff",
+      "reason": "Satu tool per bahasa yang dipakai: TypeScript → ESLint + Prettier, Python → Ruff.",
+      "source": "dependency",
+      "alternatives": [
+       "ESLint + Prettier",
+       "Biome",
+       "gofmt + go vet + golangci-lint"
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "decisions": [
+  {
+   "id": "DEC-001",
+   "kind": "question",
+   "text": "Target latency dan throughput (buka barrier, validasi akses, dashboard), interval pengecekan perangkat, timeout perintah, dan jumlah retry belum diberikan. Blueprint belum memiliki angka performa.",
+   "area": "operations",
+   "resolution": "Pilih nilai awal untuk uji lalu konfirmasi. Asumsi sementara: nilai dari konfigurasi, bukan hardcode."
+  },
+  {
+   "id": "DEC-002",
+   "kind": "question",
+   "text": "Platform Desktop dipilih, tetapi cerita tidak menjelaskan apa yang dijalankan di desktop. Pilihan: (a) konsol operator di gerbang berbasis web yang dibungkus desktop, (b) aplikasi Edge dengan UI lokal, (c) tidak dibangun sekarang.",
+   "area": "ui",
+   "resolution": "Rekomendasi: (c) sampai fitur desktop jelas. Target desktop tetap tercatat di platform.targets."
+  },
+  {
+   "id": "DEC-003",
+   "kind": "conflict",
+   "text": "Survei memilih Mobile, cerita menyebut aplikasi mobile dikembangkan fase berikutnya. Sisi A: Mobile dipilih. Sisi B: mobile app fase berikutnya dan saat ini responsif.",
+   "area": "ui",
+   "resolution": "Asumsi: Mobile = UI responsif sekarang. Pilih android, ios, atau keduanya pada fase berikutnya."
+  },
+  {
+   "id": "DEC-004",
+   "kind": "assumption",
+   "text": "Asumsi: login petugas di Edge saat offline memakai salinan kredensial ter-hash yang disinkron dari cloud, dengan batas percobaan gagal lokal. Data sensitif ini perlu persetujuan.",
+   "area": "security",
+   "resolution": "Konfirmasi model autentikasi offline dan masa berlaku salinan kredensial."
+  },
+  {
+   "id": "DEC-005",
+   "kind": "question",
+   "text": "Penyedia pembayaran resmi (QRIS, e-wallet, kartu uang elektronik) belum dipilih. Kontrak webhook dan sandbox bergantung pada pilihan ini.",
+   "area": "integration",
+   "resolution": "Dibuat sebagai port PaymentProvider. Pilih penyedia sebelum fase pembayaran."
+  },
+  {
+   "id": "DEC-006",
+   "kind": "assumption",
+   "text": "Asumsi: peran admin-perusahaan, supervisor, kasir, petugas-gerbang, dan klien-sistem. Member bukan pengguna yang login. Pengguna open di survei.",
+   "area": "security",
+   "resolution": "Konfirmasi daftar peran dan apakah member perlu akun login."
+  },
+  {
+   "id": "DEC-007",
+   "kind": "assumption",
+   "text": "Asumsi: satu perusahaan operator (tenant) mengelola banyak pelanggan dan lokasi. Pelanggan (mall, rumah sakit) tidak login sendiri.",
+   "area": "data",
+   "resolution": "Konfirmasi model tenant dan pelanggan."
+  },
+  {
+   "id": "DEC-008",
+   "kind": "risk",
+   "text": "Dokumentasi vendor perangkat (ANPR, barrier, RFID, dan lainnya) belum tersedia. Adapter nyata tidak bisa diverifikasi dan simulator bisa menutupi perilaku nyata.",
+   "area": "integration",
+   "resolution": "Buat adapter interface dan simulator dulu. Tandai adapter_verified=false sampai ada bukti komunikasi nyata."
+  },
+  {
+   "id": "DEC-009",
+   "kind": "question",
+   "text": "Jumlah tenant, lokasi, gerbang, perangkat, dan transaksi per hari belum diberikan. Ini menentukan kebutuhan skala dan kapasitas database.",
+   "area": "operations",
+   "resolution": "Dapatkan estimasi awal. Sampai itu, pakai arsitektur modular monolith dan ukur sebelum memecah."
+  },
+  {
+   "id": "DEC-010",
+   "kind": "question",
+   "text": "Target RPO, RTO, dan lama retensi (termasuk foto ANPR dan log) belum diberikan.",
+   "area": "operations",
+   "resolution": "Tetapkan target dari kebutuhan bisnis. Asumsi sementara: backup harian dan uji restore berkala."
+  },
+  {
+   "id": "DEC-011",
+   "kind": "assumption",
+   "text": "Asumsi: Edge adalah sumber kebenaran untuk kejadian fisik lokal (masuk, keluar, buka barrier). Cloud adalah sumber kebenaran untuk konfigurasi dan master data. Kasus konflik masuk ConflictCase untuk ditinjau.",
+   "area": "data",
+   "resolution": "Konfirmasi aturan pemenang konflik, terutama untuk tarif dan pembayaran yang berubah saat offline."
+  },
+  {
+   "id": "DEC-012",
+   "kind": "question",
+   "text": "Kanal notifikasi (email, SMS, push, dan lainnya) dan penyedia belum ditentukan.",
+   "area": "integration",
+   "resolution": "Pilih kanal awal. Asumsi: email."
+  },
+  {
+   "id": "DEC-013",
+   "kind": "question",
+   "text": "Aturan biaya tiket hilang dan verifikasi kepemilikan belum ditentukan.",
+   "area": "use-cases",
+   "resolution": "Tetapkan aturan dari operator."
+  },
+  {
+   "id": "DEC-014",
+   "kind": "question",
+   "text": "Buka manual saat darurat: apakah cukup persetujuan supervisor sebelum atau sesudah kejadian, atau perlu dua orang?",
+   "area": "security",
+   "resolution": "Asumsi: supervisor menyetujui sebelum buka, dengan jalur darurat yang mencatat persetujuan setelahnya. Konfirmasi."
+  },
+  {
+   "id": "DEC-015",
+   "kind": "question",
+   "text": "Pajak (PPN) dan kebutuhan faktur atau e-invoice belum disebut di cerita.",
+   "area": "use-cases",
+   "resolution": "Konfirmasi apakah dibutuhkan pada fase pembayaran."
+  },
+  {
+   "id": "DEC-016",
+   "kind": "question",
+   "text": "Target availability, SLO, dan ambang alert (durasi offline Edge, jumlah timeout perangkat, lonjakan error rate, ukuran outbox) belum diberikan. Tanpa angka ini, alert dan kriteria performa tidak bisa diuji. Dampak: konfigurasi alert dan dashboard belum final.",
+   "area": "operations",
+   "resolution": "Tetapkan setelah estimasi skala (DEC-009). Sampai itu, semua ambang diambil dari konfigurasi dan tidak di-hardcode."
+  },
+  {
+   "id": "DEC-017",
+   "kind": "question",
+   "text": "Nilai rate limit login dan API, ambang kunci sementara setelah gagal login, dan jendela waktu anti-replay belum diberikan. Dampak: kontrol T-02, T-05, dan T-15 belum bisa diuji dengan angka.",
+   "area": "security",
+   "resolution": "Asumsi: nilai diambil dari konfigurasi, dengan nilai awal ditetapkan saat uji lalu dikonfirmasi user (sejalan dengan DEC-001)."
+  },
+  {
+   "id": "DEC-018",
+   "kind": "question",
+   "text": "Mekanisme autentikasi Edge ke cloud belum ditentukan: identitas per perangkat Edge, cara rotasi, dan pencabutan. Dampak: keamanan sinkronisasi batch (T-05, T-11) belum tuntas.",
+   "area": "security",
+   "resolution": "Asumsi: setiap Edge memiliki kredensial sendiri yang bisa dicabut dari cloud. Konfirmasi user."
+  },
+  {
+   "id": "DEC-019",
+   "kind": "risk",
+   "text": "Plat nomor, foto ANPR, dan data member adalah data pribadi. Retensi dan hak penghapusan belum ditentukan (DEC-010). Dampak: kewajiban perlindungan data dan risiko kebocoran (T-14).",
+   "area": "security",
+   "resolution": "Tetapkan retensi dari kebutuhan bisnis dan ketentuan hukum. Sampai itu, terapkan minimisasi data dan redaksi di log."
+  },
+  {
+   "id": "DEC-020",
+   "kind": "question",
+   "text": "Nama permission untuk sebagian besar aksi belum didefinisikan. Yang sudah dikenal hanya session:read, payment:collect, dan gate:open_manual. Dampak: permission matrix belum bisa diimplementasikan penuh.",
+   "area": "security",
+   "resolution": "Asumsi: nama permission mengikuti pola resource:action seperti pada use-cases. Konfirmasi di langkah daftar permission."
+  },
+  {
+   "id": "DEC-021",
+   "kind": "question",
+   "text": "Engine penyimpanan durable di Edge belum ditentukan. Ini memengaruhi cara outbox, salinan kredensial hash, dan backup lokal ditulis. Tanpa pilihan ini, REQ-025 (data tidak hilang saat restart) belum bisa diuji.",
+   "area": "data",
+   "resolution": "Asumsi: penyimpanan lokal dengan commit yang durable (fsync), dipilih sebelum fase 5. Konfirmasi pilihan engine."
+  },
+  {
+   "id": "DEC-022",
+   "kind": "question",
+   "text": "Kebijakan retensi dan perlindungan data pribadi untuk plat nomor, foto ANPR, dan data member belum diberikan. Ini memengaruhi retensi, anonimisasi, dan hak penghapusan. Terkait DEC-010 dan DEC-015.",
+   "area": "data",
+   "resolution": "Asumsi: retensi foto ANPR dan data member dikonfigurasi per tenant tanpa angka default. Operator menetapkan angka dan dasar hukumnya."
+  },
+  {
+   "id": "DEC-023",
+   "kind": "risk",
+   "text": "Prosedur uji rollback migrasi skema dan sinkronisasi Edge tanpa kehilangan event lokal belum ada. Risiko ini tinggi di change-plan.",
+   "area": "data",
+   "resolution": "Asumsi: rollback diuji di staging dengan data Edge simulasi sebelum rilis pertama. Tidak menjadi blocker blueprint."
+  },
+  {
+   "id": "DEC-024",
+   "kind": "question",
+   "text": "Enkripsi at rest untuk data pribadi dan backup belum disebut di cerita. Yang disebut hanya enkripsi in transit (REQ-031).",
+   "area": "data",
+   "resolution": "Asumsi: enkripsi at rest wajib untuk kolom sensitif dan seluruh backup. Konfirmasi."
+  }
+ ],
+ "blueprint": {
+  "modules": [
+   {
+    "id": "tenant",
+    "responsibility": "Perusahaan operator, pelanggan, gedung, lokasi, area, gerbang, isolasi tenant.",
+    "data": [
+     "Tenant",
+     "Customer",
+     "Location",
+     "Area",
+     "Gate"
+    ],
+    "interface": [
+     "GET/POST /api/v1/locations",
+     "GET/POST /api/v1/areas",
+     "GET/POST /api/v1/gates"
+    ]
+   },
+   {
+    "id": "identity",
+    "responsibility": "Akun staf, peran, scope lokasi, sesi, API key.",
+    "data": [
+     "User",
+     "Role",
+     "UserRole",
+     "Session",
+     "ApiKey"
+    ],
+    "interface": [
+     "POST /api/v1/auth/login",
+     "POST /api/v1/auth/logout",
+     "POST /api/v1/api-keys"
+    ],
+    "depends_on": [
+     "tenant"
+    ]
+   },
+   {
+    "id": "audit",
+    "responsibility": "Penulisan dan pembacaan audit log. Tidak bergantung pada modul lain.",
+    "data": [
+     "AuditLog"
+    ],
+    "interface": [
+     "append(actor, action, resource, before, after)",
+     "GET /api/v1/audit-logs"
+    ]
+   },
+   {
+    "id": "notification",
+    "responsibility": "Aturan peringatan dan pengiriman notifikasi operasional.",
+    "data": [
+     "Notification",
+     "AlertRule"
+    ],
+    "interface": [
+     "consume event",
+     "GET/POST /api/v1/alert-rules"
+    ]
+   },
+   {
+    "id": "hardware",
+    "responsibility": "Registrasi perangkat, adapter vendor, simulator, status kesehatan, perintah dengan timeout dan retry, log perangkat.",
+    "data": [
+     "Device",
+     "DeviceEvent",
+     "DeviceCommand"
+    ],
+    "interface": [
+     "POST /api/v1/devices",
+     "POST /api/v1/devices/{id}/commands",
+     "port: DeviceAdapter"
+    ],
+    "depends_on": [
+     "tenant"
+    ]
+   },
+   {
+    "id": "membership",
+    "responsibility": "Member individu dan perusahaan, langganan, masa berlaku, reservasi, daftar putih/hitam.",
+    "data": [
+     "Member",
+     "Subscription",
+     "Reservation",
+     "ListEntry"
+    ],
+    "interface": [
+     "GET/POST /api/v1/members",
+     "GET /api/v1/access-lists",
+     "port: AccessRuleQuery"
+    ],
+    "depends_on": [
+     "tenant"
+    ]
+   },
+   {
+    "id": "tariff",
+    "responsibility": "Jenis tarif, tarif per kendaraan dan lokasi, member, masa tenggang, batas harian, event, riwayat perubahan.",
+    "data": [
+     "Tariff",
+     "TariffRevision"
+    ],
+    "interface": [
+     "GET/POST /api/v1/tariffs",
+     "port: TariffCalculator"
+    ],
+    "depends_on": [
+     "tenant",
+     "membership"
+    ]
+   },
+   {
+    "id": "parking-ops",
+    "responsibility": "Kendaraan, sesi parkir, tiket, validasi akses, cek bayar keluar, tiket hilang, buka manual.",
+    "data": [
+     "Vehicle",
+     "ParkingSession",
+     "Ticket",
+     "VehicleEvent",
+     "ManualOverride",
+     "LostTicketCase"
+    ],
+    "interface": [
+     "POST /api/v1/sessions/entry",
+     "POST /api/v1/sessions/{id}/exit",
+     "POST /api/v1/gates/{id}/manual-open"
+    ],
+    "depends_on": [
+     "tenant",
+     "tariff",
+     "membership",
+     "hardware"
+    ]
+   },
+   {
+    "id": "payment",
+    "responsibility": "Transaksi pembayaran, integrasi penyedia lewat port, webhook, refund dan void dengan izin.",
+    "data": [
+     "Payment",
+     "Refund"
+    ],
+    "interface": [
+     "POST /api/v1/payments",
+     "POST /api/v1/payments/{id}/refunds",
+     "POST /api/v1/webhooks/payments/{provider}",
+     "port: PaymentProvider"
+    ],
+    "depends_on": [
+     "tenant",
+     "parking-ops",
+     "staff-shift"
+    ]
+   },
+   {
+    "id": "staff-shift",
+    "responsibility": "Petugas, jadwal shift, serah terima kas, ringkasan shift.",
+    "data": [
+     "Shift",
+     "ShiftAssignment",
+     "CashHandover"
+    ],
+    "interface": [
+     "GET/POST /api/v1/shifts",
+     "POST /api/v1/shifts/{id}/handover",
+     "port: CurrentShiftQuery"
+    ],
+    "depends_on": [
+     "identity",
+     "tenant"
+    ]
+   },
+   {
+    "id": "revenue",
+    "responsibility": "Read model pendapatan, rekonsiliasi, transaksi mencurigakan, potensi kebocoran.",
+    "data": [
+     "RevenueDailySummary",
+     "SuspiciousTxnFlag"
+    ],
+    "interface": [
+     "GET /api/v1/reports/revenue"
+    ],
+    "depends_on": [
+     "tenant",
+     "payment",
+     "parking-ops"
+    ]
+   },
+   {
+    "id": "analytics",
+    "responsibility": "Okupansi, jam sibuk, durasi rata-rata, perbandingan periode, prediksi (fase akhir).",
+    "data": [
+     "OccupancySnapshot",
+     "DailyVehicleCount"
+    ],
+    "interface": [
+     "GET /api/v1/analytics/occupancy"
+    ],
+    "depends_on": [
+     "tenant",
+     "parking-ops"
+    ]
+   },
+   {
+    "id": "edge-sync",
+    "responsibility": "Penerimaan batch dari Edge, idempotency, urutan sequence, penyelesaian konflik, pelaporan status sinkron.",
+    "data": [
+     "SyncBatch",
+     "ConflictCase"
+    ],
+    "interface": [
+     "POST /api/v1/edge/{id}/sync-batches",
+     "GET /api/v1/edge/{id}/status"
+    ],
+    "depends_on": [
+     "tenant",
+     "parking-ops",
+     "payment",
+     "hardware"
+    ]
+   },
+   {
+    "id": "files",
+    "responsibility": "Metadata file, signed URL, lifecycle",
+    "data": [
+     "File"
+    ],
+    "interface": [
+     "POST /files/uploads",
+     "GET /files/:id"
+    ],
+    "depends_on": [
+     "identity"
+    ]
+   }
+  ]
+ }
+}

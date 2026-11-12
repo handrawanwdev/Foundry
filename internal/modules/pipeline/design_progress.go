@@ -355,6 +355,9 @@ func beginExecution(p *core.Project, id string, isMCP bool, now time.Time) {
 		trigger, cause = core.BPTriggerRetry, s.Error
 		activity = fmt.Sprintf("Mengulang %s (percobaan %d)", s.Name, s.Attempt+1)
 	}
+	if id == secTech && p.Stack != nil && p.Stack.PlanRequest != nil && p.Stack.PlanRequest.Model != "" {
+		activity += fmt.Sprintf(" · model %s (eskalasi dari %s)", p.Stack.PlanRequest.Model, p.Stack.PlanRequest.EscalatedFrom)
+	}
 	if isMCP {
 		activity += " — menunggu AI Host (MCP)"
 	}
@@ -401,12 +404,16 @@ func finishRunIfDone(p *core.Project) {
 }
 
 func trackFail(p *core.Project, kind string, err error) {
+	trackFailMsg(p, kind, err, safeProgressError(err))
+}
+
+// trackFailMsg is trackFail with the report to show.
+func trackFailMsg(p *core.Project, kind string, err error, msg string) {
 	t := liveRun(p)
 	if t == nil {
 		return
 	}
 	now := time.Now().UTC()
-	msg := safeProgressError(err)
 	t.FailSection(sectionForJob(p, kind), failureKind(err), msg, now)
 	t.FailRun(msg, now)
 }
@@ -414,8 +421,14 @@ func trackFail(p *core.Project, kind string, err error) {
 // trackRejection records a refused answer. The next attempt, if any, opens
 // its own execution.
 func trackRejection(p *core.Project, kind string, err error) {
+	trackRejectionMsg(p, kind, err, safeProgressError(err))
+}
+
+// trackRejectionMsg is trackRejection with the report to show: its first
+// line labels the refusal, the others are its details.
+func trackRejectionMsg(p *core.Project, kind string, err error, msg string) {
 	if t := liveRun(p); t != nil {
-		t.RejectOutput(sectionForJob(p, kind), failureKind(err), safeProgressError(err), time.Now().UTC())
+		t.RejectOutput(sectionForJob(p, kind), failureKind(err), msg, time.Now().UTC())
 	}
 }
 

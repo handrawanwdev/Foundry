@@ -166,7 +166,22 @@ func fakeAgent() {
 	case strings.Contains(prompt, "unified blueprint architect of Foundry"):
 		countRun("plan")
 		refused := strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED")
-		fmt.Println(fakeUnifiedAnswer(prompt, (mode == "tech_invalid_once" && !refused) || mode == "tech_invalid"))
+		if strings.Contains(prompt, "TARGETED REPAIR") {
+			countRun("plan-repair")
+		}
+		// A runner built for an escalated model carries "escalated" in its
+		// command line; it answers what the configured model could not.
+		escalated := slices.Contains(os.Args[1:], "escalated")
+		if escalated {
+			countRun("plan-escalated")
+		}
+		answer := fakeUnifiedAnswer(prompt, (mode == "tech_invalid_once" && !refused) || mode == "tech_invalid" && !escalated)
+		if mode == "tech_alts_once" && !refused {
+			// The shape the old schema example taught: alternatives with
+			// why and difference only.
+			answer = strings.NewReplacer(`"cons":["tidak pas kebutuhan"],`, "", `"pros":["dokumentasi banyak"],`, "").Replace(answer)
+		}
+		fmt.Println(answer)
 	case strings.Contains(prompt, "technology architect of Foundry"):
 		countRun("tech")
 		refused := strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED")
