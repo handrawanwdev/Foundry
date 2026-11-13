@@ -17,11 +17,11 @@ func existingCtxProject() *core.Project {
 				{Kind: "backend", Path: ".", Tech: "Go", Language: "Go", Evidence: "go.mod"},
 			},
 			Context: &core.ProjectContext{
-				Languages: []core.ContextFinding{{Text: "Go", Path: ".", Evidence: "go.mod", Confidence: core.ConfidenceObserved}},
-				Modules:   []core.ContextModule{{Name: "billing", Path: "internal/billing", Evidence: "source files: go×2"}},
-				Data:      []core.ContextEntity{{Name: "Invoice", Fields: []string{"id", "amount"}, Path: "schema.prisma", Evidence: "schema.prisma model"}},
-				APIs:      []core.ContextAPI{{Kind: "route", Path: "internal/http/router.go", Detail: "POST /invoices", Evidence: "router.go"}},
-				Features:  []core.ContextFinding{{Text: "Tagihan", Path: "README.md", Confidence: core.ConfidenceDocumented, Evidence: "README.md ## Features"}},
+				Languages:   []core.ContextFinding{{Text: "Go", Path: ".", Evidence: "go.mod", Confidence: core.ConfidenceObserved}},
+				Modules:     []core.ContextModule{{Name: "billing", Path: "internal/billing", Evidence: "source files: go×2"}},
+				Data:        []core.ContextEntity{{Name: "Invoice", Fields: []string{"id", "amount"}, Path: "schema.prisma", Evidence: "schema.prisma model"}},
+				APIs:        []core.ContextAPI{{Kind: "route", Path: "internal/http/router.go", Detail: "POST /invoices", Evidence: "router.go"}},
+				Features:    []core.ContextFinding{{Text: "Tagihan", Path: "README.md", Confidence: core.ConfidenceDocumented, Evidence: "README.md ## Features"}},
 				Corrections: "Modul billing sudah handle invoice.",
 			},
 		},
@@ -72,8 +72,8 @@ func TestFeatureMapPromptSkipsDuplicateFeatures(t *testing.T) {
 func TestWorkflowPromptCarriesChangePlan(t *testing.T) {
 	p := existingCtxProject()
 	p.Change = &core.ChangePlan{
-		Scope:   core.BlueprintScopeChange,
-		Summary: "Notifikasi invoice",
+		Scope:    core.BlueprintScopeChange,
+		Summary:  "Notifikasi invoice",
 		Existing: []string{"internal/billing"},
 		Items: []core.ChangeItem{
 			{Action: core.ChangeAdd, Target: "Notification", Module: "notify", Files: []string{"internal/notify/service.go"}},

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -165,10 +166,11 @@ func detectWorkflowPromptMode(p *core.Project) string {
 	return ""
 }
 
-// workflowSketchPrompt generates a prompt for command skeleton only
-// Uses artifact summaries instead of full bodies to reduce context size
-func workflowSketchPrompt(p *core.Project, docs []core.Artifact) string {
-	var b strings.Builder
+// writeWorkflowContext is the project context the sketch and revision
+// prompts open with: who writes, the story, platform, codebase, survey,
+// binding decisions, technology, structure, repository plan (repoText: the
+// responsibility length per node, 0 for paths and owners only) and features.
+func writeWorkflowContext(b *strings.Builder, p *core.Project, repoText int) {
 	b.WriteString(`You are the workflow planner of Foundry. Foundry designs software and writes instructions for an EXTERNAL coding agent (Claude Code, Codex, OpenCode, Qwen Code, ...). Foundry never runs them. Do not write application code. Do not modify files.
 Write every human-readable text in the same language as the story.
 
@@ -180,13 +182,23 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		}
 		b.WriteString("PLATFORM: " + strings.Join(kinds, ", ") + "\n")
 	}
-	writeCodebaseBrief(&b, p)
+	writeCodebaseBrief(b, p)
 	b.WriteString("\n" + surveyWorkflowRules(p))
-	writeBinding(&b, p)
-	writeStackBrief(&b, p)
-	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
-	writeRepoBrief(&b, p)
-	writeFeatureCatalog(&b, p)
+	writeBinding(b, p)
+	writeStackBrief(b, p)
+	writeStructureBrief(b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
+	writeRepoBriefText(b, p, repoText)
+	writeFeatureCatalog(b, p)
+}
+
+// workflowSketchPrompt asks for the command skeleton. Everything but a
+// refusal is the same on every try, so it is the static part (prompt cache):
+// a retry sends only the refusal fresh.
+func workflowSketchPrompt(p *core.Project, docs []core.Artifact) string {
+	var b strings.Builder
+	// Paths and owners only: the sketch writes no files; each detail round
+	// reads the responsibility of the nodes its command touches.
+	writeWorkflowContext(&b, p, 0)
 	writeRequirementRegistry(&b, p)
 
 	// A small blueprint is read whole (long artifacts cut); a large one by
@@ -203,14 +215,8 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 			fmt.Fprintf(&b, "=== %s (%s, %s%s) %s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary)
 		}
 		b.WriteString("\n")
+		b.WriteString(precedenceRules)
 	}
-	b.WriteString(precedenceRules)
-
-	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Rejected != "" {
-		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + w.Request.Rejected + "\n\n")
-		writeCoverageRepair(&b, p, uncoveredRequirements(p, w.Request.Rejected))
-	}
-
 	b.WriteString(`SKETCH PHASE - Generate command skeleton only:
 - Create 3-25 commands that cover all MUST requirements
 - For each command, provide ONLY: id, name, objective, depends_on, artifacts (IDs), covers (requirement IDs), feature_ids (FEAT ids), sub_feature_ids (FEAT-001.1 ids), priority, complexity
@@ -227,7 +233,13 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	if HasUI(p) {
 		b.WriteString(VisualVerificationRules)
 	}
-	b.WriteString("\nReply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"name\": \"\", \"objective\": \"\", \"depends_on\": [], \"artifacts\": [\"requirements\"], \"covers\": [\"REQ-001\"], \"feature_ids\": [\"FEAT-001\"], \"sub_feature_ids\": [\"FEAT-001.1\"], \"priority\": \"high\", \"complexity\": \"medium\"}]}")
+
+	b.WriteString(CacheBreak) // the rest changes with every try
+	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Rejected != "" {
+		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + w.Request.Rejected + "\n\n")
+		writeCoverageRepair(&b, p, uncoveredRequirements(p, w.Request.Rejected))
+	}
+	b.WriteString("Write the SKETCH PHASE outline now. Reply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"name\": \"\", \"objective\": \"\", \"depends_on\": [], \"artifacts\": [\"requirements\"], \"covers\": [\"REQ-001\"], \"feature_ids\": [\"FEAT-001\"], \"sub_feature_ids\": [\"FEAT-001.1\"], \"priority\": \"high\", \"complexity\": \"medium\"}]}")
 	return b.String()
 }
 
@@ -265,77 +277,75 @@ func nextFillCommand(cmds []core.Command) *core.Command {
 	return first
 }
 
-// skeletonCommands is the workflow a detail batch reads: what each command
-// is and how they connect. The text of finished commands stays out, or every
-// batch would carry all the batches before it; only the outputs of the
-// commands the batch depends on stay, since its inputs come from them.
-func skeletonCommands(cmds, batch []core.Command) []core.Command {
-	deps := map[string]bool{}
-	for _, c := range batch {
-		for _, d := range c.DependsOn {
-			deps[d] = true
-		}
-	}
-	out := slices.Clone(cmds)
-	for i := range out {
-		c := &out[i]
-		c.Context, c.Instructions, c.Inputs, c.Acceptance, c.Constraints = "", "", nil, nil, nil
-		if !deps[c.ID] {
-			c.Outputs = nil
-		}
-	}
-	return out
-}
+const revisionRules = `Revision rules (Foundry runs the request in rounds, ONE command change per round):
+- each answer makes exactly one change: return one command (changed or new) in commands, or put one id in remove and leave commands empty. Never more than one.
+- pick the next change the request still needs, in dependency order: a command before the commands that depend on it. Do not repeat a change from the earlier rounds.
+- return the command in full. Keep the id of a changed command; give a new command the id NEW1.
+- removing a command hands its dependencies to the commands that depended on it; change those in later rounds only when their text has to change.
+- a round never leaves a MUST requirement without a command in covers: first add or change the command that takes it over, remove the old one in a later round.
+- when the request asks to follow changed blueprint artifacts, return every command whose artifacts changed, one per round, even if its text stays valid; that records the new artifact versions.
+- set done to true when this answer is the last change the request needs, false when more commands still need a change. When nothing is left to change, reply {"commands": [], "done": true}.
+- a changed command has to be done again by the coding agent, so leave commands the agent already finished as they are unless the request or the blueprint really requires a change. Add what is missing as new commands instead.
 
-// workflowRevisionPrompt is the original prompt for revising an existing complete workflow
+`
+
+// workflowRevisionPrompt asks for one round of a revision of a complete
+// workflow. Static (prompt cache): the project context, the rules and the
+// blueprint the commands in scope implement; it stays the same over the
+// retries of a round and over the rounds whose scope does not grow.
+// Dynamic: the commands in scope in full, the others as an outline, the
+// execution state, the request and a refusal.
 func workflowRevisionPrompt(p *core.Project, docs []core.Artifact) string {
 	var b strings.Builder
-	b.WriteString(`You are the workflow planner of Foundry. Foundry designs software and writes instructions for an EXTERNAL coding agent (Claude Code, Codex, OpenCode, Qwen Code, ...). Foundry never runs them. Do not write application code. Do not modify files.
-Write every human-readable text in the same language as the story.
+	writeWorkflowContext(&b, p, 90)
+	b.WriteString(commandRules)
+	if HasUI(p) {
+		b.WriteString(VisualVerificationRules)
+	}
+	b.WriteString(revisionRules)
 
-PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
-	if p.Platform != nil {
-		var kinds []string
-		for _, t := range p.Platform.Targets {
-			kinds = append(kinds, t.Kind)
-		}
-		b.WriteString("PLATFORM: " + strings.Join(kinds, ", ") + "\n")
-	}
-	writeCodebaseBrief(&b, p)
-	b.WriteString("\n" + surveyWorkflowRules(p))
-	writeBinding(&b, p)
-	writeStackBrief(&b, p)
-	writeStructureBrief(&b, p, "PROJECT STRUCTURE (source of truth for folders, module boundaries and dependencies)")
-	writeRepoBrief(&b, p)
-	writeFeatureCatalog(&b, p)
-	cut := promptBody
-	if w := p.Workflow; w != nil && w.Request != nil && w.Request.Sync {
-		cut = 0
-	}
 	w := p.Workflow
+	r := w.Request
 	scope := revisionScope(w)
-	if scope == nil {
-		writeDocs(&b, docs, cut)
-		b.WriteString(CacheBreak) // the commands below change with every round; the blueprint above does not
-		b.WriteString("CURRENT COMMANDS:\n" + mustJSON(w.Commands) + "\n\n")
-	} else {
-		var full []core.Command
-		needed := map[string]bool{}
+	full := w.Commands
+	if scope != nil {
+		full = nil
 		for _, c := range w.Commands {
 			if scope[c.ID] {
 				full = append(full, c)
-				for _, a := range c.Artifacts {
-					needed[a.ID] = true
-				}
 			}
 		}
-		writeScopedDocs(&b, docs, cut, needed)
-		b.WriteString(CacheBreak)
-		b.WriteString("CURRENT COMMANDS (full text: the commands this request is about, the commands earlier rounds changed, and every command that depends on them):\n" + mustJSON(full) + "\n\n")
-		b.WriteString("OTHER COMMANDS (outline only, with the outputs the commands above build on; they stay as they are, never return them):\n" + mustJSON(skeletonCommands(outside(w.Commands, scope), full)) + "\n\n")
+	}
+	stale := workflow.Stale(w.Commands, workflow.Hashes(docs))
+	// A sync request reads whole the artifacts that changed under the
+	// commands it reads; the rest are cut to the sections about them.
+	var needed, whole map[string]bool
+	if scope != nil {
+		needed = map[string]bool{}
+		for _, c := range full {
+			for _, a := range c.Artifacts {
+				needed[a.ID] = true
+			}
+		}
+	}
+	if r != nil && r.Sync {
+		whole = map[string]bool{}
+		for _, c := range full {
+			for _, id := range stale[c.ID] {
+				whole[id] = true
+			}
+		}
+	}
+	writeRevisionDocs(&b, docs, needed, whole, revisionQuery(p, r, full))
+	b.WriteString(CacheBreak) // the commands below change with every round; the blueprint above does not
+
+	if scope == nil {
+		b.WriteString("CURRENT COMMANDS:\n" + mustJSON(promptCommands(full)) + "\n\n")
+	} else {
+		b.WriteString("CURRENT COMMANDS (full text: the commands this request is about, the commands earlier rounds changed, and the commands that depend on them):\n" + mustJSON(promptCommands(full)) + "\n\n")
+		writeOtherCommands(&b, outside(w.Commands, scope), full)
 	}
 	writeExecutionState(&b, p)
-	stale := workflow.Stale(w.Commands, workflow.Hashes(docs))
 	if len(stale) > 0 {
 		b.WriteString("Commands whose artifacts changed since they were written:\n")
 		for _, c := range w.Commands {
@@ -345,7 +355,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		}
 		b.WriteString("\n")
 	}
-	if r := w.Request; r != nil {
+	if r != nil {
 		b.WriteString("USER REQUEST:\n" + r.Text + "\n\n")
 		if len(r.Focus) > 0 {
 			b.WriteString("Commands the request is about: " + strings.Join(r.Focus, ", ") + ".\n\n")
@@ -355,31 +365,120 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		}
 		if r.Rejected != "" {
 			b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + r.Rejected + "\n\n")
+			writeCoverageRepair(&b, p, uncoveredRequirements(p, r.Rejected))
 		}
 	}
-	b.WriteString(commandRules)
-	if HasUI(p) {
-		b.WriteString(VisualVerificationRules)
-	}
-	b.WriteString(`Revision rules (Foundry runs the request in rounds, ONE command change per round):
-- each answer makes exactly one change: return one command (changed or new) in commands, or put one id in remove and leave commands empty. Never more than one.
-- pick the next change the request still needs, in dependency order: a command before the commands that depend on it. Do not repeat a change from the earlier rounds.
-- return the command in full. Keep the id of a changed command; give a new command the id NEW1.
-- removing a command hands its dependencies to the commands that depended on it; change those in later rounds only when their text has to change.
-- when the request asks to follow changed blueprint artifacts, return every command whose artifacts changed, one per round, even if its text stays valid; that records the new artifact versions.
-- set done to true when this answer is the last change the request needs, false when more commands still need a change. When nothing is left to change, reply {"commands": [], "done": true}.
-- a changed command has to be done again by the coding agent, so leave commands the agent already finished as they are unless the request or the blueprint really requires a change. Add what is missing as new commands instead.
-
-Reply with ONLY one JSON object in a ` + "```json" + ` block:
-{"commands": [` + commandShape + `], "remove": [], "done": false}`)
+	b.WriteString("Reply with ONLY one JSON object in a ```json block:\n{\"commands\": [" + commandShape + "], \"remove\": [], \"done\": false}")
 	return b.String()
 }
 
-// revisionScope is the set of commands a focused revision reads in full:
-// the focus, the commands earlier rounds of the request changed or added,
-// and every command that depends on them, directly or through others, since
-// a change can travel down that chain one round at a time. Dependencies stay
-// in the outline with their outputs, which is all the scope reads from them.
+// promptCommands is cmds as a revision reads them: without the workflow id
+// and the artifact hashes, which Foundry keeps and the answer never sets.
+func promptCommands(cmds []core.Command) []core.Command {
+	out := slices.Clone(cmds)
+	for i := range out {
+		c := &out[i]
+		c.WorkflowID = ""
+		refs := make([]core.ArtifactRef, len(c.Artifacts))
+		for j, a := range c.Artifacts {
+			refs[j] = core.ArtifactRef{ID: a.ID}
+		}
+		c.Artifacts = refs
+	}
+	return out
+}
+
+// writeOtherCommands lists the commands outside a focused revision's scope,
+// one line each, with what the commands in scope build on from them: their
+// outputs and files.
+func writeOtherCommands(b *strings.Builder, others, full []core.Command) {
+	deps := map[string]bool{}
+	for _, c := range full {
+		for _, d := range c.DependsOn {
+			deps[d] = true
+		}
+	}
+	b.WriteString("OTHER COMMANDS (outline only, with the outputs the commands above build on; they stay as they are, never return them):\n")
+	for _, c := range others {
+		fmt.Fprintf(b, "- %s %s: %s", c.ID, oneLine(c.Name), oneLine(c.Objective))
+		if len(c.DependsOn) > 0 {
+			fmt.Fprintf(b, " | depends_on %s", strings.Join(c.DependsOn, ","))
+		}
+		if len(c.Covers) > 0 {
+			fmt.Fprintf(b, " | covers %s", strings.Join(c.Covers, ","))
+		}
+		b.WriteString("\n")
+		if !deps[c.ID] {
+			continue
+		}
+		for _, o := range c.Outputs {
+			fmt.Fprintf(b, "  - output: %s\n", oneLine(o))
+		}
+		if len(c.Files) > 0 {
+			fmt.Fprintf(b, "  - files: %s\n", strings.Join(c.Files, ", "))
+		}
+	}
+	b.WriteString("\n")
+}
+
+// revisionQuery is what a revision round is about, for picking artifact
+// sections: the request first, then the commands it reads in full.
+func revisionQuery(p *core.Project, r *core.ChangeRequest, full []core.Command) scopeQuery {
+	q := commandQuery(p, full)
+	if r != nil {
+		q.add(r.Text, 3)
+	}
+	return q
+}
+
+// writeRevisionDocs is the blueprint a revision reads. Binding artifacts
+// and those in whole are carried whole; the others the commands read
+// (needed; nil means every artifact) are cut to their sections about q, or
+// to their start when no section is about it; the rest by summary.
+func writeRevisionDocs(b *strings.Builder, docs []core.Artifact, needed, whole map[string]bool, q scopeQuery) {
+	if needed == nil {
+		b.WriteString("BLUEPRINT ARTIFACTS:\n")
+	} else {
+		b.WriteString("BLUEPRINT ARTIFACTS (body only for the artifacts the commands below reference; the rest by summary):\n")
+	}
+	for _, d := range docs {
+		fmt.Fprintf(b, "=== %s (%s, %s%s) %s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary)
+		switch {
+		case needed != nil && !needed[d.ID] && !bindingDocs[d.ID]:
+			continue
+		case bindingDocs[d.ID] || whole[d.ID] || len(d.Body) <= promptBody:
+			b.WriteString(d.Body + "\n")
+		default:
+			b.WriteString(strings.TrimRight(cutToQuery(d.Body, q, promptBody), "\n") + "\n")
+		}
+	}
+	b.WriteString("\n")
+	b.WriteString(precedenceRules)
+}
+
+// cutToQuery is body within budget: its sections about q, or its start
+// when no section is about q.
+func cutToQuery(body string, q scopeQuery, budget int) string {
+	if len(body) <= budget {
+		return body
+	}
+	if slices.ContainsFunc(rank(splitSections(body), q), func(s float64) bool { return s > 0 }) {
+		return scopeArtifact(body, q, budget)
+	}
+	return strings.ToValidUTF8(body[:budget], "") + "\n…(dipotong)"
+}
+
+// revisionScopeBudget bounds the full text (JSON bytes) of the commands a
+// focused revision reads beyond its core.
+const revisionScopeBudget = 60_000
+
+// revisionScope is the set of commands a focused revision reads in full.
+// Its core is the focus, the commands earlier rounds of the request changed
+// or added, and their direct dependents: a change travels down the
+// dependency chain one round at a time, and a command joins the core once
+// a round changed what it builds on. Deeper dependents join too, nearest
+// first, while their text fits revisionScopeBudget. Dependencies stay in the
+// outline with their outputs, which is all the scope reads from them.
 // nil means every command: an unfocused request (coverage, decision sync), a
 // focus that no longer exists, or a scope that covers them all anyway.
 func revisionScope(w *core.Workflow) map[string]bool {
@@ -404,16 +503,31 @@ func revisionScope(w *core.Workflow) map[string]bool {
 			scope[id] = true
 		}
 	}
-	for grew := true; grew; { // dependents to a fixed point; a cycle stops it too
+	dependsOn := func(c core.Command, set map[string]bool) bool {
+		return slices.ContainsFunc(c.DependsOn, func(d string) bool { return set[d] })
+	}
+	changed := maps.Clone(scope)
+	size := 0
+	for _, c := range w.Commands {
+		if !scope[c.ID] && dependsOn(c, changed) {
+			scope[c.ID] = true
+		}
+		if scope[c.ID] {
+			size += len(mustJSON(c))
+		}
+	}
+	for grew := true; grew; { // deeper dependents, one level per pass; a cycle stops it too
 		grew = false
+		level := map[string]bool{}
 		for _, c := range w.Commands {
-			if scope[c.ID] {
+			if scope[c.ID] || !dependsOn(c, scope) {
 				continue
 			}
-			if slices.ContainsFunc(c.DependsOn, func(d string) bool { return scope[d] }) {
-				scope[c.ID], grew = true, true
+			if n := len(mustJSON(c)); size+n <= revisionScopeBudget {
+				level[c.ID], size, grew = true, size+n, true
 			}
 		}
+		maps.Copy(scope, level)
 	}
 	if len(scope) >= len(w.Commands) {
 		return nil
@@ -429,27 +543,6 @@ func outside(cmds []core.Command, scope map[string]bool) []core.Command {
 		}
 	}
 	return out
-}
-
-// writeScopedDocs is writeDocs for a focused revision: the artifacts the
-// scoped commands reference and the binding ones keep their body, the rest
-// are listed by summary.
-func writeScopedDocs(b *strings.Builder, docs []core.Artifact, cut int, needed map[string]bool) {
-	b.WriteString("BLUEPRINT ARTIFACTS (body only for the artifacts the commands below reference; the rest by summary):\n")
-	for _, d := range docs {
-		tag := fmt.Sprintf("=== %s (%s, %s%s) %s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary)
-		if !needed[d.ID] && !bindingDocs[d.ID] {
-			b.WriteString(tag)
-			continue
-		}
-		body := d.Body
-		if cut > 0 && len(body) > cut && !bindingDocs[d.ID] {
-			body = strings.ToValidUTF8(body[:cut], "") + "\n…(dipotong)"
-		}
-		b.WriteString(tag + body + "\n")
-	}
-	b.WriteString("\n")
-	b.WriteString(precedenceRules)
 }
 
 // writeExecutionState tells a revision how far the agent got, so it does not
@@ -617,6 +710,9 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 	if err := checkCommands(cmds, hashes, p.Requirements, p.Features); err != nil {
 		return err
 	}
+	if lost := lostCoverage(w.Commands, cmds, p.Requirements); len(lost) > 0 {
+		return fmt.Errorf("workflow tidak valid: %s%s", uncoveredMust, strings.Join(lost, ", "))
+	}
 	// The revision ends when the AI says so, repeats a change (no progress),
 	// runs out of rounds, or (sync) has no focused stale command left.
 	// Only the AI's done (or nothing stale left) reviews the rest of a sync
@@ -643,6 +739,24 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 		w.Request.Rejected, w.Request.Retries = "", 0 // the next round gets its own retries
 	}
 	return nil
+}
+
+// lostCoverage are the MUST requirements a revision round leaves without a
+// command although the workflow before it covered them. A MUST the
+// workflow already missed does not block an unrelated round.
+func lostCoverage(before, after []core.Command, reqs []core.Requirement) []string {
+	_, now := workflow.Covers(after, reqs)
+	if len(now) == 0 {
+		return nil
+	}
+	_, was := workflow.Covers(before, reqs)
+	var lost []string
+	for _, id := range now {
+		if !slices.Contains(was, id) {
+			lost = append(lost, id)
+		}
+	}
+	return lost
 }
 
 // rewireDependents hands a removed command's dependencies to the commands

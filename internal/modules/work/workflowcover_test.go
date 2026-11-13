@@ -61,7 +61,11 @@ func TestSketchRetrySpellsOutTheUncoveredMustRequirements(t *testing.T) {
 	if i < 0 {
 		t.Fatal("no repair section")
 	}
-	repair := prompt[i:strings.Index(prompt, "SKETCH PHASE")]
+	// The refusal and the repair are the only part a retry sends fresh.
+	if b := strings.Index(prompt, CacheBreak); b < 0 || b > i {
+		t.Fatal("repair section in the static part")
+	}
+	repair := prompt[i:strings.Index(prompt, "Write the SKETCH PHASE outline now")]
 	for _, want := range []string{
 		"REQ-025 [MUST] Data lokal tidak hilang",
 		"features: FEAT-015 Edge Controller dan Mode Offline",

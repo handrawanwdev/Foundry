@@ -42,7 +42,7 @@ func TestRepoPlanPromptLeavesTheApproachToTheAI(t *testing.T) {
 	for _, want := range []string{"You are free to choose the organization approach", "references, not a menu", "PROJECT MODULES", "- booking: pemesanan",
 		"STRUCTURE PARTS", "service:api (default folder apps/api/)", "module:booking", "EVERY project module", "consistency", "evaluation",
 		"FOLDERS, never files", "not a second part mapping", `"role": "ui"`, `Never write "*", "all", "all-modules"`,
-		"will be refused"} {
+		"will be refused", "Every location path is also a folder in nodes"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt lacks %q", want)
 		}
@@ -60,7 +60,7 @@ func TestRepoRevisePromptCarriesChangedSourcesAndRefusal(t *testing.T) {
 		Consistency: []core.RepoCheck{{Area: "project_modules", Status: core.CheckConsistent, Note: "semua ada"}}}
 	p.Structure.RepoRequest = &core.RepoRequest{Action: core.RepoRevise, Text: "pisahkan billing", Reason: "deploy terpisah", Rejected: "modul x tanpa lokasi"}
 	prompt := RepoRevisePrompt(p)
-	for _, want := range []string{"SOURCES THAT CHANGED since the plan was written: modules", "Plan sections affected: modules, tree, evaluation",
+	for _, want := range []string{"every location path must be a node of the plan after the ops", "SOURCES THAT CHANGED since the plan was written: modules", "Plan sections affected: modules, tree, evaluation",
 		"USER REQUEST:\npisahkan billing", "REASON GIVEN BY THE USER:\ndeploy terpisah", "YOUR LAST ANSWER WAS REFUSED, fix this: modul x tanpa lokasi",
 		"- apps/ | platform", `"op":"move_node"`, "CURRENT EVALUATION", "- cohesion: 4 — domain terpisah",
 		"CURRENT CONSISTENCY", "evaluation and consistency are mandatory JSON keys"} {

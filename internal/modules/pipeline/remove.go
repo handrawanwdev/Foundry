@@ -22,7 +22,7 @@ import (
 // Fates of a command that referred to a deleted document.
 const (
 	FateRemoved = "removed" // it had no other document: it goes
-	FateReview  = "review" // it keeps its other documents and is marked for review
+	FateReview  = "review"  // it keeps its other documents and is marked for review
 )
 
 // ImpactCommand is a command reached by a deletion.

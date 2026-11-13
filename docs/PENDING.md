@@ -1,16 +1,23 @@
 # Pekerjaan yang Belum Selesai
 
-Per 2026-11-12 (diperbarui 23:30 WIB). Mencakup Phase 7 (keandalan Step 9 Teknologi) dan perbaikan coverage workflow (REQ-025/REQ-031 ParkOS).
-Kode sudah di-commit user: `2d490fa` (Phase 7), `9c9fa86` (coverage workflow), `87b9efe` (retry, ID, raw, batas pesan). Optimasi prompt detail, lifecycle file sementara, dan telemetry belum di-commit.
+Per 2026-11-13 (finalisasi pasca Phase 7). Mencakup Phase 7 (keandalan Step 9 Teknologi), perbaikan coverage workflow (REQ-025/REQ-031 ParkOS), dan optimasi prompt sketch/revisi.
+Kode sudah di-commit user: `2d490fa` (Phase 7), `9c9fa86` (coverage workflow), `87b9efe` (retry, ID, raw, batas pesan), `554a296` (optimasi prompt detail, lifecycle file sementara, telemetry). Optimasi prompt sketch/revisi, guard coverage revisi, dan gofmt belum di-commit.
 
 ## A. Workflow — perbaikan coverage MUST
 
 ### Harus dikerjakan
-- [ ] **Proyek asli Parking-System belum diperbarui** (`job.status=failed`, `signal: killed`, workflow kosong). Salinan sudah lolos penuh (lihat di bawah). Pilih: salin `project.json` + `usage.jsonl` + `ai-raw/` dari salinan ke proyek asli (backup dulu), atau build ulang Foundry lalu tekan "Coba lagi".
+- [x] **Proyek asli Parking-System diperbaiki** (2026-11-13). Workflow 25 command dipindah dari run live tervalidasi (`parking-detail2`, kode `554a296`) setelah dicek input identik (requirements, features, blueprint, artefak, keputusan, stack, struktur, story, UI, flows). Ditulis lewat `Store.Update` (lock). Validator resmi: 0 masalah, 26/26 MUST tercakup, semua AC MUST dikutip. Backup: `/home/handrawan/Project/Parking-System.foundry-backup-20261113`. `usage.jsonl` asli tidak digabung (riwayat salinan berbeda).
 - [x] **Validasi workflow lengkap terbukti live** (2026-11-12, Haiku, 44m53s, 31 run, $0,69). Outline lolos percobaan pertama. 25/25 command terisi. `Covers`: 26/26 MUST tercakup. `Validate` + `ValidateFeatures` + `CheckUI`: 0 masalah.
   - REQ-025 → CMD-009 (SQLite WAL `synchronous=FULL`, outbox). AC1: uji SIGKILL 200 iterasi.
   - REQ-031 → CMD-002 (AC1, AC2), CMD-021 (AC1, AC2, AC3 gitleaks), CMD-024 (AC1 gateway redirect, AC3 job gitleaks CI).
   - Hasil: `/tmp/claude-1000/-home-handrawan-Project-Foundry/6e73f342-d3ad-4d96-bbb4-925a76766846/scratchpad/wf/parking` (`bench-workflow.json`).
+
+### Optimasi prompt sketch dan revisi (2026-11-13)
+- [x] **Sketch**: semua konteks stabil jadi bagian statis (cache); dinamis hanya penolakan + perbaikan coverage. Repo plan ringkas (path + owner). Replay ParkOS: 74,5 → 65,4 KB (−12,2%); dinamis percobaan pertama 73,1 KB → 0,3 KB; retry dinamis 74,8 → 2,0 KB. Live Haiku (1 run): lolos percobaan pertama, 24 command, 0 MUST tak tercakup, cache write 37,7k → 33,4k token, biaya $0,0204 → $0,0169.
+- [x] **Revisi**: aturan pindah ke bagian statis; scope fokus = fokus + ronde sebelumnya + dependent langsung, dependent lebih dalam hanya selama muat 60 KB; command di luar scope jadi outline satu baris (output + files untuk dependensi); hash artefak dan `workflow_id` tidak dikirim; artefak non-binding dipotong ke section relevan (BM25) bukan 4 KB awal; sync hanya membaca utuh artefak yang berubah. Replay revisi fokus CMD-009: 261,3 → 194,9 KB (−25,4%), dinamis 128,2 → 62,6 KB (−51,2%). Live Haiku (1 run masing-masing): keduanya selesai 1 ronde, hanya CMD-009 berubah, 0 masalah validasi, 26/26 MUST; cache write 125,6k → 94,0k token.
+- [x] **Revisi kini menolak ronde yang menghilangkan coverage MUST** (`lostCoverage`); MUST yang memang sudah tidak tercakup sebelumnya tidak memblokir.
+- [ ] **Revisi tanpa fokus masih ~480 KB** (semua command utuh, ~120k token). Tidak dipotong karena AI butuh teks penuh untuk memilih command; perlu desain lain (mis. AI minta teks command) bila workflow makin besar.
+- [ ] **Revisi live: run kedua menulis 11 AC untuk CMD-009** (aturan: sekitar 8 lalu dipecah); run lama 8. Satu sampel, belum bisa disimpulkan.
 
 ### Kelemahan yang ditemukan, belum diperbaiki
 - [x] **Satu percobaan per "Coba lagi".** Diperbaiki: `autoRetry` retry selama pesan penolakan berubah, maks 3 per request (`ChangeRequest.Retries`). "Coba lagi" mereset jatah. Berlaku untuk workflow, artifacts, design. Structure/repo/featuremap masih aturan lama.
@@ -25,13 +32,15 @@ Kode sudah di-commit user: `2d490fa` (Phase 7), `9c9fa86` (coverage workflow), `
 ## B. Phase 7 — Step 9 Teknologi
 
 ### Butuh keputusan user
-- [ ] **distra: mobile dinilai "Tidak perlu"** (DEC-001 PWA). Rekomendasi: web responsif + PWA, hapus target android/ios (REQ-031 menyebut browser Chrome/Safari; REQ-017 foto/tanda tangan/lokasi bisa lewat browser; tidak ada requirement offline, push, atau barcode). Menunggu persetujuan user.
+- [x] **distra: web responsif + PWA diterapkan** (disetujui user 2026-11-13). Lewat API resmi: `SetPlatform` (target web + backend; android/ios dihapus), keputusan stack mobile React Native hilang otomatis, `apps/mobile/` hilang dari struktur, repository dipertahankan Monorepo (override; recommender sempat mengubah ke Simple), DEC-001 diputuskan. REQ-017, REQ-031, features, flows tidak berubah (hash sama). Stack belum di-approve (status `impact_checked`). Backup: `/home/handrawan/Project/distra-project.foundry-backup-20261113`.
+- [x] **distra: kebutuhan offline dihapus** (keputusan user 2026-11-13; tidak ada requirement offline). `blueprint.platform.offline` partial → none; aturan UI "Mode offline menampilkan antrean aksi tertunda" dihapus lewat `EditDesignRules`. Requirements, features, flows, stack, platform, keputusan, artefak tidak berubah. Backup: `/home/handrawan/Project/distra-project.foundry-backup-20261113-offline`.
 - [x] **Parking: backend Python + FastAPI.** Sudah selesai di proyek asli: stack v2 (2026-11-12 01:18) Go + Gin, approved. Python tidak dibutuhkan sekarang (ANPR lewat kamera vendor; AI = REQ-033 COULD, fase akhir).
 
 ### Belum terbukti / belum dikerjakan
 - [ ] **Eskalasi alami Haiku → Sonnet** (dipicu stall/regress) belum pernah terjadi live. Hanya terbukti lewat test. Runner Sonnet terbukti live lewat model paksa.
 - [ ] **Eskalasi hanya untuk preset `claude`** dengan model yang mengandung `haiku`. Agent lain (Codex, OpenCode, Qwen) tidak punya eskalasi.
 - [ ] **Step 11 Struktur Repository**: retry masih sekali, tanpa repair terarah. Kawal gagal 19 → 2 masalah (cycle).
+- [x] **Step 11: lokasi modul yang bukan node** (roda-sense 2026-11-13, percobaan 2: 10 lokasi `apps/mobile/lib/features/<modul>/` tidak ada di `nodes`). Prompt plan dan revise kini mewajibkan setiap lokasi modul juga jadi node. Validator tidak diubah. Proyek itu sendiri lolos di percobaan berikutnya (01:21).
 - [ ] **Job KindTech mandiri** (di luar Blueprint terpadu) masih membuang request saat gagal akhir. Pola draft/resume belum diterapkan di sana.
 - [ ] **UI frontend belum menampilkan** riwayat percobaan, progres, dan eskalasi (`TechAttempt`). Data sudah ada di `project.json` dan diagnosis teks.
 - [ ] **Jumlah alternatif teknologi turun** (Parking 14/42, kawal 5/35). Lebih aman bagi validator, tapi informasi pembanding berkurang.
@@ -40,9 +49,10 @@ Kode sudah di-commit user: `2d490fa` (Phase 7), `9c9fa86` (coverage workflow), `
 
 ### Teknis
 - [ ] Race test `internal/modules/pipeline` butuh `-timeout 40m` (default 10m timeout; terakhir PASS 649,3 detik, 0 data race, 2026-11-12).
-- [ ] gofmt lama (bukan dari Phase 7): `learning.go`, `remove.go`, `context_test.go`.
+- [x] gofmt lama: `learning.go`, `remove.go`, `context_test.go` (hanya spasi; `git diff -w` kosong).
 
 ## Bukti
+- Ukuran prompt sketch/revisi: `go test -tags foundrybench -run 'TestBench(Sketch|Revision)PromptSize'` (BENCH_PROJECT=…/project.json). Revisi live: `TestBenchWorkflowRevise` (BENCH_DIR, BENCH_REVISE_TEXT, BENCH_REVISE_FOCUS).
 - Ukuran prompt detail: `go test -tags foundrybench -run TestBenchDetailPromptSize` (BENCH_PROJECT=…/project.json). Live: `/tmp/claude-1000/-home-handrawan-Project-Foundry/6e73f342-d3ad-4d96-bbb4-925a76766846/scratchpad/wf/parking-detail2`
 - Benchmark Step 9: `<scratchpad>/bench/SUMMARY.md`, `out/`, `out2/`, `logs2/`
 - Workflow lolos penuh: `/tmp/claude-1000/-home-handrawan-Project-Foundry/6e73f342-d3ad-4d96-bbb4-925a76766846/scratchpad/wf/parking`
