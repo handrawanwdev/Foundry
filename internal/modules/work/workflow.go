@@ -38,6 +38,9 @@ type commandOut struct {
 	Files         []string    `json:"files"`
 	Priority      string      `json:"priority"`
 	Complexity    string      `json:"complexity"`
+	// Pages are the layout-spec page ids a detail round says its command
+	// builds; an explicit [] means it builds none.
+	Pages *[]string `json:"pages"`
 }
 
 // artifactIDs reads the artifacts of an answered command: ids, or the
@@ -918,6 +921,9 @@ func applyWorkflowDetailBatchFromParsed(p *core.Project, out workflowOut, docs [
 		if len(d.SubFeatureIDs) > 0 {
 			cmd.SubFeatureIDs = nonEmpty(d.SubFeatureIDs)
 		}
+		if err := settlePages(p, w.Commands, cmd, d.Pages); err != nil {
+			return err
+		}
 		updated++
 	}
 	if updated == 0 {
@@ -939,7 +945,18 @@ func applyWorkflowDetailBatchFromParsed(p *core.Project, out workflowOut, docs [
 			return err
 		}
 		if issues := CheckUI(p, w.Commands); len(issues) > 0 {
-			return UIError(issues)
+			reason := reopenForUI(p, w, issues, next.ID)
+			if reason == "" {
+				return UIError(issues)
+			}
+			remaining := 0
+			for _, cmd := range w.Commands {
+				if cmd.Instructions == "" {
+					remaining++
+				}
+			}
+			w.Request = &core.ChangeRequest{Text: fmt.Sprintf("Fill in details for remaining %d commands", remaining), Rejected: reason}
+			return nil
 		}
 		w.Request = nil
 	} else {

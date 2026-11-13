@@ -89,6 +89,7 @@ The blueprint artifacts the command implements are cut to the sections about it;
 	for _, cmd := range batch {
 		writeDetailCommand(&b, cmd)
 		writeDependencyOutputs(&b, w.Commands, cmd)
+		writeLayoutPages(&b, p, w.Commands, cmd)
 	}
 	if !writeBatchRequirements(&b, p, batch) {
 		b.WriteString("REQUIREMENTS: this command covers none; its acceptance criteria carry no requirement or criterion id.\n\n")
@@ -125,11 +126,14 @@ The blueprint artifacts the command implements are cut to the sections about it;
 
 	// The example carries the id this round asks for: an example id ("C1",
 	// the outline's) is copied back and the round is refused.
-	id := "CMD-001"
+	id, pages := "CMD-001", ""
 	if len(batch) > 0 {
 		id = batch[0].ID
+		if len(layoutPages(p)) > 0 && listsLayout(batch[0]) {
+			pages = `, "pages": [""]`
+		}
 	}
-	fmt.Fprintf(&b, "Reply with ONLY one JSON object in a ```json block; \"id\" is exactly %s:\n{\"commands\": [{\"id\": %q, \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"], \"files\": [\"\"]}]}", id, id)
+	fmt.Fprintf(&b, "Reply with ONLY one JSON object in a ```json block; \"id\" is exactly %s:\n{\"commands\": [{\"id\": %q, \"context\": \"\", \"instructions\": \"\", \"inputs\": [\"\"], \"expected_outputs\": [\"\"], \"acceptance_criteria\": [\"\"], \"constraints\": [\"\"], \"files\": [\"\"]%s}]}", id, id, pages)
 	return b.String()
 }
 
