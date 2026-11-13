@@ -28,7 +28,7 @@ export function RepoWorkspace({ project, section = "all" }: { project: Project; 
     );
   }
   if (!s.ir) {
-    return <div className="repo"><h1>{architecture ? "Arsitektur" : "Struktur repository"}</h1><p className="muted">Keputusan struktur belum ada. Muncul setelah platform dan teknologi dipilih.</p></div>;
+    return <div className="repo"><h1>{architecture ? "Arsitektur" : "Struktur repository"}</h1><NoStructure project={project} /></div>;
   }
 
   return (
@@ -44,6 +44,22 @@ export function RepoWorkspace({ project, section = "all" }: { project: Project; 
       {architecture && <StructurePanel project={project} />}
       {folders && <RepoPlan project={project} />}
     </div>
+  );
+}
+
+// Before the first structure: the AI designs it (Foundry has no template).
+function NoStructure({ project }: { project: Project }) {
+  const { run, pending } = useProject();
+  const s = project.structure as Structure;
+  const busy = isWorking(project) || pending === "structure" || !!s.plan_request || project.stage === "READY";
+  if (s.plan_request) return <p className="muted"><span className="spinner" /> AI merancang alternatif struktur…</p>;
+  return (
+    <>
+      <p className="muted">Struktur belum dirancang. AI merancang gaya arsitektur dan foldernya untuk sistem ini; Foundry tidak memakai template.</p>
+      {project.platform && (s.plan && !s.plan.stale
+        ? <button className="primary" disabled={busy} onClick={() => void run("structure", () => api.useStructureAlternative())}>Pakai rekomendasi AI</button>
+        : <button className="primary" disabled={busy} onClick={() => void run("structure", () => api.analyzeStructure())}>Rancang struktur dengan AI</button>)}
+    </>
   );
 }
 

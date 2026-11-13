@@ -246,7 +246,7 @@ func techMarkdown(p *core.Project) string {
 			}
 			b.WriteString("\n")
 		case s.IR != nil:
-			fmt.Fprintf(&b, "## Struktur project\n\nTipe: %s (v%d)", s.IR.Type, s.Version())
+			fmt.Fprintf(&b, "## Struktur project\n\nGaya arsitektur: %s (v%d)", s.IR.Type, s.Version())
 			if a := s.Plan.SelectedAlternative(); a != nil {
 				fmt.Fprintf(&b, " · dipilih: %s", a.Name)
 			}
@@ -267,7 +267,7 @@ func techMarkdown(p *core.Project) string {
 					for _, x := range ps {
 						fmt.Fprintf(&b, "- `%s` %s\n", x.Path, x.Reason)
 						for _, m := range x.Modules {
-							fmt.Fprintf(&b, "  - `%s%s/` %s\n", x.Path, m, x.ModuleReasons[m])
+							fmt.Fprintf(&b, "  - `%s` %s\n", structure.ModulePath(x, m), x.ModuleReasons[m])
 						}
 					}
 				}
@@ -514,7 +514,7 @@ func architectureMarkdown(p *core.Project) string {
 	}
 	if s := p.Structure; s != nil && s.Mode == core.StructureNew && s.IR != nil {
 		b.WriteString("### Struktur project dan dependency\n\n")
-		fmt.Fprintf(&b, "Tipe **%s**; folder dan batas domain di bawah ini adalah sumber kebenaran untuk implementasi.\n\n", s.IR.Type)
+		fmt.Fprintf(&b, "Gaya arsitektur **%s**; folder dan batas domain di bawah ini adalah sumber kebenaran untuk implementasi.\n\n", s.IR.Type)
 		b.WriteString("```text\n")
 		if plan := repoPlanOf(p); plan != nil {
 			b.WriteString(repoTree(plan))
@@ -574,7 +574,7 @@ func adrStack(p *core.Project) string {
 	if st.Version() > 0 {
 		fmt.Fprintf(&b, "Versi: v%d\n\n", st.Version())
 	}
-	fmt.Fprintf(&b, "Profil rekomendasi (kebijakan, bukan aturan): %s\n\nKebutuhan teknis: %s\n\n", st.Profile, orDash(strings.Join(st.Needs, ", ")))
+	fmt.Fprintf(&b, "Kebutuhan teknis: %s\n\n", orDash(strings.Join(st.Needs, ", ")))
 	for _, g := range core.TechGroups {
 		var ds []core.TechDecision
 		for _, a := range g.Areas {

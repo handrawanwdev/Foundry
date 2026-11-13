@@ -21,9 +21,38 @@ func project(kinds ...string) *core.Project {
 	for _, k := range kinds {
 		p.Platform.Targets = append(p.Platform.Targets, core.PlatformTarget{Kind: k})
 	}
-	p.Stack = stack.Recommend(p)
+	p.Stack = decided(p)
 	stack.Record(p.Stack, nil, "recommend", "")
 	return p
+}
+
+// decided is the stack an earlier AI plan decided for the platform. Foundry
+// has no recommender of its own; the tests start from a decided stack.
+func decided(p *core.Project) *core.TechStack {
+	s := stack.Baseline(p)
+	pl := s.Platform
+	add := func(on bool, area, tech, lang string) {
+		if on {
+			s.Decisions = append(s.Decisions, core.TechDecision{Area: area, Recommended: tech, Language: lang, Reason: "rencana AI", Source: core.SourceAI})
+		}
+	}
+	add(pl.Web, core.TechFrontend, "React + TypeScript + Vite", "TypeScript")
+	add(pl.Web, core.TechUI, "Tailwind CSS", "")
+	add(pl.Mobile, core.TechMobile, "Flutter", "Dart")
+	add(pl.Backend, core.TechBackend, "NestJS + TypeScript", "TypeScript")
+	add(pl.Backend, core.TechAPI, "REST + OpenAPI", "")
+	add(pl.Backend, core.TechDatabase, "PostgreSQL", "SQL")
+	for _, a := range []string{core.TechCache, core.TechMessaging, core.TechWorkers, core.TechStorage, core.TechSearch} {
+		add(pl.Backend, a, core.TechNone, "")
+	}
+	add(true, core.TechArchitecture, "Modular Monolith", "")
+	add(true, core.TechRepository, "Single repository", "")
+	add(pl.Backend || pl.Web, core.TechDeployment, "Docker Compose (satu server)", "")
+	add(pl.Backend, core.TechObservability, "Log terstruktur + health check", "")
+	add(pl.Web || pl.Backend, core.TechTesting, "Vitest", "TypeScript")
+	add(pl.Web || pl.Backend, core.TechQuality, "ESLint + Prettier", "TypeScript")
+	stack.Refresh(s)
+	return s
 }
 
 func filled(area, tech, lang string) core.TechItem {
@@ -117,9 +146,9 @@ func TestNormalizeCleansPlan(t *testing.T) {
 				Purpose: "pipeline", Fulfills: []string{"REQ-001"}, Driver: core.DriverOperational,
 				Reasoning: "Build dan rilis harus otomatis untuk tim kecil ini",
 				Pros:      []string{"sudah dipakai"}, Cons: []string{"vendor"}, Confidence: "high"},
-			{Area: "architecture", Technology: "modular monolith"},
-			{Area: "repository", Technology: "MONOREPO"},
-			{Area: "backend", Technology: "Elixir + Phoenix"},
+			{Area: "architecture", Technology: "  Cell-based  modular monolith "},
+			{Area: "repository", Technology: "Polyrepo per bounded context"},
+			{Area: "backend", Technology: "Elixir + Phoenix", Language: "Elixir"},
 		},
 		Compatibility: []core.TechCompat{
 			{Area: "runtime", Status: core.CompatCompatible, Between: []string{"backend"}},
@@ -137,14 +166,15 @@ func TestNormalizeCleansPlan(t *testing.T) {
 	if ci == nil || ci.Group != core.TechPlanOperations {
 		t.Fatalf("ci_cd = %+v", ci)
 	}
-	if it := plan.Item(core.TechArchitecture); it == nil || it.Technology != core.ArchModular || it.Group != core.TechPlanArchitecture {
+	// Architecture and repository are free text: no closed list.
+	if it := plan.Item(core.TechArchitecture); it == nil || it.Technology != "Cell-based modular monolith" || it.Group != core.TechPlanArchitecture {
 		t.Fatalf("architecture = %+v", plan.Item(core.TechArchitecture))
 	}
-	if it := plan.Item(core.TechRepository); it == nil || it.Technology != core.RepoMonorepo {
+	if it := plan.Item(core.TechRepository); it == nil || it.Technology != "Polyrepo per bounded context" {
 		t.Fatalf("repository = %+v", plan.Item(core.TechRepository))
 	}
 	be := plan.Item(core.TechBackend)
-	if be == nil || be.Group != core.TechPlanStack || be.InCatalog || be.Language != "Elixir" {
+	if be == nil || be.Group != core.TechPlanStack || be.Language != "Elixir" {
 		t.Fatalf("backend = %+v", be)
 	}
 	if plan.Compatibility[0].Status != core.CompatUnverified {
@@ -194,15 +224,8 @@ func TestAcceptValidPlan(t *testing.T) {
 		core.TechCache:    "Valkey",
 	}, filled("authentication", "Phoenix.Session", "Elixir"), filled("orm", "Ecto", "Elixir"))
 	mustAccept(t, p, plan)
-	if plan.Analysis.Outside == 0 {
-		t.Fatal("outside catalog was not counted")
-	}
-	if plan.Item(core.TechBackend).InCatalog || plan.Item(core.TechDatabase).InCatalog || plan.Item(core.TechCache).InCatalog {
-		t.Fatalf("catalog flags: backend=%v db=%v cache=%v",
-			plan.Item(core.TechBackend).InCatalog, plan.Item(core.TechDatabase).InCatalog, plan.Item(core.TechCache).InCatalog)
-	}
-	if !stack.Known(core.TechFrontend, p.Stack.Choice(core.TechFrontend)) && plan.Item(core.TechFrontend).InCatalog {
-		t.Fatal("unknown frontend marked in catalog")
+	if hasIssue(plan, "katalog") {
+		t.Fatalf("a technology was judged against a catalog: %+v", plan.Analysis.Issues)
 	}
 }
 
@@ -234,9 +257,9 @@ func TestAcceptRefusals(t *testing.T) {
 			pl.Items = slices.DeleteFunc(pl.Items, func(it core.TechItem) bool { return it.Area == core.TechBackend })
 			_ = p
 		}, "tidak menentukan teknologi backend"},
-		{"architecture outside closed set", func(_ *core.Project, pl *core.TechPlan) {
-			pl.Item(core.TechArchitecture).Technology = "Hexagonal"
-		}, "arsitektur harus salah satu"},
+		{"architecture missing", func(_ *core.Project, pl *core.TechPlan) {
+			pl.Items = slices.DeleteFunc(pl.Items, func(it core.TechItem) bool { return it.Area == core.TechArchitecture })
+		}, "rencana harus menentukan architecture"},
 		{"duplicate area", func(_ *core.Project, pl *core.TechPlan) {
 			pl.Items = append(pl.Items, filled(core.TechBackend, "Go + Gin", "Go"))
 		}, "muncul lebih dari sekali"},
@@ -325,9 +348,9 @@ func TestCrossArtifactConflictsLandAsIssues(t *testing.T) {
 			p.Stack.Needs = append(p.Stack.Needs, "files")
 			pl.Items = slices.DeleteFunc(pl.Items, func(it core.TechItem) bool { return it.Area == core.TechStorage })
 		}, "upload file", false},
-		{"static deployment with backend", func(_ *core.Project, pl *core.TechPlan) {
-			pl.Item(core.TechDeployment).Technology = "Static hosting + CDN"
-		}, "tidak menjalankan kode server", false},
+		{"backend without deployment", func(_ *core.Project, pl *core.TechPlan) {
+			pl.Items = slices.DeleteFunc(pl.Items, func(it core.TechItem) bool { return it.Area == core.TechDeployment })
+		}, "tidak menentukan deployment", false},
 		{"orm language mismatch", func(_ *core.Project, pl *core.TechPlan) {
 			pl.Item(core.TechBackend).Technology = "Elixir + Phoenix"
 			pl.Item(core.TechBackend).Language = "Elixir"
@@ -341,13 +364,6 @@ func TestCrossArtifactConflictsLandAsIssues(t *testing.T) {
 			}
 			pl.Items = append(pl.Items, filled("job_queue", "Oban", "Elixir"))
 		}, "tidak ada worker", false},
-		{"auth without session", func(_ *core.Project, pl *core.TechPlan) {
-			pl.Items = append(pl.Items, filled("authentication", "Custom header scheme", "Elixir"))
-		}, "belum menentukan strategi session", true},
-		{"seo with spa", func(p *core.Project, pl *core.TechPlan) {
-			p.Stack.Needs = append(p.Stack.Needs, "seo")
-			pl.Item(core.TechFrontend).Technology = "React + TypeScript + Vite"
-		}, "dirender di browser", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

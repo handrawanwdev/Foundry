@@ -9,6 +9,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
+	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
 const surveyStory = "Saya ingin membuat aplikasi klinik untuk janji temu pasien"
@@ -67,12 +68,12 @@ func TestSurveyBindsBlueprint(t *testing.T) {
 	if !reflect.DeepEqual(p.Survey, want) {
 		t.Fatalf("survey after reload = %+v", p.Survey)
 	}
-	// The user's architecture wins over Foundry's prototype default.
-	if d := p.Stack.Decision(core.TechArchitecture); d == nil || d.Choice() != core.ArchMicroservices {
-		t.Fatalf("architecture = %+v", d)
-	}
-	if d := p.Stack.Decision(core.TechDatabase); d == nil || d.Choice() != "PostgreSQL" {
-		t.Fatalf("database = %+v", d)
+	// The answers bind the AI that designs the technology; Foundry turns
+	// none of them into a technology itself.
+	prompt := work.TechPlanPrompt(p)
+	if !strings.Contains(prompt, "architecture preference: Beberapa service terpisah") ||
+		!strings.Contains(prompt, "MANDATORY CONSTRAINTS (the user's words; binding): Database wajib PostgreSQL") {
+		t.Fatalf("tech prompt misses the survey:\n%s", prompt)
 	}
 	// Separate services for a prototype is a conflict the user decides before finalize.
 	crit := surveyConflicts(p)
@@ -93,11 +94,9 @@ func TestSurveyBindsBlueprint(t *testing.T) {
 	if p.Survey.Stage != core.SurveyStageMVP || p.Survey.Constraints != "" || len(surveyConflicts(p)) != 0 {
 		t.Fatalf("survey %+v conflicts %v", p.Survey, surveyConflicts(p))
 	}
-	if d := p.Stack.Decision(core.TechArchitecture); d.Choice() != core.ArchModular {
-		t.Fatalf("architecture after change = %+v", d)
-	}
-	if d := p.Stack.Decision(core.TechDatabase); d.Source == core.SourcePreference {
-		t.Fatalf("removed constraint still binds: %+v", d)
+	if prompt := work.TechPlanPrompt(p); !strings.Contains(prompt, "architecture preference: Satu aplikasi modular") ||
+		strings.Contains(prompt, "Database wajib PostgreSQL") {
+		t.Fatalf("tech prompt after change:\n%s", prompt)
 	}
 }
 

@@ -40,7 +40,7 @@ Prompting an AI and asking it to write code straight away is rarely enough. With
 | ------------------------------------------------ | ------------------------------------------------------------------- |
 | Ambiguous or conflicting requirements            | Discovery, a technical survey, and an explicit **decision register** |
 | A decided change that other artifacts still contradict | Decided entries **bind** every artifact and command; a change queues a sync so nothing hangs on its own |
-| Architecture & stack that don't fit the need     | Profile-based stack recommendations that require your approval      |
+| Architecture & stack that don't fit the need     | Stack, architecture and folders designed by AI for the system, approved by you |
 | Implementation instructions that lose context    | Every command references blueprint artifacts directly               |
 | Spec changes with undetected impact              | **Artifact hashes** flag affected commands & artifacts `needs_review` |
 | Features "done" but not meeting criteria         | **Traceability** from requirement → acceptance criteria → command   |
@@ -213,7 +213,7 @@ docs/foundry/
 | 🔧 Embedded | Firmware, IoT, robotics                                 |
 | 📚 Other    | Libraries, SDKs, data pipelines, ML, infrastructure, tooling |
 
-A single project can span multiple platforms. Foundry **doesn't impose a specific stack** — recommendations consider the requirements, existing code, developer preferences, and the project profile (`saas`, `enterprise`, `mobile-app`, `ai-product`, `trading`). Optional components such as caching, messaging, workers, and search are only recommended when actually needed.
+A single project can span multiple platforms. Foundry **has no technology catalog, stack profile, structure template or default folder layout** — the AI designs the stack, the architecture style and every folder for the system from its requirements, the existing code and your choices. Foundry only validates, versions and asks for your approval. Optional components such as caching, messaging, workers, and search appear only when the system needs them.
 
 ## 🚀 Quick Start
 
@@ -394,7 +394,7 @@ internal/
 │   ├── agent/        AI CLI adapters (Claude Code, Codex, OpenCode, Qwen Code, Gemini)
 │   ├── spec/         Final specification & export package
 │   ├── workflow/     Command workflow validation
-│   ├── stack/        Stack recommendations & project profiles
+│   ├── stack/        Technology decisions (from code, user and AI plan)
 │   ├── structure/    Repository structure decisions
 │   ├── scan/ uiscan/ Existing project & UI scanning
 │   └── standard/     Design principles & instructions for the coding agent

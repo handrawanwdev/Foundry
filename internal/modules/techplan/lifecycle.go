@@ -50,7 +50,7 @@ func Project(p *core.Project, plan *core.TechPlan) *core.TechStack {
 	if old == nil {
 		old = &core.TechStack{}
 	}
-	return &core.TechStack{Mode: old.Mode, Profile: old.Profile, Needs: old.Needs, Platform: old.Platform,
+	return &core.TechStack{Mode: old.Mode, Needs: old.Needs, Platform: old.Platform,
 		Decisions: Decisions(plan, old), Plan: plan}
 }
 

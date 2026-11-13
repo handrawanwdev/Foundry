@@ -466,3 +466,25 @@ func TestLoadDropsProgressFromBeforeRunIDs(t *testing.T) {
 		t.Fatalf("kept %+v", p.BlueprintProgress)
 	}
 }
+
+// Module folders Foundry used to derive are written into older files, so
+// their structure keeps the folders it showed.
+func TestLoadLegacyModulePaths(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, StateDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"name":"klinik","stage":"DESIGN","story":"x","structure":{"mode":"new","ir":{"type":"modular","docs":"docs/",
+		"services":[{"name":"api","path":"apps/api/","modules":["booking"]},{"name":"billing","path":"services/billing/","modules":["invoice"]}]}}}`
+	if err := os.WriteFile(filepath.Join(dir, StateDir, "project.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := (&Store{Dir: dir}).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	svcs := p.Structure.IR.Services
+	if svcs[0].ModulePaths["booking"] != "apps/api/modules/booking/" || svcs[1].ModulePaths["invoice"] != "services/billing/invoice/" {
+		t.Fatalf("module paths = %+v %+v", svcs[0].ModulePaths, svcs[1].ModulePaths)
+	}
+}

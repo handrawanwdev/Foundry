@@ -13,8 +13,8 @@ import (
 // evaluation. Foundry stores, validates and exports the plan; it never
 // builds the product.
 //
-// The plan is free-form. Foundry's catalog and profiles are reference, not a
-// menu: the AI may choose any technology, combine technologies, propose
+// The plan is free-form. Foundry keeps no catalog or profile: the AI may
+// choose any technology, combine technologies, propose
 // something new or decide that an area needs none. The plan's decisions on
 // the areas Foundry knows (TechAreas) become the TechStack decisions every
 // later stage reads; the other areas (authentication, ORM, CI/CD, ...) stay
@@ -78,10 +78,9 @@ const (
 	DriverCompatibility = "compatibility"
 	DriverEngineering   = "engineering"
 	DriverOperational   = "operational"
-	DriverProfile       = "profile"
 )
 
-var TechDrivers = []string{DriverRequirement, DriverArchitecture, DriverCompatibility, DriverEngineering, DriverOperational, DriverProfile}
+var TechDrivers = []string{DriverRequirement, DriverArchitecture, DriverCompatibility, DriverEngineering, DriverOperational}
 
 // Confidence in a decision.
 var TechConfidence = []string{"high", "medium", "low"}
@@ -161,8 +160,6 @@ type TechItem struct {
 	// reuse | add | modify | refactor | remove. Empty on greenfield.
 	Action string `json:"action,omitempty"`
 
-	// Computed by Foundry, never trusted from the AI.
-	InCatalog bool `json:"in_catalog,omitempty"`
 	// UserChosen is set when the user's own choice replaced this one.
 	UserChosen string `json:"user_chosen,omitempty"`
 }
@@ -281,9 +278,7 @@ type TechAnalysis struct {
 	Checks   []TechCheck   `json:"checks,omitempty"`
 	Compat   []TechCompat  `json:"compat,omitempty"`
 	Items    int           `json:"items"`
-	// Outside are the decisions whose technology Foundry's catalog does not
-	// list; Unverified the ones whose version was not verified.
-	Outside    int            `json:"outside_catalog"`
+	// Unverified are the decisions whose version was not verified.
 	Unverified int            `json:"unverified"`
 	Coverage   []TechCoverage `json:"coverage,omitempty"`
 	// Diverged are the areas where the stack's current choice (the user's

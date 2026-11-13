@@ -437,14 +437,14 @@ const (
 type Structure struct {
 	Mode       StructureMode `json:"mode"`
 	Components []Component   `json:"components"` // detected (existing) or planned (new)
-	// Template is the structure type of a new project (IR.Type); Layout
-	// the folders derived from IR.
+	// Template mirrors IR.Type (the style the design named); Layout the
+	// folders of the IR.
 	Template string   `json:"template,omitempty"`
 	Layout   []string `json:"layout,omitempty"`
 	Reason   string   `json:"reason"`
 	// IR is the structure decision of a new project, the build contract.
 	IR *StructureIR `json:"ir,omitempty"`
-	// Recommended is the type Foundry recommends for the current needs.
+	// Recommended is the style of the alternative the AI recommends.
 	Recommended string             `json:"recommended,omitempty"`
 	Status      TechStatus         `json:"status,omitempty"`
 	Issues      []TechIssue        `json:"issues,omitempty"`

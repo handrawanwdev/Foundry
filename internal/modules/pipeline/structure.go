@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
-	"github.com/handrawanwdev/foundry/internal/modules/stack"
 	"github.com/handrawanwdev/foundry/internal/modules/structure"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
@@ -58,19 +57,10 @@ func (s *Service) ProposeStructure(ops []core.StructureOp) (*core.Project, error
 	})
 }
 
-// RecommendStructure proposes Foundry's recommendation for the current
-// needs; the user applies it like any other change.
+// RecommendStructure adopts the alternative the AI analysis recommends.
+// Foundry has no structure of its own to recommend.
 func (s *Service) RecommendStructure() (*core.Project, error) {
-	return s.Store.Update(func(p *core.Project) error {
-		if err := structureEditable(p); err != nil {
-			return err
-		}
-		if p.Structure.Request != "" || p.Structure.PlanRequest != nil {
-			return errors.New("AI masih memproses permintaan struktur")
-		}
-		ir, why := structure.Recommend(p)
-		return structure.ProposeIR(p.Structure, p, ir, nil, "recommend", "", why)
-	})
+	return s.UseStructureAlternative("")
 }
 
 // RequestStructureChange asks the AI to turn a request in words into a
@@ -320,29 +310,9 @@ func applyStructureProposalLocked(p *core.Project) error {
 	if st.Proposal == nil {
 		return structure.ErrNoProposal
 	}
-	if len(st.Proposal.Tech) > 0 && p.Stack.Proposal != nil {
-		return stack.ErrPending
-	}
 	before, pr, err := structure.Apply(st)
 	if err != nil {
 		return err
-	}
-	if len(pr.Tech) > 0 {
-		old := core.CloneDecisions(p.Stack.Decisions)
-		var areas []string
-		for _, c := range pr.Tech {
-			areas = append(areas, c.Area)
-			value := c.To
-			if d := p.Stack.Decision(c.Area); d != nil && value == d.Recommended {
-				value = ""
-			}
-			if err := stack.Override(p.Stack, c.Area, value, c.Reason); err != nil {
-				return err
-			}
-		}
-		stack.Follow(p.Stack, areas...)
-		stackChanged(p, old, "structure", "Struktur project: "+pr.IR.Type)
-		work.ResetBlueprintTech(p, stack.Diff(old, p.Stack.Decisions))
 	}
 	work.CompleteBlueprint(p)
 	stampRefs(p)
@@ -401,8 +371,8 @@ func structureReady(p *core.Project) error {
 	return nil
 }
 
-// syncStructure keeps the structure in step with the technology without
-// overriding the user's structure (structure.Sync).
+// syncStructure revalidates the structure against the technology without
+// changing it (structure.Sync).
 func syncStructure(p *core.Project, why string) {
 	if p.Finalized() {
 		return

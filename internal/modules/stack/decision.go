@@ -26,16 +26,17 @@ var (
 	ErrNoProposal = errors.New("tidak ada perubahan teknologi yang menunggu")
 	ErrNoChange   = errors.New("tidak ada perubahan: pilihan sama dengan yang sekarang")
 	ErrPending    = errors.New("terapkan atau batalkan perubahan teknologi yang menunggu dulu")
+	// ErrNotDesigned: a new project has no technology until the AI plan (or
+	// the user) decides it; Foundry has none of its own to approve.
+	ErrNotDesigned = errors.New("teknologi belum dirancang: minta AI merancang teknologi dulu")
 )
 
 const maxHistory = 50
 
-// Propose validates changes and records them as a proposal together with
-// what follows from them: recommendations that depend on a changed area
-// follow it (Follow changes), choices of the user or of the code that
-// depend on it are marked for review, and the issues and impact the stack
-// would have. It merges with a waiting proposal; nothing in the decisions
-// changes until Apply.
+// Propose validates changes and records them as a proposal with the
+// issues and impact the stack would have. Foundry derives no other area
+// from a change: dependent areas are the AI's to revise. It merges with a
+// waiting proposal; nothing in the decisions changes until Apply.
 func Propose(s *core.TechStack, changes []Change, source, request, note string) error {
 	if s == nil {
 		return errors.New("teknologi belum direkomendasikan")
@@ -60,7 +61,7 @@ func Propose(s *core.TechStack, changes []Change, source, request, note string) 
 		}
 		want[c.Area] = c
 	}
-	next := &core.TechStack{Mode: s.Mode, Profile: s.Profile, Needs: s.Needs, Platform: s.Platform, Decisions: core.CloneDecisions(s.Decisions)}
+	next := &core.TechStack{Mode: s.Mode, Needs: s.Needs, Platform: s.Platform, Decisions: core.CloneDecisions(s.Decisions), Plan: s.Plan}
 	changed := map[string]bool{}
 	for _, a := range order {
 		c := want[a]
@@ -78,7 +79,6 @@ func Propose(s *core.TechStack, changes []Change, source, request, note string) 
 			delete(changed, a)
 		}
 	}
-	settle(next, changed, true)
 	diff := Diff(s.Decisions, next.Decisions)
 	if len(diff) == 0 {
 		if s.Proposal != nil {
@@ -100,7 +100,6 @@ func Propose(s *core.TechStack, changes []Change, source, request, note string) 
 			review = append(review, core.TechIssue{Level: "warning", Area: d.Area, Message: d.Review})
 		}
 	}
-	fillAlternatives(next)
 	prev := s.State()
 	if s.Proposal != nil {
 		prev = s.Proposal.Previous
@@ -165,7 +164,7 @@ func ProposeDecisions(s *core.TechStack, next []core.TechDecision, plan *core.Te
 	if s.Proposal != nil {
 		return ErrPending
 	}
-	cand := &core.TechStack{Mode: s.Mode, Profile: s.Profile, Needs: s.Needs, Platform: s.Platform, Decisions: core.CloneDecisions(next), Plan: plan}
+	cand := &core.TechStack{Mode: s.Mode, Needs: s.Needs, Platform: s.Platform, Decisions: core.CloneDecisions(next), Plan: plan}
 	diff := Diff(s.Decisions, cand.Decisions)
 	if len(diff) == 0 {
 		return ErrNoChange
@@ -241,6 +240,9 @@ func Approve(s *core.TechStack) error {
 	}
 	if s.Proposal != nil {
 		return ErrPending
+	}
+	if s.Mode != core.StructureExisting && len(s.Decisions) == 0 {
+		return ErrNotDesigned
 	}
 	Refresh(s)
 	if r := s.Reviews(); len(r) > 0 {
@@ -339,13 +341,11 @@ func Impact(s *core.TechStack, changes []core.TechChange) []core.TechImpact {
 	var out []core.TechImpact
 	for _, c := range changes {
 		a := append([]string(nil), affects[c.Area]...)
-		if c.Area == core.TechFrontend || c.Area == core.TechMobile || c.Area == core.TechBackend {
-			if s.Choice(core.TechRepository) == core.RepoMonorepo {
-				a = append(a, "paket bersama (packages/ui, packages/types)")
-			}
+		if len(a) == 0 {
+			a = []string{"bagian sistem yang memakai " + AreaName(c.Area)}
 		}
 		if c.Area == core.TechArchitecture || c.Area == core.TechRepository {
-			a = append(a, "struktur project: diperbarui bila masih rekomendasi; bila sudah diubah/disetujui, ditandai tidak sesuai (tidak diubah otomatis)")
+			a = append(a, "struktur project: tidak diubah otomatis; minta AI menganalisis ulang struktur bila tidak lagi sesuai")
 		}
 		out = append(out, core.TechImpact{Area: c.Area, Affects: a, Design: core.AffectsDesign(c.Area)})
 	}
@@ -361,11 +361,10 @@ func Refresh(s *core.TechStack) {
 
 func none(v string) bool { return v == "" || v == core.TechNone }
 
-// Validate checks the stack against its needs and itself. Only real
-// incompatibilities are errors; risks and gaps are warnings. Optional
-// components (cache, messaging, workers, observability) are never required
-// for their own sake. In an existing project an error between technologies
-// the code already uses is only a warning: the code runs that way today.
+// Validate checks what Foundry can check without knowing technologies:
+// a decision without a choice, and a replaced technology of the code
+// (a migration). Compatibility between technologies is the AI plan's
+// review (techplan), never a list kept in Foundry.
 func Validate(s *core.TechStack) []core.TechIssue {
 	if s == nil {
 		return nil
@@ -374,141 +373,12 @@ func Validate(s *core.TechStack) []core.TechIssue {
 	add := func(level, area, msg string, args ...any) {
 		out = append(out, core.TechIssue{Level: level, Area: area, Message: fmt.Sprintf(msg, args...)})
 	}
-	has := func(n string) bool { return slices.Contains(s.Needs, n) }
-	ch := s.Choice
-	lang := func(area string) string { return langOf(s, area) }
-	present := func(area string) bool { return s.Decision(area) != nil }
-
 	for _, d := range s.Decisions {
-		if fromExisting(s, d) && d.Override == nil {
-			continue
-		}
-		for _, v := range parts(d.Area, d.Choice()) {
-			// A plan's own choice is checked by the plan's compatibility review;
-			// only the user's choice outside the catalog is flagged here.
-			if !none(v) && option(d.Area, v) == nil && (s.Plan == nil || d.Override != nil) {
-				add("warning", d.Area, "%s belum dikenal Foundry; kecocokannya dengan pilihan lain tidak diperiksa otomatis.", v)
-			}
+		if strings.TrimSpace(d.Choice()) == "" {
+			add("error", d.Area, "%s belum punya pilihan teknologi.", AreaName(d.Area))
 		}
 		if d.Override != nil && fromExisting(s, d) {
 			add("warning", d.Area, "%s sudah dipakai di kode; menggantinya dengan %s adalah migrasi kode dan data yang harus direncanakan.", d.Recommended, d.Choice())
-		}
-	}
-	// Errors: combinations that cannot work as chosen.
-	if v := ch(core.TechSearch); v == "PostgreSQL full-text search" && ch(core.TechDatabase) != "PostgreSQL" {
-		add("error", core.TechSearch, "PostgreSQL full-text search butuh database PostgreSQL, sedangkan database %s.", orNone(ch(core.TechDatabase)))
-	}
-	if ch(core.TechDeployment) == "Static hosting + CDN" {
-		if s.Platform.Backend {
-			add("error", core.TechDeployment, "Static hosting tidak bisa menjalankan backend %s; pilih server/container.", ch(core.TechBackend))
-		} else if strings.Contains(ch(core.TechFrontend), "Next.js") {
-			add("warning", core.TechDeployment, "Next.js dengan render server tidak jalan di static hosting; pakai static export atau Node server.")
-		}
-	}
-	if o := option(core.TechUI, ch(core.TechUI)); o != nil && o.Framework != "" {
-		if fam := family(s); fam != "" && fam != "?" && fam != o.Framework {
-			add("error", core.TechUI, "%s dibuat untuk %s, sedangkan UI ditulis dengan %s.", o.Value, o.Framework, fam)
-		}
-	}
-	if ch(core.TechAPI) == "tRPC" {
-		if l := lang(core.TechBackend); l != "" && l != "TypeScript" {
-			add("error", core.TechAPI, "tRPC hanya untuk backend TypeScript, sedangkan backend %s (%s).", ch(core.TechBackend), l)
-		}
-		if s.Platform.Mobile && lang(core.TechMobile) != "" && lang(core.TechMobile) != "TypeScript" {
-			add("error", core.TechAPI, "tRPC hanya bisa dipanggil klien TypeScript; mobile %s butuh REST/GraphQL.", ch(core.TechMobile))
-		}
-	}
-	if o := option(core.TechMobile, ch(core.TechMobile)); o != nil {
-		if o.Platform == core.PlatformAndroid && s.Platform.IOS || o.Platform == core.PlatformIOS && s.Platform.Android {
-			add("error", core.TechMobile, "%s hanya berjalan di %s, padahal target platform mencakup Android dan iOS; pilih cross-platform atau dua aplikasi native.", o.Value, o.Platform)
-		}
-	}
-	// Warnings: risks of the combination.
-	if ch(core.TechWorkers) == workersSeparate && none(ch(core.TechCache)) && none(ch(core.TechMessaging)) {
-		add("warning", core.TechWorkers, "Worker terpisah butuh antrean: pakai Redis, broker messaging, atau tabel job di database.")
-	}
-	if m := ch(core.TechMessaging); strings.HasPrefix(m, "Redis ") && ch(core.TechCache) != "Redis" {
-		add("warning", core.TechMessaging, "%s butuh server Redis, sedangkan cache “%s”; Redis tetap harus dioperasikan.", m, orNone(ch(core.TechCache)))
-	}
-	if ch(core.TechAPI) == "gRPC" && s.Platform.Web {
-		add("warning", core.TechAPI, "Browser tidak memanggil gRPC langsung; web butuh gRPC-Web/proxy atau endpoint REST.")
-	}
-	langs := languages(s)
-	for _, area := range []string{core.TechTesting, core.TechQuality} {
-		for _, v := range parts(area, ch(area)) {
-			o := option(area, v)
-			if o == nil {
-				continue
-			}
-			targets := o.Langs
-			if len(targets) == 0 {
-				targets = []string{o.Language}
-			}
-			if !slices.ContainsFunc(targets, func(l string) bool { return slices.Contains(langs, l) }) {
-				add("warning", area, "%s untuk %s, tapi stack tidak memakai bahasa itu.", v, strings.Join(targets, "/"))
-			}
-		}
-	}
-	if present(core.TechBackend) && none(ch(core.TechDatabase)) {
-		add("warning", core.TechDatabase, "Backend tanpa database: data tidak tersimpan permanen.")
-	}
-	// Needs that the stack does not cover.
-	if has("realtime") && present(core.TechCache) && none(ch(core.TechCache)) && none(ch(core.TechMessaging)) {
-		add("warning", core.TechCache, "Kebutuhan realtime dengan lebih dari satu instance backend butuh pub/sub atau state bersama (mis. Redis).")
-	}
-	if has("high_concurrency") && slices.Contains([]string{"TypeScript", "Python", "PHP", "Ruby"}, lang(core.TechBackend)) {
-		add("warning", core.TechBackend, "Kebutuhan konkurensi tinggi; backend %s (%s) perlu scaling horizontal dan benchmark. Go, Rust atau Java lebih aman.", ch(core.TechBackend), lang(core.TechBackend))
-	}
-	if has("transactions") && strings.Contains(strings.ToLower(ch(core.TechDatabase)), "mongo") {
-		add("warning", core.TechDatabase, "Ada transaksi keuangan; MongoDB mendukung transaksi ACID multi-dokumen dengan batasan. PostgreSQL lebih aman untuk ledger.")
-	}
-	if has("seo") && strings.Contains(ch(core.TechFrontend), "Vite") {
-		add("warning", core.TechFrontend, "Halaman publik butuh SEO, tapi %s dirender di browser; pilih Next.js atau tambahkan prerender.", ch(core.TechFrontend))
-	}
-	if has("files") && present(core.TechStorage) && none(ch(core.TechStorage)) {
-		add("warning", core.TechStorage, "Ada kebutuhan upload file, tapi file storage “Tidak perlu”.")
-	}
-	if has("search") && present(core.TechSearch) && none(ch(core.TechSearch)) {
-		add("warning", core.TechSearch, "Ada kebutuhan pencarian teks, tapi search “Tidak perlu”; query LIKE lambat pada data besar.")
-	}
-	if has("ai") && present(core.TechWorkers) && ch(core.TechWorkers) != workersSeparate {
-		add("warning", core.TechWorkers, "Panggilan AI bisa puluhan detik; tanpa worker terpisah request HTTP tertahan.")
-	}
-	if has("webhook") && present(core.TechWorkers) && ch(core.TechWorkers) != workersSeparate {
-		add("warning", core.TechWorkers, "Webhook sebaiknya diproses lewat antrean, bukan sinkron di request; pilih worker terpisah.")
-	}
-	if has("high_concurrency") && ch(core.TechObservability) == "Log terstruktur + health check" {
-		add("warning", core.TechObservability, "Beban tinggi butuh metrics dan tracing untuk menemukan bottleneck, bukan hanya log.")
-	}
-	if has("offline") && s.Platform.Web && !s.Platform.Mobile {
-		add("warning", core.TechFrontend, "Kebutuhan offline di web butuh PWA (service worker + penyimpanan lokal); rencanakan sejak awal.")
-	}
-	// Architecture, repository and deployment consistency.
-	arch, repo := ch(core.TechArchitecture), ch(core.TechRepository)
-	if arch == core.ArchMicroservices {
-		if present(core.TechMessaging) && none(ch(core.TechMessaging)) {
-			add("warning", core.TechMessaging, "Microservices tanpa messaging: layanan saling memanggil langsung dan ikut gagal bersama.")
-		}
-		if !has("independent_scaling") {
-			add("warning", core.TechArchitecture, "Microservices tanpa kebutuhan skala/deploy independen menambah biaya operasional; Modular Monolith biasanya cukup.")
-		}
-	}
-	if ch(core.TechDeployment) == "Kubernetes" && arch != core.ArchMicroservices {
-		add("warning", core.TechDeployment, "Kubernetes untuk %s berlebihan; Docker Compose atau PaaS lebih sederhana.", arch)
-	}
-	if repo == core.RepoMonorepo {
-		if l := lang(core.TechBackend); l != "" && l != "TypeScript" && (s.Platform.Web || s.Platform.Mobile) {
-			add("warning", core.TechRepository, "packages/types (TypeScript) tidak bisa dipakai backend %s; pakai kontrak API (OpenAPI) dan generate type.", l)
-		}
-		if lang(core.TechMobile) == "Dart" && s.Platform.Web {
-			add("warning", core.TechRepository, "packages/ui berbasis web tidak bisa dipakai Flutter; UI mobile dibuat terpisah.")
-		}
-	}
-	if s.Mode == core.StructureExisting {
-		for i := range out {
-			if d := s.Decision(out[i].Area); out[i].Level == "error" && d != nil && d.Override == nil && fromExisting(s, *d) {
-				out[i].Level = "warning"
-			}
 		}
 	}
 	return out

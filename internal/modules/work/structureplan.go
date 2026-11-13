@@ -52,12 +52,12 @@ PROJECT: `)
 		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + r.Rejected + "\n\n")
 	}
 	b.WriteString(`Rules for every alternative:
-- type must be one of: simple | modular | monorepo | microservices, and must agree with the approved architecture and repository decisions.
-- apps must match the target platform exactly: web, mobile (android/ios), desktop, cli. Do not invent a platform the product does not have.
-- a backend platform needs exactly one API service unless the technology decision is Microservices; then one service per domain that is deployed and scaled independently.
+- type names the architecture style of the alternative in your own words (there is no fixed list); it must agree with the approved architecture and repository decisions.
+- apps must cover the target platform: a client platform needs an app. Do not invent a platform the product does not have. How many services there are and how they split is your design; justify it in the reasons.
+- every app, service, worker and package has the folder YOU chose in path, and every module its folder in module_paths. Foundry derives no folder and has no template: choose the layout that fits this system and its technologies (their ecosystem conventions included).
 - services and modules are business domain boundaries. Put every domain from the blueprint in exactly one place (a service or a module), in EVERY alternative. When the platform has no backend, keep the domains as modules of the single service that owns the app's data; never drop a domain, rename it away from its id, or turn it into a package. Never use controllers/, services/ or other file-type folders as module boundaries, and never use CRUD names (create-booking).
 - every app, service, module, worker and package needs a concrete reason/responsibility in this system. Module reasons go in the service's module_reasons map.
-- add packages/ only when code is really shared by at least two consumers. Add workers only when the blueprint has background jobs and the technology uses a separate worker.
+- add a shared package only when code is really shared by at least two consumers. Add workers only when the blueprint has background jobs that run outside the request.
 - the rules list contains the internal module layout and conventions; dependency_rules contains only the allowed dependencies between parts (what may import what, and what must go through a public interface or event). Keep both short and checkable.
 - alternatives must differ in a real trade-off (fewer folders vs clearer isolation, one backend vs separate services, shared packages vs local code), not in names. Never return the same folder tree twice.
 - score each alternative 1-5 (5 best) for maintainability, simplicity, extensibility, testability and separation_of_concerns; score complexity 1 (simple) to 5 (complex). Be honest: the recommendation is not automatically the most layered or the biggest one.
@@ -72,18 +72,18 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block:
   "recommendation": "<id of the recommended alternative>",
   "reason": "<why this alternative is the best fit, in Indonesian>",
   "alternatives": [
-    {"id": "recommended", "name": "<short name>", "summary": "<the idea in one sentence>", "type": "modular",
-     "ir": {"type": "modular",
-       "apps": [{"name": "web", "reason": "<why this app exists>"}],
-       "services": [{"name": "api", "reason": "<why one API>", "modules": ["booking"], "module_reasons": {"booking": "<what the booking module owns>"}}],
-       "workers": [], "packages": [{"name": "contracts", "reason": "<what is shared and by whom>"}],
-       "docs": "docs/", "rules": ["<internal module layout or convention>"]},
+    {"id": "recommended", "name": "<short name>", "summary": "<the idea in one sentence>", "type": "<the style you designed>",
+     "ir": {"type": "<the style you designed>",
+       "apps": [{"name": "<app>", "path": "<its folder>/", "reason": "<why this app exists>"}],
+       "services": [{"name": "<service>", "path": "<its folder>/", "reason": "<why it exists>", "modules": ["booking"], "module_paths": {"booking": "<folder of booking>/"}, "module_reasons": {"booking": "<what the booking module owns>"}}],
+       "workers": [], "packages": [{"name": "<package>", "path": "<its folder>/", "reason": "<what is shared and by whom>"}],
+       "docs": "<documentation folder>/", "rules": ["<internal module layout or convention>"]},
      "evaluation": {"maintainability": 4, "simplicity": 5, "extensibility": 3, "testability": 4, "separation_of_concerns": 4, "complexity": 2},
      "pros": ["<concrete advantage>"], "cons": ["<concrete cost>"], "tradeoffs": ["<what is given up>"]},
     {"id": "alternative-2", "name": "<short name>", "summary": "<the idea in one sentence>", "type": "...", "ir": {}, "evaluation": {}, "pros": [], "cons": [], "tradeoffs": []}
   ]
 }
-Return 2 or 3 alternatives. Paths are derived by Foundry from names, so do not invent them.`)
+Return 2 or 3 alternatives. Every path is relative to the repository root and ends with "/"; Foundry keeps the paths you chose.`)
 	return b.String()
 }
 
@@ -259,7 +259,7 @@ func writeStructureBrief(b *strings.Builder, p *core.Project, title string) {
 	}
 	ir := s.IR.Clone()
 	structure.Normalize(ir)
-	fmt.Fprintf(b, "%s (type %s; source of truth for folders and dependencies; the coding agent must not invent another):\n", title, ir.Type)
+	fmt.Fprintf(b, "%s (style %s; source of truth for folders and dependencies; the coding agent must not invent another):\n", title, ir.Type)
 	b.WriteString("```text\n")
 	b.WriteString(structure.Tree(ir))
 	b.WriteString("```\n")
@@ -267,7 +267,7 @@ func writeStructureBrief(b *strings.Builder, p *core.Project, title string) {
 		for _, part := range ps {
 			fmt.Fprintf(b, "- %s: %s\n", part.Path, part.Reason)
 			for _, m := range part.Modules {
-				fmt.Fprintf(b, "  - %s%s: %s\n", part.Path, m, part.ModuleReasons[m])
+				fmt.Fprintf(b, "  - %s: %s\n", structure.ModulePath(part, m), part.ModuleReasons[m])
 			}
 		}
 	}

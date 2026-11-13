@@ -22,9 +22,9 @@ func planProject() *core.Project {
 		}},
 		Features: []core.Feature{{ID: "FEAT-001", Name: "Janji Temu", RequirementIDs: []string{"REQ-001"}}},
 		Structure: &core.Structure{Mode: core.StructureNew,
-			IR: &core.StructureIR{Type: core.StructModular,
-				Apps: []core.StructurePart{{Name: "web", Reason: "Admin memakai web"}},
-				Services: []core.StructurePart{{Name: "api", Reason: "API tunggal",
+			IR: &core.StructureIR{Type: "Modular monolith",
+				Apps: []core.StructurePart{{Name: "web", Path: "apps/web/", Reason: "Admin memakai web"}},
+				Services: []core.StructurePart{{Name: "api", Path: "apps/api/", Reason: "API tunggal",
 					Modules:       []string{"booking", "billing"},
 					ModuleReasons: map[string]string{"booking": "Janji", "billing": "Tagihan"}}}},
 			PlanRequest: &core.StructurePlanRequest{SourceHash: "abc"},
@@ -72,7 +72,7 @@ func TestStructurePlanPromptAndApply(t *testing.T) {
 	if plan == nil || plan.SourceHash != "abc" || len(plan.Alternatives) != 2 || plan.Recommendation != "recommended" {
 		t.Fatalf("plan = %+v", plan)
 	}
-	if p.Structure.PlanRequest != nil || p.Structure.Recommended != core.StructModular {
+	if p.Structure.PlanRequest != nil || p.Structure.Recommended != "modular" {
 		t.Fatalf("structure = %+v", p.Structure)
 	}
 	if plan.Selected != "" || plan.GeneratedAt.IsZero() {
@@ -98,7 +98,29 @@ func TestWriteStructureBriefCarriesRules(t *testing.T) {
 	var b strings.Builder
 	writeStructureBrief(&b, p, "STRUCTURE")
 	got := b.String()
-	if !strings.Contains(got, "apps/web/") || !strings.Contains(got, "apps/web hanya memakai") || !strings.Contains(got, "Janji") {
+	if !strings.Contains(got, "- apps/web/: Admin") || !strings.Contains(got, "- apps/api/booking/: Janji") || !strings.Contains(got, "apps/web hanya memakai") {
 		t.Fatalf("brief = %s", got)
+	}
+}
+
+// No prompt hands the AI a catalog, profile, baseline, closed list of
+// architectures or a folder layout of Foundry's: the AI designs them.
+func TestPromptsCarryNoCatalogOrTemplate(t *testing.T) {
+	p := planProject()
+	p.Stack = &core.TechStack{Mode: core.StructureNew, Platform: core.TechPlatform{Web: true, Backend: true},
+		Decisions: []core.TechDecision{{Area: core.TechBackend, Recommended: "Gleam + Wisp", Source: core.SourceAI}},
+		Request:   "ganti backend"}
+	p.Structure.Request = "pisahkan billing"
+	prompts := map[string]string{
+		"unified": UnifiedPlanPrompt(p), "tech": TechPlanPrompt(p), "structure plan": StructurePlanPrompt(p),
+		"stack change": StackPrompt(p), "structure change": StructurePrompt(p), "repo": RepoPlanPrompt(p),
+	}
+	for name, prompt := range prompts {
+		for _, bad := range []string{"CATALOG REFERENCE", "KNOWN OPTIONS", "FOUNDRY BASELINE", "PROFILE HINT", "simple | modular",
+			"simple|modular", `"Modular Monolith"`, `"Monorepo"`, "default folder", "Paths are derived", "apps/api/modules"} {
+			if strings.Contains(prompt, bad) {
+				t.Errorf("%s prompt carries %q", name, bad)
+			}
+		}
 	}
 }

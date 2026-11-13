@@ -49,26 +49,17 @@ CURRENT DECISION (area: choice — reason):
 		fmt.Fprintf(&b, " — %s\n", d.Reason)
 	}
 	fmt.Fprintf(&b, "\nTechnical needs: %s\n", strings.Join(s.Needs, ", "))
-	b.WriteString("\nKNOWN OPTIONS (prefer these exact names; architecture, repository and cache must be one of them; other areas may name another technology):\n")
-	for _, area := range core.TechAreas {
-		if s.Decision(area) == nil {
-			continue
-		}
-		var vs []string
-		for _, o := range stack.Catalog[area] {
-			vs = append(vs, o.Value)
-		}
-		fmt.Fprintf(&b, "- %s: %s\n", area, strings.Join(vs, " | "))
-	}
 	fmt.Fprintf(&b, "\nUSER REQUEST:\n%s\n", s.Request)
 	b.WriteString(`
 Answer with one JSON object only:
 {"changes":[{"area":"backend","value":"Rust + Axum","reason":"<why, in the user's words, Indonesian>"}],
  "note":"<one Indonesian sentence on what you changed, or why nothing>"}
-Use only areas from CURRENT DECISION. value is "Tidak perlu" to remove an optional component.
-Replacing a technology "already used in the code" is a migration: change it only when the request
-asks for it explicitly, and give the user's reason. Areas that depend on a change (UI library on
-the frontend, testing tools on the language, ...) are re-evaluated by Foundry; do not list them.
+Any technology may be named: Foundry has no list of allowed values. An area not in CURRENT
+DECISION may be added when the request asks for it (area is a short snake_case name). value is
+"Tidak perlu" to remove a component. Replacing a technology "already used in the code" is a
+migration: change it only when the request asks for it explicitly, and give the user's reason.
+When the change makes another area incompatible (UI library of a replaced frontend, testing tool
+of a replaced language, ...), change that area too and say why.
 Return "changes": [] when the request asks for nothing that can be changed.
 `)
 	return b.String()

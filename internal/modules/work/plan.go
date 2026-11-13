@@ -71,7 +71,7 @@ func UnifiedPlanPrompt(p *core.Project) string {
 	var b strings.Builder
 	b.WriteString(`You are the unified blueprint architect of Foundry. Foundry designs software and writes instructions for an external coding agent; it never implements and you must not write application code or touch files.
 Design TECHNOLOGY, ARCHITECTURE and REPOSITORY STRUCTURE as ONE consistent decision. Analyze the system once. Do not repeat the analysis per section. Every technology choice must fit the architecture; every folder must implement that architecture and those technologies. If a choice in one section forces a change in another, resolve it in this answer.
-You are free. Foundry's catalog and profiles are a REFERENCE, not a menu. Pick the simplest stack, architecture and folder tree that meet THIS system's needs. No folder, service, module or technology without a named need.
+You are free. Foundry keeps no catalog, profile, structure template or folder layout of its own: the stack, the architecture style and every folder are yours to design for THIS system. Pick the simplest ones that meet its needs. No folder, service, module or technology without a named need.
 Do not invent facts. When the requirements do not say something that matters, list it in technology.context.unknowns and state the assumption; never present an assumption as a requirement.
 Write every human-readable text in the same language as the story.
 
@@ -94,12 +94,12 @@ PROJECT: `)
 			fmt.Fprintf(&b, "DOMAINS THAT MUST APPEAR IN EVERY ALTERNATIVE (exact ids): %s\n", strings.Join(domains, ", "))
 			b.WriteString("Place every id in exactly one service or module. An alternative that misses one domain is invalid.\n\n")
 		}
-		writeStructureBrief(&b, p, "CURRENT STRUCTURE (heuristic before this analysis; you may recommend a better fit)")
+		writeStructureBrief(&b, p, "CURRENT STRUCTURE (the decision before this analysis; you may recommend a better fit)")
 	}
 	if hasPlanPart(parts, KindRepo) {
 		writeRepoAnchors(&b, p)
 		if p.Structure != nil && p.Structure.IR != nil {
-			b.WriteString("If you recommend a different architecture alternative, the repository must implement THAT alternative's parts, not the current heuristic folders. Every part of the recommended alternative maps to exactly one folder.\n\n")
+			b.WriteString("If you recommend a different architecture alternative, the repository must implement THAT alternative's parts, not the current folders. Every part of the recommended alternative maps to exactly one folder.\n\n")
 		}
 	}
 	writeUnifiedFrozen(&b, p, open)
@@ -138,10 +138,10 @@ PROJECT: `)
 		writeKey(`  "technology": { "approach": "...", "summary": "...", "rationale": "...", "context": {"summary":"...","facts":[],"unknowns":[],"assumptions":[]}, "items": [{"area":"backend","group":"stack","technology":"...","purpose":"...","fulfills":["REQ-001"],"driver":"requirement","reasoning":"...","pros":["..."],"cons":["..."],"tradeoffs":["..."],"depends_on":["database"],"integration":"...","operational":"...","alternatives":[{"technology":"...","why":"...","difference":"...","pros":["..."],"cons":["..."]}],"confidence":"medium"` + existingActionHint(p) + `}], "compatibility": [{"area":"runtime","status":"compatible","between":["backend","database"],"note":"...","basis":"..."}], "evaluation": {"summary":"...","criteria":[{"name":"requirement_coverage","score":4,"reason":"...","evidence":["backend"]}], "findings":[]}, "consistency": [{"area":"requirements","status":"consistent","note":"..."}] }`)
 	}
 	if hasPlanPart(parts, KindStructure) {
-		writeKey(`  "architecture": { "summary": "...", "drivers": ["..."], "domains": [{"name":"booking","responsibility":"..."}], "dependency_rules": ["..."], "recommendation": "recommended", "reason": "...", "alternatives": [{"id":"recommended","name":"...","summary":"...","type":"modular","ir":{"type":"modular","apps":[{"name":"web","reason":"..."}],"services":[{"name":"api","reason":"...","modules":["booking"],"module_reasons":{"booking":"..."}}],"workers":[],"packages":[],"docs":"docs/","rules":["..."]},"evaluation":{"maintainability":5,"simplicity":5,"extensibility":3,"testability":4,"separation_of_concerns":4,"complexity":2}}] }`)
+		writeKey(`  "architecture": { "summary": "...", "drivers": ["..."], "domains": [{"name":"booking","responsibility":"..."}], "dependency_rules": ["..."], "recommendation": "recommended", "reason": "...", "alternatives": [{"id":"recommended","name":"...","summary":"...","type":"<style you designed>","ir":{"type":"<style you designed>","apps":[{"name":"<app>","path":"<folder>/","reason":"..."}],"services":[{"name":"<service>","path":"<folder>/","reason":"...","modules":["booking"],"module_paths":{"booking":"<folder>/"},"module_reasons":{"booking":"..."}}],"workers":[],"packages":[],"docs":"<folder>/","rules":["..."]},"evaluation":{"maintainability":5,"simplicity":5,"extensibility":3,"testability":4,"separation_of_concerns":4,"complexity":2}}] }`)
 	}
 	if hasPlanPart(parts, KindRepo) {
-		writeKey(`  "repository": { "approach": "...", "topology": "...", "summary": "...", "rationale": "...", "nodes": [{"path":"apps/","type":"dir","role":"source","responsibility":"...","owner":"platform","reason":"...","allowed":["..."],"forbidden":["..."]}], "modules": [{"module":"booking","locations":[{"path":"apps/api/modules/booking/","role":"api"}],"frontend":true,"backend":true}], "dependency": {"direction":"...","allowed":[{"from":"booking","to":"shared","reason":"..."}],"forbidden":[{"from":"shared","to":"booking","reason":"..."}],"communication":[],"interfaces":[],"shared_rules":["..."],"cycle_guard":"..."}, "rules": ["..."], "evaluation": {"summary":"...","criteria":[{"name":"cohesion","score":4,"reason":"..."}],"findings":[]}, "consistency": [{"area":"project_modules","status":"consistent","note":"..."}], "decisions": [{"title":"...","choice":"...","reason":"...","alternatives":["..."],"tradeoff":"..."}] }`)
+		writeKey(`  "repository": { "approach": "...", "topology": "...", "summary": "...", "rationale": "...", "nodes": [{"path":"<folder>/","type":"dir","role":"source","responsibility":"...","owner":"platform","reason":"...","allowed":["..."],"forbidden":["..."]}], "modules": [{"module":"booking","locations":[{"path":"<folder of booking>/","role":"..."}],"frontend":true,"backend":true}], "dependency": {"direction":"...","allowed":[{"from":"booking","to":"shared","reason":"..."}],"forbidden":[{"from":"shared","to":"booking","reason":"..."}],"communication":[],"interfaces":[],"shared_rules":["..."],"cycle_guard":"..."}, "rules": ["..."], "evaluation": {"summary":"...","criteria":[{"name":"cohesion","score":4,"reason":"..."}],"findings":[]}, "consistency": [{"area":"project_modules","status":"consistent","note":"..."}], "decisions": [{"title":"...","choice":"...","reason":"...","alternatives":["..."],"tradeoff":"..."}] }`)
 	}
 	if existingProject(p) {
 		writeKey(`  "adaptation": [{"action":"reuse","target":"existing module or path","module":"id","reason":"...","files":["path"]}]`)
@@ -247,9 +247,9 @@ const unifiedExistingRules = `EXISTING PROJECT — classify every recommendation
 
 const unifiedStructureRules = `ARCHITECTURE RULES:
 - design 2-3 complete alternatives that genuinely differ in a trade-off, not in names.
-- type is simple | modular | monorepo | microservices and must agree with the technology architecture and repository decisions in this same answer.
-- apps must match the target platform: web, mobile (android/ios), desktop, cli.
-- a backend platform needs exactly one API service unless technology architecture is Microservices; then one service per independently deployed domain.
+- type names the architecture style of the alternative in your own words (there is no fixed list); it must agree with the technology architecture and repository decisions in this same answer.
+- apps must cover the target platform (a client platform needs an app); how many apps, services, workers and packages, and how they are split, is your design.
+- every app, service, worker and package has the folder YOU chose in path, and every module its folder in module_paths. Foundry derives no folder; choose the layout that fits this system and its technologies (ecosystem conventions included), not a generic template.
 - services and modules are business domain boundaries. Put every domain in exactly one place in EVERY alternative.
 - score maintainability, simplicity, extensibility, testability, separation_of_concerns 1-5 (5 best) and complexity 1 (simple) to 5 (complex).
 - recommendation is the alternative that best fits THIS system. Prefer fewer moving parts when the difference is small.

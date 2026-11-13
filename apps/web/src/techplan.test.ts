@@ -9,7 +9,7 @@ const item = (area: string, group: string, extra: Partial<TechItem> = {}): TechI
 const plan = (extra: Partial<TechPlan> = {}): TechPlan => ({
   approach: "A", summary: "S", context: { summary: "c" },
   items: [
-    item("backend", "stack", { technology: "Elixir + Phoenix", in_catalog: false }),
+    item("backend", "stack", { technology: "Elixir + Phoenix" }),
     item("database", "data", { technology: "TimescaleDB" }),
     item("authentication", "app_infra", { technology: "Phoenix.Session" }),
     item("deployment", "operations", { technology: "Fly.io Machines" }),
@@ -18,7 +18,7 @@ const plan = (extra: Partial<TechPlan> = {}): TechPlan => ({
   ],
   evaluation: { criteria: [], findings: [{ category: "unverified", severity: "info", message: "ai", source: "ai" }], score: 66 },
   analysis: {
-    items: 6, outside_catalog: 3, unverified: 1,
+    items: 6, unverified: 1,
     issues: [{ level: "warning", message: "w" }, { level: "error", message: "e" }],
     findings: [{ category: "unverified", severity: "info", message: "computed", source: "computed" }],
     checks: [{ area: "requirements", status: "consistent", source: "computed" }],
@@ -49,7 +49,7 @@ describe("techplan helpers", () => {
         { category: "other", severity: "warning", message: "risk", resolution: "fix" },
         { category: "other", severity: "error", message: "e" },
       ] },
-      analysis: { items: 6, outside_catalog: 3, unverified: 1, diverged: ["data_migration"], issues: [{ level: "warning", message: "w" }, { level: "error", message: "e" }] },
+      analysis: { items: 6, unverified: 1, diverged: ["data_migration"], issues: [{ level: "warning", message: "w" }, { level: "error", message: "e" }] },
     });
     expect(planNotes(p).map((n) => n.text)).toEqual(["e", "w", "risk Solusi: fix", "Evaluasi belum mencerminkan pilihan user: data migration."]);
   });
@@ -57,7 +57,7 @@ describe("techplan helpers", () => {
   it("gates approval on a missing, stale or conflicting plan", () => {
     expect(planGate({} as Project)).toBeNull();
     expect(planGate({ stack: { plan: plan() } } as unknown as Project)).toMatch(/masalah/);
-    expect(planGate({ stack: { plan: plan({ stale: true, analysis: { items: 1, outside_catalog: 0, unverified: 0 } }) } } as unknown as Project)).toMatch(/Sumber/);
-    expect(planGate({ stack: { plan: plan({ analysis: { items: 1, outside_catalog: 0, unverified: 0 } }) } } as unknown as Project)).toBeNull();
+    expect(planGate({ stack: { plan: plan({ stale: true, analysis: { items: 1, unverified: 0 } }) } } as unknown as Project)).toMatch(/Sumber/);
+    expect(planGate({ stack: { plan: plan({ analysis: { items: 1, unverified: 0 } }) } } as unknown as Project)).toBeNull();
   });
 });

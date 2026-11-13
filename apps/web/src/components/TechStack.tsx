@@ -7,28 +7,21 @@ import {
   changeText, DECISION_STATE, decisionState, fromExisting, needsApproval, NONE, TECH_AREA, TECH_SOURCE, TECH_STATUS,
   techChoice, techLang, techReview, techRuntime, techState, techVersion,
 } from "../tech";
-import type { Project, StackCatalog, TechArea, TechDecision, TechGroup, TechIssue, TechOption, TechProposal, TechStack } from "../types";
+import type { Project, StackAreas, TechArea, TechDecision, TechGroup, TechIssue, TechProposal, TechStack } from "../types";
 
-const NEED: Record<string, string> = {
-  realtime: "realtime", offline: "offline", seo: "SEO", ai: "AI", high_concurrency: "konkurensi tinggi", low_latency: "latency rendah",
-  flexible_schema: "skema fleksibel", transactions: "transaksi", independent_scaling: "skala independen", enterprise: "enterprise",
-  files: "upload file", search: "pencarian teks", webhook: "webhook",
-};
-// These shape the project structure and must be a known option; the rest
-// also accept the user's own choice.
-const CLOSED = new Set<TechArea>(["cache", "architecture", "repository"]);
 const SOURCE: Record<string, string> = { recommend: "rekomendasi", user: "diubah user", ai: "permintaan ke AI", structure: "struktur dipilih" };
-// Used until the catalog (with the groups) has loaded.
+// Used until the groups have loaded.
 const ALL: TechGroup[] = [{ id: "all", title: "Teknologi", description: "", areas: Object.keys(TECH_AREA) as TechArea[] }];
 
-// Technology decision workspace, grouped by domain: the AI recommends, the
-// user changes (by hand or in words), sees what follows and what it
-// affects, applies and approves. A recommendation is never an approval.
+// Technology decision workspace, grouped by domain: the AI designs the
+// technology (Foundry has no catalog or default), the user changes it (by
+// hand or in words, any technology), sees what it affects, applies and
+// approves. A recommendation is never an approval.
 export function TechStackPanel({ project }: { project: Project }) {
   const { run, pending } = useProject();
-  const [cat, setCat] = useState<StackCatalog | null>(null);
+  const [cat, setCat] = useState<StackAreas | null>(null);
   const [edit, setEdit] = useState<TechArea | null>(null);
-  useEffect(() => { api.stackCatalog().then(setCat, () => {}); }, []);
+  useEffect(() => { api.stackAreas().then(setCat, () => {}); }, []);
   const s = project.stack;
   const busy = isWorking(project) || pending === "stack";
   const finalized = project.stage === "READY";
@@ -36,13 +29,12 @@ export function TechStackPanel({ project }: { project: Project }) {
     return (
       <section className="info-sec">
         <h3>Teknologi</h3>
-        <p className="small muted">Belum ada rekomendasi teknologi.</p>
-        {project.platform && <button disabled={busy || finalized} onClick={() => void run("stack", api.recommendStack)}>Buat rekomendasi</button>}
+        <p className="small muted">Teknologi belum dirancang.</p>
+        {project.platform && <button disabled={busy || finalized} onClick={() => void run("stack", api.recommendStack)}>Baca fakta project</button>}
       </section>
     );
   }
   const state = techState(s);
-  const profile = cat?.profiles.find((p) => p.id === s.profile);
   const editable = !finalized && !busy && !s.request;
   const approval = needsApproval(s);
   const unused = s.decisions.filter((d) => techChoice(d) === NONE);
@@ -50,7 +42,7 @@ export function TechStackPanel({ project }: { project: Project }) {
   const reviews = s.decisions.filter((d) => d.review);
   const review = techReview(project);
   const row = (d: TechDecision) => (
-    <TechRow key={d.area} s={s} d={d} editable={editable && !s.proposal} open={edit === d.area} options={cat?.catalog[d.area] ?? []}
+    <TechRow key={d.area} s={s} d={d} editable={editable && !s.proposal} open={edit === d.area}
       onToggle={() => setEdit(edit === d.area ? null : d.area)} onDone={() => setEdit(null)} />
   );
   return (
@@ -62,10 +54,10 @@ export function TechStackPanel({ project }: { project: Project }) {
       <p className="small muted">
         {s.mode === "existing"
           ? "Dibaca dari kode project yang ada. Teknologi yang sudah dipakai tetap dipakai; menggantinya adalah migrasi dan butuh alasan."
-          : "Rekomendasi berdasarkan kebutuhan project — kamu yang memutuskan."}
-        {profile && <> Profil <strong className="fg">{profile.name}</strong> hanya kebijakan rekomendasi untuk area yang tidak ditentukan kebutuhan: {profile.description}</>}
+          : "Dirancang AI untuk kebutuhan project ini, tanpa katalog atau default — kamu yang memutuskan."}
       </p>
-      {s.needs?.length ? <p className="small">Kebutuhan teknis: <span className="theme-tags">{s.needs.map((n) => <i key={n}>{NEED[n] ?? n}</i>)}</span></p> : null}
+      {s.needs?.length ? <p className="small">Kebutuhan teknis: <span className="theme-tags">{s.needs.map((n) => <i key={n}>{n.replace(/_/g, " ")}</i>)}</span></p> : null}
+      {!s.decisions.length && !s.plan && <p className="small muted">Belum ada keputusan. AI merancang teknologi di langkah Blueprint, atau minta sekarang.</p>}
 
       {!finalized && s.request && <p className="small muted"><span className="spinner" /> AI memahami permintaan: “{s.request}” <Elapsed started={project.job?.started} /></p>}
 
@@ -73,7 +65,7 @@ export function TechStackPanel({ project }: { project: Project }) {
 
       {review.length > 0 && <DesignReview project={project} />}
 
-      {(cat?.groups ?? ALL).map((g) => {
+      {[...(cat?.groups ?? ALL), otherGroup(s, cat?.groups ?? ALL)].map((g) => {
         const ds = g.areas.map((a) => s.decisions.find((d) => d.area === a)).filter((d): d is TechDecision => !!d && techChoice(d) !== NONE);
         if (!ds.length) return null;
         return (
@@ -94,7 +86,7 @@ export function TechStackPanel({ project }: { project: Project }) {
       {!s.proposal && <Issues issues={s.issues} />}
 
       <div className="tech-foot">
-        {editable && !s.proposal && !s.plan && <button className="ghost small" onClick={() => void run("stack", api.recommendStack)}>↻ Analisa ulang</button>}
+        {editable && !s.proposal && !s.plan && <button className="ghost small" onClick={() => void run("stack", () => api.generateTechPlan())}>✦ Rancang dengan AI</button>}
         {!approval ? <span className="ok-text small">✓ Semua teknologi dibaca dari kode yang ada</span>
           : state === "approved" ? <span className="ok-text small">✓ Teknologi v{techVersion(s)} disetujui{finalized ? " dan masuk spesifikasi final" : ""}</span>
             : !finalized && (
@@ -111,13 +103,19 @@ export function TechStackPanel({ project }: { project: Project }) {
   );
 }
 
-export function TechRow({ s, d, editable, open, options, onToggle, onDone }: {
-  s: TechStack; d: TechDecision; editable: boolean; open: boolean; options: TechOption[]; onToggle: () => void; onDone: () => void;
+// otherGroup holds the areas the AI plan named outside the known groups.
+function otherGroup(s: TechStack, groups: TechGroup[]): TechGroup {
+  const known = new Set(groups.flatMap((g) => g.areas));
+  return { id: "other", title: "Lainnya", description: "", areas: s.decisions.map((d) => d.area).filter((a) => !known.has(a)) };
+}
+
+export function TechRow({ s, d, editable, open, onToggle, onDone }: {
+  s: TechStack; d: TechDecision; editable: boolean; open: boolean; onToggle: () => void; onDone: () => void;
 }) {
   const { run, pending } = useProject();
   const st = decisionState(s, d);
   const attrs = [techLang(d), techRuntime(d) && `runtime ${techRuntime(d)}`].filter(Boolean).join(" · ");
-  const alts = (d.alternatives ?? []).map((v) => options.find((o) => o.value === v) ?? { value: v, fit: "" });
+  const alts = d.alternatives ?? [];
   return (
     <div className="tech-row">
       <div className="tech-head">
@@ -141,41 +139,28 @@ export function TechRow({ s, d, editable, open, options, onToggle, onDone }: {
       {!!d.evidence?.length && <div className="small muted">Bukti di kode: {d.evidence.map((e) => <code key={e}>{e}</code>)}</div>}
       {alts.length > 0 && (
         <details className="small tech-alts">
-          <summary>Alternatif yang cocok ({alts.length})</summary>
-          <ul>{alts.map((o) => <li key={o.value}><OptionInfo o={o} /></li>)}</ul>
+          <summary>Alternatif ({alts.length})</summary>
+          <ul>{alts.map((v) => <li key={v}><strong>{v}</strong></li>)}</ul>
         </details>
       )}
-      {open && <TechEdit s={s} d={d} options={options} onDone={onDone} />}
+      {open && <TechEdit s={s} d={d} onDone={onDone} />}
     </div>
-  );
-}
-
-// What an option is good for, gives up and asks from operations.
-function OptionInfo({ o }: { o: TechOption }) {
-  return (
-    <>
-      <strong>{o.value}</strong>{o.fit && ` — ${o.fit}`}
-      {o.tradeoff && <div className="muted">Trade-off: {o.tradeoff}</div>}
-      {o.ops && <div className="muted">Operasional: {o.ops}</div>}
-    </>
   );
 }
 
 type Mode = "recommended" | "alternative" | "custom";
 
-// Gunakan Rekomendasi / Pilih Alternatif / Tentukan Sendiri. Saving makes
-// a proposal; nothing changes until it is applied. Alternatives are the
-// options that fit the other choices; replacing code technology needs a
-// reason.
-function TechEdit({ s, d, options, onDone }: { s: TechStack; d: TechDecision; options: TechOption[]; onDone: () => void }) {
+// Gunakan Rekomendasi / Pilih Alternatif / Tentukan Sendiri. Any technology
+// is accepted: Foundry has no list of allowed values. Saving makes a
+// proposal; nothing changes until it is applied. Replacing code technology
+// needs a reason.
+function TechEdit({ s, d, onDone }: { s: TechStack; d: TechDecision; onDone: () => void }) {
   const { run, pending } = useProject();
   const current = techChoice(d);
-  const fit = d.alternatives?.length ? options.filter((o) => d.alternatives!.includes(o.value)) : [];
-  const others = (fit.length ? fit : options.filter((o) => o.value !== NONE || !fromExisting(s, d)))
-    .filter((o) => o.value !== d.recommended);
-  const known = others.some((o) => o.value === current);
-  const [mode, setMode] = useState<Mode>(!d.override ? (others.length ? "alternative" : "custom") : known ? "alternative" : "custom");
-  const [pick, setPick] = useState(d.override && known ? current : others[0]?.value ?? "");
+  const others = (d.alternatives ?? []).filter((v) => v !== d.recommended);
+  const known = others.includes(current);
+  const [mode, setMode] = useState<Mode>(d.override && known ? "alternative" : d.override || !others.length ? "custom" : "alternative");
+  const [pick, setPick] = useState(d.override && known ? current : others[0] ?? "");
   const [custom, setCustom] = useState(d.override && !known ? current : "");
   const [reason, setReason] = useState(d.override?.reason ?? "");
   const migration = fromExisting(s, d) && mode !== "recommended";
@@ -184,25 +169,21 @@ function TechEdit({ s, d, options, onDone }: { s: TechStack; d: TechDecision; op
   const radio = (m: Mode, label: string) => (
     <label className="check small"><input type="radio" checked={mode === m} onChange={() => setMode(m)} /> {label}</label>
   );
-  const picked = others.find((o) => o.value === pick);
   return (
     <div className="tech-edit">
       <div className="tech-modes">
-        {radio("recommended", fromExisting(s, d) ? `Tetap pakai yang ada (${d.recommended})` : `Gunakan rekomendasi (${d.recommended})`)}
-        {others.length > 0 && radio("alternative", fit.length ? "Pilih alternatif yang cocok" : "Pilih dari katalog")}
-        {!CLOSED.has(d.area) && radio("custom", "Tentukan sendiri")}
+        {d.recommended && radio("recommended", fromExisting(s, d) ? `Tetap pakai yang ada (${d.recommended})` : `Gunakan rekomendasi (${d.recommended})`)}
+        {others.length > 0 && radio("alternative", "Pilih alternatif yang dibandingkan AI")}
+        {radio("custom", "Tentukan sendiri")}
       </div>
       {mode === "alternative" && (
-        <>
-          <select value={pick} onChange={(e) => setPick(e.target.value)}>
-            {others.map((o) => <option key={o.value} value={o.value}>{o.value} — {o.fit}</option>)}
-          </select>
-          {picked && (picked.tradeoff || picked.ops) && <div className="small"><OptionInfo o={picked} /></div>}
-        </>
+        <select value={pick} onChange={(e) => setPick(e.target.value)}>
+          {others.map((v) => <option key={v} value={v}>{v}</option>)}
+        </select>
       )}
-      {mode === "custom" && <input value={custom} maxLength={80} placeholder="mis. Rust + Axum" onChange={(e) => setCustom(e.target.value)} />}
+      {mode === "custom" && <input value={custom} maxLength={120} placeholder="teknologi apa pun, mis. Rust + Axum" onChange={(e) => setCustom(e.target.value)} />}
       {mode !== "recommended" && (
-        <input value={reason} maxLength={200} placeholder={migration ? "Alasan migrasi (wajib)" : "Alasan, mis. keahlian tim"}
+        <input value={reason} maxLength={400} placeholder={migration ? "Alasan migrasi (wajib)" : "Alasan, mis. keahlian tim"}
           onChange={(e) => setReason(e.target.value)} />
       )}
       {migration && <p className="small warn-text">Teknologi ini sudah dipakai di kode; menggantinya berarti migrasi kode dan data.</p>}
@@ -241,7 +222,7 @@ export function Proposal({ p, disabled }: { p: TechProposal; disabled: boolean }
           <ul className="small">{p.review.map((i, k) => <li key={k}>{i.area && <strong>{(TECH_AREA as Record<string, string>)[i.area] ?? i.area}: </strong>}{i.message}</li>)}</ul>
         </>
       )}
-      <Issues issues={p.issues} ok="Kombinasi teknologi ini kompatibel dengan pilihan lain dan kebutuhan project." />
+      <Issues issues={p.issues} ok="Tidak ada masalah yang diperiksa Foundry; kecocokan antarteknologi dinilai rencana AI." />
       {!!p.impact?.length && (
         <details className="small" open>
           <summary>Bagian yang terdampak</summary>

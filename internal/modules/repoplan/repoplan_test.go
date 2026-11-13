@@ -45,7 +45,7 @@ func evaluated(plan *core.RepoPlan) {
 
 // monolith is a web app and one API whose modules are the business domains.
 func monolith() (*core.Project, *core.RepoPlan) {
-	p := project([]string{"booking", "billing"}, &core.StructureIR{Type: core.StructModular,
+	p := project([]string{"booking", "billing"}, &core.StructureIR{Type: "Modular monolith",
 		Apps:     []core.StructurePart{{Name: "web", Reason: "web"}},
 		Services: []core.StructurePart{{Name: "api", Reason: "api", Modules: []string{"booking", "billing"}, ModuleReasons: map[string]string{"booking": "b", "billing": "c"}}},
 		Packages: []core.StructurePart{{Name: "contracts", Reason: "kontrak"}}})
@@ -151,7 +151,7 @@ func TestNormalizeCleansPaths(t *testing.T) {
 }
 
 func TestNormalizeHealsFileLocationsAndDuplicateParts(t *testing.T) {
-	p := project([]string{"identity", "task"}, &core.StructureIR{Type: core.StructModular,
+	p := project([]string{"identity", "task"}, &core.StructureIR{Type: "Modular monolith",
 		Apps: []core.StructurePart{{Name: "web", Reason: "web"}},
 		Services: []core.StructurePart{{Name: "api", Reason: "api", Modules: []string{"identity", "task"},
 			ModuleReasons: map[string]string{"identity": "akun", "task": "tugas"}}}})

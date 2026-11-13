@@ -183,8 +183,7 @@ func Contract(st *core.TechStack) string {
 	if st != nil && st.Mode == core.StructureExisting {
 		b.WriteString("- MANDATORY STRUCTURE AREAS: architecture and repository, as the existing code has them.\n")
 	} else {
-		fmt.Fprintf(&b, "- MANDATORY STRUCTURE AREAS: architecture (exactly %q, %q or %q) and repository (exactly %q or %q).\n",
-			core.ArchSimple, core.ArchModular, core.ArchMicroservices, core.RepoSimple, core.RepoMonorepo)
+		b.WriteString("- MANDATORY STRUCTURE AREAS: architecture and repository. Name the architecture style and the repository organization YOU designed for this system in your own words (no fixed list); reasoning says why it fits.\n")
 	}
 	fmt.Fprintf(&b, "- every item: area (unique), group (%s), technology, %s. With a technology (not %q) also: %s (at least one id each for fulfills, pros, cons).\n",
 		strings.Join(core.TechPlanGroups, "|"), strings.Join([]string{"reasoning", "driver (" + strings.Join(core.TechDrivers, "|") + ")", "confidence (high|medium|low)"}, ", "),

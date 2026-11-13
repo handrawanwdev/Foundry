@@ -52,6 +52,12 @@ func owner(ir *core.StructureIR, m string) int {
 func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 	name, to := Slug(op.Name), Slug(op.To)
 	kind := strings.ToLower(strings.TrimSpace(op.Kind))
+	dir := ""
+	if strings.TrimSpace(op.Path) != "" {
+		if dir = CleanDir(op.Path); dir == "" {
+			return fmt.Errorf("folder %q tidak valid: harus folder relatif di dalam repository", op.Path)
+		}
+	}
 	if kind == core.PartRule {
 		if err := applyRule(ir, op); err != nil {
 			return err
@@ -61,12 +67,11 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 	}
 	switch strings.ToLower(strings.TrimSpace(op.Op)) {
 	case "type":
-		t := strings.ToLower(strings.TrimSpace(op.Name))
-		if !slices.Contains(core.StructureTypes, t) {
-			return fmt.Errorf("tipe struktur %q tidak dikenal (simple, modular, monorepo, microservices)", op.Name)
+		t := strings.Join(strings.Fields(op.Name), " ")
+		if t == "" {
+			return errors.New("nama gaya arsitektur kosong")
 		}
-		*ir = *Convert(ir, t, p)
-		return nil
+		ir.Type = t
 	case "add":
 		if name == "" {
 			return errors.New("nama bagian kosong")
@@ -82,13 +87,12 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 			if i < 0 {
 				return fmt.Errorf("service tujuan modul %s tidak ditemukan", name)
 			}
-			ir.Services[i].Modules = append(ir.Services[i].Modules, name)
-			if reason := strings.TrimSpace(op.Reason); reason != "" {
-				if ir.Services[i].ModuleReasons == nil {
-					ir.Services[i].ModuleReasons = map[string]string{}
-				}
-				ir.Services[i].ModuleReasons[name] = reason
+			svc := &ir.Services[i]
+			if dir == "" {
+				dir = modulePlace(*svc, name)
 			}
+			svc.Modules = append(svc.Modules, name)
+			setModule(svc, name, dir, strings.TrimSpace(op.Reason))
 			break
 		}
 		ps, err := list(ir, kind)
@@ -98,7 +102,35 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 		if find(*ps, name) >= 0 {
 			return fmt.Errorf("%s %s sudah ada", kind, name)
 		}
-		*ps = append(*ps, core.StructurePart{Name: name, Reason: strings.TrimSpace(op.Reason)})
+		if dir == "" {
+			dir = placeFor(name, *ps, ir.Apps, ir.Services, ir.Workers, ir.Packages)
+		}
+		*ps = append(*ps, core.StructurePart{Name: name, Path: dir, Reason: strings.TrimSpace(op.Reason)})
+	case "path":
+		if dir == "" {
+			return errors.New("folder baru kosong")
+		}
+		if kind == core.PartModule {
+			i := owner(ir, name)
+			if i < 0 {
+				return fmt.Errorf("modul %s tidak ditemukan", name)
+			}
+			setModule(&ir.Services[i], name, dir, "")
+			break
+		}
+		ps, err := list(ir, kind)
+		if err != nil {
+			return err
+		}
+		i := find(*ps, name)
+		if i < 0 {
+			return fmt.Errorf("%s %s tidak ditemukan", kind, name)
+		}
+		part := &(*ps)[i]
+		for m, d := range part.ModulePaths {
+			part.ModulePaths[m] = rebase(d, part.Path, dir)
+		}
+		part.Path = dir
 	case "remove":
 		if kind == core.PartModule {
 			i := owner(ir, name)
@@ -107,6 +139,7 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 			}
 			ir.Services[i].Modules = slices.DeleteFunc(ir.Services[i].Modules, func(m string) bool { return m == name })
 			delete(ir.Services[i].ModuleReasons, name)
+			delete(ir.Services[i].ModulePaths, name)
 			break
 		}
 		ps, err := list(ir, kind)
@@ -130,15 +163,11 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 			if owner(ir, to) >= 0 {
 				return fmt.Errorf("modul %s sudah ada", to)
 			}
-			ms := ir.Services[i].Modules
-			ms[slices.Index(ms, name)] = to
-			if reason := ir.Services[i].ModuleReasons[name]; reason != "" {
-				if ir.Services[i].ModuleReasons == nil {
-					ir.Services[i].ModuleReasons = map[string]string{}
-				}
-				ir.Services[i].ModuleReasons[to] = reason
-				delete(ir.Services[i].ModuleReasons, name)
-			}
+			svc := &ir.Services[i]
+			svc.Modules[slices.Index(svc.Modules, name)] = to
+			setModule(svc, to, renamed(ModulePath(*svc, name), name, to), svc.ModuleReasons[name])
+			delete(svc.ModuleReasons, name)
+			delete(svc.ModulePaths, name)
 			break
 		}
 		ps, err := list(ir, kind)
@@ -152,7 +181,12 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 		if find(*ps, to) >= 0 {
 			return fmt.Errorf("%s %s sudah ada", kind, to)
 		}
-		(*ps)[i].Name = to
+		part := &(*ps)[i]
+		next := renamed(part.Path, name, to)
+		for m, d := range part.ModulePaths {
+			part.ModulePaths[m] = rebase(d, part.Path, next)
+		}
+		part.Name, part.Path = to, next
 	case "move":
 		dst := find(ir.Services, to)
 		if dst < 0 {
@@ -164,15 +198,16 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 			if src < 0 {
 				return fmt.Errorf("modul %s tidak ditemukan", name)
 			}
+			reason := ir.Services[src].ModuleReasons[name]
 			ir.Services[src].Modules = slices.DeleteFunc(ir.Services[src].Modules, func(m string) bool { return m == name })
-			ir.Services[dst].Modules = append(ir.Services[dst].Modules, name)
-			if reason := ir.Services[src].ModuleReasons[name]; reason != "" {
-				if ir.Services[dst].ModuleReasons == nil {
-					ir.Services[dst].ModuleReasons = map[string]string{}
-				}
-				ir.Services[dst].ModuleReasons[name] = reason
-				delete(ir.Services[src].ModuleReasons, name)
+			delete(ir.Services[src].ModuleReasons, name)
+			delete(ir.Services[src].ModulePaths, name)
+			d := &ir.Services[dst]
+			if dir == "" {
+				dir = modulePlace(*d, name)
 			}
+			d.Modules = append(d.Modules, name)
+			setModule(d, name, dir, reason)
 		case core.PartService:
 			src := find(ir.Services, name)
 			if src < 0 || src == dst {
@@ -182,40 +217,46 @@ func ApplyOp(ir *core.StructureIR, op core.StructureOp, p *core.Project) error {
 			svc := ir.Services[src]
 			mods := svc.Modules
 			reasons := moduleReasons(ir)
-			if !generic(svc.Name) {
-				mods = append([]string{svc.Name}, mods...)
+			if domainService(svc) {
+				mods = []string{svc.Name}
 				if svc.Reason != "" {
 					reasons[svc.Name] = svc.Reason
 				}
 			}
 			d := &ir.Services[dst]
-			if len(d.Modules) == 0 && !generic(d.Name) {
-				d.Modules = append(d.Modules, d.Name) // the target keeps its own domain as a module
-				if d.Reason != "" {
-					if d.ModuleReasons == nil {
-						d.ModuleReasons = map[string]string{}
-					}
-					d.ModuleReasons[d.Name] = d.Reason
-				}
+			if domainService(*d) {
+				// the target keeps its own domain as a module
+				d.Modules = append(d.Modules, d.Name)
+				setModule(d, d.Name, d.Path, d.Reason)
 			}
-			d.Modules = append(d.Modules, mods...)
 			for _, m := range mods {
-				if d.ModuleReasons[m] == "" && reasons[m] != "" {
-					if d.ModuleReasons == nil {
-						d.ModuleReasons = map[string]string{}
-					}
-					d.ModuleReasons[m] = reasons[m]
-				}
+				d.Modules = append(d.Modules, m)
+				setModule(d, m, modulePlace(*d, m), reasons[m])
 			}
 			ir.Services = slices.Delete(ir.Services, src, src+1)
 		default:
 			return errors.New("yang bisa dipindah hanya module atau service")
 		}
 	default:
-		return fmt.Errorf("operasi %q tidak dikenal (type, add, remove, rename, move)", op.Op)
+		return fmt.Errorf("operasi %q tidak dikenal (type, add, path, remove, rename, move)", op.Op)
 	}
 	Normalize(ir)
 	return nil
+}
+
+// setModule records the folder and reason of module m in svc; an empty
+// reason keeps the current one.
+func setModule(svc *core.StructurePart, m, dir, reason string) {
+	if svc.ModulePaths == nil {
+		svc.ModulePaths = map[string]string{}
+	}
+	svc.ModulePaths[m] = dir
+	if reason != "" {
+		if svc.ModuleReasons == nil {
+			svc.ModuleReasons = map[string]string{}
+		}
+		svc.ModuleReasons[m] = reason
+	}
 }
 
 // applyRule adds, removes or rewrites a structure rule; Name is its text.
@@ -256,18 +297,15 @@ func applyRule(ir *core.StructureIR, op core.StructureOp) error {
 
 // ---------- diff, validation, impact ----------
 
-var typeName = map[string]string{core.StructSimple: "Simple", core.StructModular: "Modular",
-	core.StructMonorepo: "Monorepo", core.StructMicroservices: "Microservices"}
-
-// where tells where a domain lives: its own service, or a module of one.
+// where tells where a domain lives: its own service, or a module folder.
 func where(ir *core.StructureIR) map[string]string {
 	out := map[string]string{}
 	for _, s := range ir.Services {
-		if !generic(s.Name) {
+		if domainService(s) {
 			out[s.Name] = "service " + s.Path
 		}
 		for _, m := range s.Modules {
-			out[m] = "modul di " + s.Path
+			out[m] = "modul " + ModulePath(s, m)
 		}
 	}
 	return out
@@ -280,23 +318,28 @@ func Diff(a, b *core.StructureIR) []string {
 	}
 	var out []string
 	if a.Type != b.Type {
-		out = append(out, fmt.Sprintf("Tipe: %s → %s", typeName[a.Type], typeName[b.Type]))
+		out = append(out, fmt.Sprintf("Gaya arsitektur: %s → %s", orDash(a.Type), orDash(b.Type)))
 	}
-	parts := func(label string, x, y []core.StructurePart, skip func(string) bool) {
+	parts := func(label string, x, y []core.StructurePart, skip func(core.StructurePart) bool) {
 		for _, p := range y {
-			if find(x, p.Name) < 0 && !skip(p.Name) {
+			i := find(x, p.Name)
+			switch {
+			case skip(p):
+			case i < 0:
 				out = append(out, fmt.Sprintf("%s ditambah: %s", label, p.Path))
+			case x[i].Path != p.Path:
+				out = append(out, fmt.Sprintf("%s %s dipindah: %s → %s", label, p.Name, x[i].Path, p.Path))
 			}
 		}
 		for _, p := range x {
-			if find(y, p.Name) < 0 && !skip(p.Name) {
+			if find(y, p.Name) < 0 && !skip(p) {
 				out = append(out, fmt.Sprintf("%s dihapus: %s", label, p.Path))
 			}
 		}
 	}
-	none := func(string) bool { return false }
+	none := func(core.StructurePart) bool { return false }
 	parts("App", a.Apps, b.Apps, none)
-	parts("Service", a.Services, b.Services, func(n string) bool { return !generic(n) })
+	parts("Service", a.Services, b.Services, domainService)
 	wa, wb := where(a), where(b)
 	for _, d := range domainsIn(b) {
 		switch from, ok := wa[d]; {
@@ -313,6 +356,9 @@ func Diff(a, b *core.StructureIR) []string {
 	}
 	parts("Worker", a.Workers, b.Workers, none)
 	parts("Package", a.Packages, b.Packages, none)
+	if a.Docs != b.Docs {
+		out = append(out, fmt.Sprintf("Folder dokumentasi: %s → %s", orDash(a.Docs), orDash(b.Docs)))
+	}
 	for _, r := range b.Rules {
 		if ruleIndex(a.Rules, r) < 0 {
 			out = append(out, "Aturan ditambah: "+r)
@@ -326,70 +372,47 @@ func Diff(a, b *core.StructureIR) []string {
 	return out
 }
 
-// TechFor are the architecture and repository changes structure type t
-// needs to agree with the technology decision.
-func TechFor(t string, s *core.TechStack) []core.TechChange {
-	if s == nil || s.Mode == core.StructureExisting {
-		return nil
+func orDash(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "—"
 	}
-	arch, repo := s.Choice(core.TechArchitecture), s.Choice(core.TechRepository)
-	wantArch, wantRepo := arch, repo
-	switch t {
-	case core.StructSimple, core.StructModular:
-		wantArch = map[string]string{core.StructSimple: core.ArchSimple, core.StructModular: core.ArchModular}[t]
-		if repo == core.RepoMonorepo {
-			wantRepo = core.RepoSimple
-		}
-	case core.StructMonorepo:
-		wantRepo = core.RepoMonorepo
-		if arch == core.ArchMicroservices {
-			wantArch = core.ArchModular
-		}
-	case core.StructMicroservices:
-		wantArch = core.ArchMicroservices
-	}
-	var out []core.TechChange
-	why := "Mengikuti struktur " + typeName[t] + "."
-	if arch != wantArch {
-		out = append(out, core.TechChange{Area: core.TechArchitecture, From: arch, To: wantArch, Reason: why})
-	}
-	if repo != wantRepo {
-		out = append(out, core.TechChange{Area: core.TechRepository, From: repo, To: wantRepo, Reason: why})
-	}
-	return out
+	return s
 }
 
-// withTech is s as it would be after the changes.
-func withTech(s *core.TechStack, changes []core.TechChange) *core.TechStack {
-	if s == nil || len(changes) == 0 {
-		return s
-	}
-	c := *s
-	c.Decisions = core.CloneDecisions(s.Decisions)
-	for _, ch := range changes {
-		if d := c.Decision(ch.Area); d != nil {
-			d.Override = &core.TechOverride{Value: ch.To}
-		}
-	}
-	return &c
-}
-
-// Validate lists concrete problems of ir for the project p with the
-// technology st; an error blocks approval.
+// Validate lists concrete problems of ir for the project p; an error
+// blocks approval. It checks what holds for any architecture: a named
+// style, one folder per part, the platform's parts present, every domain
+// placed. Which style fits is the design's decision, not a rule here.
 func Validate(ir *core.StructureIR, p *core.Project, st *core.TechStack) []core.TechIssue {
 	var out []core.TechIssue
 	add := func(level, area, f string, a ...any) {
 		out = append(out, core.TechIssue{Level: level, Area: area, Message: fmt.Sprintf(f, a...)})
 	}
-	if !slices.Contains(core.StructureTypes, ir.Type) {
-		add("error", "structure", "Tipe struktur %q tidak dikenal.", ir.Type)
+	if strings.TrimSpace(ir.Type) == "" {
+		add("error", "structure", "Gaya arsitektur belum dinamai.")
 	}
-	paths := map[string]bool{}
-	for _, l := range Layout(ir) {
-		if paths[l] {
-			add("error", "structure", "Folder %s dipakai dua bagian; ganti salah satu nama.", l)
+	owners := map[string]string{}
+	claim := func(dir, who string) {
+		if dir == "" {
+			add("error", "structure", "%s tidak punya folder yang valid.", who)
+			return
 		}
-		paths[l] = true
+		if other, ok := owners[dir]; ok {
+			add("error", "structure", "Folder %s dipakai %s dan %s; beri folder sendiri.", dir, other, who)
+			return
+		}
+		owners[dir] = who
+	}
+	for _, g := range []struct {
+		kind string
+		ps   []core.StructurePart
+	}{{core.PartApp, ir.Apps}, {core.PartService, ir.Services}, {core.PartWorker, ir.Workers}, {core.PartPackage, ir.Packages}} {
+		for _, part := range g.ps {
+			claim(part.Path, g.kind+" "+part.Name)
+			for _, m := range part.Modules {
+				claim(ModulePath(part, m), "modul "+m)
+			}
+		}
 	}
 	pl := platformOf(p)
 	if (pl.web || pl.mobile || pl.desktop) && len(ir.Apps) == 0 {
@@ -401,45 +424,13 @@ func Validate(ir *core.StructureIR, p *core.Project, st *core.TechStack) []core.
 	if !pl.backend && len(ir.Services) > 0 {
 		add("warning", core.PartService, "Ada service, tapi platform backend tidak dipilih.")
 	}
-	for _, c := range TechFor(ir.Type, st) {
-		add("error", "technology", "Struktur %s tidak sesuai teknologi (%s: %s). Ubah struktur atau teknologinya; Foundry tidak mengubahnya diam-diam.",
-			typeName[ir.Type], c.Area, c.From)
-	}
 	for _, d := range domainsIn(ir) {
 		if crudName(d) {
 			add("warning", core.PartModule, "%s mengikuti operasi (CRUD), bukan domain; gabungkan ke domain %s.", d, domainOf(d))
 		}
 	}
-	for _, s := range ir.Services {
-		if (ir.Type == core.StructModular || ir.Type == core.StructMonorepo) && generic(s.Name) && len(s.Modules) == 0 && len(Domains(p)) > 1 {
-			add("warning", core.PartService, "%s tanpa modul; batas domain tidak terlihat di folder.", s.Path)
-		}
-	}
-	if ir.Type == core.StructMicroservices {
-		switch n := len(ir.Services); {
-		case n == 1:
-			add("warning", core.PartService, "Microservices dengan satu service sama dengan monolith; Modular lebih sederhana.")
-		case n > 8:
-			add("warning", core.PartService, "%d service: biaya deploy, observability dan koordinasi tinggi. Gabungkan domain yang selalu berubah bersama.", n)
-		}
-		if st != nil && !slices.Contains(st.Needs, "independent_scaling") {
-			add("warning", "structure", "Tidak ada kebutuhan deploy/skala independen; Microservices menambah biaya operasional, Modular biasanya cukup.")
-		}
-	}
-	if ir.Type == core.StructSimple && len(ir.Packages) > 0 {
-		add("warning", core.PartPackage, "Simple tidak memakai packages/; pindahkan ke app atau naikkan ke Modular.")
-	}
-	for _, pk := range ir.Packages {
-		if pk.Name == "ui" && len(ir.Apps) == 0 {
-			add("warning", core.PartPackage, "packages/ui tanpa app frontend.")
-		}
-	}
-	separate := st != nil && st.Choice(core.TechWorkers) == workersSeparate
-	switch {
-	case len(ir.Workers) > 0 && st != nil && !separate:
-		add("warning", core.PartWorker, "Ada folder worker, tapi teknologi worker “%s”; ubah teknologi worker ke %s atau hapus worker.", st.Choice(core.TechWorkers), workersSeparate)
-	case len(ir.Workers) == 0 && separate:
-		add("warning", core.PartWorker, "Teknologi memilih %s, tapi struktur tidak punya worker.", workersSeparate)
+	if missing := missingDomains(ir, Domains(p)); len(missing) > 0 && len(ir.Services) > 0 {
+		add("warning", core.PartModule, "Domain %s belum punya tempat di struktur.", strings.Join(missing, ", "))
 	}
 	return out
 }
@@ -457,34 +448,7 @@ func Impact(a, b *core.StructureIR, tech []core.TechChange) []core.StructureImpa
 		add("Teknologi", fmt.Sprintf("%s: %s → %s (diterapkan bersama perubahan ini)", c.Area, c.From, c.To))
 	}
 	if a != nil && a.Type != b.Type {
-		switch {
-		case b.Type == core.StructMicroservices:
-			add("Deployment", "Tiap service punya build, image dan pipeline deploy sendiri.")
-			add("CI/CD", "Pipeline per service; rilis bisa independen.")
-			add("Database", "Data dimiliki per service; join antar domain lewat API atau event.")
-			add("API", "Panggilan antar domain jadi network call (timeout, retry, versi kontrak).")
-			add("Authentication", "Token diverifikasi di tiap service.")
-			add("Observability", "Butuh tracing lintas service.")
-			add("Testing", "Contract test antar service.")
-			add("Local development", "Semua service dijalankan bersama (mis. Docker Compose).")
-			add("Team ownership", "Ownership per service.")
-		case a.Type == core.StructMicroservices:
-			add("Deployment", "Satu deploy backend; skala per domain tidak lagi independen.")
-			add("Database", "Satu database; batas data per modul dijaga di kode.")
-			add("API", "Panggilan antar domain jadi function call di dalam backend.")
-			add("Observability", "Tracing lintas service tidak lagi diperlukan.")
-		}
-		switch {
-		case b.Type == core.StructMonorepo:
-			add("Repository", "Satu repo dengan workspace (apps/, services/, packages/).")
-			add("CI/CD", "Pipeline per app dengan filter path.")
-		case a.Type == core.StructMonorepo:
-			add("Repository", "Workspace monorepo tidak dipakai lagi.")
-			add("Shared packages", "packages/* tidak lagi diasumsikan shared; distribusi type/UI perlu registry atau codegen.")
-		}
-		if b.Type == core.StructSimple {
-			add("Domain boundaries", "Batas modul hilang; kode backend dalam satu folder.")
-		}
+		add("Arsitektur", fmt.Sprintf("Gaya arsitektur berubah (%s → %s): deployment, CI/CD, batas domain dan komunikasi antarbagian ikut ditinjau.", orDash(a.Type), orDash(b.Type)))
 	}
 	if a == nil {
 		a = &core.StructureIR{}
@@ -512,12 +476,14 @@ func Impact(a, b *core.StructureIR, tech []core.TechChange) []core.StructureImpa
 	}
 	if len(diffNames(a.Workers, b.Workers)) > 0 {
 		add("Worker", "Job latar belakang berpindah proses.")
-		add("Queue", "Worker terpisah butuh antrean (cache/messaging).")
 		add("Deployment", "Proses worker di-deploy terpisah.")
 	}
 	if len(diffNames(a.Packages, b.Packages)) > 0 {
 		add("Shared packages", "Kode bersama berubah: "+strings.Join(diffNames(a.Packages, b.Packages), ", ")+".")
-		add("Dependency management", "Dependency workspace antar app/package berubah.")
+		add("Dependency management", "Dependency antar app/package berubah.")
+	}
+	if !slices.Equal(Layout(a), Layout(b)) {
+		add("Repository", "Folder project berubah; rencana struktur repository perlu mengikuti.")
 	}
 	if !slices.Equal(a.Rules, b.Rules) {
 		add("Struktur internal", "Isi tiap modul (layer, file, dependensi, penamaan) mengikuti aturan struktur.")
@@ -551,11 +517,13 @@ func editable(s *core.Structure) error {
 		return errors.New("struktur belum ditentukan")
 	case s.Mode == core.StructureExisting:
 		return ErrExisting
-	case s.IR == nil:
-		return errors.New("struktur belum direkomendasikan")
 	}
 	return nil
 }
+
+// ErrNoStructure: hand edits need a structure; the AI analysis designs the
+// first one.
+var ErrNoStructure = errors.New("struktur belum dirancang: jalankan analisis struktur AI lalu pilih alternatifnya")
 
 // Propose applies ops to the structure (or the waiting proposal) and
 // records the result as a proposal; nothing changes until Apply.
@@ -572,6 +540,9 @@ func Propose(s *core.Structure, p *core.Project, ops []core.StructureOp, source,
 		if request == "" {
 			request = s.Proposal.Request
 		}
+	}
+	if base == nil {
+		return ErrNoStructure
 	}
 	next := base.Clone()
 	for _, op := range ops {
@@ -624,9 +595,8 @@ func ProposeIR(s *core.Structure, p *core.Project, ir *core.StructureIR, ops []c
 	if s.Proposal != nil {
 		prev = s.Proposal.Previous
 	}
-	tech := TechFor(ir.Type, p.Stack)
 	s.Proposal = &core.StructureProposal{Source: source, Request: request, Note: note, Ops: ops, IR: ir, Changes: changes,
-		Tech: tech, Issues: Validate(ir, p, withTech(p.Stack, tech)), Impact: Impact(s.IR, ir, tech), Previous: prev, At: time.Now().UTC()}
+		Issues: Validate(ir, p, p.Stack), Impact: Impact(s.IR, ir, nil), Previous: prev, At: time.Now().UTC()}
 	s.Status, s.Approved = core.TechReview, false
 	return nil
 }
@@ -669,6 +639,9 @@ func Approve(s *core.Structure, p *core.Project) error {
 	}
 	if s.Proposal != nil {
 		return ErrPending
+	}
+	if s.IR == nil {
+		return ErrNoStructure
 	}
 	Refresh(s, p)
 	if errs := s.Errors(); len(errs) > 0 {
@@ -720,41 +693,19 @@ func Record(s *core.Structure, before *core.StructureIR, source, request string)
 	return &s.History[len(s.History)-1]
 }
 
-// Sync keeps a new project's structure in step with the requirement and
-// technology. A recommendation the user has not touched follows them; a
-// structure the user changed or approved is never rewritten, it only shows
-// where it no longer fits.
+// Sync keeps a new project's structure in step with the AI analysis: the
+// recommended style is the recommended alternative's, and the decision is
+// revalidated. Foundry never designs or rewrites a structure itself; the
+// user adopts an alternative or edits the structure.
 func Sync(p *core.Project, why string) {
 	s := p.Structure
 	if s == nil || s.Mode != core.StructureNew {
 		return
 	}
-	ir, reason := Recommend(p)
-	current := PlanCurrent(s, p)
-	follow := (s.IR == nil && !s.Approved || s.IR != nil && s.State() == core.TechRecommended && s.Proposal == nil) && !current
-	if s.IR == nil {
-		follow = !s.Approved
-	}
-	if follow {
-		before := s.IR
-		if before == nil || len(Diff(before, ir)) > 0 {
-			set(s, ir)
-			s.Reason = reason
-			s.SetStatus(core.TechRecommended)
-			if before == nil {
-				s.History = nil
-				Record(s, nil, "recommend", why)
-			} else {
-				Record(s, before, "technology", why)
-			}
-		}
-	}
-	if current {
+	if PlanCurrent(s, p) {
 		if rec := s.Plan.RecommendedAlternative(); rec != nil && rec.IR != nil {
 			s.Recommended, s.Reason = rec.IR.Type, s.Plan.Reason
 		}
-	} else {
-		s.Recommended = ir.Type
 	}
 	Refresh(s, p)
 }

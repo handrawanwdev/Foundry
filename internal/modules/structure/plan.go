@@ -127,17 +127,14 @@ func NormalizePlan(p *core.Project, plan *core.StructurePlan) error {
 		if a.IR == nil {
 			return fmt.Errorf("alternatif %q tanpa struktur folder", a.Name)
 		}
-		if a.IR.Type == "" {
-			a.IR.Type = strings.ToLower(strings.TrimSpace(a.Type))
+		if strings.TrimSpace(a.IR.Type) == "" {
+			a.IR.Type = a.Type
 		}
-		a.Type = a.IR.Type
-		if !slices.Contains(core.StructureTypes, a.Type) {
-			return fmt.Errorf("alternatif %q memakai tipe struktur %q yang tidak dikenal (simple, modular, monorepo, microservices)", a.Name, a.Type)
-		}
-		if p.Stack != nil && p.Stack.Choice(core.TechRepository) == core.RepoMonorepo && a.Type == core.StructModular {
-			a.IR.Type, a.Type = core.StructMonorepo, core.StructMonorepo
+		if strings.TrimSpace(a.IR.Type) == "" {
+			a.IR.Type = a.Name
 		}
 		Normalize(a.IR)
+		a.Type = a.IR.Type
 		fillModuleReasonsFromDomains(a.IR, plan.Domains)
 		if err := partsHaveReasons(a.IR); err != nil {
 			return fmt.Errorf("alternatif %q: %w", a.Name, err)

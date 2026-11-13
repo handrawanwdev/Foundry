@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { isWorking } from "../flow";
@@ -7,7 +7,7 @@ import {
 } from "../techplan";
 import { needsApproval, TECH_AREA, TECH_STATUS, techState, techVersion } from "../tech";
 import { useProject } from "../store/project";
-import type { Project, StackCatalog, TechArea, TechItem, TechPlan } from "../types";
+import type { Project, TechArea, TechItem, TechPlan } from "../types";
 import { Elapsed } from "./Elapsed";
 import { DesignReview, Proposal, TechRow } from "./TechStack";
 
@@ -23,8 +23,6 @@ const areaName = (area: string) => TECH_AREA[area as TechArea] ?? areaLabel(area
 export function TechWorkspace({ project }: { project: Project }) {
   const { pending, run } = useProject();
   const [opened, setOpened] = useState("");
-  const [cat, setCat] = useState<StackCatalog | null>(null);
-  useEffect(() => { api.stackCatalog().then(setCat, () => {}); }, []);
   const s = project.stack;
   const plan = s?.plan;
   const finalized = project.stage === "READY";
@@ -38,7 +36,7 @@ export function TechWorkspace({ project }: { project: Project }) {
   const reviews = s.decisions.filter((d) => d.review);
   const outdated = plan.evaluation.outdated && !plan.stale;
   const a = plan.analysis;
-  const rows = { plan, stack: s, catalog: cat, editable, opened, onOpen: setOpened };
+  const rows = { plan, stack: s, editable, opened, onOpen: setOpened };
 
   return (
     <div className="repo tp">
@@ -110,7 +108,7 @@ function flagged(it: TechItem, s: Stack): boolean {
 }
 
 type RowProps = {
-  plan: TechPlan; stack: Stack; catalog: StackCatalog | null; editable: boolean; opened: string; onOpen: (a: string) => void;
+  plan: TechPlan; stack: Stack; editable: boolean; opened: string; onOpen: (a: string) => void;
 };
 
 function ItemRows({ items, opened, onOpen, ...rest }: RowProps & { items: TechItem[] }) {
@@ -147,8 +145,8 @@ function Unused(props: RowProps) {
   );
 }
 
-function ItemDetail({ it, plan, stack, catalog, editable }: {
-  it: TechItem; plan: TechPlan; stack: Stack; catalog: StackCatalog | null; editable: boolean;
+function ItemDetail({ it, plan, stack, editable }: {
+  it: TechItem; plan: TechPlan; stack: Stack; editable: boolean;
 }) {
   const [edit, setEdit] = useState(false);
   const d = stack.decisions.find((x) => x.area === it.area);
@@ -161,7 +159,7 @@ function ItemDetail({ it, plan, stack, catalog, editable }: {
       {alternatives.length > 0 && <p className="small muted">Alternatif: {alternatives.join(", ")}</p>}
       {conflicts.map((c, i) => <p key={i} className="small warn-text">Konflik {(c.between ?? []).join(", ") || c.area}: {c.note || "—"}</p>)}
       {d && editable && !isNone(it) && (edit || d.review
-        ? <TechRow s={stack} d={d} editable={editable} open={edit} options={catalog?.catalog[d.area] ?? []}
+        ? <TechRow s={stack} d={d} editable={editable} open={edit}
             onToggle={() => setEdit(!edit)} onDone={() => setEdit(false)} />
         : <button className="ghost small" onClick={() => setEdit(true)}>Ubah</button>)}
     </div>

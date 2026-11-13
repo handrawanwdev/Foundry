@@ -94,12 +94,15 @@ export interface Flow {
 export interface PlatformTarget { kind: PlatformKind; rationale: string }
 export interface PlatformPlan { targets: PlatformTarget[]; reason: string; approved: boolean }
 export interface Component { kind: string; path: string; tech: string; evidence: string }
-export type StructureType = "simple" | "modular" | "monorepo" | "microservices";
+// The architecture style the design named in its own words (no fixed list).
+export type StructureType = string;
 export type PartKind = "app" | "service" | "module" | "worker" | "package";
 export interface StructurePart {
   name: string; path: string; modules?: string[]; reason?: string;
   // Responsibility of each module (domain folder).
   module_reasons?: Record<string, string>;
+  // Folder of each module, chosen by the design.
+  module_paths?: Record<string, string>;
 }
 // The structure decision of a new project (design level).
 export interface StructureIR {
@@ -108,7 +111,7 @@ export interface StructureIR {
   // Conventions every part follows: internal module layout, layers, dependencies, naming.
   rules?: string[];
 }
-export interface StructureOp { op: "type" | "add" | "remove" | "rename" | "move"; kind?: PartKind | "rule"; name: string; to?: string; reason?: string }
+export interface StructureOp { op: "type" | "add" | "path" | "remove" | "rename" | "move"; kind?: PartKind | "rule"; name: string; to?: string; path?: string; reason?: string }
 export interface StructureImpact { area: string; message: string }
 export interface StructureProposal {
   source: "user" | "ai" | "recommend"; request?: string; note?: string; alternative?: string;
@@ -238,7 +241,8 @@ export interface ExistingUI {
 export type TechArea = "frontend" | "ui" | "mobile" | "desktop" | "cli" | "backend" | "api" | "database" | "cache" | "messaging"
   | "workers" | "storage" | "search" | "architecture" | "repository" | "deployment" | "observability" | "testing" | "quality";
 export interface TechOverride { value: string; language?: string; runtime?: string; reason?: string }
-// Where a recommendation came from (core.Source*); "" in older stacks.
+// Where a decision came from (core.Source*); stacks saved before Foundry
+// dropped its catalog may still carry need, profile, default or dependency.
 export type TechSource = "existing" | "preference" | "need" | "profile" | "default" | "dependency" | "ai";
 export interface TechDecision {
   area: TechArea; recommended: string; language?: string; runtime?: string; reason: string; source?: TechSource;
@@ -271,7 +275,7 @@ export interface TechItem {
   language?: string; runtime?: string; purpose: string; fulfills?: string[]; driver: string; reasoning: string;
   pros?: string[]; cons?: string[]; tradeoffs?: string[]; depends_on?: string[]; integration?: string; operational?: string;
   alternatives?: TechAlternative[]; confidence: string; assumptions?: string[]; action?: "reuse" | "add" | "modify" | "refactor" | "remove";
-  in_catalog?: boolean; user_chosen?: string;
+  user_chosen?: string;
 }
 export interface TechConstraint { areas: string[]; rule: string; reason?: string }
 export interface TechCompat { area: string; status: string; between?: string[]; note?: string; basis?: string; source?: string }
@@ -282,7 +286,7 @@ export interface TechCheck { area: string; status: string; note?: string; source
 export interface TechCoverage { ref: string; areas: string[] }
 export interface TechAnalysis {
   issues?: TechIssue[]; findings?: TechFinding[]; checks?: TechCheck[]; compat?: TechCompat[];
-  items: number; outside_catalog: number; unverified: number; coverage?: TechCoverage[];
+  items: number; unverified: number; coverage?: TechCoverage[];
   diverged?: string[]; stale_areas?: string[]; affected?: string[];
 }
 export interface TechPlanVersion {
@@ -296,18 +300,13 @@ export interface TechPlan {
   history?: TechPlanVersion[]; sources?: Record<string, string>; generated_at?: string; stale?: boolean; analysis: TechAnalysis;
 }
 export interface TechStack {
-  mode: "existing" | "new"; profile?: string; needs?: string[];
+  mode: "existing" | "new"; needs?: string[];
   platform: { web: boolean; mobile: boolean; android?: boolean; ios?: boolean; desktop: boolean; backend: boolean; cli?: boolean };
   decisions: TechDecision[]; approved: boolean; status?: TechStatus; issues?: TechIssue[]; proposal?: TechProposal;
   request?: string; history?: TechVersion[]; plan?: TechPlan; plan_request?: TechPlanRequest;
 }
-export interface TechOption {
-  value: string; language?: string; runtime?: string; fit: string; tradeoff?: string; ops?: string; needs?: string[];
-  framework?: string; platform?: string;
-}
-export interface TechProfile { id: string; name: string; description: string }
 export interface TechGroup { id: string; title: string; description: string; areas: TechArea[] }
-export interface StackCatalog { catalog: Record<string, TechOption[]>; profiles: TechProfile[]; areas: TechArea[]; groups: TechGroup[] }
+export interface StackAreas { areas: TechArea[]; groups: TechGroup[] }
 export interface Token { name: string; value: string; use?: string }
 export interface DesignTokens {
   colors: Token[] | null; typography: Token[] | null; spacing: Token[] | null;
@@ -472,7 +471,6 @@ export interface AIState {
   mcp: { client: string; dir: string; at: string } | null;
   agents: AgentInfo[]; mcp_config: unknown;
 }
-export interface Template { id: string; name: string; description: string; layout: string[] }
 export interface Browse {
   path: string; parent: string; is_project: boolean;
   dirs: { name: string; path: string; is_project: boolean }[];

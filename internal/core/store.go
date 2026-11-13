@@ -131,6 +131,7 @@ func (s *Store) Load() (*Project, error) {
 	migrateLegacyDesign(&p, b)
 	migrateArtifactIDs(&p)
 	migratePlatformAudience(&p, b)
+	migrateModulePaths(&p)
 	if p.BlueprintProgress != nil && p.BlueprintProgress.RunID == "" {
 		p.BlueprintProgress = nil // written before runs had tasks and executions
 	}

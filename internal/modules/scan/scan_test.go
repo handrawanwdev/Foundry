@@ -46,7 +46,7 @@ func TestDetectsStack(t *testing.T) {
 	for _, want := range []string{
 		"backend|apps/api|Go + Gin|Go", "database|apps/api|PostgreSQL|", "testing|.|go test|Go",
 		"web|apps/web|React|TypeScript", "ui|apps/web|MUI (Material UI)|", "testing|apps/web|Vitest|",
-		"repository|.|Monorepo|", "quality|.|ESLint + Prettier|JavaScript",
+		"repository|.|Workspace package.json|", "quality|.|ESLint + Prettier|JavaScript",
 		"deployment|.|Docker Compose (satu server)|", "database|.|PostgreSQL|", "cache|.|Redis|",
 		"backend|.|Flask + Python|Python",
 	} {

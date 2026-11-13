@@ -45,14 +45,18 @@ layers), merge points that say the same thing, and skip what a current rule alre
 change parts and rules together. Return no ops only when the request has nothing to do with the project
 structure.
 
-CURRENT STRUCTURE (type %s):
+CURRENT STRUCTURE (style %s):
 %s
 `, ir.Type, structure.Tree(ir))
 	section := func(label string, ps []core.StructurePart) {
 		for _, x := range ps {
-			fmt.Fprintf(&b, "- %s %s", label, x.Name)
+			fmt.Fprintf(&b, "- %s %s at %s", label, x.Name, x.Path)
 			if len(x.Modules) > 0 {
-				fmt.Fprintf(&b, " (modules: %s)", strings.Join(x.Modules, ", "))
+				var ms []string
+				for _, m := range x.Modules {
+					ms = append(ms, m+" at "+structure.ModulePath(x, m))
+				}
+				fmt.Fprintf(&b, " (modules: %s)", strings.Join(ms, ", "))
 			}
 			b.WriteString("\n")
 		}
@@ -82,9 +86,11 @@ CURRENT STRUCTURE (type %s):
 Answer with one JSON object only:
 {"ops":[{"op":"move","kind":"service","name":"reporting","to":"operations","reason":"<why, Indonesian>"}],
  "note":"<one Indonesian sentence on what you changed, or why nothing>"}
-Ops (names are lowercase folder names):
-- {"op":"type","name":"simple|modular|monorepo|microservices"} regroups the same domains for that type
-- {"op":"add","kind":"app|service|worker|package","name":"x"} ; {"op":"add","kind":"module","name":"x","to":"<service>"}
+Ops (names are lowercase part names; path is a folder relative to the repository root ending with "/"):
+- {"op":"type","name":"<architecture style in your own words>"} renames the style; regroup parts with the other ops
+- {"op":"add","kind":"app|service|worker|package","name":"x","path":"<folder>/"} ; {"op":"add","kind":"module","name":"x","to":"<service>","path":"<folder>/"}
+  (path may be omitted: the part then goes next to its siblings)
+- {"op":"path","kind":"app|service|module|worker|package","name":"x","path":"<new folder>/"} moves a part to another folder
 - {"op":"remove","kind":"app|service|module|worker|package","name":"x"}
 - {"op":"rename","kind":"...","name":"x","to":"y"}
 - {"op":"move","kind":"module","name":"x","to":"<service>"} ; {"op":"move","kind":"service","name":"x","to":"<service>"} makes service x a module of the target

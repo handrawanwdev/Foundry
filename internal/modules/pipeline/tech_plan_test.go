@@ -163,9 +163,9 @@ func pickFakeTech(area string, bound map[string][2]string, backendLang string) (
 	case core.TechCache:
 		return "Valkey", ""
 	case core.TechArchitecture:
-		return core.ArchModular, ""
+		return "Modular Monolith", ""
 	case core.TechRepository:
-		return core.RepoMonorepo, ""
+		return "Monorepo", ""
 	case core.TechDeployment:
 		return "Fly.io Machines", ""
 	case core.TechObservability:
@@ -242,13 +242,13 @@ func fakeTechItems(prompt string) []map[string]any {
 		seen[area] = true
 		tech, lang := pickFakeTech(area, bound, backendLang)
 		if area == core.TechArchitecture && !has("backend") && bound[area][0] == "" {
-			tech = core.ArchSimple
+			tech = "Simple"
 		}
 		if area == core.TechRepository && bound[area][0] == "" {
 			if (has("web") && (has("android") || has("ios"))) || (has("web") && has("backend")) {
-				tech = core.RepoMonorepo
+				tech = "Monorepo"
 			} else {
-				tech = core.RepoSimple
+				tech = "Simple"
 			}
 		}
 		if area == core.TechDatabase && has("cli") && !has("backend") {
@@ -339,24 +339,18 @@ func fakeTechAnswer(prompt string, invalid bool) string {
 	return fakeTechPlanJSON(prompt, invalid)
 }
 
+// assertOutsideCatalog: the plan's own technologies are accepted as they
+// are; Foundry judges none against a catalog of its own.
 func assertOutsideCatalog(t *testing.T, p *core.Project) {
 	t.Helper()
 	plan := p.Stack.Plan
-	if plan.Analysis.Outside == 0 {
-		t.Fatal("expected technologies outside the catalog")
+	if plan == nil || len(plan.Items) == 0 {
+		t.Fatal("no plan")
 	}
-	var outside bool
-	for _, it := range plan.Items {
-		if it.None() {
-			continue
+	for _, is := range plan.Analysis.Issues {
+		if strings.Contains(is.Message, "katalog") || strings.Contains(is.Message, "belum dikenal Foundry") {
+			t.Fatalf("judged against a catalog: %+v", is)
 		}
-		if !it.InCatalog || !stack.Known(it.Area, it.Technology) {
-			outside = true
-			break
-		}
-	}
-	if !outside {
-		t.Fatalf("every item is in the catalog: %+v", plan.Items)
 	}
 }
 
@@ -428,11 +422,13 @@ func TestTechPlanCLI(t *testing.T) {
 
 func TestTechPlanExistingBinding(t *testing.T) {
 	s := newService(t, fakeAI{}, "")
-	p := techReady(t, s, core.PlatformWeb, core.PlatformBackend)
-	want := p.Stack.Choice(core.TechBackend)
+	techReady(t, s, core.PlatformWeb, core.PlatformBackend)
+	want := "Go + Gin"
 	if _, err := s.Store.Update(func(p *core.Project) error {
 		p.Structure.Mode = core.StructureExisting
 		p.Stack.Mode = core.StructureExisting
+		p.Stack.Decisions = slices.DeleteFunc(p.Stack.Decisions, func(d core.TechDecision) bool { return d.Area == core.TechBackend })
+		p.Stack.Decisions = append(p.Stack.Decisions, core.TechDecision{Area: core.TechBackend, Recommended: want, Language: "Go"})
 		for i := range p.Stack.Decisions {
 			p.Stack.Decisions[i].Source = core.SourceExisting
 		}
@@ -441,7 +437,7 @@ func TestTechPlanExistingBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	generateTech(t, s, "")
-	p = load(t, s)
+	p := load(t, s)
 	if p.Stack.Choice(core.TechBackend) != want {
 		t.Fatalf("existing backend replaced: got %s want %s", p.Stack.Choice(core.TechBackend), want)
 	}

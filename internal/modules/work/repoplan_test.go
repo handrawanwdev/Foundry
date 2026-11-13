@@ -12,7 +12,7 @@ import (
 
 func repoProject() *core.Project {
 	p := &core.Project{Name: "demo", Story: "cerita", Blueprint: &core.Blueprint{Modules: []core.Module{{ID: "booking", Responsibility: "pemesanan"}}},
-		Structure: &core.Structure{Mode: core.StructureNew, IR: &core.StructureIR{Type: core.StructModular,
+		Structure: &core.Structure{Mode: core.StructureNew, IR: &core.StructureIR{Type: "Modular monolith",
 			Services: []core.StructurePart{{Name: "api", Path: "apps/api/", Modules: []string{"booking"}}}}}}
 	return p
 }
@@ -41,7 +41,7 @@ func TestRepoPlanPromptOmitsArtifactBodies(t *testing.T) {
 func TestRepoPlanPromptLeavesTheApproachToTheAI(t *testing.T) {
 	prompt := RepoPlanPrompt(repoProject())
 	for _, want := range []string{"You are free to choose the organization approach", "references, not a menu", "PROJECT MODULES", "- booking: pemesanan",
-		"STRUCTURE PARTS", "service:api (default folder apps/api/)", "module:booking", "EVERY project module", "consistency", "evaluation",
+		"STRUCTURE PARTS", "service:api (folder in the structure decision: apps/api/)", "module:booking", "EVERY project module", "consistency", "evaluation",
 		"FOLDERS, never files", "not a second part mapping", `"role": "ui"`, `Never write "*", "all", "all-modules"`,
 		"will be refused", "Every location path is also a folder in nodes"} {
 		if !strings.Contains(prompt, want) {

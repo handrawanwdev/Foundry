@@ -1,8 +1,4 @@
-import type { Project, Structure, StructureAlternative, StructureIR, StructurePlan, TechStatus } from "./types";
-
-export const STRUCTURE_TYPE: Record<string, string> = {
-  simple: "Simple", modular: "Modular", monorepo: "Monorepo", microservices: "Microservices",
-};
+import type { Project, Structure, StructureAlternative, StructureIR, StructurePart, StructurePlan, TechStatus } from "./types";
 
 export const SCORE_LABEL: Record<string, string> = {
   maintainability: "Maintainability", simplicity: "Simplicity", extensibility: "Extensibility",
@@ -28,17 +24,20 @@ export function structureState(s: Structure): TechStatus {
 
 export const structureVersion = (s: Structure) => s.history?.at(-1)?.version ?? 0;
 
+// The folder of module m inside part p, as the design chose it
+// (structure.ModulePath).
+export const modulePath = (p: StructurePart, m: string) => p.module_paths?.[m] || `${p.path}${m}/`;
+
 // Every folder of the IR in scaffold order (structure.Layout).
 export function layoutOf(ir: StructureIR): string[] {
   const out: string[] = [];
   for (const p of ir.apps ?? []) out.push(p.path);
   for (const p of ir.services ?? []) {
     out.push(p.path);
-    const infix = p.name === "api" || p.name === "backend" ? "modules/" : "";
-    for (const m of p.modules ?? []) out.push(`${p.path}${infix}${m}/`);
+    for (const m of p.modules ?? []) out.push(modulePath(p, m));
   }
   for (const p of [...(ir.workers ?? []), ...(ir.packages ?? [])]) out.push(p.path);
-  out.push(ir.docs || "docs/");
+  if (ir.docs) out.push(ir.docs);
   return out;
 }
 
@@ -71,7 +70,8 @@ export function tree(ir: StructureIR): string {
 // Why the project cannot be finalized yet because of the structure, or null.
 export function structureGate(p: Project): string | null {
   const s = p.structure;
-  if (!s || s.mode === "existing" || !s.ir) return null;
+  if (!s || s.mode === "existing") return null;
+  if (!s.ir) return "Rancang struktur dengan AI dulu";
   if (s.proposal) return "Terapkan atau batalkan perubahan struktur dulu";
   if (structureState(s) !== "approved") return "Setujui struktur project dulu";
   if ((s.issues ?? []).some((i) => i.level === "error")) return "Selesaikan masalah struktur dulu";

@@ -30,6 +30,15 @@ Kode sudah di-commit user: `2d490fa` (Phase 7), `9c9fa86` (coverage workflow), `
 - [x] **File sementara tertinggal.** Diperbaiki (`agent/tempfiles.go`): folder per run `$TMPDIR/foundry-agent/run-<pid>-*`, dihapus saat run selesai (sukses, error, timeout, cancel, panic); sweep saat start (`serve`, `mcp`, run pertama) menghapus folder milik PID mati dan semua yang > 6 jam; shutdown menghapus folder proses sendiri. Test memakai TMPDIR terisolasi.
 - [x] **Criterion ID karangan** (muncul setelah optimasi, run 1: 11 ID seperti `REQ-031-AC9`). Diperbaiki dengan aturan prompt; run 2: 0.
 
+## C. Arsitektur tanpa katalog/hardcode (2026-11-13)
+
+- [x] **Teknologi**: katalog (`stack.Catalog`), profil (`profiles/*.json`), deteksi kebutuhan dari kata kunci, rekomender deterministik, nilai tertutup arsitektur/repository/cache, aturan kompatibilitas berbasis nama teknologi dihapus. Stack baru kosong sampai rencana AI; existing tetap dibaca dari kode. Override menerima teknologi dan area apa pun. Prompt tidak lagi memuat CATALOG REFERENCE / FOUNDRY BASELINE / PROFILE HINT / KNOWN OPTIONS.
+- [x] **Struktur**: tipe tertutup (simple/modular/monorepo/microservices), `Templates`, `/api/v1/templates`, `Recommend`/`Convert`, penurunan folder (`apps/`, `services/`, `packages/`, infix `modules/`) dan validasi/dampak per tipe dihapus. IR menyimpan gaya arsitektur bebas + folder pilihan AI (`path`, `module_paths`); op baru `path`. Struktur pertama berasal dari analisis AI.
+- [x] **Blueprint**: `CompleteBlueprint` tidak lagi mengarang modul, entity, auth, ORM, library frontend, aturan coding, worker; hanya menyalin fakta discovery/platform dan pilihan teknologi.
+- [x] **Data lama**: `migrateModulePaths` menulis folder modul yang dulu diturunkan. Replay 12 project nyata (read-only): layout identik, 0 error validasi baru.
+- [ ] **Belum terbukti live**: alur penuh dengan AI sungguhan (rencana AI kini satu-satunya sumber teknologi dan struktur project baru).
+- [ ] **Masih kosakata tetap (bukan resep arsitektur)**: area teknologi bawaan (`core.TechAreas`, AI boleh menambah area lain), jenis bagian IR (app/service/module/worker/package), opsi survey arsitektur (preferensi user, diteruskan ke AI), deteksi teknologi dari manifest di `scan` (fakta kode existing).
+
 ## B. Phase 7 — Step 9 Teknologi
 
 ### Butuh keputusan user

@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "../api";
 import { Elapsed } from "./Elapsed";
 import { isWorking } from "../flow";
 import {
-  otherAlternatives, recommendedAlternative, SCORE_LABEL, STRUCTURE_TYPE, structureState, structureVersion, tree,
+  modulePath, otherAlternatives, recommendedAlternative, SCORE_LABEL, structureState, structureVersion, tree,
 } from "../structure";
 import { changeText, TECH_STATUS } from "../tech";
 import { useProject } from "../store/project";
 import type {
   PartKind, Project, StructureAlternative, StructureIR, StructureOp, StructurePlan, StructureProposal, Structure,
-  StructureEvaluation, Template, TechIssue,
+  StructureEvaluation, TechIssue,
 } from "../types";
 
 const KIND: Record<string, string> = {
@@ -17,15 +17,14 @@ const KIND: Record<string, string> = {
 };
 const SOURCE: Record<string, string> = { recommend: "rekomendasi", user: "diubah user", ai: "AI", technology: "mengikuti teknologi" };
 
-// Structure decision: Foundry recommends a shape, the user edits (by hand
-// or in words), sees the impact, applies and approves. The folder plan
-// on this page spells out the approved shape.
+// Structure decision: the AI designs the style and folders (Foundry has no
+// template), the user edits (by hand or in words), sees the impact,
+// applies and approves. The folder plan on this page spells out the
+// approved shape.
 export function StructurePanel({ project }: { project: Project }) {
   const { run, pending } = useProject();
-  const [types, setTypes] = useState<Template[]>([]);
   const [editing, setEditing] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
-  useEffect(() => { void api.templates().then(setTypes, () => {}); }, []);
   const s = project.structure!;
   const ir = s.ir!;
   const finalized = project.stage === "READY";
@@ -36,7 +35,7 @@ export function StructurePanel({ project }: { project: Project }) {
   const errors = (s.issues ?? []).filter((i) => i.level === "error");
   const plan = s.plan;
   const rec = recommendedAlternative(plan);
-  const recommendation = rec?.name ?? STRUCTURE_TYPE[s.recommended ?? ""] ?? "—";
+  const recommendation = rec?.name ?? s.recommended ?? "—";
   // Folder tree, specs, rules and history live in the folder plan once it exists.
   const repo = s.repo && !s.proposal ? s.repo : undefined;
   const compact = !s.proposal && state === "approved";
@@ -54,8 +53,8 @@ export function StructurePanel({ project }: { project: Project }) {
       </p>
       {!compact && (
         <p className="small muted">
-          Bentuk struktur secara garis besar, diturunkan dari arsitektur di Teknologi, lalu diperiksa AI terhadap
-          seluruh blueprint. Rencana folder di bawah merinci folder dan tanggung jawabnya.
+          Gaya arsitektur dan folder dirancang AI untuk sistem ini (tanpa template), konsisten dengan keputusan
+          Teknologi dan seluruh blueprint. Rencana folder di bawah merinci folder dan tanggung jawabnya.
         </p>
       )}
 
@@ -71,7 +70,7 @@ export function StructurePanel({ project }: { project: Project }) {
       {!s.proposal && <StructureAnalysis plan={plan} editable={editable} busy={busy} finalized={finalized} hideRules={!!repo || compact} compact={compact} />}
 
       <div className="tech-list">
-        <TypeRow s={s} type={shown.type} types={types} editable={editable && !s.proposal} open={typeOpen}
+        <TypeRow s={s} type={shown.type} editable={editable && !s.proposal} open={typeOpen}
           compact={compact} onToggle={() => setTypeOpen(!typeOpen)} onDone={() => setTypeOpen(false)} />
       </div>
 
@@ -205,7 +204,7 @@ function AlternativeCard({ a, plan, primary, canUse, busy, finalized, open }: {
     <details className="plan-alt" open={open}>
       <summary>
         <strong>{a.name}</strong>
-        <span className="muted small"> · {STRUCTURE_TYPE[a.type] ?? a.type} · skor {a.evaluation.score ?? "—"}</span>
+        <span className="muted small"> · {a.type} · skor {a.evaluation.score ?? "—"}</span>
         {a.recommended && <span className="tech-tag">rekomendasi AI</span>}
         {chosen && <span className="tech-tag">dipilih</span>}
       </summary>
@@ -239,56 +238,41 @@ function Scores({ e }: { e: StructureEvaluation }) {
   );
 }
 
-// The structure type, changed like a technology decision: keep the
-// recommendation or pick another type, then see the impact.
-function TypeRow({ s, type, types, editable, open, compact, onToggle, onDone }: {
-  s: Structure; type: string; types: Template[]; editable: boolean; open: boolean; compact?: boolean; onToggle: () => void; onDone: () => void;
+// The architecture style the design named; the user may rename it in
+// their own words (there is no list of types). Folders change with the
+// structure edits, never from the name.
+function TypeRow({ s, type, editable, open, compact, onToggle, onDone }: {
+  s: Structure; type: string; editable: boolean; open: boolean; compact?: boolean; onToggle: () => void; onDone: () => void;
 }) {
   const recommended = s.recommended ?? "";
-  const label = (id: string) => types.find((t) => t.id === id)?.name ?? STRUCTURE_TYPE[id] ?? id;
   return (
     <div className="tech-row">
       <div className="tech-head">
-        <span className="tech-area">Layout</span>
-        <strong>{label(type)}</strong>
+        <span className="tech-area">Gaya arsitektur</span>
+        <strong>{type || "—"}</strong>
         {recommended && type !== recommended && <span className="tech-tag">pilihan kamu</span>}
         {editable && <button className="ghost small" onClick={onToggle}>Ubah</button>}
       </div>
       {!compact && (
         <div className="small muted">
-          {recommended && type !== recommended ? <>Rekomendasi: {label(recommended)}{s.reason && <> — {s.reason}</>}</> : <>Alasan: {s.reason || "—"}</>}
+          {recommended && type !== recommended ? <>Rekomendasi AI: {recommended}{s.reason && <> — {s.reason}</>}</> : <>Alasan: {s.reason || "—"}</>}
         </div>
       )}
-      {open && <TypeEdit type={type} recommended={recommended} types={types} label={label} onDone={onDone} />}
+      {open && <TypeEdit type={type} onDone={onDone} />}
     </div>
   );
 }
 
-function TypeEdit({ type, recommended, types, label, onDone }: {
-  type: string; recommended: string; types: Template[]; label: (id: string) => string; onDone: () => void;
-}) {
+function TypeEdit({ type, onDone }: { type: string; onDone: () => void }) {
   const { run, pending } = useProject();
-  const others = types.filter((t) => t.id !== recommended);
-  const [mode, setMode] = useState<"recommended" | "alternative">("alternative");
-  const [pick, setPick] = useState(type !== recommended ? type : others[0]?.id ?? "");
-  const value = mode === "recommended" ? recommended : pick;
-  const save = async () => { if (await run("structure", () => api.proposeStructure([{ op: "type", name: value }]))) onDone(); };
-  const radio = (m: typeof mode, text: string) => (
-    <label className="check small"><input type="radio" checked={mode === m} onChange={() => setMode(m)} /> {text}</label>
-  );
+  const [value, setValue] = useState(type);
+  const save = async () => { if (await run("structure", () => api.proposeStructure([{ op: "type", name: value.trim() }]))) onDone(); };
   return (
     <div className="tech-edit">
-      <div className="tech-modes">
-        {recommended && radio("recommended", `Gunakan rekomendasi (${label(recommended)})`)}
-        {others.length > 0 && radio("alternative", "Pilih alternatif")}
-      </div>
-      {mode === "alternative" && (
-        <select value={pick} onChange={(e) => setPick(e.target.value)}>
-          {others.map((t) => <option key={t.id} value={t.id}>{t.name} — {t.description}</option>)}
-        </select>
-      )}
+      <input value={value} maxLength={120} placeholder="nama gaya arsitektur, mis. modular monolith heksagonal" onChange={(e) => setValue(e.target.value)} />
+      <p className="small muted">Hanya nama gayanya. Untuk mengubah bentuknya, edit bagian struktur atau minta AI.</p>
       <div className="tech-actions">
-        <button disabled={pending === "structure" || !value || value === type} onClick={() => void save()}>Lihat dampak</button>
+        <button disabled={pending === "structure" || !value.trim() || value.trim() === type} onClick={() => void save()}>Lihat dampak</button>
         <button className="ghost" onClick={onDone}>Batal</button>
       </div>
     </div>
@@ -306,7 +290,7 @@ function Parts({ ir }: { ir: StructureIR }) {
           <code>{p.path}</code> {p.reason || <span className="muted">ditambahkan user</span>}
           {!!p.modules?.length && (
             <ul>{p.modules.map((m) => (
-              <li key={m}><code>{p.path}{m}/</code> {p.module_reasons?.[m] || <span className="muted">tanggung jawab belum diisi</span>}</li>
+              <li key={m}><code>{modulePath(p, m)}</code> {p.module_reasons?.[m] || <span className="muted">tanggung jawab belum diisi</span>}</li>
             ))}</ul>
           )}
         </li>
@@ -344,7 +328,7 @@ function Rules({ rules, editable }: { rules: string[]; editable: boolean }) {
 }
 
 type Op = StructureOp["op"];
-const OPS: [Op, string][] = [["add", "Tambah"], ["rename", "Ganti nama"], ["move", "Pindahkan"], ["remove", "Hapus"]];
+const OPS: [Op, string][] = [["add", "Tambah"], ["path", "Ganti folder"], ["rename", "Ganti nama"], ["move", "Pindahkan"], ["remove", "Hapus"]];
 
 // One edit at a time; each becomes (part of) the waiting proposal.
 function StructureEdit({ ir, onDone }: { ir: StructureIR; onDone: () => void }) {
@@ -354,6 +338,7 @@ function StructureEdit({ ir, onDone }: { ir: StructureIR; onDone: () => void }) 
   const [name, setName] = useState("");
   const [to, setTo] = useState("");
   const [reason, setReason] = useState("");
+  const [path, setPath] = useState("");
   const services = (ir.services ?? []).map((p) => p.name);
   const names: Record<PartKind, string[]> = {
     app: (ir.apps ?? []).map((p) => p.name), service: services,
@@ -363,8 +348,8 @@ function StructureEdit({ ir, onDone }: { ir: StructureIR; onDone: () => void }) 
   const kinds: PartKind[] = op === "move" ? ["module", "service"] : ["app", "service", "module", "worker", "package"];
   const needsTo = op === "rename" || op === "move" || (op === "add" && kind === "module");
   const save = async () => {
-    if (await run("structure", () => api.proposeStructure([{ op, kind, name: name.trim(), to: to.trim() || undefined, reason: reason.trim() || undefined }]))) {
-      setName(""); setTo(""); setReason("");
+    if (await run("structure", () => api.proposeStructure([{ op, kind, name: name.trim(), to: to.trim() || undefined, path: path.trim() || undefined, reason: reason.trim() || undefined }]))) {
+      setName(""); setTo(""); setReason(""); setPath("");
     }
   };
   return (
@@ -393,9 +378,13 @@ function StructureEdit({ ir, onDone }: { ir: StructureIR; onDone: () => void }) 
             </select>
           ))}
       </div>
+      {(op === "add" || op === "path") && (
+        <input value={path} maxLength={200} placeholder={op === "path" ? "folder baru, mis. server/" : "folder (opsional; kosong = di samping bagian sejenis)"}
+          onChange={(e) => setPath(e.target.value)} />
+      )}
       {op === "add" && <input value={reason} maxLength={200} placeholder="Alasan, mis. domain laporan terpisah" onChange={(e) => setReason(e.target.value)} />}
       <div className="tech-actions">
-        <button disabled={pending === "structure" || !name.trim() || (needsTo && !to.trim() && !(op === "add" && services.length === 1))}
+        <button disabled={pending === "structure" || !name.trim() || (op === "path" && !path.trim()) || (needsTo && !to.trim() && !(op === "add" && services.length === 1))}
           onClick={() => void save()}>Lihat dampak</button>
         <button className="ghost" onClick={onDone}>Tutup</button>
       </div>
@@ -452,7 +441,7 @@ function History({ s }: { s: Structure }) {
       <ul>
         {versions.map((v, i) => (
           <li key={v.version}>
-            <strong>v{v.version}</strong> {STRUCTURE_TYPE[v.ir.type] ?? v.ir.type} — {i === 0 ? "saat ini" : "sebelumnya"} · {new Date(v.at).toLocaleString("id-ID")}
+            <strong>v{v.version}</strong> {v.ir.type} — {i === 0 ? "saat ini" : "sebelumnya"} · {new Date(v.at).toLocaleString("id-ID")}
             {" · "}{SOURCE[v.source] ?? v.source} · {TECH_STATUS[v.status] ?? v.status}
             {v.request && <div className="muted">“{v.request}”</div>}
             {!!v.changes?.length && <div className="muted">{v.changes.join("; ")}</div>}

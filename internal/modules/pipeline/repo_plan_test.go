@@ -43,11 +43,11 @@ func promptModules(prompt string) []string {
 	return out
 }
 
-// promptParts maps ref → default folder from the STRUCTURE PARTS section.
+// promptParts maps ref → folder from the STRUCTURE PARTS section.
 func promptParts(prompt string) map[string]string {
 	out := map[string]string{}
 	for _, l := range promptLines(prompt, "STRUCTURE PARTS") {
-		ref, rest, _ := strings.Cut(l, " (default folder ")
+		ref, rest, _ := strings.Cut(l, " (folder in the structure decision: ")
 		out[ref] = strings.TrimSuffix(rest, ")")
 	}
 	return out
@@ -509,12 +509,12 @@ func TestRepoPlanExport(t *testing.T) {
 // structure decision it is given.
 func TestRepoPlanForOtherStructureDecisions(t *testing.T) {
 	cases := map[string]*core.StructureIR{
-		"microservices with a worker": {Type: core.StructMicroservices,
+		"microservices with a worker": {Type: "microservices",
 			Apps:     []core.StructurePart{{Name: "web", Reason: "web"}},
 			Services: []core.StructurePart{{Name: "alpha", Reason: "a"}, {Name: "beta", Reason: "b"}},
 			Workers:  []core.StructurePart{{Name: "worker", Reason: "job"}},
 			Packages: []core.StructurePart{{Name: "contracts", Reason: "kontrak"}}},
-		"no backend": {Type: core.StructSimple, Apps: []core.StructurePart{{Name: "web", Reason: "web"}}},
+		"no backend": {Type: "simple", Apps: []core.StructurePart{{Name: "web", Reason: "web"}}},
 	}
 	for name, ir := range cases {
 		t.Run(name, func(t *testing.T) {

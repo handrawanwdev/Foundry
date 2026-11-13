@@ -113,12 +113,12 @@ func Scan(dir string) Result {
 			r.Existing = true
 			scanGo(relDir, read(path), add)
 		case name == "go.work":
-			add(core.Component{Kind: KindRepository, Path: relDir, Tech: core.RepoMonorepo, Evidence: "go.work"})
+			add(core.Component{Kind: KindRepository, Path: relDir, Tech: "Workspace go.work", Evidence: "go.work"})
 		case name == "package.json":
 			r.Existing = true
 			scanNode(dir, relDir, path, add)
 		case name == "pnpm-workspace.yaml" || name == "turbo.json" || name == "nx.json" || name == "lerna.json":
-			add(core.Component{Kind: KindRepository, Path: relDir, Tech: core.RepoMonorepo, Evidence: name})
+			add(core.Component{Kind: KindRepository, Path: relDir, Tech: "Workspace " + name, Evidence: name})
 		case name == "pyproject.toml" || name == "requirements.txt" || name == "Pipfile":
 			scanPython(relDir, name, read(path), code, add)
 		case name == "Cargo.toml":
@@ -395,7 +395,7 @@ func scanNode(root, relDir, path string, add func(core.Component)) {
 		add(core.Component{Kind: "shared", Path: relDir, Tech: "Workspace root", Evidence: "package.json workspaces"})
 	}
 	if len(p.Workspaces) > 0 {
-		add(core.Component{Kind: KindRepository, Path: relDir, Tech: core.RepoMonorepo, Evidence: "package.json workspaces"})
+		add(core.Component{Kind: KindRepository, Path: relDir, Tech: "Workspace package.json", Evidence: "package.json workspaces"})
 	}
 	if has("eslint") || has("prettier") {
 		t := map[[2]bool]string{{true, true}: "ESLint + Prettier", {true, false}: "ESLint", {false, true}: "Prettier"}[[2]bool{has("eslint"), has("prettier")}]

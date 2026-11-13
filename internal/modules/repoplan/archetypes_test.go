@@ -21,7 +21,7 @@ func deps(n core.RepoNode, to ...string) core.RepoNode { n.DependsOn = to; retur
 // contracts package every service shares. Services talk through contracts
 // and events only.
 func microservices() (*core.Project, *core.RepoPlan) {
-	p := project([]string{"orders", "payments", "notifications"}, &core.StructureIR{Type: core.StructMicroservices,
+	p := project([]string{"orders", "payments", "notifications"}, &core.StructureIR{Type: "Service per domain",
 		Apps: []core.StructurePart{{Name: "mobile", Reason: "pelanggan memesan lewat HP"}},
 		Services: []core.StructurePart{
 			{Name: "orders", Reason: "o"}, {Name: "payments", Reason: "p"},
@@ -62,7 +62,7 @@ func microservices() (*core.Project, *core.RepoPlan) {
 // firmware: no frontend, no backend, no services. Modules are firmware
 // components; one module is only documentation.
 func firmware() (*core.Project, *core.RepoPlan) {
-	p := project([]string{"sensing", "transport", "calibration"}, &core.StructureIR{Type: core.StructSimple})
+	p := project([]string{"sensing", "transport", "calibration"}, &core.StructureIR{Type: "Simple"})
 	plan := &core.RepoPlan{
 		Nodes: []core.RepoNode{
 			dir("firmware/", core.OwnerPlatform, "kode yang berjalan di perangkat"),
@@ -88,7 +88,7 @@ func firmware() (*core.Project, *core.RepoPlan) {
 
 // cli: a single Go module with one command and two internal packages.
 func cli() (*core.Project, *core.RepoPlan) {
-	p := project([]string{"parser", "renderer"}, &core.StructureIR{Type: core.StructSimple,
+	p := project([]string{"parser", "renderer"}, &core.StructureIR{Type: "Simple",
 		Apps: []core.StructurePart{{Name: "cli", Reason: "alat baris perintah"}}})
 	plan := &core.RepoPlan{
 		Nodes: []core.RepoNode{
@@ -179,7 +179,7 @@ func TestCLIPartMustBeMapped(t *testing.T) {
 	if errs := errorsOf(p, plan); !hasError(errs, "app:cli") {
 		t.Fatalf("errors = %v", errs)
 	}
-	// Placing the part away from its default folder is allowed; the plan is
+	// Placing the part away from its folder in the structure decision is allowed; the plan is
 	// then the source of truth, and says so as a warning.
 	p, plan = cli()
 	plan.Nodes[0].Path = "cmd/tool/"
@@ -190,7 +190,7 @@ func TestCLIPartMustBeMapped(t *testing.T) {
 	}
 	var moved bool
 	for _, i := range plan.Analysis.Issues {
-		moved = moved || i.Level == "warning" && strings.Contains(i.Message, "luar lokasi default")
+		moved = moved || i.Level == "warning" && strings.Contains(i.Message, "luar folder keputusan struktur")
 	}
 	if !moved {
 		t.Fatalf("issues = %+v", plan.Analysis.Issues)

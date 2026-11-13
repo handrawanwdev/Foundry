@@ -74,7 +74,7 @@ func TestWriteDocs(t *testing.T) {
 	p := &core.Project{Name: "Klinik", Story: "Aplikasi klinik", Dir: dir, Stage: core.StageReady,
 		Discovery:    &core.Discovery{Summary: "Klinik"},
 		Requirements: []core.Requirement{{ID: "REQ-001", Text: "Buat janji", Priority: "MUST"}},
-		Stack: &core.TechStack{Profile: "saas", Decisions: []core.TechDecision{
+		Stack: &core.TechStack{Decisions: []core.TechDecision{
 			{Area: core.TechBackend, Recommended: "NestJS + TypeScript", Reason: "API"},
 		}},
 		Artifacts: []core.Artifact{{ID: "threat-model", Title: "Threat Model", Category: core.ArtifactQuality, Body: "## Aset"}},

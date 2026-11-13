@@ -1,4 +1,4 @@
-import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, CommandHistory, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackCatalog, StructureOp, Survey, TechArea, Flow, Template, WorkflowView } from "./types";
+import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, CommandHistory, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackAreas, StructureOp, Survey, TechArea, Flow, WorkflowView } from "./types";
 
 // details lists what an invalid request broke (field = where).
 export interface ErrorDetail { field?: string; message: string }
@@ -39,7 +39,6 @@ export const api = {
   removeRecent: (dir = "") => call("POST", "/projects/recent/remove", { dir }),
   closeProject: () => call("POST", "/projects/close", {}),
   browse: (path?: string) => call<Browse>("GET", `/fs${path ? `?path=${encodeURIComponent(path)}` : ""}`),
-  templates: () => call<Template[]>("GET", "/templates"),
 
   project: () => call<Project>("GET", "/project"),
   story: (story: string, survey?: Survey, intent?: string, corrections?: string) =>
@@ -83,7 +82,7 @@ export const api = {
   generateTechPlan: (text = "", reason = "") => call("POST", "/project/stack/plan/generate", { text, reason }),
   reviseTechPlan: (text = "", reason = "") => call("POST", "/project/stack/plan/revise", { text, reason }),
   discardTechPlan: () => call<Project>("POST", "/project/stack/plan/discard", {}),
-  stackCatalog: () => call<StackCatalog>("GET", "/stack/catalog"),
+  stackAreas: () => call<StackAreas>("GET", "/stack/areas"),
   // UI design: design rules + layout spec, blueprint artifacts edited as data.
   design: () => call<DesignView>("GET", "/project/design"),
   generateDesign: () => call("POST", "/project/design/generate", {}),

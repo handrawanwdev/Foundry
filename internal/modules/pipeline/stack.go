@@ -217,7 +217,9 @@ func (s *Service) ApproveStack() (*core.Project, error) {
 	})
 }
 
-// RecommendStack analyzes the requirement again; the user's choices stay.
+// RecommendStack reads the facts again (the code of an existing project,
+// the platform, the needs); the user's choices stay. The technology itself
+// is designed by the AI plan (GenerateTechPlan).
 func (s *Service) RecommendStack() (*core.Project, error) {
 	return s.Store.Update(func(p *core.Project) error {
 		if err := stackEditable(p); err != nil {
@@ -278,9 +280,10 @@ func stackReady(p *core.Project) error {
 	return nil
 }
 
-// decideStack recommends the stack from the requirement and platform,
-// keeps the user's choices, saves a version when the result differs and
-// derives a new project's structure from it. why names the trigger.
+// decideStack sets the stack before the AI designs it: what the code
+// already uses and what the user chose. Foundry recommends no technology
+// of its own. It saves a version when the result differs and revalidates
+// the structure. why names the trigger.
 func decideStack(p *core.Project, why string) {
 	old := p.Stack
 	if old != nil && old.Plan != nil {
@@ -292,7 +295,7 @@ func decideStack(p *core.Project, why string) {
 		syncStructure(p, why)
 		return
 	}
-	next := stack.Recommend(p)
+	next := stack.Baseline(p)
 	stack.Carry(old, next)
 	stack.Refresh(next)
 	p.Stack = next

@@ -21,7 +21,7 @@ func planProject() *core.Project {
 func TestSourceHashTracksSystemNotStructure(t *testing.T) {
 	p := planProject()
 	h := SourceHash(p)
-	p.Structure.IR = &core.StructureIR{Type: core.StructModular}
+	p.Structure.IR = &core.StructureIR{Type: "Modular monolith"}
 	if SourceHash(p) != h {
 		t.Fatal("the structure itself must not change its source hash")
 	}
@@ -33,7 +33,7 @@ func TestSourceHashTracksSystemNotStructure(t *testing.T) {
 
 func TestNormalizePlanComparesAlternatives(t *testing.T) {
 	p := planProject()
-	modular := &core.StructureIR{Type: core.StructModular,
+	modular := &core.StructureIR{Type: "Modular monolith",
 		Apps: []core.StructurePart{{Name: "web", Reason: "Pasien dan admin memakai web"}},
 		Services: []core.StructurePart{{Name: "api", Reason: "Satu API untuk kedua domain",
 			Modules: []string{"booking", "pembayaran"},
@@ -43,7 +43,7 @@ func TestNormalizePlanComparesAlternatives(t *testing.T) {
 			}}},
 		Rules: []string{"Modul hanya memanggil modul lain lewat public API."},
 	}
-	services := &core.StructureIR{Type: core.StructMicroservices,
+	services := &core.StructureIR{Type: "Service per domain",
 		Apps: []core.StructurePart{{Name: "web", Reason: "Pasien dan admin memakai web"}},
 		Services: []core.StructurePart{
 			{Name: "booking", Reason: "Janji temu diskalakan sendiri"},
@@ -56,9 +56,9 @@ func TestNormalizePlanComparesAlternatives(t *testing.T) {
 		DependencyRules: []string{"Tidak ada import melingkar antarmodul."},
 		Recommendation:  "recommended",
 		Alternatives: []core.StructureAlternative{
-			{ID: "recommended", Name: "Modular", Summary: "Satu API, dua modul", Type: core.StructModular, IR: modular,
+			{ID: "recommended", Name: "Modular", Summary: "Satu API, dua modul", Type: "Modular monolith", IR: modular,
 				Evaluation: core.StructureEvaluation{Maintainability: 5, Simplicity: 5, Extensibility: 3, Testability: 4, Separation: 4, Complexity: 2}},
-			{ID: "alt-2", Name: "Microservices", Summary: "Satu service per domain", Type: core.StructMicroservices, IR: services,
+			{ID: "alt-2", Name: "Microservices", Summary: "Satu service per domain", Type: "Service per domain", IR: services,
 				Evaluation: core.StructureEvaluation{Maintainability: 3, Simplicity: 2, Extensibility: 5, Testability: 3, Separation: 5, Complexity: 5}},
 		},
 	}
@@ -83,15 +83,15 @@ func TestNormalizePlanComparesAlternatives(t *testing.T) {
 
 func TestNormalizePlanRefusesFolderWithoutResponsibility(t *testing.T) {
 	p := planProject()
-	ir := &core.StructureIR{Type: core.StructModular,
+	ir := &core.StructureIR{Type: "Modular monolith",
 		Apps:     []core.StructurePart{{Name: "web", Reason: "Web"}},
 		Services: []core.StructurePart{{Name: "api", Reason: "API", Modules: []string{"booking", "pembayaran"}}}}
 	// Module reasons are filled from the plan's domains, so remove those to
 	// test the refusal.
 	plan := &core.StructurePlan{Summary: "Sistem kecil", DependencyRules: []string{"Tidak ada import melingkar."},
 		Alternatives: []core.StructureAlternative{
-			{ID: "a", Name: "A", Type: core.StructModular, IR: ir},
-			{ID: "b", Name: "B", Type: core.StructModular, IR: ir.Clone()},
+			{ID: "a", Name: "A", Type: "Modular monolith", IR: ir},
+			{ID: "b", Name: "B", Type: "Modular monolith", IR: ir.Clone()},
 		}}
 	err := NormalizePlan(p, plan)
 	if err == nil || !strings.Contains(err.Error(), "tanpa alasan") {

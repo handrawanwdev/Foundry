@@ -313,11 +313,11 @@ func checkParts(p *core.Project, x *index, is *issues) {
 		case len(w) > 1:
 			is.add("error", areaStructure, "bagian struktur %s dipetakan ke lebih dari satu folder: %s", part.Ref, strings.Join(w, ", "))
 		case w[0] != part.Path:
-			moved = append(moved, fmt.Sprintf("%s di %s (default %s)", part.Ref, w[0], part.Path))
+			moved = append(moved, fmt.Sprintf("%s di %s (struktur: %s)", part.Ref, w[0], part.Path))
 		}
 	}
 	is.list("error", areaStructure, "bagian keputusan struktur belum dipetakan ke folder", unmapped)
-	is.list("warning", areaStructure, "bagian struktur ditempatkan di luar lokasi default; rencana repository menjadi sumber kebenaran", moved)
+	is.list("warning", areaStructure, "bagian struktur ditempatkan di luar folder keputusan struktur; rencana repository menjadi sumber kebenaran", moved)
 }
 
 // cycle is a circular dependency: the members of one strongly connected

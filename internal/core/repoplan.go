@@ -14,7 +14,7 @@ import (
 // Foundry stores and exports the plan; it never writes the project's code.
 //
 // The plan is free-form: Foundry does not pick the organization approach
-// from a catalog. The coarse Structure IR (apps, services, modules, ...)
+// from a catalog or template. The coarse Structure IR (apps, services, modules, ...)
 // stays the architecture decision; every IR part is mapped to the folder
 // that implements it (RepoNode.Part), wherever the AI put it.
 

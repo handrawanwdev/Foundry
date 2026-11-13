@@ -58,7 +58,7 @@ func moduleIDs(p *core.Project) []string {
 	return out
 }
 
-// IRPart is a part of the Structure IR with the folder Foundry derives for
+// IRPart is a part of the Structure IR with the folder the structure design chose for
 // it. The plan may place the part elsewhere; Ref is what a node's Part names.
 type IRPart struct {
 	Ref  string

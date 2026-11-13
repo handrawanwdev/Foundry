@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/handrawanwdev/foundry/internal/core"
-	"github.com/handrawanwdev/foundry/internal/modules/stack"
 )
 
 // Limits that keep a plan readable and bounded.
@@ -67,8 +66,7 @@ func cleanAreas(in []string) []string {
 func lower(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
 // Normalize cleans a plan the AI wrote: trimmed texts, area ids, groups,
-// canonical architecture and repository values, computed catalog flags and
-// score. It never invents content; what is missing stays missing for the
+// and score. It never invents content; what is missing stays missing for the
 // validation to report.
 func Normalize(plan *core.TechPlan) {
 	plan.Approach, plan.Summary = clean(plan.Approach, maxName), clean(plan.Summary, maxLongTxt)
@@ -162,13 +160,6 @@ func normalizeItem(it *core.TechItem) {
 	if strings.EqualFold(it.Technology, core.TechNone) || it.Technology == "-" || strings.EqualFold(it.Technology, "none") {
 		it.Technology = core.TechNone
 	}
-	// closed values the project structure is derived from
-	switch it.Area {
-	case core.TechArchitecture:
-		it.Technology = canonical(it.Technology, core.ArchSimple, core.ArchModular, core.ArchMicroservices)
-	case core.TechRepository:
-		it.Technology = canonical(it.Technology, core.RepoSimple, core.RepoMonorepo)
-	}
 	if g := core.TechAreaGroup(it.Area); g != "" {
 		it.Group = g
 	} else {
@@ -177,9 +168,6 @@ func normalizeItem(it *core.TechItem) {
 	it.Version, it.Language, it.Runtime = clean(it.Version, 60), clean(it.Language, 40), clean(it.Runtime, 80)
 	if it.Version == "" {
 		it.VersionVerified = false
-	}
-	if it.Language == "" && !it.None() {
-		it.Language = stack.LanguageOf(it.Area, it.Technology)
 	}
 	it.Purpose, it.Reasoning = clean(it.Purpose, maxText), clean(it.Reasoning, maxLongTxt)
 	it.Integration, it.Operational = clean(it.Integration, maxText), clean(it.Operational, maxText)
@@ -208,7 +196,6 @@ func normalizeItem(it *core.TechItem) {
 		}
 	}
 	it.Alternatives = alts
-	it.InCatalog = stack.Known(it.Area, it.Technology)
 	it.UserChosen = clean(it.UserChosen, maxText)
 }
 

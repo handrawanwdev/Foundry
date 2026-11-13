@@ -31,7 +31,6 @@ import (
 	"github.com/handrawanwdev/foundry/internal/modules/progress"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/stack"
-	"github.com/handrawanwdev/foundry/internal/modules/structure"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 	"github.com/handrawanwdev/foundry/internal/safefile"
 	"github.com/handrawanwdev/foundry/internal/transport/httpapi/respond"
@@ -227,7 +226,6 @@ func (s *Server) Handler() http.Handler {
 	})
 	api("POST /api/v1/projects/close", func(r *http.Request) (any, error) { return ok(s.Close()) })
 	api("GET /api/v1/fs", s.browse)
-	api("GET /api/v1/templates", func(r *http.Request) (any, error) { return structure.Templates, nil })
 
 	// Project pipeline
 	api("GET /api/v1/project", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
@@ -287,7 +285,7 @@ func (s *Server) Handler() http.Handler {
 		return svc.SetPlatform(in.Targets)
 	}))
 	// Structure edits become a proposal; apply/discard decide it. A bare
-	// template is a change of the structure type.
+	// template renames the architecture style (free text).
 	api("PUT /api/v1/project/structure", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {
 			Ops      []core.StructureOp
@@ -404,8 +402,8 @@ func (s *Server) Handler() http.Handler {
 	}))
 	api("POST /api/v1/project/stack/review-design", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.AckTechReview() }))
 	api("POST /api/v1/project/stack/recommend", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) { return svc.RecommendStack() }))
-	api("GET /api/v1/stack/catalog", func(r *http.Request) (any, error) {
-		return map[string]any{"catalog": stack.Catalog, "profiles": stack.Profiles, "areas": core.TechAreas, "groups": core.TechGroups}, nil
+	api("GET /api/v1/stack/areas", func(r *http.Request) (any, error) {
+		return map[string]any{"areas": core.TechAreas, "groups": core.TechGroups}, nil
 	})
 	// UI design: design rules and layout spec (blueprint artifacts).
 	api("GET /api/v1/project/design", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {

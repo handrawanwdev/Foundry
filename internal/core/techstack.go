@@ -53,7 +53,7 @@ var TechGroups = []TechGroup{
 		Areas: []string{TechFrontend, TechUI, TechMobile, TechDesktop, TechCLI, TechBackend, TechAPI}},
 	{ID: "data", Title: "Data & Communication", Description: "Database, cache, messaging, worker, file storage, dan search; komponen tambahan hanya bila ada kebutuhannya.",
 		Areas: []string{TechDatabase, TechCache, TechMessaging, TechWorkers, TechStorage, TechSearch}},
-	{ID: "architecture", Title: "Architecture & Repository", Description: "Arsitektur aplikasi dan struktur repository adalah dua keputusan terpisah; struktur folder diturunkan dari keduanya.",
+	{ID: "architecture", Title: "Architecture & Repository", Description: "Gaya arsitektur dan organisasi repository yang dirancang AI untuk sistem ini; struktur folder dirancang terpisah dan harus konsisten dengannya.",
 		Areas: []string{TechArchitecture, TechRepository}},
 	{ID: "operations", Title: "Infrastructure & Operations", Description: "Strategi deployment dan observability.",
 		Areas: []string{TechDeployment, TechObservability}},
@@ -71,17 +71,8 @@ func GroupOf(area string) string {
 	return ""
 }
 
-// Architecture and repository values; the project structure is derived
-// from them.
-const (
-	ArchSimple        = "Simple"
-	ArchModular       = "Modular Monolith"
-	ArchMicroservices = "Microservices"
-	RepoSimple        = "Simple"
-	RepoMonorepo      = "Monorepo"
-	TechNone          = "Tidak perlu"
-	CacheNone         = TechNone
-)
+// TechNone is the choice for an area the product does not need.
+const TechNone = "Tidak perlu"
 
 // TechStatus is where the technology decision is in its review. A change
 // after approval makes it changed: it must be approved again before the
@@ -103,10 +94,7 @@ type TechStack struct {
 	// Mode is existing when the stack was read from the project's code;
 	// such a stack is never replaced by a recommendation.
 	Mode StructureMode `json:"mode"`
-	// Profile is the technology profile the recommendation started from.
-	Profile string `json:"profile,omitempty"`
-	// Needs are the technical signals found in the requirement
-	// (realtime, offline, seo, ai, ...).
+	// Needs are the technical needs the discovery analyst reported.
 	Needs     []string       `json:"needs,omitempty"`
 	Platform  TechPlatform   `json:"platform"`
 	Decisions []TechDecision `json:"decisions"`
@@ -284,14 +272,11 @@ type TechPlatform struct {
 	CLI     bool `json:"cli,omitempty"`
 }
 
-// Sources of a recommendation, from the strongest.
+// Sources of a decision. Stacks saved before Foundry dropped its catalog
+// may still carry "need", "profile", "default" or "dependency".
 const (
 	SourceExisting   = "existing"   // read from the project's code
-	SourcePreference = "preference" // the stack the user stated in the survey
-	SourceNeed       = "need"       // a technical need of the project
-	SourceProfile    = "profile"    // the profile's policy for this kind of product
-	SourceDefault    = "default"
-	SourceDependency = "dependency" // follows another decision (UI library of the frontend, ...)
+	SourcePreference = "preference" // chosen by the user
 )
 
 type TechDecision struct {
@@ -464,7 +449,9 @@ func (s *TechStack) Brief() string {
 
 // TechReview lists the technology changes made after the UI design was
 // last checked that affect it; the project is not finalized until the user
-// has reviewed them. Empty when there is no draft design.
+// has reviewed them. A first decision of an area (nothing before it) is no
+// change to a design written without it. Empty when there is no draft
+// design.
 func (p *Project) TechReview() []TechChange {
 	d, s := p.UI, p.Stack
 	if !d.Written() || p.Finalized() || s == nil {
@@ -476,7 +463,7 @@ func (p *Project) TechReview() []TechChange {
 			continue
 		}
 		for _, c := range v.Changes {
-			if designArea[c.Area] {
+			if designArea[c.Area] && c.From != "" {
 				out = append(out, c)
 			}
 		}

@@ -9,7 +9,6 @@ import (
 
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/repoplan"
-	"github.com/handrawanwdev/foundry/internal/modules/stack"
 	"github.com/handrawanwdev/foundry/internal/modules/techplan"
 )
 
@@ -29,7 +28,7 @@ func TechPlanPrompt(p *core.Project) string {
 	var b strings.Builder
 	b.WriteString(`You are the technology architect of Foundry. Foundry designs software and writes instructions for an external coding agent; it never implements and you must not write application code or touch files.
 Decide the TECHNOLOGY of the system below. First understand what it needs, then choose, area by area, what it needs and nothing more.
-You are free. Foundry's catalog and profiles are a REFERENCE of what Foundry happens to know, not a menu: choose any technology that fits, outside the catalog, an unpopular one, a combination, a new approach, or no technology at all for an area that does not need one. Reject what does not meet a need. Different areas may come from different ecosystems as long as they integrate. Do not copy the baseline; keep it only where it is right for THIS system. The project profile is weak context: an explicit requirement always outranks it and a technology is never "mandatory" because of a profile.
+You are free. Foundry keeps no catalog, profile or default stack: choose any technology that fits, an unpopular one, a combination, a new approach, or no technology at all for an area that does not need one. Reject what does not meet a need. Different areas may come from different ecosystems as long as they integrate. A technology is never "mandatory" because it is popular; only a requirement, the user's choice or the existing code binds it.
 Pick the simplest stack that satisfies the requirements; every technology must serve a need that you can name. Do not add a component to be complete. Do not change the requirements, the platform or the domain boundaries.
 Do not invent facts. When the requirements do not say something that matters (load, data volume, compliance, team skills, budget), list it in context.unknowns and state the assumption you made; never present an assumption as a requirement. Version numbers: give one only when you know it, and set version_verified true only if you checked it against a source in this answer (you usually cannot: leave it false). Never claim two technologies are compatible without a basis you can state.
 Write every human-readable text in the same language as the story.
@@ -76,10 +75,10 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block:
 const techPlanRules = `Rules:
 - items is one decision per area. area is one of Foundry's areas — frontend, ui, mobile, desktop, cli, backend, api, database, cache, messaging, workers, storage, search, architecture, repository, deployment, observability, testing, quality — or any other area the system needs, as a lowercase id (runtime, state_management, orm, data_migration, authentication, authorization, session, background_jobs, scheduler, message_broker, integrations, containerization, hosting, networking, ci_cd, logging, metrics, tracing, monitoring, build_tool, package_manager, static_analysis, formatting, ...). Not every area needs a technology: decide each independently, and for an area the system does not need write technology "Tidak perlu" with the reason in reasoning. Do not list an area just to fill a category.
 - group: stack (application stack), data (data architecture), app_infra (authentication, authorization, background processing, broker, scheduler, integrations), architecture (architecture and repository), operations (deployment, hosting, containers, networking, CI/CD, logging, metrics, tracing, monitoring), standards (testing, lint, format, build, packages, static analysis). Foundry's own areas have a fixed group.
-- the platform decides which application parts exist: a web target needs frontend, mobile needs mobile, desktop needs desktop, backend needs backend, a CLI needs cli. architecture must be exactly one of "Simple", "Modular Monolith", "Microservices" and repository exactly "Simple" or "Monorepo"; Foundry derives the project structure from them, so they must agree with the structure decision and the folder plan shown above.
-- every decision (except "Tidak perlu"): technology (your own name, with its language or framework), language and runtime when they apply, version (only if known) with version_verified, purpose (what it is for), fulfills (the requirement ids, feature ids, module ids or technical needs it serves; at least one), driver (requirement | architecture | compatibility | engineering | operational | profile), reasoning (a technical reason that points at this system), pros, cons, tradeoffs, depends_on (areas it integrates with, only areas that are in items), integration (how it fits those), operational (what it asks from operations), confidence (high | medium | low) and the assumptions it rests on. Facts, assumptions, preferences and your recommendation are different things: say which one each reason is.
+- the platform decides which application parts exist: a web target needs frontend, mobile needs mobile, desktop needs desktop, backend needs backend, a CLI needs cli. architecture and repository name the architecture style and the repository organization you designed, in your own words (there is no fixed list); they must agree with the structure decision and the folder plan shown above.
+- every decision (except "Tidak perlu"): technology (your own name, with its language or framework), language and runtime when they apply, version (only if known) with version_verified, purpose (what it is for), fulfills (the requirement ids, feature ids, module ids or technical needs it serves; at least one), driver (requirement | architecture | compatibility | engineering | operational), reasoning (a technical reason that points at this system), pros, cons, tradeoffs, depends_on (areas it integrates with, only areas that are in items), integration (how it fits those), operational (what it asks from operations), confidence (high | medium | low) and the assumptions it rests on. Facts, assumptions, preferences and your recommendation are different things: say which one each reason is.
 - alternatives: only technologies that would genuinely work here. Each says why it is viable, how it differs from your choice, pros, cons, and its impact on architecture, maintenance and operational cost. No alternative when there is no other technically sensible option; never pad the list.
-- compatibility: check the whole stack — language, runtime, framework, package, database, api, authentication, storage, build, deployment, testing, operational. status is compatible (only with a basis), unverified (plausible but you could not verify), conflict (an incompatibility you could not fix; it blocks approval), resolved (found and fixed in this answer) or not_applicable. List what is redundant, incompatible or unnecessary in evaluation.findings. Check these conflicts in particular and resolve them with the simplest sufficient fix, not by adding components: transactions without a database or persistence; file upload without a storage strategy; a Modular Monolith or microservices whose deployment has no backend; an ORM that does not run on the backend's runtime; background processing with nothing that executes it; authentication without a session or token strategy; a frontend that does not fit the application.
+- compatibility: check the whole stack — language, runtime, framework, package, database, api, authentication, storage, build, deployment, testing, operational. status is compatible (only with a basis), unverified (plausible but you could not verify), conflict (an incompatibility you could not fix; it blocks approval), resolved (found and fixed in this answer) or not_applicable. List what is redundant, incompatible or unnecessary in evaluation.findings. Check these conflicts in particular and resolve them with the simplest sufficient fix, not by adding components: transactions without a database or persistence; file upload without a storage strategy; a backend whose deployment does not run it; an ORM that does not run on the backend's runtime; background processing with nothing that executes it; authentication without a session or token strategy; a frontend that does not fit the application.
 - evaluation: score EVERY criterion 1-5 with a concrete reason and evidence (a list of the ids it rests on: areas of items, requirement ids or module ids; a section name such as "compatibility" is not evidence): requirement_coverage, compatibility, maintainability, performance, scalability, security, reliability, developer_experience, sustainability (5 = best) and operational_complexity, total_cost (1 = low, 5 = high). A score without evidence is refused. A larger stack is not a better one; be honest.
 - consistency: check the plan against each of requirements, project_modules, architecture, folder_structure, data_architecture, security, deployment. status is consistent, resolved (conflict found and fixed in this answer) or conflict (not fixable; blocks approval). Resolve conflicts before answering.
 `
@@ -193,12 +192,9 @@ func writeTechAnchors(b *strings.Builder, p *core.Project) {
 		return
 	}
 	if len(s.Needs) > 0 {
-		fmt.Fprintf(b, "TECHNICAL NEED SIGNALS (keywords Foundry found in the requirements; a hint that may be wrong): %s\n\n", strings.Join(s.Needs, ", "))
+		fmt.Fprintf(b, "TECHNICAL NEEDS (reported by the discovery analysis; verify them against the requirements): %s\n\n", strings.Join(s.Needs, ", "))
 	}
-	if pr := stack.ProfileByID(s.Profile); pr != nil {
-		fmt.Fprintf(b, "PROFILE HINT (weak context only, lowest priority): %s — %s\n\n", pr.Name, pr.Description)
-	}
-	var existing, chosen, base []string
+	var existing, chosen []string
 	for _, d := range s.Decisions {
 		line := fmt.Sprintf("- %s: %s", d.Area, d.Choice())
 		if l := d.Lang(); l != "" {
@@ -211,8 +207,6 @@ func writeTechAnchors(b *strings.Builder, p *core.Project) {
 			chosen = append(chosen, line+" — "+orNo(d.Reason, "chosen by the user"))
 		case d.Source == core.SourceExisting || d.Source == "" && s.Mode == core.StructureExisting:
 			existing = append(existing, line+" — "+d.Reason)
-		case s.Plan == nil:
-			base = append(base, line+" — "+d.Reason)
 		}
 	}
 	if len(existing) > 0 {
@@ -221,20 +215,7 @@ func writeTechAnchors(b *strings.Builder, p *core.Project) {
 	if len(chosen) > 0 {
 		b.WriteString("CHOSEN BY THE USER (binding: use exactly this technology in items, and explain and evaluate it; never replace it):\n" + strings.Join(chosen, "\n") + "\n\n")
 	}
-	if len(base) > 0 {
-		b.WriteString("FOUNDRY BASELINE (a deterministic first guess from keywords and a profile; NOT binding; question every line):\n" + strings.Join(base, "\n") + "\n\n")
-	}
-	b.WriteString("CATALOG REFERENCE (technologies Foundry has compatibility data for; reference only, you may choose others):\n")
-	for _, area := range core.TechAreas {
-		var vs []string
-		for _, o := range stack.Catalog[area] {
-			vs = append(vs, o.Value)
-		}
-		if len(vs) > 0 {
-			fmt.Fprintf(b, "- %s: %s\n", area, strings.Join(vs, " | "))
-		}
-	}
-	b.WriteString("\n")
+	b.WriteString("Foundry has no technology catalog, profile or default: every area that is not binding above is yours to design for THIS system.\n\n")
 }
 
 func orNo(s, fallback string) string {
@@ -335,7 +316,7 @@ func TechRevisePrompt(p *core.Project) string {
 	plan := s.Plan
 	var b strings.Builder
 	b.WriteString(`You are the technology architect of Foundry. Foundry designs software and writes instructions for an external coding agent; it never implements and you must not write application code or touch files.
-Revise the CURRENT TECHNOLOGY PLAN below for the user's request and for the sources that changed since it was written. Change ONLY what the request or a changed source requires; keep everything else. The user decides the technology: never swap a choice the user asked to keep, or one chosen by the user, for your own preference. Choose freely otherwise (outside the catalog is fine) and keep the stack as simple as the requirements allow. Do not invent facts; list what is unknown and what you assumed. Every decision you set is complete (purpose, fulfills, driver, reasoning, pros, cons, tradeoffs, depends_on, integration, operational, alternatives, confidence, assumptions) and a claim of compatibility needs a basis.
+Revise the CURRENT TECHNOLOGY PLAN below for the user's request and for the sources that changed since it was written. Change ONLY what the request or a changed source requires; keep everything else. The user decides the technology: never swap a choice the user asked to keep, or one chosen by the user, for your own preference. Choose freely otherwise (Foundry has no catalog) and keep the stack as simple as the requirements allow. Do not invent facts; list what is unknown and what you assumed. Every decision you set is complete (purpose, fulfills, driver, reasoning, pros, cons, tradeoffs, depends_on, integration, operational, alternatives, confidence, assumptions) and a claim of compatibility needs a basis.
 Write every human-readable text in the same language as the story.
 
 PROJECT: `)

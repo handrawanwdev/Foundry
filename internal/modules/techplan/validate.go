@@ -71,16 +71,9 @@ func refresh(p *core.Project, plan *core.TechPlan, st *core.TechStack) {
 		if it.None() {
 			continue
 		}
-		if !stack.Known(it.Area, it.Technology) {
-			a.Outside++
-		}
 		if it.Version != "" && !it.VersionVerified {
 			a.Unverified++
 		}
-	}
-	if a.Outside > 0 {
-		a.Findings = append(a.Findings, core.TechFinding{Category: "unverified", Severity: "info", Source: "computed",
-			Message: fmt.Sprintf("%d teknologi tidak ada di katalog Foundry; kompatibilitasnya bergantung pada tinjauan AI, bukan data katalog.", a.Outside)})
 	}
 	if a.Unverified > 0 {
 		a.Findings = append(a.Findings, core.TechFinding{Category: "unverified", Severity: "info", Source: "computed",
@@ -177,15 +170,8 @@ func validatePlan(c *collector, plan *core.TechPlan, st *core.TechStack) {
 		it := plan.Item(area)
 		switch {
 		case it == nil || it.None():
-			c.issue("error", area, "architecture", true, CodeStructureValue, itemPath(area), "tambahkan item "+area+" dengan nilai yang diizinkan",
+			c.issue("error", area, "architecture", true, CodeStructureValue, itemPath(area), "tambahkan item "+area+" yang menamai rancanganmu untuk sistem ini",
 				"rencana harus menentukan %s", area)
-		case st.Mode == core.StructureExisting:
-		case area == core.TechArchitecture && !slices.Contains([]string{core.ArchSimple, core.ArchModular, core.ArchMicroservices}, it.Technology):
-			c.issue("error", area, "architecture", true, CodeStructureValue, itemPath(area, "technology"), "pakai tepat salah satu nilai yang diizinkan",
-				"arsitektur harus salah satu dari: %s, %s, %s (bukan %q)", core.ArchSimple, core.ArchModular, core.ArchMicroservices, it.Technology)
-		case area == core.TechRepository && !slices.Contains([]string{core.RepoSimple, core.RepoMonorepo}, it.Technology):
-			c.issue("error", area, "architecture", true, CodeStructureValue, itemPath(area, "technology"), "pakai tepat salah satu nilai yang diizinkan",
-				"repository harus salah satu dari: %s, %s (bukan %q)", core.RepoSimple, core.RepoMonorepo, it.Technology)
 		}
 	}
 	seen := map[string]bool{}
@@ -247,9 +233,6 @@ func validateItems(c *collector, plan *core.TechPlan) {
 		if it.Confidence == "low" && len(it.Assumptions) == 0 {
 			c.add("warning", it.Area, "requirements", false, "%s: kepercayaan rendah tanpa asumsi yang disebutkan; apa yang belum pasti?", it.Area)
 		}
-		if it.Driver == core.DriverProfile && len(it.Fulfills) == 0 {
-			c.add("warning", it.Area, "requirements", false, "%s: alasannya hanya profil proyek; profil bukan kebutuhan", it.Area)
-		}
 	}
 }
 
@@ -277,8 +260,10 @@ func refs(p *core.Project, plan *core.TechPlan) (exact map[string]bool, names []
 	for _, m := range repoplan.Modules(p) {
 		add(m.ID)
 	}
-	for _, n := range stack.KnownNeeds {
-		add(n)
+	if st := p.Stack; st != nil {
+		for _, n := range st.Needs {
+			add(n)
+		}
 	}
 	for _, g := range core.TechPlanGroups {
 		add(g)
@@ -391,11 +376,6 @@ func orDash(s string) string {
 // background mechanisms need something that runs them.
 var jobAreas = []string{"background_jobs", "job_queue", "message_broker"}
 
-var staticHost = []string{"static", "cdn", "github pages", "netlify", "cloudflare pages", "s3 bucket"}
-var runsCode = []string{"server", "container", "docker", "function", "lambda", "worker", "kubernetes", "k8s", "vm", "ecs", "fly", "render", "railway", "heroku", "app engine", "cloud run", "paas", "compose"}
-
-var sessionWords = []string{"session", "token", "jwt", "cookie", "oauth", "oidc", "openid", "passkey", "saml", "webauthn", "api key", "bearer"}
-
 // crossChecks finds the conflicts between decisions, and between the
 // decisions and the other artifacts, that a plan must not leave in place.
 func crossChecks(p *core.Project, c *collector, plan *core.TechPlan, st *core.TechStack) {
@@ -414,18 +394,8 @@ func crossChecks(p *core.Project, c *collector, plan *core.TechPlan, st *core.Te
 			c.add("warning", core.TechStorage, "data_architecture", false, "Ada kebutuhan upload file, tetapi file storage diputuskan tidak perlu; pastikan alasannya cukup.")
 		}
 	}
-	if pl.Backend {
-		dep := tech(core.TechDeployment)
-		if dep == "" && tech("hosting") == "" {
-			c.add("error", core.TechDeployment, "deployment", false, "Backend ada di platform, tetapi rencana tidak menentukan deployment atau hosting yang menjalankannya.")
-		} else {
-			d := strings.ToLower(dep + " " + tech("hosting"))
-			if slices.ContainsFunc(staticHost, func(w string) bool { return strings.Contains(d, w) }) &&
-				!slices.ContainsFunc(runsCode, func(w string) bool { return strings.Contains(d, w) }) {
-				c.add("error", core.TechDeployment, "deployment", false,
-					"Deployment %q tidak menjalankan kode server, padahal ada backend %s dan arsitektur %s.", orDash(strings.TrimSpace(dep+" "+tech("hosting"))), orDash(tech(core.TechBackend)), orDash(tech(core.TechArchitecture)))
-			}
-		}
+	if pl.Backend && tech(core.TechDeployment) == "" && tech("hosting") == "" {
+		c.add("error", core.TechDeployment, "deployment", false, "Backend ada di platform, tetapi rencana tidak menentukan deployment atau hosting yang menjalankannya.")
 	}
 	if be := plan.Item(core.TechBackend); be != nil && !be.None() {
 		bl := CanonLanguage(be.Language)
@@ -450,24 +420,8 @@ func crossChecks(p *core.Project, c *collector, plan *core.TechPlan, st *core.Te
 	if it := plan.Item("scheduler"); it != nil && !it.None() && tech(core.TechWorkers) == "" && tech(core.TechBackend) == "" {
 		c.add("error", "scheduler", "architecture", false, "Ada scheduler (%s), tetapi tidak ada proses backend atau worker yang menjalankannya.", it.Technology)
 	}
-	for _, area := range []string{"authentication", "auth"} {
-		it := plan.Item(area)
-		if it == nil || it.None() {
-			continue
-		}
-		strategy := plan.Item("session") != nil || plan.Item("token") != nil
-		text := strings.ToLower(it.Technology + " " + it.Purpose + " " + it.Reasoning + " " + it.Integration)
-		if !strategy && !slices.ContainsFunc(sessionWords, func(w string) bool { return strings.Contains(text, w) }) {
-			c.add("warning", area, "security", false, "Authentication %s belum menentukan strategi session atau token.", it.Technology)
-		}
-	}
-	if fe := strings.ToLower(tech(core.TechFrontend)); has("seo") && fe != "" &&
-		slices.ContainsFunc([]string{"vite", "create-react-app", "cra", "spa"}, func(w string) bool { return strings.Contains(fe, w) }) &&
-		!slices.ContainsFunc([]string{"next", "nuxt", "remix", "astro", "sveltekit", "ssr", "ssg", "prerender", "gatsby", "qwik"}, func(w string) bool { return strings.Contains(fe, w) }) {
-		c.add("warning", core.TechFrontend, "requirements", false, "Ada kebutuhan SEO, tetapi %s dirender di browser; tambahkan SSR/prerender atau pilih framework lain.", tech(core.TechFrontend))
-	}
-	// The catalog's own compatibility rules apply to the areas it knows;
-	// outside the catalog the plan's review is what counts.
+	// What Foundry checks on any stack (a decision without a choice, a
+	// migration of the code's technology).
 	cand := *st
 	cand.Plan = plan
 	cand.Decisions = Decisions(plan, st)

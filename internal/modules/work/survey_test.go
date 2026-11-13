@@ -122,13 +122,13 @@ func TestPerformanceBudgetNeedsAReason(t *testing.T) {
 		s    *core.Survey
 		want string
 	}{
-		{&core.Survey{}, "Tanpa target angka khusus"},
-		{&core.Survey{Priorities: []string{core.SurveyPriorityPerformance}}, "Prioritas performa"},
+		{&core.Survey{}, ""},
+		{&core.Survey{Priorities: []string{core.SurveyPriorityPerformance}}, ""},
 		{&core.Survey{Latency: core.SurveyLatency200}, "< 200 ms p95"},
 	} {
 		b := &core.Blueprint{}
-		completePerformance(b, &core.Project{Survey: c.s}, nil)
-		if !strings.HasPrefix(b.Performance.Budget, c.want) {
+		mirrorSurvey(b, c.s)
+		if b.Performance.Budget != c.want {
 			t.Errorf("%+v: budget %q", c.s, b.Performance.Budget)
 		}
 	}

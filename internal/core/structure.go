@@ -1,23 +1,17 @@
 package core
 
 import (
+	"maps"
 	"slices"
 	"time"
 )
 
-// Project structure decision of a new project: Foundry recommends one, the
-// user edits it (by hand or in words), sees the impact and approves it. The
-// approved StructureIR is the contract the scaffold and the build follow.
-
-// Structure types, from the simplest.
-const (
-	StructSimple        = "simple"
-	StructModular       = "modular"
-	StructMonorepo      = "monorepo"
-	StructMicroservices = "microservices"
-)
-
-var StructureTypes = []string{StructSimple, StructModular, StructMonorepo, StructMicroservices}
+// Project structure decision of a new project: the AI designs alternatives
+// for THIS system, the user adopts one, edits it (by hand or in words),
+// sees the impact and approves it. The approved StructureIR is the contract
+// the scaffold and the build follow. Foundry has no structure template:
+// the type is the name of the style the design chose, the paths are the
+// folders it chose.
 
 // Kinds of structure parts. A module lives inside a service.
 const (
@@ -31,8 +25,9 @@ const (
 	PartRule = "rule"
 )
 
-// StructureIR is the project structure: what is built and where. Paths are
-// derived from the type and names, so the IR alone decides the folders.
+// StructureIR is the project structure: what is built and where. Type
+// names the architecture style in the design's own words; every part
+// carries the folder the design chose for it.
 type StructureIR struct {
 	Type     string          `json:"type"`
 	Apps     []StructurePart `json:"apps,omitempty"`
@@ -52,6 +47,9 @@ type StructurePart struct {
 	Name    string   `json:"name"`
 	Path    string   `json:"path"`
 	Modules []string `json:"modules,omitempty"`
+	// ModulePaths is the folder of each module, chosen by the design; a
+	// module without one lives directly under the part's folder.
+	ModulePaths map[string]string `json:"module_paths,omitempty"`
 	// ModuleReasons explains what each module (domain folder) is responsible
 	// for; a module is a folder like any other, so it carries its reason.
 	ModuleReasons map[string]string `json:"module_reasons,omitempty"`
@@ -67,13 +65,8 @@ func (ir *StructureIR) Clone() *StructureIR {
 		out := make([]StructurePart, len(ps))
 		for i, p := range ps {
 			p.Modules = slices.Clone(p.Modules)
-			if p.ModuleReasons != nil {
-				m := make(map[string]string, len(p.ModuleReasons))
-				for k, v := range p.ModuleReasons {
-					m[k] = v
-				}
-				p.ModuleReasons = m
-			}
+			p.ModuleReasons = maps.Clone(p.ModuleReasons)
+			p.ModulePaths = maps.Clone(p.ModulePaths)
 			out[i] = p
 		}
 		return out
@@ -84,9 +77,10 @@ func (ir *StructureIR) Clone() *StructureIR {
 }
 
 // StructureOp is one edit of the structure:
-//   - type: Name is the new structure type
-//   - add: Kind and Name; a module goes into service To; a rule's Name is
-//     its text
+//   - type: Name is the new name of the architecture style
+//   - add: Kind and Name, optionally its Path; a module goes into service
+//     To; a rule's Name is its text
+//   - path: the part or module Name moves to folder Path
 //   - remove: Kind and Name
 //   - rename: Kind and Name to To
 //   - move: a module Name into service To, or a service Name (with its
@@ -96,6 +90,7 @@ type StructureOp struct {
 	Kind   string `json:"kind,omitempty"`
 	Name   string `json:"name"`
 	To     string `json:"to,omitempty"`
+	Path   string `json:"path,omitempty"`
 	Reason string `json:"reason,omitempty"`
 }
 

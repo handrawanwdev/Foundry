@@ -252,3 +252,45 @@ func migratePlatformAudience(p *Project, raw []byte) {
 		p.Log("system", fmt.Sprintf("Pengguna per platform dipindah ke %d peran (roles); platform target tidak lagi menyimpan pengguna", n))
 	}
 }
+
+// migrateModulePaths writes the module folders older project files never
+// stored: Foundry derived them then (an "api" or "backend" service kept
+// its modules under modules/). Writing them keeps those projects' folders
+// as they were; new structures carry the folders their design chose.
+func migrateModulePaths(p *Project) {
+	s := p.Structure
+	if s == nil {
+		return
+	}
+	fix := func(ir *StructureIR) {
+		if ir == nil {
+			return
+		}
+		for i := range ir.Services {
+			svc := &ir.Services[i]
+			if len(svc.Modules) == 0 || len(svc.ModulePaths) > 0 || svc.Path == "" {
+				continue
+			}
+			infix := ""
+			if svc.Name == "api" || svc.Name == "backend" {
+				infix = "modules/"
+			}
+			svc.ModulePaths = map[string]string{}
+			for _, m := range svc.Modules {
+				svc.ModulePaths[m] = svc.Path + infix + m + "/"
+			}
+		}
+	}
+	fix(s.IR)
+	if s.Proposal != nil {
+		fix(s.Proposal.IR)
+	}
+	if s.Plan != nil {
+		for i := range s.Plan.Alternatives {
+			fix(s.Plan.Alternatives[i].IR)
+		}
+	}
+	for i := range s.History {
+		fix(&s.History[i].IR)
+	}
+}

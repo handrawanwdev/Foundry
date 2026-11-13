@@ -5,7 +5,8 @@ import type { Project, Structure, StructureIR, StructurePlan } from "./types";
 const ir: StructureIR = {
   type: "modular", docs: "docs/",
   apps: [{ name: "web", path: "apps/web/" }],
-  services: [{ name: "backend", path: "backend/", modules: ["booking", "payment"] }],
+  services: [{ name: "backend", path: "backend/", modules: ["booking", "payment"],
+    module_paths: { booking: "backend/modules/booking/", payment: "backend/modules/payment/" } }],
 };
 const project = (s: Partial<Structure>) =>
   ({ structure: { mode: "new", components: null, reason: "", commands: null, approved: false, scaffolded: false, ir, ...s } }) as unknown as Project;
@@ -13,6 +14,10 @@ const project = (s: Partial<Structure>) =>
 describe("structure", () => {
   it("draws the IR as a folder tree", () => {
     expect(tree(ir)).toBe("apps/\n└── web/\nbackend/\n└── modules/\n    ├── booking/\n    └── payment/\ndocs/");
+    // Folders are the design's: a module without its own folder sits in the
+    // service folder, with no infix of Foundry's.
+    const plain: StructureIR = { type: "Cell-based", docs: "", services: [{ name: "core", path: "server/", modules: ["booking"] }] };
+    expect(tree(plain)).toBe("server/\n└── booking/");
   });
 
   it("gates the design approval on an approved structure without errors", () => {
@@ -20,6 +25,7 @@ describe("structure", () => {
     expect(structureGate(project({ status: "approved", approved: true }))).toBeNull();
     expect(structureGate(project({ status: "approved", issues: [{ level: "error", message: "x" }] }))).toMatch(/masalah/);
     expect(structureGate(project({ mode: "existing", ir: undefined }))).toBeNull();
+    expect(structureGate(project({ ir: undefined }))).toMatch(/Rancang struktur/);
   });
 
   it("puts the AI recommendation first and keeps the other alternatives separate", () => {

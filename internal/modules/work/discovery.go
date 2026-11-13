@@ -77,22 +77,19 @@ STORY:
 	b.WriteString(`Platform kinds allowed: web, android, ios, desktop, backend, cli, embedded (firmware, IoT, robotics), other (library, SDK,
 data pipeline, ML system, infrastructure, tooling). Choose them from where the software runs. A platform target names no
 users: who uses which platform is discovery.roles[].platform, permissions belong to authz and security.
-tech_needs lists only the technical needs the product really has, from: realtime, offline, seo, ai, high_concurrency,
-flexible_schema, transactions, independent_scaling, enterprise, files, search, webhook. For web, mobile, desktop, cli and backend
-parts Foundry picks the technology stack from them; do not choose those frameworks, databases, caches, brokers or API protocols
-in the blueprint. For other software
+tech_needs lists only the technical needs the product really has, as short snake_case words of your own (for example
+realtime, offline, files, transactions); there is no fixed list. The technology stack (frameworks, databases, caches, brokers,
+API protocols) is designed in a later step by the technology plan for THIS system; do not choose it in the blueprint. For other software
 (embedded, cli, other) write the technology constraints (language, toolchain, runtime, hardware) the request names or needs
 into an artifact, marked as recommendation when the user did not name them.
 When modules exchange domain events, list them (name domain.happened, producer module, consumers) in blueprint.events.events.
 Set performance.budget only when the story or the survey gives a reason; otherwise leave it empty.
 
 Blueprint rules:
-- modules/ are domain boundaries (identity, the core business, files, audit, …), never folders of file types (controllers/, services/).
+- modules are domain boundaries of THIS product, never groupings of file types (controllers, services).
 - each module owns data, exposes a public interface, and may depend on other modules without cycles.
-- do not put large files in the database; describe object storage when the product has uploads, attachments, exports, or media.
-- processes that are slow (email, reports, export, image, scan, sync, cron) are workers, not API request work.
-- dashboards and reports read summary/read-model, not heavy queries on the transaction tables.
-- authentication and authorization sized to the product: who the users are, how they sign in, what each may do (roles, ownership or none). Name permissions resource:action. Do not assume JWT or RBAC when the story does not need them.
+- storage, background work, read models and events are designed only when THIS product needs them; say why in the field.
+- authentication and authorization sized to the product: who the users are, how they sign in, what each may do (roles, ownership or none). Name permissions consistently. Do not assume a mechanism the story does not need.
 - keep the blueprint specific to THIS product; omit unused areas (empty realtime if none, storage.strategy "none" if no files).
 - the blueprint object below has web/backend-oriented fields; leave the fields that do not apply empty (no database, auth or
   REST API for firmware, a library or a pipeline) and describe the real design in artifacts instead.
@@ -124,18 +121,18 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
     "overview": {"goal": "", "users": [""], "capabilities": [""], "core_domain": ""},
     "platform": {"reason": "", "devices": ["web"], "offline": "none|partial|required", "realtime": "none|needed|critical", "deployment": ""},
     "architecture": {"pattern": "", "reason": "", "tradeoff": "", "evolve_when": [""], "scale": ""},
-    "modules": [{"id": "identity", "responsibility": "", "data": ["User"], "interface": ["POST /auth/login"], "depends_on": []}],
-    "database": {"entities": [{"name": "User", "fields": ["id","email"], "module": "identity", "relates": []}],
+    "modules": [{"id": "<domain>", "responsibility": "", "data": ["<Entity>"], "interface": ["<public entry point>"], "depends_on": []}],
+    "database": {"entities": [{"name": "<Entity>", "fields": ["<field>"], "module": "<domain>", "relates": []}],
                  "transactions": "", "indexing": [""]},
     "storage": {"strategy": "none|object", "types": [""], "security": [""], "processing": [""]},
     "auth": {"method": "", "hashing": "", "tokens": "", "session": "", "refresh": ""},
-    "authz": {"model": "RBAC", "convention": "resource:action", "permissions": ["appointment:create"]},
-    "realtime": {"needed": false, "events": ["appointment.created"], "retry": ""},
-    "workers": [{"name": "email", "trigger": "queue|cron|event", "job": ""}],
+    "authz": {"model": "", "convention": "", "permissions": [""]},
+    "realtime": {"needed": false, "events": [""], "retry": ""},
+    "workers": [{"name": "", "trigger": "queue|cron|event", "job": ""}],
     "aggregation": {"needed": false, "approach": "", "reads": [""]},
-    "events": {"events": [{"type": "appointment.created", "producer": "janji-temu", "consumers": ["identity"], "durable": true}]},
-    "performance": {"budget": "", "health": "GET /health and GET /ready", "pagination": "", "caching": "", "avoid": [""], "indexing": ""},
-    "coding": {"backend": [""], "frontend": [""], "api": {"style": "REST", "versioning": "/api/v1", "errors": "", "pagination": ""}}
+    "events": {"events": [{"type": "<domain>.<happened>", "producer": "<domain>", "consumers": ["<domain>"], "durable": true}]},
+    "performance": {"budget": "", "health": "", "pagination": "", "caching": "", "avoid": [""], "indexing": ""},
+    "coding": {"backend": [""], "frontend": [""], "api": {"style": "", "versioning": "", "errors": "", "pagination": ""}}
   },
   "requirements": [{"id": "REQ-001", "text": "", "priority": "MUST|SHOULD|COULD", "acceptance": [` + criterionShape + `], "untestable": ""}],
   "features": [{"id": "FEAT-001", "source_id": "feature map node id", "name": "", "description": "", "requirement_ids": ["REQ-001"], "platforms": ["web","backend"],

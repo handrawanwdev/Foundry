@@ -37,7 +37,7 @@ func aiPlan(p *core.Project) core.StructurePlan {
 	if p.Stack != nil && p.Stack.Platform.Mobile {
 		apps = append(apps, core.StructurePart{Name: "mobile", Reason: "Pasien memakai aplikasi mobile"})
 	}
-	oneAPI := &core.StructureIR{Type: core.StructMonorepo, Apps: apps,
+	oneAPI := &core.StructureIR{Type: "monorepo", Apps: apps,
 		Services: []core.StructurePart{{Name: "api", Reason: "Satu API melayani semua domain", Modules: domains, ModuleReasons: moduleReasons}},
 		Packages: []core.StructurePart{
 			{Name: "domain", Reason: "Entity dan aturan domain tanpa I/O"},
@@ -49,7 +49,7 @@ func aiPlan(p *core.Project) core.StructurePlan {
 	for _, d := range domains {
 		services = append(services, core.StructurePart{Name: d, Reason: "Domain " + d + " dipisah"})
 	}
-	separate := &core.StructureIR{Type: core.StructMonorepo, Apps: apps, Services: services,
+	separate := &core.StructureIR{Type: "monorepo", Apps: apps, Services: services,
 		Packages: []core.StructurePart{{Name: "contracts", Reason: "Kontrak API bersama"}}}
 	planDomains := []core.StructureDomain{}
 	for _, d := range domains {
@@ -66,12 +66,12 @@ func aiPlan(p *core.Project) core.StructurePlan {
 		Recommendation: "recommended",
 		Reason:         "Satu API dengan modul per domain paling sederhana dan tetap memisahkan tanggung jawab.",
 		Alternatives: []core.StructureAlternative{
-			{ID: "recommended", Name: "Modular dalam satu API", Summary: "Satu deploy, modul per domain.", Type: core.StructMonorepo, IR: oneAPI,
+			{ID: "recommended", Name: "Modular dalam satu API", Summary: "Satu deploy, modul per domain.", Type: "monorepo", IR: oneAPI,
 				Evaluation: core.StructureEvaluation{Maintainability: 5, Simplicity: 5, Extensibility: 3, Testability: 4, Separation: 4, Complexity: 2},
 				Pros:       []string{"Sedikit bagian bergerak", "Batas domain tetap jelas"},
 				Cons:       []string{"Satu deploy untuk semua domain"},
 				Tradeoffs:  []string{"Skala per domain tidak independen"}},
-			{ID: "alt-2", Name: "Service per domain", Summary: "Domain dipisah jadi service sendiri.", Type: core.StructMonorepo, IR: separate,
+			{ID: "alt-2", Name: "Service per domain", Summary: "Domain dipisah jadi service sendiri.", Type: "monorepo", IR: separate,
 				Evaluation: core.StructureEvaluation{Maintainability: 3, Simplicity: 2, Extensibility: 5, Testability: 3, Separation: 5, Complexity: 5},
 				Pros:       []string{"Isolasi domain"},
 				Cons:       []string{"Biaya deploy dan observability lebih tinggi"},
@@ -229,7 +229,7 @@ func TestStructurePlanEndToEnd(t *testing.T) {
 	if p.Structure.State() != core.TechApproved || p.Structure.Plan.Selected != "recommended" {
 		t.Fatalf("structure = %+v", p.Structure)
 	}
-	if p.Structure.IR.Type != core.StructMonorepo || !strings.Contains(strings.Join(p.Structure.IR.Rules, "; "), "import melingkar") {
+	if p.Structure.IR.Type != "monorepo" || !strings.Contains(strings.Join(p.Structure.IR.Rules, "; "), "import melingkar") {
 		t.Fatalf("ir = %+v", p.Structure.IR)
 	}
 	if p.Structure.IR.Services[0].ModuleReasons["identity"] == "" {

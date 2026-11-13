@@ -87,7 +87,9 @@ func TestApplyDiscoveryNormalizesBlueprint(t *testing.T) {
 	}
 }
 
-func TestCompleteBlueprintFillsStackAndRules(t *testing.T) {
+// CompleteBlueprint mirrors the decided technology and the discovery facts;
+// it designs no module, auth, ORM, frontend library or coding rule itself.
+func TestCompleteBlueprintMirrorsStackOnly(t *testing.T) {
 	p := &core.Project{Story: "Aplikasi klinik", Name: "Klinik"}
 	if err := ApplyDiscovery(p, thinDiscovery); err != nil {
 		t.Fatal(err)
@@ -97,8 +99,10 @@ func TestCompleteBlueprintFillsStackAndRules(t *testing.T) {
 		Decisions: []core.TechDecision{
 			{Area: core.TechBackend, Recommended: "NestJS + TypeScript"},
 			{Area: core.TechDatabase, Recommended: "PostgreSQL"},
-			{Area: core.TechCache, Recommended: core.CacheNone},
-			{Area: core.TechArchitecture, Recommended: core.ArchModular, Reason: "beberapa domain"},
+			{Area: core.TechCache, Recommended: core.TechNone},
+			{Area: core.TechStorage, Recommended: core.TechNone},
+			{Area: core.TechAPI, Recommended: "gRPC-Web"},
+			{Area: core.TechArchitecture, Recommended: "Cell-based modular monolith", Reason: "beberapa domain"},
 			{Area: core.TechFrontend, Recommended: "React + TypeScript + Vite"},
 		},
 	}
@@ -107,26 +111,18 @@ func TestCompleteBlueprintFillsStackAndRules(t *testing.T) {
 	if b == nil {
 		t.Fatal("nil blueprint")
 	}
-	if b.Architecture.Pattern != core.ArchModular {
-		t.Fatalf("pattern = %s", b.Architecture.Pattern)
+	if b.Architecture.Pattern != "Cell-based modular monolith" || b.Architecture.Reason != "beberapa domain" {
+		t.Fatalf("architecture = %+v", b.Architecture)
 	}
-	if b.Database.Engine != "PostgreSQL" || b.Database.ORM != "Prisma" || b.Database.PK == "" {
-		t.Fatalf("db = %+v", b.Database)
+	if b.Database.Engine != "PostgreSQL" || b.Cache.Use != "none" || b.Storage.Strategy != "none" || b.Coding.API.Style != "gRPC-Web" {
+		t.Fatalf("mirror = %+v %+v %+v %+v", b.Database, b.Cache, b.Storage, b.Coding.API)
 	}
-	if b.Module("identity") == nil || b.Module("janji-temu") == nil {
-		t.Fatalf("modules = %+v", b.Modules)
+	if len(b.Modules) != 0 || b.Database.ORM != "" || b.Database.PK != "" || b.Auth.Hashing != "" || b.Authz.Model != "" ||
+		b.Frontend.State != "" || len(b.Coding.Backend) != 0 || len(b.Workers) != 0 || b.Architecture.Tradeoff != "" {
+		t.Fatalf("Foundry designed the architecture itself: %+v", b)
 	}
-	if b.Auth.Hashing != "Argon2id" || b.Authz.Model != "RBAC" {
-		t.Fatalf("auth = %+v %+v", b.Auth, b.Authz)
-	}
-	if b.Frontend.State != "Zustand" || b.Coding.API.Style != "REST" {
-		t.Fatalf("frontend/api = %+v %+v", b.Frontend, b.Coding.API)
-	}
-	if len(b.AIGuidelines) == 0 || len(b.Coding.Backend) == 0 {
-		t.Fatal("missing rules")
-	}
-	if b.Storage.Strategy != "none" {
-		t.Fatalf("storage = %s", b.Storage.Strategy)
+	if len(b.AIGuidelines) == 0 || len(b.Docs) == 0 {
+		t.Fatal("missing Foundry export guidelines")
 	}
 }
 
@@ -135,20 +131,21 @@ func TestCompleteBlueprintKeepsAIAndOverridesPattern(t *testing.T) {
 	if err := ApplyDiscovery(p, richDiscovery); err != nil {
 		t.Fatal(err)
 	}
+	orm := p.Blueprint.Database.ORM
 	p.Stack = &core.TechStack{Decisions: []core.TechDecision{
-		{Area: core.TechArchitecture, Recommended: core.ArchModular, Reason: "Foundry"},
+		{Area: core.TechArchitecture, Recommended: "Modular monolith", Reason: "Foundry"},
 		{Area: core.TechDatabase, Recommended: "PostgreSQL"},
 		{Area: core.TechBackend, Recommended: "Go + Gin"},
 	}}
 	CompleteBlueprint(p)
-	if p.Blueprint.Architecture.Pattern != core.ArchModular {
+	if p.Blueprint.Architecture.Pattern != "Modular monolith" {
 		t.Fatalf("pattern = %s", p.Blueprint.Architecture.Pattern)
 	}
 	if p.Blueprint.Overview.Goal != "Jadwal klinik tanpa antrian kertas" {
 		t.Fatalf("goal overwritten: %s", p.Blueprint.Overview.Goal)
 	}
-	if p.Blueprint.Database.ORM != "GORM" { // empty ORM filled from Go stack
-		t.Fatalf("orm = %s", p.Blueprint.Database.ORM)
+	if p.Blueprint.Database.ORM != orm {
+		t.Fatalf("orm changed: %q → %q", orm, p.Blueprint.Database.ORM)
 	}
 	if p.Blueprint.Storage.Strategy != "object" {
 		t.Fatalf("storage dropped: %s", p.Blueprint.Storage.Strategy)

@@ -253,7 +253,7 @@ func TestContractNamesEveryRequirementTheValidatorChecks(t *testing.T) {
 	got := techplan.Contract(st)
 	for _, want := range append(append(append([]string{
 		"frontend (target web)", "mobile (target android)", "desktop (target desktop)", "backend (target backend)",
-		core.ArchModular, core.RepoMonorepo,
+		"MANDATORY STRUCTURE AREAS: architecture and repository",
 	}, techplan.AlternativeFields...), core.TechCriteria...), core.TechConsistencyAreas...) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("contract misses %q:\n%s", want, got)
@@ -298,7 +298,7 @@ func TestValidatorAlternativeAndPlatformCases(t *testing.T) {
 		alt := core.TechAlternative{Technology: "Go + Gin", Why: "w", Difference: "d", Pros: []string{"p"}, Cons: []string{"c"}}
 		be := techItem(core.TechBackend, "Elixir + Phoenix")
 		be.Alternatives = []core.TechAlternative{alt}
-		return &core.TechPlan{Items: []core.TechItem{be, techItem(core.TechArchitecture, core.ArchModular), techItem(core.TechRepository, core.RepoSimple)}}
+		return &core.TechPlan{Items: []core.TechItem{be, techItem(core.TechArchitecture, "Modular monolith"), techItem(core.TechRepository, "Single repository")}}
 	}
 	st := &core.TechStack{Platform: core.TechPlatform{Backend: true}}
 	codes := func(plan *core.TechPlan, st *core.TechStack) (refused, kept []core.TechIssue) {
@@ -363,7 +363,7 @@ func TestValidatorFlagsIncompatibleORMWithoutRefusing(t *testing.T) {
 	be.Language = "Go"
 	orm := techItem("orm", "Prisma")
 	orm.Language, orm.Group = "TypeScript", core.TechPlanData
-	plan := &core.TechPlan{Items: []core.TechItem{be, orm, techItem(core.TechArchitecture, core.ArchSimple), techItem(core.TechRepository, core.RepoSimple)}}
+	plan := &core.TechPlan{Items: []core.TechItem{be, orm, techItem(core.TechArchitecture, "Single process"), techItem(core.TechRepository, "Single repository")}}
 	techplan.Normalize(plan)
 	st := &core.TechStack{Platform: core.TechPlatform{Backend: true}}
 	p := &core.Project{Stack: st}

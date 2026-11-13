@@ -51,7 +51,7 @@ func techPlanMarkdown(p *core.Project) string {
 	a := plan.Analysis
 	st := p.Stack
 	var b strings.Builder
-	fmt.Fprintf(&b, "Status: **%s** · v%d · %d keputusan (%d di luar katalog Foundry) · skor evaluasi %d/100", st.State(), plan.Version(), a.Items, a.Outside, plan.Evaluation.Score)
+	fmt.Fprintf(&b, "Status: **%s** · v%d · %d keputusan · skor evaluasi %d/100", st.State(), plan.Version(), a.Items, plan.Evaluation.Score)
 	if plan.Stale {
 		fmt.Fprintf(&b, " · **KEDALUWARSA** (sumber berubah: %s; bagian terdampak: %s)", strings.Join(a.StaleAreas, ", "), strings.Join(a.Affected, ", "))
 	}
@@ -213,9 +213,6 @@ func writeTechItem(b *strings.Builder, p *core.Project, it core.TechItem) {
 		attrs = append(attrs, "runtime "+it.Runtime)
 	}
 	attrs = append(attrs, "driver: "+it.Driver, "kepercayaan: "+it.Confidence)
-	if !it.InCatalog {
-		attrs = append(attrs, "di luar katalog Foundry")
-	}
 	fmt.Fprintf(b, "%s\n\n", strings.Join(attrs, " · "))
 	if it.UserChosen != "" {
 		fmt.Fprintf(b, "**Dipilih user** (%s); rencana menjelaskan dan menilai pilihan itu.\n\n", it.UserChosen)
