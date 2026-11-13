@@ -1,6 +1,7 @@
 package work
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -223,5 +224,26 @@ func TestApplyRepoRevisionRejectsEmptyAnswerWithoutReview(t *testing.T) {
 	}
 	if p.Structure.Repo.Node("docs/adr/") != nil {
 		t.Fatal("empty answer changed the plan")
+	}
+}
+
+// A plan larger than the prompt budget loses descriptions, never paths: a
+// revision op can only name a path the AI was shown.
+func TestRepoPlanListingKeepsEveryPath(t *testing.T) {
+	plan := &core.RepoPlan{}
+	for i := range 300 {
+		plan.Nodes = append(plan.Nodes, core.RepoNode{Path: fmt.Sprintf("apps/mod%03d/", i), Type: core.NodeDir, Owner: "platform",
+			Responsibility: strings.Repeat("tanggung jawab panjang ", 5)})
+	}
+	var b strings.Builder
+	writeRepoPlan(&b, plan, 2000, 110)
+	out := b.String()
+	for _, n := range plan.Nodes {
+		if !strings.Contains(out, n.Path) {
+			t.Fatalf("%s missing from the listing", n.Path)
+		}
+	}
+	if !strings.Contains(out, "path only") || strings.Count(out, "tanggung jawab") >= 300 {
+		t.Fatal("past the budget the descriptions should be dropped")
 	}
 }

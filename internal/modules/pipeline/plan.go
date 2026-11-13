@@ -163,12 +163,12 @@ func stampPlanRejection(p *core.Project, msg string) bool {
 		return retry
 	case work.KindStructure:
 		r := p.Structure.PlanRequest
-		retry := r.Rejected == ""
+		retry := retryBudget(&r.Retries, r.Rejected, msg)
 		r.Rejected = msg
 		return retry
 	case work.KindRepo:
 		r := p.Structure.RepoRequest
-		retry := r.Rejected == ""
+		retry := retryBudget(&r.Retries, r.Rejected, msg)
 		r.Rejected = msg
 		return retry
 	}

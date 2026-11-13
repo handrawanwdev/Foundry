@@ -45,6 +45,7 @@ type FeatureMapRequest struct {
 	NodeID   string `json:"node_id,omitempty"` // expand target
 	Text     string `json:"text,omitempty"`
 	Rejected string `json:"rejected,omitempty"`
+	Retries  int    `json:"retries,omitempty"`
 }
 
 const (

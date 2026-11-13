@@ -603,3 +603,131 @@ func TestEvaluationScore(t *testing.T) {
 		t.Fatalf("incomplete evaluation scores %d", plan.Evaluation.Score)
 	}
 }
+
+// worker is a plan where a worker folder has an implied lib/ folder that only
+// holds one file, the shape of the revision that failed on roda-sense.
+func worker() *core.RepoPlan {
+	plan := &core.RepoPlan{Nodes: []core.RepoNode{
+		dir("apps/", core.OwnerPlatform, "aplikasi"),
+		dir("apps/mobile/", core.OwnerPlatform, "aplikasi mobile"),
+		dir("apps/mobile/src/", core.OwnerPlatform, "kode aplikasi"),
+		dir("apps/read-model-rebuild/", core.OwnerPlatform, "worker rebuild"),
+		file("apps/read-model-rebuild/lib/read_model_rebuild.dart", core.OwnerPlatform, "pemicu rebuild"),
+		file("apps/read-model-rebuild/lib/checkpoint.dart", core.OwnerPlatform, "checkpoint"),
+	}}
+	repoplan.Normalize(plan)
+	return plan
+}
+
+func TestOpsSeeEarlierOpsOfTheSameRevision(t *testing.T) {
+	plan := worker()
+	if n := plan.Node("apps/read-model-rebuild/lib/"); n == nil || !n.Implied {
+		t.Fatalf("lib/ = %+v", n)
+	}
+	// Exactly what the AI sent: move the worker, move both files out of the
+	// implied lib/ (Foundry drops the emptied folder), then remove lib/.
+	changes, err := repoplan.Apply(plan, []core.RepoOp{
+		{Op: repoplan.OpSetNode, Node: &core.RepoNode{Path: "apps/mobile/src/workers/", Type: "folder", Owner: core.OwnerPlatform, Responsibility: "job in-process", Reason: "worker"}},
+		{Op: repoplan.OpMoveNode, Path: "apps/read-model-rebuild/", To: "apps/mobile/src/workers/read-model-rebuild/"},
+		{Op: repoplan.OpMoveNode, Path: "apps/mobile/src/workers/read-model-rebuild/lib/read_model_rebuild.dart", To: "apps/mobile/src/workers/read-model-rebuild/index.ts"},
+		{Op: repoplan.OpMoveNode, Path: "apps/mobile/src/workers/read-model-rebuild/lib/checkpoint.dart", To: "apps/mobile/src/workers/read-model-rebuild/checkpoint.ts"},
+		{Op: repoplan.OpRemoveNode, Path: "apps/mobile/src/workers/read-model-rebuild/lib/"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(changes[4], "Lewati") || !strings.Contains(changes[4], "perubahan 4") {
+		t.Fatalf("remove of the emptied folder = %q", changes[4])
+	}
+	if plan.Node("apps/mobile/src/workers/read-model-rebuild/index.ts") == nil || plan.Node("apps/mobile/src/workers/read-model-rebuild/lib/") != nil || plan.Node("apps/read-model-rebuild/") != nil {
+		t.Fatalf("nodes = %+v", plan.Nodes)
+	}
+}
+
+func TestOpsFollowMovesAndRefuseGonePaths(t *testing.T) {
+	p, plan := monolith()
+	repoplan.Normalize(plan)
+	// Later ops name the old place of a moved folder: they mean the node at
+	// its new place, references included.
+	changes, err := repoplan.Apply(plan, []core.RepoOp{
+		{Op: repoplan.OpMoveNode, Path: "apps/api/modules/booking/", To: "apps/api/domains/booking/"},
+		{Op: repoplan.OpSetInterface, Interface: &core.RepoInterface{Module: "booking", Path: "apps/api/modules/booking/index.ts", Reason: "pintu masuk"}},
+		{Op: repoplan.OpSetModule, Module: &core.RepoModuleMap{Module: "booking", Locations: []core.RepoLocation{{Path: "apps/api/modules/booking/", Role: "api"}, {Path: "apps/web/", Role: "ui"}}, Frontend: true, Backend: true}},
+		{Op: repoplan.OpAddDependency, Kind: "allowed", Dep: &core.RepoDepRule{From: "apps/api/modules/billing/", To: "apps/api/modules/booking/index.ts"}},
+		{Op: repoplan.OpMoveNode, Path: "apps/api/modules/booking/index.ts", To: "apps/api/domains/booking/public.ts"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(changes[4], "ditulis sebagai apps/api/modules/booking/index.ts") {
+		t.Fatalf("move through the earlier move = %q", changes[4])
+	}
+	if plan.Node("apps/api/domains/booking/public.ts") == nil {
+		t.Fatalf("nodes = %+v", plan.Nodes)
+	}
+	if plan.Modules[0].Locations[0].Path != "apps/api/domains/booking/" {
+		t.Fatalf("module location = %+v", plan.Modules[0].Locations)
+	}
+	if !slices.ContainsFunc(plan.Dependency.Interfaces, func(i core.RepoInterface) bool { return i.Path == "apps/api/domains/booking/public.ts" }) {
+		t.Fatalf("interfaces = %+v", plan.Dependency.Interfaces)
+	}
+	if !slices.ContainsFunc(plan.Dependency.Allowed, func(r core.RepoDepRule) bool { return r.To == "apps/api/domains/booking/public.ts" }) {
+		t.Fatalf("allowed = %+v", plan.Dependency.Allowed)
+	}
+	if errs := errorsOf(p, plan); len(errs) != 0 {
+		t.Fatalf("plan broken: %v", errs)
+	}
+
+	// A removed folder is gone for every later op: removing it (or below it)
+	// again is a no-op, moving it is refused.
+	_, plan = monolith()
+	repoplan.Normalize(plan)
+	changes, err = repoplan.Apply(plan.Clone(), []core.RepoOp{
+		{Op: repoplan.OpRemoveNode, Path: "apps/api/modules/booking/"},
+		{Op: repoplan.OpRemoveNode, Path: "apps/api/modules/booking/index.ts"},
+	})
+	if err != nil || !strings.Contains(changes[1], "sejak perubahan 1") {
+		t.Fatalf("remove below a removed folder: %v %v", changes, err)
+	}
+	_, err = repoplan.Apply(plan.Clone(), []core.RepoOp{
+		{Op: repoplan.OpRemoveNode, Path: "apps/api/modules/booking/"},
+		{Op: repoplan.OpMoveNode, Path: "apps/api/modules/booking/index.ts", To: "apps/api/index.ts"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "perubahan 2") || !strings.Contains(err.Error(), "sejak perubahan 1") {
+		t.Fatalf("move of a removed path: %v", err)
+	}
+
+	// A folder created by an earlier op is a real target for the next ones.
+	c := plan.Clone()
+	if _, err := repoplan.Apply(c, []core.RepoOp{
+		{Op: repoplan.OpSetNode, Node: &core.RepoNode{Path: "apps/api/jobs/", Type: core.NodeDir, Owner: core.OwnerPlatform, Responsibility: "job", Reason: "job"}},
+		{Op: repoplan.OpMoveNode, Path: "apps/api/jobs/", To: "apps/jobs/"},
+		{Op: repoplan.OpRemoveNode, Path: "apps/jobs"},
+	}); err != nil || c.Node("apps/jobs/") != nil || c.Node("apps/api/jobs/") != nil {
+		t.Fatalf("create, move, remove: %v", err)
+	}
+
+	// Recreating a moved path makes it a new node: later ops mean that one.
+	c = plan.Clone()
+	if _, err := repoplan.Apply(c, []core.RepoOp{
+		{Op: repoplan.OpMoveNode, Path: "docs/", To: "documentation/"},
+		{Op: repoplan.OpSetNode, Node: &core.RepoNode{Path: "docs/", Type: core.NodeDir, Owner: core.OwnerPlatform, Responsibility: "docs baru", Reason: "docs"}},
+		{Op: repoplan.OpRemoveNode, Path: "docs/"},
+	}); err != nil || c.Node("documentation/") == nil || c.Node("docs/") != nil {
+		t.Fatalf("recreate after move: %v %+v", err, c.Nodes)
+	}
+}
+
+func TestOpsRefuseUnknownPathWithWhatExists(t *testing.T) {
+	_, plan := monolith()
+	repoplan.Normalize(plan)
+	_, err := repoplan.Apply(plan, []core.RepoOp{{Op: repoplan.OpRemoveNode, Path: "apps/api/modules/payments/lib/"}})
+	if err == nil {
+		t.Fatal("unknown path accepted")
+	}
+	for _, want := range []string{"apps/api/modules/payments/lib/", "folder terdekat yang ada apps/api/modules/", "billing/", "booking/"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q lacks %q", err, want)
+		}
+	}
+}

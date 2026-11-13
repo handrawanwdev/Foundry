@@ -229,6 +229,7 @@ type StructurePlanRequest struct {
 	Text       string `json:"text,omitempty"`
 	SourceHash string `json:"source_hash,omitempty"`
 	Rejected   string `json:"rejected,omitempty"`
+	Retries    int    `json:"retries,omitempty"`
 }
 
 // StructureVersion is one saved state of the structure.

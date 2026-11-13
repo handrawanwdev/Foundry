@@ -153,8 +153,13 @@ func writeRepoPlan(b *strings.Builder, plan *core.RepoPlan, limit, text int) {
 			break
 		}
 		fmt.Fprintf(b, "- %s | %s | %s | %s\n", n.Path, n.Owner, n.Part, cut(n.Responsibility))
-		if b.Len()-start > limit {
-			fmt.Fprintf(b, "…(dipotong, %d node lagi)\n", len(plan.Nodes)-i-1)
+		if rest := plan.Nodes[i+1:]; b.Len()-start > limit && len(rest) > 0 {
+			// Past the budget only the descriptions go: every path stays
+			// visible, so an op never has to guess one.
+			fmt.Fprintf(b, "remaining %d nodes (path only, owner in brackets):\n", len(rest))
+			for _, r := range rest {
+				fmt.Fprintf(b, "- %s [%s]\n", r.Path, r.Owner)
+			}
 			break
 		}
 	}
@@ -276,7 +281,7 @@ PROJECT: `)
  "consistency": [{"area":"architecture_identity","status":"consistent","note":"..."}, {"area":"project_modules","status":"consistent","note":"..."}, {"area":"folder_responsibility","status":"consistent","note":"..."}, {"area":"technology","status":"consistent","note":"..."}, {"area":"dependency_rules","status":"consistent","note":"..."}, {"area":"architecture_rules","status":"consistent","note":"..."}, {"area":"structure_decision","status":"consistent","note":"..."}],
  "ops": [ ... ], "note": "<one sentence on what you changed and why>",
  "decisions": [new design decisions only: {"title", "choice", "reason", "alternatives", "tradeoff"}]}
-Ops apply in order; paths are exact paths of the current plan (a folder ends with "/"):
+Ops apply in order and each one sees the plan the ops before it left: a folder you set_node exists for the next ops, a moved node lives at its new path, a removed node is gone, and a folder Foundry implied (no description) disappears once nothing is left in it. Paths are exact paths of the current plan or of nodes your earlier ops created (a folder ends with "/"); never name a path you have not seen:
 - {"op":"set_node","node":{...a complete node: path, type, role, responsibility, owner, reason, part, depends_on, shared_by, allowed, forbidden, relations, boundary}} adds or replaces a folder or file; its parent folders must exist or are added without description, so describe them too
 - {"op":"remove_node","path":"x/"} removes the node and everything below it, and the references to it
 - {"op":"move_node","path":"x/","to":"y/"} moves a node (with everything below it) and rewrites the references

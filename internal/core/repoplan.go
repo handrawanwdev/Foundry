@@ -289,8 +289,9 @@ type RepoRequest struct {
 	Areas      []string `json:"areas,omitempty"`
 	SourceHash string   `json:"source_hash,omitempty"`
 	// Rejected is why the AI's last answer was refused; the retry prompt
-	// shows it.
+	// shows it. Retries counts the automatic retries since "Coba lagi".
 	Rejected string `json:"rejected,omitempty"`
+	Retries  int    `json:"retries,omitempty"`
 }
 
 const (

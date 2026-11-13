@@ -782,8 +782,9 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			if p.Structure == nil || p.Structure.PlanRequest == nil {
 				return nil
 			}
-			retry = p.Structure.PlanRequest.Rejected == ""
-			p.Structure.PlanRequest.Rejected = err.Error()
+			r := p.Structure.PlanRequest
+			retry = retryBudget(&r.Retries, r.Rejected, err.Error())
+			r.Rejected = err.Error()
 			p.Log("system", err.Error())
 			trackRejection(p, kind, err)
 			return nil
@@ -796,8 +797,9 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			if p.Structure == nil || p.Structure.RepoRequest == nil {
 				return nil
 			}
-			retry = p.Structure.RepoRequest.Rejected == ""
-			p.Structure.RepoRequest.Rejected = err.Error()
+			r := p.Structure.RepoRequest
+			retry = retryBudget(&r.Retries, r.Rejected, err.Error())
+			r.Rejected = err.Error()
 			p.Log("system", err.Error())
 			trackRejection(p, kind, err)
 			return nil
@@ -832,8 +834,9 @@ func (s *Service) noteRejection(kind string, err error) bool {
 			if p.FeatureMap.Request == nil {
 				p.FeatureMap.Request = &core.FeatureMapRequest{Action: core.FeatureMapGenerate}
 			}
-			retry = p.FeatureMap.Request.Rejected == ""
-			p.FeatureMap.Request.Rejected = err.Error()
+			r := p.FeatureMap.Request
+			retry = retryBudget(&r.Retries, r.Rejected, err.Error())
+			r.Rejected = err.Error()
 			p.Log("system", err.Error())
 			return nil
 		})
@@ -884,10 +887,18 @@ const maxAutoRetries = 3
 // passes, a subfeature rule fails) is not left to the user, while the same
 // problem twice stops.
 func autoRetry(r *core.ChangeRequest, msg string) bool {
-	if r.Retries >= maxAutoRetries || (r.Rejected != "" && r.Rejected == msg) {
+	return retryBudget(&r.Retries, r.Rejected, msg)
+}
+
+// retryBudget is the one retry rule of every AI request: retry while the
+// refusal changes, at most maxAutoRetries times. The same refusal twice means
+// the prompt with that refusal did not change the answer, so another identical
+// attempt is not a new strategy and stops for the user.
+func retryBudget(retries *int, last, msg string) bool {
+	if *retries >= maxAutoRetries || (last != "" && last == msg) {
 		return false
 	}
-	r.Retries++
+	*retries++
 	return true
 }
 
@@ -1026,11 +1037,28 @@ func failedJob(kind string) func(*core.Project) error {
 		}
 		// "Coba lagi" gives the request a fresh retry budget; its last
 		// refusal stays, so the same problem again still stops.
-		if r := changeRequestOf(p, kind); r != nil {
-			r.Retries = 0
+		if r := retriesOf(p, kind); r != nil {
+			*r = 0
 		}
 		return nil
 	}
+}
+
+// retriesOf is the retry counter of the request a job of kind answers; nil
+// when the job has none.
+func retriesOf(p *core.Project, kind string) *int {
+	if r := changeRequestOf(p, kind); r != nil {
+		return &r.Retries
+	}
+	switch {
+	case kind == work.KindRepo && p.Structure != nil && p.Structure.RepoRequest != nil:
+		return &p.Structure.RepoRequest.Retries
+	case kind == work.KindStructure && p.Structure != nil && p.Structure.PlanRequest != nil:
+		return &p.Structure.PlanRequest.Retries
+	case kind == work.KindFeatureMap && p.FeatureMap != nil && p.FeatureMap.Request != nil:
+		return &p.FeatureMap.Request.Retries
+	}
+	return nil
 }
 
 // changeRequestOf is the change request a design, artifacts or workflow job

@@ -148,3 +148,32 @@ func TestAutoRetryWhileRefusalChanges(t *testing.T) {
 		t.Fatal("retry after Coba lagi")
 	}
 }
+
+// Repository, structure and feature map requests follow the same retry rule
+// as the change requests, and "Coba lagi" resets their budget too.
+func TestEveryRequestSharesTheRetryRule(t *testing.T) {
+	repo := &core.RepoRequest{Action: core.RepoRevise}
+	for i, c := range []struct {
+		msg  string
+		want bool
+	}{{"path a", true}, {"path a", false}, {"path b", true}, {"cycle", true}, {"lain", false}} {
+		if got := retryBudget(&repo.Retries, repo.Rejected, c.msg); got != c.want {
+			t.Fatalf("%d %q: retry=%v", i, c.msg, got)
+		}
+		repo.Rejected = c.msg
+	}
+	p := &core.Project{
+		Job:        &core.Job{Kind: work.KindRepo, Status: core.JobFailed},
+		Structure:  &core.Structure{RepoRequest: repo, PlanRequest: &core.StructurePlanRequest{Retries: 2}},
+		FeatureMap: &core.FeatureMap{Request: &core.FeatureMapRequest{Retries: 3}},
+	}
+	if err := failedJob(work.KindRepo)(p); err != nil || repo.Retries != 0 {
+		t.Fatalf("repo reset: %v retries=%d", err, repo.Retries)
+	}
+	for kind, n := range map[string]*int{work.KindStructure: &p.Structure.PlanRequest.Retries, work.KindFeatureMap: &p.FeatureMap.Request.Retries} {
+		p.Job.Kind = kind
+		if err := failedJob(kind)(p); err != nil || *n != 0 {
+			t.Fatalf("%s reset: %v retries=%d", kind, err, *n)
+		}
+	}
+}

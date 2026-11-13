@@ -31,8 +31,10 @@ const (
 var ErrNoOps = errors.New("tidak ada perubahan struktur")
 
 // Apply revises plan in place and returns what changed, one line per op.
-// It stops at the first op that cannot apply; the caller works on a clone,
-// so a refused revision leaves the real plan untouched.
+// Ops run in order, each validated against the plan the ops before it left
+// behind (see journal); nothing is checked against the snapshot alone. It
+// stops at the first op that cannot apply; the caller works on a clone, so a
+// refused revision leaves the real plan untouched.
 func Apply(plan *core.RepoPlan, ops []core.RepoOp) ([]string, error) {
 	if len(ops) == 0 {
 		return nil, ErrNoOps
@@ -40,19 +42,23 @@ func Apply(plan *core.RepoPlan, ops []core.RepoOp) ([]string, error) {
 	if len(ops) > MaxOps {
 		return nil, fmt.Errorf("terlalu banyak perubahan sekaligus (maks. %d)", MaxOps)
 	}
+	j := newJournal()
 	var changes []string
 	for i, op := range ops {
-		msg, err := applyOp(plan, op)
+		before := pathSet(plan)
+		msg, err := applyOp(plan, op, j)
 		if err != nil {
 			return nil, fmt.Errorf("perubahan %d (%s): %w", i+1, op.Op, err)
 		}
-		changes = append(changes, msg)
 		Normalize(plan)
+		j.settle(before, plan, i+1)
+		changes = append(changes, msg)
 	}
 	return changes, nil
 }
 
-func applyOp(plan *core.RepoPlan, op core.RepoOp) (string, error) {
+func applyOp(plan *core.RepoPlan, op core.RepoOp, j *journal) (string, error) {
+	have := pathSet(plan)
 	switch strings.ToLower(strings.TrimSpace(op.Op)) {
 	case OpSetNode:
 		if op.Node == nil {
@@ -61,6 +67,9 @@ func applyOp(plan *core.RepoPlan, op core.RepoOp) (string, error) {
 		n, ok := normalizeNode(*op.Node)
 		if !ok {
 			return "", fmt.Errorf("path %q tidak valid", op.Node.Path)
+		}
+		for i, d := range n.DependsOn {
+			n.DependsOn[i] = j.follow(have, d)
 		}
 		if i := slices.IndexFunc(plan.Nodes, func(x core.RepoNode) bool { return x.Path == n.Path }); i >= 0 {
 			n.Implied = false
@@ -71,10 +80,16 @@ func applyOp(plan *core.RepoPlan, op core.RepoOp) (string, error) {
 		return "Menambah " + Describe(n), nil
 
 	case OpRemoveNode:
-		root, err := findPath(plan, op.Path)
+		t, err := j.resolve(plan, op.Path)
 		if err != nil {
 			return "", err
 		}
+		if t.gone > 0 {
+			// The op wants the path gone and it is: an earlier op of this
+			// revision removed it (or emptied the implied folder it was).
+			return fmt.Sprintf("Lewati hapus %s: sudah tidak ada sejak perubahan %d", t.path, t.gone), nil
+		}
+		root := t.path
 		removed := 0
 		plan.Nodes = slices.DeleteFunc(plan.Nodes, func(n core.RepoNode) bool {
 			if under(n.Path, root) {
@@ -89,13 +104,17 @@ func applyOp(plan *core.RepoPlan, op core.RepoOp) (string, error) {
 			}
 			return e
 		})
-		return fmt.Sprintf("Menghapus %s (%d node)", root, removed), nil
+		return fmt.Sprintf("Menghapus %s (%d node)%s", root, removed, t.followed()), nil
 
 	case OpMoveNode:
-		root, err := findPath(plan, op.Path)
+		t, err := j.resolve(plan, op.Path)
 		if err != nil {
 			return "", err
 		}
+		if t.gone > 0 {
+			return "", fmt.Errorf("%s sudah tidak ada sejak perubahan %d, tidak bisa dipindah", t.path, t.gone)
+		}
+		root := t.path
 		to := CleanPath(op.To, strings.HasSuffix(root, "/"))
 		switch {
 		case to == "":
@@ -121,13 +140,15 @@ func applyOp(plan *core.RepoPlan, op core.RepoOp) (string, error) {
 		}
 		for i := range plan.Nodes {
 			if under(plan.Nodes[i].Path, root) {
-				plan.Nodes[i].Path = remap(plan.Nodes[i].Path)
+				old := plan.Nodes[i].Path
+				plan.Nodes[i].Path = remap(old)
+				j.pending[old] = plan.Nodes[i].Path
 			}
 		}
 		rewriteRefs(plan, remap)
 		// The parent folders of the old place may now be empty implied ones.
 		plan.Nodes = dropEmptyImplied(plan.Nodes)
-		return fmt.Sprintf("Memindahkan %s ke %s", root, to), nil
+		return fmt.Sprintf("Memindahkan %s ke %s%s", root, to, t.followed()), nil
 
 	case OpSetModule:
 		if op.Module == nil || strings.TrimSpace(op.Module.Module) == "" {
@@ -135,6 +156,10 @@ func applyOp(plan *core.RepoPlan, op core.RepoOp) (string, error) {
 		}
 		m := *op.Module
 		m.Module = strings.ToLower(strings.TrimSpace(m.Module))
+		m.Locations = slices.Clone(m.Locations)
+		for i := range m.Locations {
+			m.Locations[i].Path = j.follow(have, m.Locations[i].Path)
+		}
 		if i := slices.IndexFunc(plan.Modules, func(x core.RepoModuleMap) bool { return x.Module == m.Module }); i >= 0 {
 			plan.Modules[i] = m
 			return "Mengubah pemetaan modul " + m.Module, nil
@@ -184,6 +209,7 @@ func applyOp(plan *core.RepoPlan, op core.RepoOp) (string, error) {
 		}
 		r := *op.Dep
 		r.From, r.To = Endpoint(r.From), Endpoint(r.To)
+		j.followRule(have, &r)
 		if i := slices.IndexFunc(*set, func(x core.RepoDepRule) bool { return x.From == r.From && x.To == r.To }); i >= 0 {
 			(*set)[i] = r
 			return fmt.Sprintf("Mengubah aturan %s %s → %s", op.Kind, r.From, r.To), nil
@@ -212,7 +238,7 @@ func applyOp(plan *core.RepoPlan, op core.RepoOp) (string, error) {
 			return "", errors.New("interface wajib diisi")
 		}
 		i := *op.Interface
-		i.Module, i.Path = strings.ToLower(strings.TrimSpace(i.Module)), Endpoint(i.Path)
+		i.Module, i.Path = strings.ToLower(strings.TrimSpace(i.Module)), j.follow(have, Endpoint(i.Path))
 		if i.Module == "" || i.Path == "" {
 			return "", errors.New("interface.module dan interface.path wajib diisi")
 		}
