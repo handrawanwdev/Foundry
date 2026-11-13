@@ -543,6 +543,19 @@ func TestTechPlanDropsAfterTwoFailures(t *testing.T) {
 	if p.Stack.Proposal != nil {
 		t.Fatal("a refused revision installed a proposal")
 	}
+	// The request is kept with the user's words; "Coba lagi" runs it again.
+	if strings.Contains(p.Job.Error, "lebih spesifik") || p.Stack.PlanRetry == nil || p.Stack.PlanRetry.Text != "Ganti cache ke Valkey" {
+		t.Fatalf("error=%q retry=%+v", p.Job.Error, p.Stack.PlanRetry)
+	}
+	t.Setenv("FAKE_MODE", "")
+	if err := s.RetryJob(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p = load(t, s)
+	if p.Job == nil || p.Job.Status != core.JobDone || p.Stack.PlanRetry != nil || p.Stack.PlanRequest != nil {
+		t.Fatalf("retry: job=%+v retry=%v", p.Job, p.Stack.PlanRetry != nil)
+	}
 }
 
 func TestTechPlanUserOverrideNotReplaced(t *testing.T) {

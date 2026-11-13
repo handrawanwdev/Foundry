@@ -648,7 +648,7 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 		case r.Sync:
 			acceptStale(w, r.Focus, hashes) // reviewed, text stays valid
 		case len(r.Handled) == 0:
-			return errors.New("AI tidak menemukan perubahan untuk permintaan ini; tulis lebih spesifik")
+			return errors.New("AI tidak menemukan perubahan untuk permintaan ini")
 		}
 		if issues := CheckUI(p, w.Commands); len(issues) > 0 {
 			return UIError(issues)

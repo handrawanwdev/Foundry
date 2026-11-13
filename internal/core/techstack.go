@@ -127,6 +127,10 @@ type TechStack struct {
 	// them); PlanRequest is an AI job for it that waits for an answer.
 	Plan        *TechPlan        `json:"plan,omitempty"`
 	PlanRequest *TechPlanRequest `json:"plan_request,omitempty"`
+	// PlanRetry is the request of a technology job that failed for good,
+	// with its draft: "Coba lagi" resumes it, closing the job or a new
+	// request drops it.
+	PlanRetry *TechPlanRequest `json:"plan_retry,omitempty"`
 }
 
 // TechChange is one area moving from one technology to another.

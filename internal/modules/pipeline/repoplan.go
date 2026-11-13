@@ -58,6 +58,7 @@ func (s *Service) GenerateRepoPlan(text, reason string) error {
 				return errors.New("rencana repository masih berlaku: sumbernya belum berubah; tulis permintaan untuk merancang ulang")
 			}
 		}
+		p.Structure.RepoRetry = nil
 		p.Structure.RepoRequest = &core.RepoRequest{Action: core.RepoGenerate, Text: text, Reason: strings.TrimSpace(reason), SourceHash: structure.SourceHash(p)}
 		if text == "" {
 			p.Log("ui", "Minta AI merancang struktur repository")
@@ -91,6 +92,7 @@ func (s *Service) ReviseRepoPlan(text, reason string) error {
 		if text == "" && !plan.Stale && !plan.Evaluation.Outdated && len(plan.Errors()) == 0 {
 			return errors.New("tulis permintaan revisi; sumber tidak berubah dan evaluasi masih berlaku")
 		}
+		p.Structure.RepoRetry = nil
 		p.Structure.RepoRequest = &core.RepoRequest{Action: core.RepoRevise, Text: text, Reason: strings.TrimSpace(reason)}
 		if text == "" {
 			p.Log("ui", "Minta AI menyesuaikan struktur repository dengan perubahan sumber")
@@ -112,9 +114,6 @@ func (s *Service) EditRepoPlan(ops []core.RepoOp, reason string) (*core.Project,
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		return nil, errors.New("tulis alasan perubahan struktur")
-	}
-	if len(reason) > work.MaxRepoRequest {
-		return nil, fmt.Errorf("alasan terlalu panjang (maks. %d karakter)", work.MaxRepoRequest)
 	}
 	return s.Store.Update(func(p *core.Project) error {
 		if err := repoEditable(p); err != nil {
@@ -186,11 +185,13 @@ func (s *Service) dropRepoRequest(cause error) error {
 		}
 		req := p.Structure.RepoRequest
 		p.Structure.RepoRequest = nil
+		req.Retries = 0
+		p.Structure.RepoRetry = req
 		what := "Perancangan struktur repository"
 		if req.Action == core.RepoRevise {
 			what = "Revisi struktur repository"
 		}
-		msg := fmt.Sprintf("%s gagal: %v. Rencana tidak diubah; tulis permintaan yang lebih spesifik atau coba lagi.", what, cause)
+		msg := fmt.Sprintf("%s gagal: %v. Rencana tidak diubah; permintaanmu disimpan, Coba lagi menjalankannya ulang.", what, cause)
 		p.Job = &core.Job{Kind: work.KindRepo, Status: core.JobFailed, Message: what, Error: msg, Started: time.Now().UTC()}
 		p.Log("system", msg)
 		return nil

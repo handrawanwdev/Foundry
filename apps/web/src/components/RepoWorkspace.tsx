@@ -244,7 +244,7 @@ function RegenDiscard() {
   const [confirm, setConfirm] = useState(false);
   return (
     <div className="repo-actions">
-      <input value={again} maxLength={6000} placeholder="Rancang ulang, mis. “satu app, tanpa packages/”" onChange={(e) => setAgain(e.target.value)} />
+      <input value={again} placeholder="Rancang ulang, mis. “satu app, tanpa packages/”" onChange={(e) => setAgain(e.target.value)} />
       <button disabled={pending === "repo" || !again.trim()} onClick={async () => { if (await run("repo", () => api.generateRepo(again.trim()))) setAgain(""); }}>Rancang ulang</button>
       {confirm
         ? <><button className="bad" disabled={pending === "repo"} onClick={() => void run("repo", api.discardRepo)}>Ya, hapus</button><button className="ghost" onClick={() => setConfirm(false)}>Batal</button></>

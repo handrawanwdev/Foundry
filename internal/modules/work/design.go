@@ -17,7 +17,7 @@ import (
 // as a sketch instead of refusing the whole result.
 
 // ErrNoChange means the AI found nothing to change for the request.
-var ErrNoChange = errors.New("AI tidak menemukan perubahan rancangan UI untuk permintaan ini; tulis lebih spesifik")
+var ErrNoChange = errors.New("AI tidak menemukan perubahan rancangan UI untuk permintaan ini")
 
 type designOut struct {
 	Rules        *core.DesignRules   `json:"rules"`

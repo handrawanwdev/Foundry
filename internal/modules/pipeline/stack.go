@@ -92,8 +92,7 @@ func (s *Service) dropStackRequest(cause error) error {
 		if p.Stack != nil {
 			req, p.Stack.Request = p.Stack.Request, ""
 		}
-		msg := fmt.Sprintf("Permintaan “%s” tidak mengubah teknologi: %v. Keputusan teknologi tidak diubah. "+
-			"Tulis lebih spesifik, mis. “Ganti backend ke Rust + Axum, tetap PostgreSQL”.", req, cause)
+		msg := fmt.Sprintf("Permintaan “%s” tidak mengubah teknologi: %v. Keputusan teknologi tidak diubah.", req, cause)
 		p.Job = &core.Job{Kind: work.KindStack, Status: core.JobFailed, Message: "Permintaan perubahan teknologi", Error: msg, Started: time.Now().UTC()}
 		p.Log("system", msg)
 		return nil

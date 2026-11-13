@@ -942,11 +942,11 @@ func (s *Service) DismissJob() error {
 			}
 		case work.KindRepo:
 			if p.Structure != nil {
-				p.Structure.RepoRequest = nil
+				p.Structure.RepoRequest, p.Structure.RepoRetry = nil, nil
 			}
 		case work.KindTech:
 			if p.Stack != nil {
-				p.Stack.PlanRequest = nil
+				p.Stack.PlanRequest, p.Stack.PlanRetry = nil, nil
 			}
 		case work.KindPlan:
 			clearPlanRequests(p)
@@ -984,15 +984,15 @@ func (s *Service) RetryJob() error {
 			return s.startAIIf(kind, failedJob(kind))
 		}
 	case work.KindRepo:
-		if p.Structure != nil && p.Structure.RepoRequest != nil {
-			return s.startAIIf(kind, failedJob(kind))
+		if p.Structure != nil && (p.Structure.RepoRequest != nil || p.Structure.RepoRetry != nil) {
+			return s.startAIIf(kind, restoreRequest(kind, failedJob(kind)))
 		}
 		if p.Structure != nil && p.Structure.IR != nil && p.Structure.Mode != core.StructureExisting {
 			return s.GenerateRepoPlan("", "")
 		}
 	case work.KindTech:
-		if p.Stack != nil && p.Stack.PlanRequest != nil {
-			return s.startAIIf(kind, retryTech(kind))
+		if p.Stack != nil && (p.Stack.PlanRequest != nil || p.Stack.PlanRetry != nil) {
+			return s.startAIIf(kind, restoreRequest(kind, retryTech(kind)))
 		}
 	case work.KindPlan:
 		if s.planPending() {
@@ -1009,6 +1009,24 @@ func (s *Service) RetryJob() error {
 		return s.GenerateBlueprint()
 	}
 	return ErrNothingToDo
+}
+
+// restoreRequest puts back the request a repository or technology job kept
+// when it failed for good, so "Coba lagi" runs the user's own request again
+// instead of a fresh design without it; then check runs on it.
+func restoreRequest(kind string, check func(*core.Project) error) func(*core.Project) error {
+	return func(p *core.Project) error {
+		if p.Job == nil || p.Job.Status != core.JobFailed || p.Job.Kind != kind {
+			return check(p)
+		}
+		switch {
+		case kind == work.KindRepo && p.Structure != nil && p.Structure.RepoRequest == nil && p.Structure.RepoRetry != nil:
+			p.Structure.RepoRequest, p.Structure.RepoRetry = p.Structure.RepoRetry, nil
+		case kind == work.KindTech && p.Stack != nil && p.Stack.PlanRequest == nil && p.Stack.PlanRetry != nil:
+			p.Stack.PlanRequest, p.Stack.PlanRetry = p.Stack.PlanRetry, nil
+		}
+		return check(p)
+	}
 }
 
 // retryTech is failedJob for a technology job: a retry the user asked for

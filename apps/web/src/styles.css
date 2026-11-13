@@ -348,7 +348,7 @@ button.connect-row:not(:disabled):hover { background: var(--hover); }
 .ws-main > .repo { padding: 0; margin: 0 auto; }
 .ws-dock { position: absolute; left: calc(264px + (100% - 264px) / 2); bottom: 1.1rem; transform: translateX(-50%); width: min(680px, calc(100% - 264px - 2rem)); z-index: 15; }
 .prompt-box { background: var(--card); border: 1px solid var(--line-strong); border-radius: 16px; box-shadow: var(--shadow-pop); padding: .6rem; display: flex; flex-direction: column; gap: .5rem; animation: dw-pop .14s ease-out; }
-.prompt-box textarea { border: none; box-shadow: none; background: transparent; font-size: 14px; padding: .4rem .5rem; }
+.prompt-box textarea { border: none; box-shadow: none; background: transparent; font-size: 14px; padding: .4rem .5rem; max-height: 50vh; overflow-y: auto; resize: none; }
 .prompt-box textarea:focus { box-shadow: none; }
 .prompt-foot { display: flex; align-items: center; gap: .5rem; }
 .prompt-foot .muted { flex: 1; padding-left: .5rem; }

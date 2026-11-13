@@ -15,17 +15,14 @@ import (
 // applies or cancels it.
 const KindStructure = "structure"
 
-const maxStructureRequest = 6000
-
 var ErrStructureUnclear = errors.New("AI tidak menemukan perubahan struktur untuk permintaan ini")
 
+// CleanStructureRequest trims a change request. Its length is not limited:
+// the request is the user's own words, like a chat message.
 func CleanStructureRequest(text string) (string, error) {
 	text = strings.TrimSpace(text)
-	switch {
-	case text == "":
+	if text == "" {
 		return "", errors.New("tuliskan perubahan struktur yang diinginkan")
-	case len(text) > maxStructureRequest:
-		return "", fmt.Errorf("permintaan terlalu panjang (maks. %d karakter)", maxStructureRequest)
 	}
 	return text, nil
 }

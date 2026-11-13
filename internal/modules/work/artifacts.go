@@ -178,7 +178,7 @@ func ApplyArtifacts(p *core.Project, raw string) error {
 	}
 	sync := p.ArtifactRequest != nil && p.ArtifactRequest.Sync
 	if len(out.Artifacts) == 0 && len(out.Remove) == 0 && out.scopeOut.empty() && !sync {
-		return errors.New("AI tidak menemukan perubahan untuk permintaan ini; tulis lebih spesifik")
+		return errors.New("AI tidak menemukan perubahan untuk permintaan ini")
 	}
 	before := p.Decisions
 	list := slices.Clone(p.Artifacts)

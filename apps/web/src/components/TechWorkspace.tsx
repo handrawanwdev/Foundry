@@ -202,7 +202,7 @@ function MoreActions() {
       <summary className="small">Revisi atau rancang ulang</summary>
       <section className="repo-ask">
         <strong>Minta AI merevisi</strong>
-        <textarea rows={2} value={text} maxLength={6000} placeholder="mis. ganti cache ke Valkey; atau jelaskan ulang alasan memilih Elixir"
+        <textarea rows={2} value={text} placeholder="mis. ganti cache ke Valkey; atau jelaskan ulang alasan memilih Elixir"
           onChange={(e) => setText(e.target.value)} />
         <div className="repo-actions">
           <input value={why} maxLength={600} placeholder="Alasan (opsional, dicatat di riwayat)" onChange={(e) => setWhy(e.target.value)} />
@@ -211,7 +211,7 @@ function MoreActions() {
         </div>
       </section>
       <div className="repo-actions">
-        <input value={again} maxLength={6000} placeholder="Rancang ulang dari awal dengan arahan, mis. “pakai Go di backend, tetap PostgreSQL”" onChange={(e) => setAgain(e.target.value)} />
+        <input value={again} placeholder="Rancang ulang dari awal dengan arahan, mis. “pakai Go di backend, tetap PostgreSQL”" onChange={(e) => setAgain(e.target.value)} />
         <button disabled={pending === "stack" || !again.trim()} onClick={async () => { if (await run("stack", () => api.generateTechPlan(again.trim()))) setAgain(""); }}>Rancang ulang</button>
         {confirm
           ? <><button className="bad" disabled={pending === "stack"} onClick={() => void run("stack", api.discardTechPlan)}>Ya, hapus rencana</button><button className="ghost" onClick={() => setConfirm(false)}>Batal</button></>

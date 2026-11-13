@@ -58,6 +58,7 @@ func (s *Service) GenerateTechPlan(text, reason string) error {
 				return errors.New("rencana teknologi masih berlaku: sumbernya belum berubah; tulis permintaan untuk merancang ulang")
 			}
 		}
+		p.Stack.PlanRetry = nil
 		p.Stack.PlanRequest = &core.TechPlanRequest{Action: core.TechPlanGenerate, Text: text, Reason: strings.TrimSpace(reason)}
 		if text == "" {
 			p.Log("ui", "Minta AI merancang teknologi")
@@ -91,6 +92,7 @@ func (s *Service) ReviseTechPlan(text, reason string) error {
 		if text == "" && !plan.Stale && !plan.Evaluation.Outdated && len(plan.Errors()) == 0 {
 			return errors.New("tulis permintaan revisi; sumber tidak berubah dan evaluasi masih berlaku")
 		}
+		p.Stack.PlanRetry = nil
 		p.Stack.PlanRequest = &core.TechPlanRequest{Action: core.TechPlanRevise, Text: text, Reason: strings.TrimSpace(reason)}
 		if text == "" {
 			p.Log("ui", "Minta AI menyesuaikan rencana teknologi dengan perubahan sumber")
@@ -140,11 +142,12 @@ func (s *Service) dropTechRequest(cause error) error {
 		req := p.Stack.PlanRequest
 		report := techDiagnosis(p, work.KindTech, cause, true)
 		p.Stack.PlanRequest = nil
+		p.Stack.PlanRetry = req
 		what := "Perancangan teknologi"
 		if req.Action == core.TechPlanRevise {
 			what = "Revisi rencana teknologi"
 		}
-		msg := fmt.Sprintf("%s gagal: %v. Rencana dan keputusan teknologi tidak diubah; tulis permintaan yang lebih spesifik atau coba lagi.", what, cause)
+		msg := fmt.Sprintf("%s gagal: %v. Rencana dan keputusan teknologi tidak diubah; permintaanmu dan draft yang valid disimpan, Coba lagi melanjutkannya.", what, cause)
 		p.Job = &core.Job{Kind: work.KindTech, Status: core.JobFailed, Message: what, Error: msg, Started: time.Now().UTC()}
 		p.Log("system", msg)
 		trackFailMsg(p, work.KindTech, cause, report)

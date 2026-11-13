@@ -459,6 +459,10 @@ type Structure struct {
 	// a design or revision of it waiting for the AI.
 	Repo        *RepoPlan    `json:"repo,omitempty"`
 	RepoRequest *RepoRequest `json:"repo_request,omitempty"`
+	// RepoRetry is the request of a repository job that failed for good:
+	// "Coba lagi" runs it again with its text, closing the job or a new
+	// request drops it.
+	RepoRetry *RepoRequest `json:"repo_retry,omitempty"`
 	// Request is a natural-language change waiting for the AI.
 	Request string             `json:"request,omitempty"`
 	History []StructureVersion `json:"history,omitempty"`

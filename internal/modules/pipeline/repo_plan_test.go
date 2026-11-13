@@ -609,3 +609,63 @@ func TestRepoPlanGatesFinalize(t *testing.T) {
 		t.Fatalf("edit after finalize: %v", err)
 	}
 }
+
+// A revision the AI keeps failing is kept with the user's words: the failure
+// does not ask for a "more specific" request, and "Coba lagi" runs the same
+// request again instead of a fresh design without it. The request has no
+// length limit, like a chat message.
+func TestRepoRevisionFailureKeepsTheRequestForRetry(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	designReady(t, s)
+	if err := s.GenerateRepoPlan("", ""); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	text := "Pindahkan dokumentasi ke folder handbook." + strings.Repeat(" Detail tambahan permintaan.", 1000)
+	t.Setenv("FAKE_MODE", "repo_invalid")
+	if err := s.ReviseRepoPlan(text, ""); err != nil {
+		t.Fatalf("long request refused: %v", err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindRepo, core.JobFailed)
+	if strings.Contains(p.Job.Error, "lebih spesifik") || !strings.Contains(p.Job.Error, "Coba lagi") {
+		t.Fatalf("error = %q", p.Job.Error)
+	}
+	if p.Structure.RepoRequest != nil || p.Structure.RepoRetry == nil || p.Structure.RepoRetry.Text != text {
+		t.Fatalf("request not kept: req=%v retry=%v", p.Structure.RepoRequest != nil, p.Structure.RepoRetry != nil)
+	}
+
+	t.Setenv("FAKE_MODE", "")
+	if err := s.RetryJob(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p = load(t, s)
+	mustJob(t, p, work.KindRepo, core.JobDone)
+	h := p.Structure.Repo.History
+	if p.Structure.RepoRetry != nil || len(h) < 2 || h[len(h)-1].Request != text || h[len(h)-1].Source != "ai" {
+		t.Fatalf("retry did not run the request: retry=%v history=%d source=%s len=%d", p.Structure.RepoRetry != nil, len(h), h[len(h)-1].Source, len(h[len(h)-1].Request))
+	}
+}
+
+// Closing the failed job drops the kept request.
+func TestDismissDropsKeptRepoRequest(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	designReady(t, s)
+	if err := s.GenerateRepoPlan("", ""); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	t.Setenv("FAKE_MODE", "repo_invalid")
+	if err := s.ReviseRepoPlan("gabungkan docs", ""); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	if err := s.DismissJob(); err != nil {
+		t.Fatal(err)
+	}
+	if p := load(t, s); p.Structure.RepoRetry != nil || p.Job != nil {
+		t.Fatalf("kept after dismiss: %+v %+v", p.Structure.RepoRetry, p.Job)
+	}
+}

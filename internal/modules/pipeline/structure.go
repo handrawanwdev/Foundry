@@ -12,10 +12,6 @@ import (
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 )
 
-// maxStructurePlanRequest bounds the natural-language revision of an AI
-// structure analysis.
-const maxStructurePlanRequest = 6000
-
 // Project structure workspace: recommendation → user edit (by hand or in
 // words) → validation and impact → apply → approval. The approved Structure
 // IR is what the scaffold and the build follow.
@@ -109,9 +105,6 @@ func (s *Service) RequestStructureChange(text string) error {
 // current plan. The analysis is not repeated while its source is unchanged.
 func (s *Service) AnalyzeStructure(text string) error {
 	text = strings.TrimSpace(text)
-	if len(text) > maxStructurePlanRequest {
-		return fmt.Errorf("permintaan revisi terlalu panjang (maks. %d karakter)", maxStructurePlanRequest)
-	}
 	_, err := s.Store.Update(func(p *core.Project) error {
 		if err := structureEditable(p); err != nil {
 			return err
@@ -302,9 +295,7 @@ func (s *Service) dropStructureRequest(cause error) error {
 		if r := []rune(req); len(r) > 160 {
 			req = string(r[:160]) + "…"
 		}
-		msg := fmt.Sprintf("Permintaan “%s” tidak mengubah struktur: %v. Struktur tidak diubah. "+
-			"Tulis lebih spesifik, mis. “Reporting jangan jadi service sendiri, jadikan modul di operations” "+
-			"atau “Tiap modul pakai layer domain, application, infrastructure, presentation”.", req, cause)
+		msg := fmt.Sprintf("Permintaan “%s” tidak mengubah struktur: %v. Struktur tidak diubah.", req, cause)
 		p.Job = &core.Job{Kind: work.KindStructure, Status: core.JobFailed, Message: "Permintaan perubahan struktur", Error: msg, Started: time.Now().UTC()}
 		p.Log("system", msg)
 		return nil

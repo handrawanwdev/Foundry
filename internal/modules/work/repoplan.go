@@ -15,9 +15,6 @@ import (
 // prompt runs and which Apply lands the answer.
 const KindRepo = "repo"
 
-// MaxRepoRequest bounds a natural-language revision request.
-const MaxRepoRequest = 6000
-
 // RepoPlanPrompt asks the AI to design the whole repository structure of
 // the system: topology, folders and files with their responsibilities, the
 // place of every module, the dependency architecture, an honest quality
@@ -216,13 +213,10 @@ func writeRepoBriefText(b *strings.Builder, p *core.Project, text int) {
 	b.WriteString("\n")
 }
 
-// CleanRepoRequest validates a revision request.
+// CleanRepoRequest trims a revision request. Its length is not limited: the
+// request is the user's own words, like a chat message.
 func CleanRepoRequest(text string) (string, error) {
-	text = strings.TrimSpace(text)
-	if len(text) > MaxRepoRequest {
-		return "", fmt.Errorf("permintaan terlalu panjang (maks. %d karakter)", MaxRepoRequest)
-	}
-	return text, nil
+	return strings.TrimSpace(text), nil
 }
 
 // RepoRevisePrompt asks the AI to revise the current plan: a few ops, a

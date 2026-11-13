@@ -192,6 +192,7 @@ func prepareBlueprintStep(p *core.Project, kind string) error {
 		if p.Stack.Plan != nil {
 			action = core.TechPlanRevise
 		}
+		p.Stack.PlanRetry = nil
 		p.Stack.PlanRequest = keepTechDraft(p, &core.TechPlanRequest{Action: action})
 		return nil
 	case work.KindStructure:
@@ -215,6 +216,7 @@ func prepareBlueprintStep(p *core.Project, kind string) error {
 		if p.Structure.Repo != nil {
 			action = core.RepoRevise
 		}
+		p.Structure.RepoRetry = nil
 		p.Structure.RepoRequest = &core.RepoRequest{Action: action, SourceHash: structure.SourceHash(p)}
 		return nil
 	case work.KindPlan:
@@ -240,6 +242,7 @@ func prepareUnifiedPlan(p *core.Project) error {
 			if p.Stack.Proposal != nil {
 				return stack.ErrPending
 			}
+			p.Stack.PlanRetry = nil
 			p.Stack.PlanRequest = keepTechDraft(p, &core.TechPlanRequest{Action: core.TechPlanGenerate})
 		case work.KindStructure:
 			if err := structureEditable(p); err != nil {
@@ -257,6 +260,7 @@ func prepareUnifiedPlan(p *core.Project) error {
 			if p.Structure.Proposal != nil {
 				return structure.ErrPending
 			}
+			p.Structure.RepoRetry = nil
 			p.Structure.RepoRequest = &core.RepoRequest{Action: core.RepoGenerate, SourceHash: structure.SourceHash(p)}
 		}
 	}

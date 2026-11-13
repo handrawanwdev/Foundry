@@ -189,7 +189,11 @@ func fakeAgent() {
 	case strings.Contains(prompt, "repository architect of Foundry"):
 		countRun("repo")
 		refused := strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED")
-		fmt.Println(fakeRepoAnswer(prompt, mode == "repo_invalid_once" && !refused))
+		if mode == "repo_invalid" && strings.Contains(prompt, "Revise the CURRENT REPOSITORY PLAN") {
+			fmt.Println("```json\n" + `{"ops":[{"op":"remove_node","path":"ghost/"}],"note":"hapus"}` + "\n```")
+			return
+		}
+		fmt.Println(fakeRepoAnswer(prompt, mode == "repo_invalid_once" && !refused || mode == "repo_invalid"))
 	case strings.Contains(prompt, "feature mapper"):
 		countRun("feature_map")
 		if mode == "bad_json" && strings.Contains(prompt, "ACTION: generate") && strings.Contains(prompt, "YOUR LAST ANSWER WAS REFUSED") {

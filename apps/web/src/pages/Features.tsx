@@ -314,8 +314,8 @@ export function FeaturesPage() {
             ? "Contoh: pecah jadi subfitur, atau isi tujuan dan manfaatnya."
             : "Contoh: yang belum ada untuk pembayaran, notifikasi, atau laporan."}
           hint={node || mod
-            ? "AI bantu lengkapi yang sedang dipilih. Ctrl+Enter untuk kirim."
-            : "AI cari modul atau fitur yang belum ada. Ctrl+Enter untuk kirim."}
+            ? "AI bantu lengkapi yang sedang dipilih."
+            : "AI cari modul atau fitur yang belum ada."}
           disabled={working}
           busy={pending === "expandFeature" || pending === "findFeatureGaps"}
           onSend={(text) => selectedId

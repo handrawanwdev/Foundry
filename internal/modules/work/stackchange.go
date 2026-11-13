@@ -14,18 +14,15 @@ import (
 // its impact and applies or cancels it.
 const KindStack = "stack"
 
-const maxStackRequest = 1000
-
 // ErrStackUnclear: the AI found nothing to change for the request.
 var ErrStackUnclear = errors.New("AI tidak menemukan perubahan teknologi untuk permintaan ini")
 
+// CleanStackRequest trims a change request. Its length is not limited: the
+// request is the user's own words, like a chat message.
 func CleanStackRequest(text string) (string, error) {
 	text = strings.TrimSpace(text)
-	switch {
-	case text == "":
+	if text == "" {
 		return "", errors.New("tuliskan perubahan teknologi yang diinginkan")
-	case len(text) > maxStackRequest:
-		return "", fmt.Errorf("permintaan terlalu panjang (maks. %d karakter)", maxStackRequest)
 	}
 	return text, nil
 }

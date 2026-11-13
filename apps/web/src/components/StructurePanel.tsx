@@ -163,7 +163,7 @@ function StructureAnalysis({ plan, editable, busy, finalized, hideRules, compact
       )}
       {!finalized && editable && (
         <div className="tech-actions plan-revise">
-          <input value={revision} maxLength={6000} placeholder="Minta revisi analisis, mis. “jangan pisahkan reporting; buat worker terpisah”"
+          <input value={revision} placeholder="Minta revisi analisis, mis. “jangan pisahkan reporting; buat worker terpisah”"
             onChange={(e) => setRevision(e.target.value)} />
           <button disabled={busy || pending === "structure" || !revision.trim()}
             onClick={async () => { if (await run("structure", () => api.analyzeStructure(revision.trim()))) setRevision(""); }}>

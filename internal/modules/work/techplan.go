@@ -18,9 +18,6 @@ import (
 // runs and which Apply lands the answer.
 const KindTech = "tech"
 
-// MaxTechRequest bounds a natural-language revision request.
-const MaxTechRequest = 6000
-
 // TechPlanPrompt asks the AI to analyze what the system needs and design its
 // whole technology: every area it needs, each with its reasoning, the
 // alternatives it weighed, a compatibility review of the stack, an honest
@@ -325,13 +322,10 @@ func writeTechPlan(b *strings.Builder, plan *core.TechPlan, limit int) {
 	}
 }
 
-// CleanTechRequest validates a revision request.
+// CleanTechRequest trims a revision request. Its length is not limited: the
+// request is the user's own words, like a chat message.
 func CleanTechRequest(text string) (string, error) {
-	text = strings.TrimSpace(text)
-	if len(text) > MaxTechRequest {
-		return "", fmt.Errorf("permintaan terlalu panjang (maks. %d karakter)", MaxTechRequest)
-	}
-	return text, nil
+	return strings.TrimSpace(text), nil
 }
 
 // TechRevisePrompt asks the AI to revise the current plan: the decisions that
