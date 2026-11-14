@@ -1131,6 +1131,28 @@ func TestDetectStructureKeepsNewIR(t *testing.T) {
 	}
 }
 
+func TestDetectStructureKeepsNewDesignOverBuiltCode(t *testing.T) {
+	s := newService(t, fakeAI{mcp: true}, "")
+	if _, err := s.Store.Update(func(p *core.Project) error {
+		p.Structure = &core.Structure{Mode: core.StructureNew, Template: "modular", IR: &core.StructureIR{Type: "modular"},
+			Repo: &core.RepoPlan{Nodes: []core.RepoNode{{Path: "apps/"}}}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// the commands built code into the folder
+	if err := os.WriteFile(filepath.Join(s.Store.Dir, "package.json"), []byte(`{"name":"x","dependencies":{"react-native":"0.76.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.DetectStructure()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Structure.Mode != core.StructureNew || p.Structure.IR == nil || p.Structure.Repo == nil {
+		t.Fatalf("designed structure replaced by scan: %+v", p.Structure)
+	}
+}
+
 func TestSubmitStoryDetectsExistingBeforeDiscovery(t *testing.T) {
 	s := newService(t, fakeAI{mcp: true}, "")
 	if err := os.WriteFile(filepath.Join(s.Store.Dir, "package.json"), []byte(`{"name":"dompetku","dependencies":{"react-native":"0.76.0"}}`), 0o644); err != nil {

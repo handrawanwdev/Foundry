@@ -217,8 +217,13 @@ func (s *Service) SubmitStoryIntent(story string, survey *core.Survey, intent co
 
 // DetectStructure records whether the folder already has a codebase, so
 // Tell/Discovery copy and the discovery prompt can follow it.
+// A designed new structure is kept: the code in the folder then is what
+// Foundry's own commands built from it, not a codebase to adopt.
 func (s *Service) DetectStructure() (*core.Project, error) {
 	return s.Store.Update(func(p *core.Project) error {
+		if designedNew(p.Structure) {
+			return nil
+		}
 		attachStructure(p)
 		return nil
 	})
@@ -248,6 +253,13 @@ func attachStructure(p *core.Project) {
 	if p.Intent == "" {
 		p.Intent = core.ClampIntent(existingFolder(p), "")
 	}
+}
+
+// designedNew reports a new project's structure that already carries a
+// design (IR, plan, repository plan or proposal).
+func designedNew(st *core.Structure) bool {
+	return st != nil && st.Mode == core.StructureNew &&
+		(st.IR != nil || st.Plan != nil || st.Repo != nil || st.Proposal != nil)
 }
 
 func existingFolder(p *core.Project) bool {
