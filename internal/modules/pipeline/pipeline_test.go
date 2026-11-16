@@ -904,7 +904,7 @@ func TestEndToEndAgent(t *testing.T) {
 	// The design is written and normalized: ids, platform, access and
 	// source are lowercased, blanks are dropped.
 	r := p.UI.Rules
-	if r.Source != core.RulesNew || len(r.Principles) != 1 || len(r.Tokens.Colors) != 1 || r.Platforms[0].Platform != "android" {
+	if r.Source != core.RulesNew || len(r.Principles) != 1 || r.Preset == "" || r.Platforms[0].Platform != "android" {
 		t.Fatalf("rules = %+v", r)
 	}
 	pg := p.UI.Layout.Pages
@@ -1336,8 +1336,10 @@ func TestDesignRevise(t *testing.T) {
 	if !slices.Equal(ids, []string{"dokter", "jadwal", "profil"}) || p.UI.Request != nil || p.UI.Version != 2 {
 		t.Fatalf("pages = %v ui = %+v", ids, p.UI)
 	}
-	// The link and flow step to the removed page are dropped.
-	if len(p.UI.Layout.Pages[0].Links) != 0 || !slices.Equal(p.Flows[0].PageIDs, []string{"dokter", "profil"}) {
+	// The link and flow step to the removed page are dropped; the flow's
+	// next page is linked instead.
+	if links := p.UI.Layout.Pages[0].Links; len(links) != 1 || links[0].To != "profil" ||
+		!slices.Equal(p.Flows[0].PageIDs, []string{"dokter", "profil"}) {
 		t.Fatalf("links = %+v flow = %v", p.UI.Layout.Pages[0].Links, p.Flows[0].PageIDs)
 	}
 	// Only the layout changed: the screen command needs review, the others

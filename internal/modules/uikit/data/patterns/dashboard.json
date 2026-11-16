@@ -1,0 +1,166 @@
+{
+ "id": "dashboard",
+ "name": "Dashboard",
+ "use": "Ringkasan kondisi untuk memutuskan tindakan berikutnya; hanya bila KPI memang tugas pengguna.",
+ "columns": "minmax(0,2fr) minmax(0,1fr)",
+ "areas": [
+  [
+   "filters",
+   "filters"
+  ],
+  [
+   "metrics",
+   "metrics"
+  ],
+  [
+   "main",
+   "aside"
+  ],
+  [
+   "detail",
+   "detail"
+  ]
+ ],
+ "slots": [
+  {
+   "id": "filters",
+   "name": "Filter",
+   "kind": "toolbar",
+   "guide": "Periode atau segmen yang mengubah seluruh isi halaman.",
+   "match": [
+    "filter",
+    "saring",
+    "periode",
+    "rentang",
+    "toolbar"
+   ]
+  },
+  {
+   "id": "metrics",
+   "name": "KPI",
+   "kind": "metrics",
+   "guide": "2-4 metrik yang mendukung keputusan; tiap metrik berlabel, bersatuan, dan berperiode.",
+   "match": [
+    "kpi",
+    "metrik",
+    "metric",
+    "ringkasan",
+    "summary",
+    "statistik"
+   ]
+  },
+  {
+   "id": "main",
+   "name": "Analisis utama",
+   "kind": "chart",
+   "guide": "Chart atau tabel yang menjawab pertanyaan utama pengguna.",
+   "required": true,
+   "match": [
+    "chart",
+    "grafik",
+    "tren",
+    "trend",
+    "analisis",
+    "utama"
+   ]
+  },
+  {
+   "id": "aside",
+   "name": "Samping",
+   "kind": "activity",
+   "guide": "Aktivitas terbaru, peringatan, atau antrean yang perlu ditindaklanjuti.",
+   "match": [
+    "aktivitas",
+    "activity",
+    "terbaru",
+    "notifikasi",
+    "peringatan",
+    "alert",
+    "antrean"
+   ]
+  },
+  {
+   "id": "detail",
+   "name": "Rincian",
+   "kind": "table",
+   "guide": "Tabel ringkas di bawah analisis bila pengguna perlu melihat record.",
+   "match": [
+    "tabel",
+    "table",
+    "daftar",
+    "rincian"
+   ]
+  }
+ ],
+ "rules": [
+  "Angka selalu punya sumber data, satuan, dan rentang waktu",
+  "Satu aksi utama; dashboard bukan menu"
+ ],
+ "avoid": [
+  "Kartu bertingkat (card di dalam card)",
+  "Metrik dekoratif yang tidak memicu tindakan",
+  "Setiap halaman dijadikan dashboard"
+ ],
+ "example": {
+  "id": "ringkasan",
+  "name": "Ringkasan penjualan",
+  "platform": "web",
+  "pattern": "dashboard",
+  "purpose": "Pantau penjualan minggu ini dan pesanan yang perlu ditindaklanjuti",
+  "sections": [
+   {
+    "id": "periode",
+    "name": "Periode",
+    "slot": "filters",
+    "content": [
+     "Rentang tanggal",
+     "Cabang"
+    ]
+   },
+   {
+    "id": "kpi",
+    "name": "KPI",
+    "slot": "metrics",
+    "content": [
+     "Pendapatan: Rp 48,2 jt",
+     "Pesanan",
+     "Rata-rata nilai pesanan",
+     "Tingkat retur"
+    ]
+   },
+   {
+    "id": "tren",
+    "name": "Tren pendapatan",
+    "slot": "main",
+    "content": [
+     "Grafik pendapatan harian 30 hari"
+    ]
+   },
+   {
+    "id": "perlu-aksi",
+    "name": "Perlu tindakan",
+    "slot": "aside",
+    "content": [
+     "Pesanan tertahan pembayaran",
+     "Stok menipis",
+     "Retur menunggu persetujuan"
+    ]
+   },
+   {
+    "id": "pesanan-terbaru",
+    "name": "Pesanan terbaru",
+    "slot": "detail",
+    "content": [
+     "Tabel: No, Pelanggan, Total, Status",
+     "Paginasi: 10 per halaman"
+    ]
+   }
+  ],
+  "primary_action": "Ekspor laporan",
+  "states": {
+   "loading": "Kerangka KPI dan grafik",
+   "empty": "Belum ada transaksi pada periode ini",
+   "error": "Data gagal dimuat; coba lagi"
+  }
+ }
+}

@@ -817,3 +817,47 @@ button.link:hover { text-decoration: underline; background: none; }
   .bp-stage.completed { animation: none; }
   .bp-bar > span { transition: none; }
 }
+
+/* Mockup review: pages rendered from the UI kit, scaled to fit. */
+/* The panel breaks out of the 760px reading column so desktop mockups stay legible. */
+.mockup { margin: 0 0 1.75rem; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--card);
+  width: max(100%, min(1120px, calc(100vw - 340px))); position: relative; left: 50%; translate: -50% 0; }
+.mockup-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: .75rem; }
+.mockup-head h2 { font-size: 1.05rem; color: var(--heading); margin: 0 0 .25rem; }
+.mockup-head p { margin: 0; max-width: 56ch; }
+.mockup-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+.mockup-bar select { max-width: 260px; }
+.mockup-walk { margin-bottom: .75rem; padding: .75rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.mockup-walk-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+.mockup-walk-nav { margin-left: auto; display: flex; gap: .5rem; }
+.mockup-walk ol { margin: 0; padding-left: 1.4rem; display: grid; gap: .25rem; }
+.mockup-walk li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; }
+.mockup-walk li::marker { color: var(--muted); }
+.mockup-walk li.on > button { font-weight: 700; color: var(--accent); }
+.mockup-walk li.sys > button { color: var(--muted); }
+.mockup-walk button.link { background: none; border: 0; padding: 0; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.mockup-walk button.link:disabled { cursor: default; }
+.mockup-walk p { margin: 0 0 .5rem; }
+.mockup-walk-branches { list-style: none; margin: .5rem 0 0; padding: .5rem 0 0; border-top: 1px dashed var(--line); display: grid; gap: .25rem; }
+.mockup-gate { margin-bottom: .75rem; padding: .5rem .75rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.mockup-gate summary { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; cursor: pointer; }
+.mockup-gate > ul { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .25rem; }
+.mockup-gate > ul li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; }
+.mockup-gate-items { margin-top: .5rem; }
+.mockup-gate-items ul { margin: .25rem 0 0; padding-left: 1.2rem; }
+.mockup-walk button.link:not(:disabled):hover { text-decoration: underline; }
+.mockup-walk p { margin: .5rem 0 0; }
+.mockup-stage { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.mockup-stage iframe { position: absolute; top: 0; border: 0; transform-origin: 0 0; background: #fff; }
+.mockup-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-top: .75rem; }
+.mockup-actions { margin-left: auto; display: flex; gap: .5rem; flex-wrap: wrap; }
+.mockup-full { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .72); display: flex; flex-direction: column; align-items: center; padding: 1rem; gap: .75rem; }
+.mockup-full-bar { width: 100%; display: flex; justify-content: space-between; align-items: center; color: #fff; }
+.mockup-full iframe { flex: 1; border: 0; border-radius: 10px; background: #fff; }
+@media (max-width: 900px) {
+  .mockup { width: 100%; left: 0; translate: none; }
+}
+@media (max-width: 640px) {
+  .mockup-head { flex-direction: column; }
+  .mockup-actions { margin-left: 0; }
+}

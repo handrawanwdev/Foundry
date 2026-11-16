@@ -1,0 +1,136 @@
+{
+ "id": "detail",
+ "name": "Detail",
+ "use": "Satu record: identitas, atribut, status, aksi, dan record terkait.",
+ "columns": "minmax(0,2fr) minmax(0,1fr)",
+ "areas": [
+  [
+   "summary",
+   "summary"
+  ],
+  [
+   "main",
+   "aside"
+  ],
+  [
+   "related",
+   "related"
+  ]
+ ],
+ "slots": [
+  {
+   "id": "summary",
+   "name": "Ringkasan",
+   "kind": "summary",
+   "guide": "Fakta kunci record dalam satu strip (status, nilai, tanggal).",
+   "match": [
+    "ringkasan",
+    "summary",
+    "header",
+    "identitas",
+    "status"
+   ]
+  },
+  {
+   "id": "main",
+   "name": "Atribut",
+   "kind": "detail",
+   "guide": "Atribut record dikelompokkan; label di kiri/atas, nilai di kanan/bawah.",
+   "required": true,
+   "match": [
+    "detail",
+    "atribut",
+    "informasi",
+    "info",
+    "data",
+    "profil"
+   ]
+  },
+  {
+   "id": "aside",
+   "name": "Samping",
+   "kind": "activity",
+   "guide": "Riwayat, catatan, atau metadata.",
+   "match": [
+    "riwayat",
+    "history",
+    "aktivitas",
+    "log",
+    "catatan",
+    "timeline",
+    "metadata"
+   ]
+  },
+  {
+   "id": "related",
+   "name": "Terkait",
+   "kind": "table",
+   "guide": "Record terkait dalam tabel ringkas.",
+   "match": [
+    "terkait",
+    "related",
+    "item",
+    "baris",
+    "tabel",
+    "daftar"
+   ]
+  }
+ ],
+ "rules": [
+  "Identitas dan status di atas",
+  "Aksi destruktif terpisah dan minta konfirmasi"
+ ],
+ "avoid": [
+  "Menampilkan semua field mentah"
+ ],
+ "example": {
+  "id": "detail-pesanan",
+  "name": "Detail pesanan",
+  "platform": "web",
+  "pattern": "detail",
+  "purpose": "Periksa pesanan dan ubah statusnya",
+  "sections": [
+   {
+    "id": "ringkasan",
+    "name": "Ringkasan",
+    "slot": "summary",
+    "content": [
+     "Status, Total, Tanggal, Metode bayar"
+    ]
+   },
+   {
+    "id": "info",
+    "name": "Informasi pesanan",
+    "slot": "main",
+    "content": [
+     "Pelanggan, Alamat kirim, Catatan"
+    ]
+   },
+   {
+    "id": "riwayat",
+    "name": "Riwayat",
+    "slot": "aside",
+    "content": [
+     "Dibuat",
+     "Dibayar",
+     "Dikemas"
+    ]
+   },
+   {
+    "id": "item",
+    "name": "Item pesanan",
+    "slot": "related",
+    "content": [
+     "Tabel: Produk, Qty, Harga, Subtotal",
+     "Filter: cari item",
+     "Paginasi: 10 per halaman"
+    ]
+   }
+  ],
+  "primary_action": "Kirim pesanan",
+  "states": {
+   "loading": "Kerangka detail",
+   "error": "Pesanan tidak ditemukan atau gagal dimuat"
+  }
+ }
+}

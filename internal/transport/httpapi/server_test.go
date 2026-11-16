@@ -332,6 +332,28 @@ func TestDesignRoutes(t *testing.T) {
 	if w := do("POST", "/api/v1/project/visual/fixes", ""); w.Code != 400 {
 		t.Fatalf("fixes without findings: %d %s", w.Code, w.Body)
 	}
+	// Mockups: rendered HTML that cannot run script or reach anywhere, a
+	// list with approvals, and the approval route.
+	w = do("GET", "/api/v1/project/design/mockups/antrean?state=loading", "")
+	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") ||
+		!strings.Contains(w.Header().Get("Content-Security-Policy"), "default-src 'none'") || !strings.Contains(w.Body.String(), `data-foundry-page="antrean"`) {
+		t.Fatalf("mockup: %d %v %s", w.Code, w.Header(), w.Body)
+	}
+	if w := do("GET", "/api/v1/project/design/mockups/tidak-ada", ""); w.Code != http.StatusNotFound {
+		t.Fatalf("mockup unknown: %d %s", w.Code, w.Body)
+	}
+	if w := do("POST", "/api/v1/project/design/mockups/approve", `{"pages": ["antrean"]}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"approved"`) {
+		t.Fatalf("approve: %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/api/v1/project/design/mockups", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"approved"`) {
+		t.Fatalf("mockups: %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/api/v1/design/kit", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"ops-dense"`) {
+		t.Fatalf("kit: %d %s", w.Code, w.Body)
+	}
+	if w := do("GET", "/api/v1/design/patterns/table", ""); w.Code != 200 || !strings.Contains(w.Body.String(), "data-foundry-section") {
+		t.Fatalf("pattern reference: %d", w.Code)
+	}
 }
 
 func TestAIDisconnect(t *testing.T) {

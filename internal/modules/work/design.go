@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/uikit"
 )
 
 // The UI design is text and structured data only: design rules and a
@@ -20,12 +21,12 @@ import (
 var ErrNoChange = errors.New("AI tidak menemukan perubahan rancangan UI untuk permintaan ini")
 
 type designOut struct {
-	Rules        *core.DesignRules   `json:"rules"`
-	Shells       []core.LayoutShell  `json:"shells"`
-	Pages        []core.LayoutPage   `json:"pages"`
-	RemoveShells []string            `json:"remove_shells"`
-	RemovePages  []string            `json:"remove_pages"`
-	Flows        map[string][]string `json:"flows"`
+	Rules        *core.DesignRules  `json:"rules"`
+	Shells       []core.LayoutShell `json:"shells"`
+	Pages        []core.LayoutPage  `json:"pages"`
+	RemoveShells []string           `json:"remove_shells"`
+	RemovePages  []string           `json:"remove_pages"`
+	Flows        map[string]flowOut `json:"flows"`
 	// The UX layer: absent on a revision keeps the current value; an empty
 	// array clears it.
 	Users       *[]core.UIUser         `json:"users"`
@@ -43,23 +44,22 @@ func (o designOut) hasExperience() bool {
 }
 
 const designShape = `{
- "rules": {"source": "new", "reference": "", "direction": "", "principles": [""], "ux_guidelines": [""],
-   "tokens": {"colors": [{"name": "action.primary", "value": "#1f6feb", "use": "aksi"}], "typography": [{"name": "type.body", "value": "Inter 14px/20px 400"}],
-              "spacing": [{"name": "space.md", "value": "16px"}]},
-   "components": [{"name": "Button", "use": "aksi", "variants": ["primary"], "rules": ["disabled saat kirim"]}],
+ "rules": {"source": "new", "preset": "ops-dense", "brand": {"primary": "#0e7490"}, "reference": "", "direction": "", "principles": [""], "ux_guidelines": [""],
+   "tokens": {"colors": [{"name": "status.overdue", "value": "#9f1239", "use": "janji terlambat"}]},
+   "components": [{"name": "SlotPicker", "use": "pilih jam praktik", "variants": ["default"], "rules": ["slot penuh disabled"]}],
    "accessibility": [""], "responsive": [""]},
  "shells": [{"id": "app", "name": "App", "platform": "web", "pattern": "sidebar",
-   "regions": [{"id": "nav", "name": "Nav", "content": ["Menu"]}]}],
+   "regions": [{"id": "nav", "name": "Nav", "slot": "nav", "content": ["Menu"]}]}],
  "pages": [{"id": "antrean", "name": "Antrean", "platform": "web", "route": "/antrean", "access": "auth", "feature_id": "FEAT-001",
    "purpose": "Saring antrean", "goal": "GOAL-1", "shell": "app", "pattern": "table",
    "fields": [{"field": "Appointment.status", "label": "Status", "presentation": "badge"}],
-   "sections": [{"id": "tabel", "name": "Tabel", "content": ["No, Pasien, Status, Aksi"], "components": ["Button"]}],
+   "sections": [{"id": "filter", "name": "Filter", "slot": "toolbar", "content": ["Cari pasien, Status"]}, {"id": "tabel", "name": "Tabel", "slot": "table", "content": ["No, Pasien, Status, Aksi"], "components": ["Table", "Badge"]}],
    "states": {"loading": "", "empty": "", "error": ""}}],
  "users": [{"role": "Operator", "platform": "web", "context": "kerja harian", "tasks": ["saring antrean"]}],
  "goals": [{"id": "GOAL-1", "role": "Operator", "text": "Saring antrean", "success": "Janji diproses", "priority": "must"}],
  "navigation": [{"name": "Operasional", "items": [{"label": "Antrean", "page": "antrean", "primary": true}]}],
  "decisions": [{"subject": "antrean", "choice": "table", "why": ["bandingkan banyak baris"], "basis": ["GOAL-1"], "source": "fact"}],
- "flows": {"FLOW-001": ["antrean"]}
+ "flows": {"FLOW-001": {"steps": ["antrean", ""], "branches": ["antrean"]}}
 }`
 
 const designRules = `DESIGN RULES (rules)
@@ -67,8 +67,8 @@ const designRules = `DESIGN RULES (rules)
 - reference: when the DESIGN REFERENCE section names a template or product, put it in reference (the user's words). The rules are derived from it, not a restatement of it: never copy its logo, brand identity, proprietary assets or exact screens; adapt its visual characteristics to THIS product's tasks and data. When no reference is given, leave reference empty.
 - principles: 3-7 principles for THIS product and its users, each one actionable and checkable ("operators compare many rows: dense tables, not cards"). Never generic ("modern and clean").
 - ux_guidelines: concrete rules for navigation, forms and validation, feedback, errors, empty states, confirmation of destructive actions.
-- tokens: colors, typography and spacing are required; radius, shadow, breakpoints when used. Semantic names (action.primary, text.secondary, surface.page, status.error, type.body, space.md, radius.md, breakpoint.tablet), concrete values (hex/rgb, px/rem, font family size/line-height weight), use = when to use it.
-- components: every shared component the pages reuse: name, use, variants, rules (including hover, focus, active and disabled states). An existing component keeps its name and gets its file in source.
+- preset: required when source is "new" — one id from UI KIT PRESETS; Foundry fills colors, typography, spacing, radius, shadow and breakpoints from it. brand only to adapt accent color or font. tokens: only extra semantic colors the preset lacks. With source "existing" the code's tokens win; still pick the closest preset so missing tokens are filled consistently.
+- components: the kit already defines Button, Input, Table, Badge, Card, Dialog, Toast, EmptyState, Tabs, Pagination — reference them by name in sections[].components and list them in rules.components only to change their rules. List every product-specific shared component: name, use, variants, rules (including hover, focus, active and disabled states). An existing component keeps its name and gets its file in source.
 - visual_hierarchy: how importance is shown (size, weight, color, position). accessibility: WCAG 2.2 AA (contrast, focus, keyboard, labels, touch targets). responsive: the breakpoints and what changes at each. interaction: feedback, loading behavior, motion.
 - platforms: omit unless a named platform in ALL PLATFORMS FOR UX RULES needs rules the others do not (e.g. Material 3 on android). Never emit a platform that was not selected.
 `
@@ -78,7 +78,7 @@ Work like a senior product designer: understand the users and their tasks BEFORE
 1. Users: from the roles and the story, name each kind of user, the platform they use, the context (frequency, pressure, device, environment) and the tasks they must complete.
 2. Goals: one measurable goal per important task (id GOAL-1, ...), the role it belongs to, and what success looks like. Goals come from the use cases, not from the data model.
 3. Information architecture: group destinations by the user's job, not by database tables and not one group per page. Each group has a name and items[{label, page}]; a group without items is invalid. Primary nav lists home destinations only. Auth, create/edit forms, detail and modal pages are reached by links, not the top-level menu. Keep the top level small (usually one group).
-4. Page inventory: one page per user task or decision point, never per database entity and never one page per feature. Reuse a page when the task is the same; split when the user's goal, permission or data scope differs. Typical 4-12 pages; a focused product is often 4-6.
+4. Page inventory: one page per user task or decision point, never per database entity and never one page per feature. Reuse a page when the task is the same; split when the user's goal, permission or data scope differs. Typical 4-12 pages.
    Not a page: a field or status, a filter/search on a list, responsive/theming, automated tests, logout, confirm-delete. Those live on the page or shell that already serves the task.
    Do not invent landing, settings, profile, OAuth, admin, team or sharing unless the story or features name them.
 5. Patterns: choose by task, data volume and platform, not by habit.
@@ -95,15 +95,17 @@ Work like a senior product designer: understand the users and their tasks BEFORE
 const layoutRules = `LAYOUT SPECIFICATION (shells, pages)
 - Text and structured data only. No images, mockups, HTML, CSS or code.
 - shells: the layouts pages share (app frame with sidebar or navbar, auth frame, ...): id, name, platform, pattern, regions (sections), navigation, grid, responsive.
-- pages: every screen the user tasks need, per platform with screens — one page per user task, not per entity or feature. route: web starts with /, mobile/desktop is the screen name. access: public or auth. shell: a shell id, or empty for a page with its own frame.
+- pages: every screen the user tasks need, per platform with screens. route: web starts with /, mobile/desktop is the screen name. access: public or auth. shell: a shell id, or empty for a page with its own frame.
 - pages[].goal names the goal id the page serves; pages[].fields maps data fields to their presentation.
 - pattern (page, shell and optional for a section) is one of: %s.
+- sections[].slot: the slot of the page pattern's template (UI KIT PAGE TEMPLATES) the section fills; every required slot gets a section; no header section (the page header comes from name, purpose and primary_action). Shell regions take the shell template's slots.
 - sections: in visual order (top to bottom, start to end). content lists the elements in order, concretely ("Tabel antrean: No, Pasien, Dokter, Status, Aksi"). components are names from rules.components. grid, alignment, spacing, sizing and responsive use the tokens (space.md, breakpoint.tablet), never arbitrary values.
+- Every table or list of records has search + filter and pagination: toolbar/pagination sections, or content items "Filter: …" and "Paginasi: …".
 - hierarchy: section ids from the most important.
 - states (page or section): keys %s; the value says what the user sees and can do. Required per page pattern: %s.
 - links: {to: page id, via: what the user activates}; together they are the navigation between pages.
-- navigation: groups named by the user's job, each with items[{label, page}]. Primary items are home destinations (list, dashboard). Auth, form, detail and modal pages stay off the top-level menu and are reached by links. Empty groups are invalid. Every page is reachable from navigation or from a link.
-- flows: for each flow id, the page ids it passes through, in order.
+- navigation: groups named by the user's job, each with items[{label, page}]. Empty groups are invalid. Every page is reachable from navigation or from a link.
+- flows: every use case with screens -> {"steps": the page id of each step in order, "" for a system step (feedback on the current page, not a page); "branches": the page that shows each alternative, then each failure, "" when no screen shows it}. Each step and branch has a section, field, state or action on its page; consecutive pages are linked (via = the step); a decision step's page offers approve and reject/return; an irreversible step (delete, cancel, post) names its confirmation; a long document flow (draft, submit, approve) gets form/detail pages or a wizard; a branch that hands over to another use case links to that one's first page.
 - ids: lowercase letters, digits and dashes. Page ids are unique; section ids are unique within their page.
 `
 
@@ -112,9 +114,9 @@ Emit compact JSON. Omit empty keys, empty arrays and empty strings. Do not copy 
 - When DESIGN REFERENCE is present, rules.reference is required (the user's words); never omit it.
 - Every pages[].shell must name a shells[].id emitted in this same answer.
 - principles 3-5 short clauses; ux_guidelines 4-6; accessibility, responsive, interaction 2-4 each. Do not repeat the same sentence across those lists.
-- tokens: 6-10 colors, 3-5 typography, 4-6 spacing, 2-3 radius, 1-2 shadow, 2-3 breakpoints. Short use.
-- components: only those pages reuse (typically 4-10). One short variants list and one short rules line each.
-- pages: one per user task, not per feature. Typical 4-12. sections 2-4; content 1-3 concrete items; fields only those shown.
+- rules.preset always; tokens only for extra semantic colors (0-4). Never restate preset tokens.
+- components: only product-specific ones and kit components whose rules change (typically 0-6). One short variants list and one short rules line each.
+- pages: sections 2-4; content 1-3 concrete items; fields only those shown.
 - navigation: one or few groups; every group has items that name existing page ids. Never a group without items. Never one group per page.
 - rules.platforms: omit unless a selected platform needs distinct rules; never emit an unselected platform.
 - decisions: exactly one per page (pattern + why). Form pages may add one for validation/submit. why: one short sentence. basis: 1-2 existing ids from the UX inputs (GOAL-*, FLOW-*, FEAT-*, REQ-*, DEC-*, entity, permission, platform, token, page id). Never invent a basis.
@@ -166,8 +168,12 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 
 	// The design language is seeded from the UI template (ui-template-ai-friendly):
 	// one framework-agnostic guidance for every product; the existing design
-	// system still wins.
+	// system still wins. The UI kit turns it into choices: a curated token
+	// preset and page templates whose slots the pages fill.
 	b.WriteString(designTemplate + "\n")
+	kit := uikit.Default()
+	b.WriteString(kit.PresetBrief() + "\n")
+	b.WriteString(kit.PatternBrief() + "\n")
 
 	// A user-provided design reference (Duolingo, YouTube, a custom template)
 	// becomes concrete rules, adapted to this product, never cloned.
@@ -214,7 +220,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 - what is not returned stays as it is.
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape (every key optional):
-` + `{"rules": {...}, "users": [...], "goals": [...], "navigation": [...], "decisions": [...], "assumptions": [""], "unknowns": [""], "shells": [...], "pages": [...], "remove_shells": ["id"], "remove_pages": ["id"], "flows": {"FLOW-001": ["page-id"]}}`)
+` + `{"rules": {...}, "users": [...], "goals": [...], "navigation": [...], "decisions": [...], "assumptions": [""], "unknowns": [""], "shells": [...], "pages": [...], "remove_shells": ["id"], "remove_pages": ["id"], "flows": {"FLOW-001": {"steps": ["page-id", ""], "branches": ["page-id"]}}}`)
 	return b.String()
 }
 
@@ -288,8 +294,18 @@ func uxBrief(p *core.Project) string {
 		b.WriteString("- Use cases (tasks):\n")
 		for _, fl := range p.Flows {
 			fmt.Fprintf(&b, "  - %s %s; role %s; goal: %s", fl.ID, fl.Name, fl.Role, firstNonEmpty(fl.Goal, fl.Name))
+			if fl.Trigger != "" {
+				fmt.Fprintf(&b, "; trigger %s", fl.Trigger)
+			}
 			if len(fl.Steps) > 0 {
-				fmt.Fprintf(&b, "; steps %s", strings.Join(fl.Steps, " -> "))
+				steps := make([]string, len(fl.Steps))
+				for i, st := range fl.Steps {
+					steps[i] = fmt.Sprintf("%d. %s", i+1, st)
+				}
+				fmt.Fprintf(&b, "; steps %s", strings.Join(steps, " "))
+			}
+			if len(fl.Alternatives) > 0 {
+				fmt.Fprintf(&b, "; alt %s", strings.Join(fl.Alternatives, " | "))
 			}
 			if len(fl.Rules) > 0 {
 				fmt.Fprintf(&b, "; rules %s", strings.Join(fl.Rules, " | "))
@@ -395,7 +411,7 @@ func ApplyDesign(p *core.Project, raw string) error {
 	}
 	next := cloneDesign(p.UI)
 	if out.Rules != nil {
-		next.Rules = completeRules(p, normRules(*out.Rules))
+		next.Rules = completeRules(p, kitRules(p, normRules(*out.Rules)))
 	} else if fresh {
 		next.Rules = defaultRules(p)
 	}
@@ -455,19 +471,13 @@ func ApplyDesign(p *core.Project, raw string) error {
 		}
 	}
 	flows := slices.Clone(p.Flows)
-	for id, pages := range out.Flows {
-		i := slices.IndexFunc(flows, func(f core.Flow) bool { return f.ID == id })
-		if i < 0 {
-			return fmt.Errorf("alur %q tidak ada", id)
-		}
-		flows[i].PageIDs = nil
-		for _, pg := range pages {
-			flows[i].PageIDs = append(flows[i].PageIDs, normID(pg))
-		}
+	if err := applyFlowsOut(flows, out.Flows); err != nil {
+		return err
 	}
 	dropPages(l, flows, gone)
 	applyExisting(p, next)
 	completeDesign(p, next)
+	completeFlows(p, next.Layout, flows)
 	if fresh || len(l.Users) > 0 && len(l.Goals) > 0 && len(l.Navigation) > 0 && len(l.Decisions) > 0 {
 		next.Format = core.UIDesignFormat
 	}
@@ -514,6 +524,13 @@ func dropPages(l *core.LayoutSpec, flows []core.Flow, gone map[string]bool) {
 	l.Decisions = slices.DeleteFunc(l.Decisions, func(d core.DesignDecision) bool { return gone[d.Subject] })
 	for i := range flows {
 		flows[i].PageIDs = slices.DeleteFunc(slices.Clone(flows[i].PageIDs), func(id string) bool { return gone[id] })
+		// A step or scenario on a removed page is placed again by its words.
+		if slices.ContainsFunc(flows[i].StepPages, func(id string) bool { return gone[id] }) {
+			flows[i].StepPages = nil
+		}
+		if slices.ContainsFunc(flows[i].BranchPages, func(id string) bool { return gone[id] }) {
+			flows[i].BranchPages = nil
+		}
 	}
 }
 
@@ -553,6 +570,8 @@ func EditLayout(p *core.Project, in core.LayoutSpec) error {
 		}
 	}
 	next.Layout = l
+	assignSlots(l)
+	addCollectionControls(l)
 	flows := slices.Clone(p.Flows)
 	dropPages(l, flows, gone)
 	return commitDesign(p, next, flows)
@@ -709,6 +728,14 @@ func normRules(r core.DesignRules) *core.DesignRules {
 	}
 	r.Reference = strings.TrimSpace(r.Reference)
 	r.Direction = strings.TrimSpace(r.Direction)
+	r.Preset = normID(r.Preset)
+	if b := r.Brand; b != nil {
+		nb := core.DesignBrand{Primary: strings.ToLower(strings.TrimSpace(b.Primary)), Font: strings.TrimSpace(b.Font)}
+		r.Brand = nil
+		if nb.Primary != "" || nb.Font != "" {
+			r.Brand = &nb
+		}
+	}
 	for _, l := range []*[]string{&r.Principles, &r.UX, &r.Hierarchy, &r.Accessibility, &r.Responsive, &r.Interaction, &r.Sources} {
 		*l = nonEmpty(*l)
 	}
@@ -870,7 +897,7 @@ func normPage(pg core.LayoutPage) core.LayoutPage {
 func normSections(in []core.Section) []core.Section {
 	var out []core.Section
 	for _, s := range in {
-		s.ID, s.Pattern = normID(s.ID), normID(s.Pattern)
+		s.ID, s.Pattern, s.Slot = normID(s.ID), normID(s.Pattern), normID(s.Slot)
 		for _, f := range []*string{&s.Name, &s.Purpose, &s.Grid, &s.Alignment, &s.Spacing, &s.Sizing, &s.Responsive} {
 			*f = strings.TrimSpace(*f)
 		}
@@ -926,6 +953,9 @@ func completeDesign(p *core.Project, d *core.UIDesign) {
 	}
 	l := d.Layout
 	repairLayout(p, d)
+	assignSlots(l)
+	addCollectionControls(l)
+	addKitComponents(d)
 	completeUsers(p, l)
 	completeGoals(p, l)
 	completePageGoals(l)

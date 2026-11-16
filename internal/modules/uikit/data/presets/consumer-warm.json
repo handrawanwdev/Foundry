@@ -1,0 +1,205 @@
+{
+ "id": "consumer-warm",
+ "name": "Consumer Warm",
+ "fit": "Aplikasi konsumen/mobile-first: pengguna awam, layar sentuh, pemakaian sesekali, butuh panduan.",
+ "direction": "Ramah dan lega: target sentuh besar, sudut membulat, bahasa yang menuntun.",
+ "density": "spacious",
+ "principles": [
+  "Target sentuh minimal 44px, aksi utama mudah dijangkau ibu jari",
+  "Satu langkah per layar, tiap langkah menjelaskan apa berikutnya",
+  "Umpan balik langsung dan bersahabat setelah setiap aksi"
+ ],
+ "tokens": {
+  "colors": [
+   {
+    "name": "surface.page",
+    "value": "#fffbf5",
+    "use": "latar halaman"
+   },
+   {
+    "name": "surface.card",
+    "value": "#ffffff",
+    "use": "kartu, panel, tabel"
+   },
+   {
+    "name": "surface.muted",
+    "value": "#fdf2e4",
+    "use": "latar sekunder, header tabel, hover baris"
+   },
+   {
+    "name": "surface.inverse",
+    "value": "#1f1a17",
+    "use": "sidebar gelap, tooltip"
+   },
+   {
+    "name": "text.primary",
+    "value": "#1f1a17",
+    "use": "teks utama"
+   },
+   {
+    "name": "text.muted",
+    "value": "#6b5e55",
+    "use": "teks sekunder, label"
+   },
+   {
+    "name": "text.inverse",
+    "value": "#ffffff",
+    "use": "teks di atas surface.inverse"
+   },
+   {
+    "name": "border.default",
+    "value": "#efe3d5",
+    "use": "garis pemisah"
+   },
+   {
+    "name": "border.strong",
+    "value": "#dccbb8",
+    "use": "border input"
+   },
+   {
+    "name": "action.primary",
+    "value": "#c2410c",
+    "use": "aksi utama, tautan aktif"
+   },
+   {
+    "name": "action.primary.hover",
+    "value": "#9a3412",
+    "use": "hover aksi utama"
+   },
+   {
+    "name": "action.primary.text",
+    "value": "#ffffff",
+    "use": "teks di atas action.primary"
+   },
+   {
+    "name": "action.secondary",
+    "value": "#fdebdc",
+    "use": "latar aksi sekunder, item nav aktif"
+   },
+   {
+    "name": "status.success",
+    "value": "#15803d",
+    "use": "sukses"
+   },
+   {
+    "name": "status.warning",
+    "value": "#a16207",
+    "use": "peringatan"
+   },
+   {
+    "name": "status.error",
+    "value": "#b91c1c",
+    "use": "error, aksi destruktif"
+   },
+   {
+    "name": "status.info",
+    "value": "#0e7490",
+    "use": "informasi"
+   },
+   {
+    "name": "focus.ring",
+    "value": "#c2410c",
+    "use": "cincin fokus keyboard"
+   }
+  ],
+  "typography": [
+   {
+    "name": "type.display",
+    "value": "Nunito Sans 32px/40px 800",
+    "use": "angka KPI, judul hero"
+   },
+   {
+    "name": "type.title",
+    "value": "Nunito Sans 24px/32px 700",
+    "use": "judul halaman (h1)"
+   },
+   {
+    "name": "type.heading",
+    "value": "Nunito Sans 18px/26px 700",
+    "use": "judul section (h2)"
+   },
+   {
+    "name": "type.body",
+    "value": "Nunito Sans 16px/24px 400",
+    "use": "teks isi, sel tabel"
+   },
+   {
+    "name": "type.label",
+    "value": "Nunito Sans 14px/20px 600",
+    "use": "label field, header kolom"
+   },
+   {
+    "name": "type.caption",
+    "value": "Nunito Sans 13px/18px 400",
+    "use": "keterangan, meta"
+   }
+  ],
+  "spacing": [
+   {
+    "name": "space.xs",
+    "value": "4px"
+   },
+   {
+    "name": "space.sm",
+    "value": "8px"
+   },
+   {
+    "name": "space.md",
+    "value": "16px"
+   },
+   {
+    "name": "space.lg",
+    "value": "24px"
+   },
+   {
+    "name": "space.xl",
+    "value": "32px"
+   },
+   {
+    "name": "space.2xl",
+    "value": "48px"
+   },
+   {
+    "name": "size.control",
+    "value": "44px",
+    "use": "tinggi tombol dan input"
+   }
+  ],
+  "radius": [
+   {
+    "name": "radius.sm",
+    "value": "8px"
+   },
+   {
+    "name": "radius.md",
+    "value": "14px"
+   },
+   {
+    "name": "radius.lg",
+    "value": "20px"
+   }
+  ],
+  "shadow": [
+   {
+    "name": "shadow.sm",
+    "value": "0 2px 6px rgba(31,26,23,0.08)",
+    "use": "kartu, panel"
+   },
+   {
+    "name": "shadow.md",
+    "value": "0 12px 28px rgba(31,26,23,0.14)",
+    "use": "menu, dialog"
+   }
+  ],
+  "breakpoints": [
+   {
+    "name": "breakpoint.tablet",
+    "value": "640px"
+   },
+   {
+    "name": "breakpoint.desktop",
+    "value": "1024px"
+   }
+  ]
+ }
+}

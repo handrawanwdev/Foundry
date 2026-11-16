@@ -1,0 +1,109 @@
+{
+ "id": "wizard",
+ "name": "Wizard",
+ "use": "Urutan panjang atau saling bergantung yang dipecah per langkah.",
+ "columns": "minmax(0,1fr)",
+ "areas": [
+  [
+   "steps"
+  ],
+  [
+   "form"
+  ],
+  [
+   "actions"
+  ]
+ ],
+ "slots": [
+  {
+   "id": "steps",
+   "name": "Langkah",
+   "kind": "steps",
+   "guide": "Indikator langkah: nomor, nama, status.",
+   "required": true,
+   "match": [
+    "langkah",
+    "step",
+    "tahap",
+    "progres",
+    "progress"
+   ]
+  },
+  {
+   "id": "form",
+   "name": "Isi langkah",
+   "kind": "form",
+   "guide": "Field langkah aktif.",
+   "required": true,
+   "match": [
+    "form",
+    "field",
+    "isian",
+    "data"
+   ]
+  },
+  {
+   "id": "actions",
+   "name": "Aksi",
+   "kind": "actions",
+   "guide": "Kembali dan Lanjut/Selesai.",
+   "match": [
+    "aksi",
+    "tombol",
+    "lanjut",
+    "kembali"
+   ]
+  }
+ ],
+ "rules": [
+  "3-6 langkah",
+  "Data langkah sebelumnya tidak hilang saat kembali"
+ ],
+ "avoid": [
+  "Wizard untuk form pendek"
+ ],
+ "example": {
+  "id": "onboarding",
+  "name": "Pendaftaran toko",
+  "platform": "web",
+  "pattern": "wizard",
+  "purpose": "Daftarkan toko dalam tiga langkah",
+  "sections": [
+   {
+    "id": "langkah",
+    "name": "Langkah",
+    "slot": "steps",
+    "content": [
+     "Profil toko",
+     "Rekening",
+     "Konfirmasi"
+    ]
+   },
+   {
+    "id": "profil",
+    "name": "Profil toko",
+    "slot": "form",
+    "content": [
+     "Nama toko",
+     "Kota",
+     "Telepon"
+    ]
+   },
+   {
+    "id": "aksi",
+    "name": "Aksi",
+    "slot": "actions",
+    "content": [
+     "Lanjut",
+     "Kembali"
+    ]
+   }
+  ],
+  "primary_action": "Lanjut",
+  "states": {
+   "error": "Error di field",
+   "success": "Toko terdaftar",
+   "disabled": "Lanjut terkunci sampai valid"
+  }
+ }
+}

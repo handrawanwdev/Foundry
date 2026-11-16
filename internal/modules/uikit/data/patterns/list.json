@@ -1,0 +1,118 @@
+{
+ "id": "list",
+ "name": "Daftar",
+ "use": "Memindai record dengan satu atribut dominan; cocok untuk layar sempit.",
+ "columns": "minmax(0,1fr)",
+ "areas": [
+  [
+   "toolbar"
+  ],
+  [
+   "list"
+  ],
+  [
+   "pagination"
+  ]
+ ],
+ "slots": [
+  {
+   "id": "toolbar",
+   "name": "Toolbar",
+   "kind": "toolbar",
+   "guide": "Wajib: pencarian dan filter; aksi massal bila ada.",
+   "match": [
+    "toolbar",
+    "filter",
+    "saring",
+    "cari",
+    "search"
+   ]
+  },
+  {
+   "id": "list",
+   "name": "Daftar",
+   "kind": "list",
+   "guide": "Item: judul, meta, status; ketuk untuk membuka.",
+   "required": true,
+   "match": [
+    "daftar",
+    "list",
+    "item",
+    "feed",
+    "riwayat"
+   ]
+  },
+  {
+   "id": "pagination",
+   "name": "Paginasi",
+   "kind": "pagination",
+   "guide": "Wajib: paginasi (ukuran halaman, rentang, halaman) atau muat lebih banyak.",
+   "match": [
+    "paginasi",
+    "pagination",
+    "lebih"
+   ]
+  }
+ ],
+ "panel": [
+  "toolbar",
+  "list",
+  "pagination"
+ ],
+ "rules": [
+  "Wajib pencarian + filter (toolbar) dan paginasi",
+  "Satu atribut dominan per item",
+  "Seluruh baris dapat diketuk"
+ ],
+ "avoid": [
+  "Terlalu banyak meta per item"
+ ],
+ "example": {
+  "id": "notifikasi",
+  "name": "Notifikasi",
+  "platform": "web",
+  "pattern": "list",
+  "purpose": "Lihat dan tindak lanjuti notifikasi",
+  "sections": [
+   {
+    "id": "filter",
+    "name": "Filter",
+    "slot": "toolbar",
+    "content": [
+     "Semua, Belum dibaca"
+    ]
+   },
+   {
+    "id": "daftar",
+    "name": "Daftar notifikasi",
+    "slot": "list",
+    "content": [
+     "Judul, waktu, status baca",
+     "Paginasi: muat lebih banyak saat digulir"
+    ]
+   }
+  ],
+  "fields": [
+   {
+    "field": "Notification.title",
+    "label": "Judul",
+    "presentation": "card-title"
+   },
+   {
+    "field": "Notification.time",
+    "label": "Waktu",
+    "presentation": "card-meta"
+   },
+   {
+    "field": "Notification.read",
+    "label": "Status",
+    "presentation": "badge"
+   }
+  ],
+  "states": {
+   "loading": "Item kerangka",
+   "empty": "Tidak ada notifikasi",
+   "error": "Gagal memuat"
+  }
+ }
+}

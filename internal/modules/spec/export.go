@@ -12,6 +12,7 @@ import (
 
 	"github.com/handrawanwdev/foundry/internal/core"
 	"github.com/handrawanwdev/foundry/internal/modules/standard"
+	"github.com/handrawanwdev/foundry/internal/modules/uikit"
 	"github.com/handrawanwdev/foundry/internal/modules/workflow"
 	"github.com/handrawanwdev/foundry/internal/safefile"
 )
@@ -410,7 +411,7 @@ func filesOf(p *core.Project, m Manifest, docs []core.Artifact) map[string]strin
 	if w := p.Workflow; w != nil {
 		for _, c := range w.Commands {
 			if safeName(c.ID) {
-				out[commandFile(c.ID)] = commandMarkdown(c, m.Waves, binding)
+				out[commandFile(c.ID)] = commandMarkdown(c, m.Waves, binding) + commandMockups(p, c)
 			}
 		}
 		if b, err := json.MarshalIndent(struct {
@@ -446,7 +447,11 @@ func filesOf(p *core.Project, m Manifest, docs []core.Artifact) map[string]strin
 				*core.LayoutSpec
 				Flows []core.Flow `json:"flows,omitempty"`
 			}{d.Layout, pageFlowList(p.Flows)})
+			out["review/design-gate.md"] = designGateMarkdown(p)
 		}
+	}
+	for path, body := range mockupFiles(p) {
+		out[path] = body
 	}
 	if p.Visual != nil && len(p.Visual.Pages) > 0 {
 		if md := visualMarkdown(p); md != "" {
@@ -458,6 +463,69 @@ func filesOf(p *core.Project, m Manifest, docs []core.Artifact) map[string]strin
 }
 
 func designFile(id string) string { return "design/" + id + ".json" }
+
+// mockupFiles are the rendered page mockups, their index and the reference
+// example of every kit template the pages use.
+func mockupFiles(p *core.Project) map[string]string {
+	if p.UI == nil || p.UI.Layout == nil || len(p.UI.Layout.Pages) == 0 {
+		return nil
+	}
+	k := uikit.Default()
+	d := uikit.DocOf(p)
+	d.Link = func(id string) string { return id + ".html" }
+	out := map[string]string{}
+	used := map[string]bool{}
+	for _, pg := range p.UI.Layout.Pages {
+		if !safeName(pg.ID) {
+			continue
+		}
+		if html, err := k.RenderPage(d, pg.ID, ""); err == nil {
+			out["design/mockups/"+pg.ID+".html"] = html
+		}
+		used[pg.Pattern] = true
+	}
+	out["design/mockups/index.html"] = k.RenderIndex(d, k.Statuses(p))
+	for id := range used {
+		if html, err := k.RenderReference(id); err == nil && safeName(id) {
+			out["design/patterns/"+id+".html"] = html
+		}
+	}
+	return out
+}
+
+// commandMockups names the mockups of the pages a command builds.
+func commandMockups(p *core.Project, c core.Command) string {
+	if p.UI == nil || p.UI.Layout == nil || p.UI.Format < core.UIDesignFormat ||
+		!slices.ContainsFunc(c.Artifacts, func(r core.ArtifactRef) bool { return r.ID == core.ArtifactLayoutSpec }) {
+		return ""
+	}
+	var b strings.Builder
+	for _, pg := range p.UI.Layout.Pages {
+		if pg.Existing || !safeName(pg.ID) || !namesPage(c.Instructions, pg.ID) {
+			continue
+		}
+		if b.Len() == 0 {
+			b.WriteString("## Mockup acuan\n\nBangun mengikuti struktur, urutan section, dan token mockup ini; tandai akar section dengan `data-foundry-section`.\n\n")
+		}
+		fmt.Fprintf(&b, "- `%s` %s: [design/mockups/%s.html](../design/mockups/%s.html)\n", pg.ID, pg.Name, pg.ID, pg.ID)
+	}
+	if b.Len() > 0 {
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// namesPage reports whether text names the page id as a whole word.
+func namesPage(text, id string) bool {
+	for _, tok := range strings.FieldsFunc(text, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-')
+	}) {
+		if strings.EqualFold(tok, id) {
+			return true
+		}
+	}
+	return false
+}
 
 func jsonFile(v any) string {
 	b, err := json.MarshalIndent(v, "", "  ")
@@ -502,6 +570,10 @@ func packageReadme(p *core.Project, m Manifest, docs []core.Artifact) string {
 		fmt.Fprintf(&b, "| %s | %s | %s |\n", a.Title, areaLabel[a.Status], cell(areaNote(a)))
 	}
 	b.WriteString("\nKeterlacakan requirement ke command: [traceability.md](traceability.md).\n")
+	if p.UI != nil && p.UI.Layout != nil && len(p.UI.Layout.Pages) > 0 {
+		b.WriteString("Mockup HTML tiap halaman (acuan tampilan untuk dibangun): [design/mockups/index.html](design/mockups/index.html).\n")
+		b.WriteString("Quality gate desain (requirement dan use case ke layar, navigasi, peran, skenario gagal): [review/design-gate.md](review/design-gate.md).\n")
+	}
 	if p.Visual != nil && len(p.Visual.Pages) > 0 {
 		b.WriteString("Evaluasi visual UI yang diimplementasikan: [review/visual.md](review/visual.md). Halaman tanpa screenshot belum diuji.\n")
 	}

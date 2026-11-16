@@ -135,6 +135,8 @@ Untuk produk dengan layar, Foundry menurunkan UI/UX dari tujuan pengguna, use ca
 - **Pemetaan data ke UI**: field mana yang tampil, di mana dan bagaimana; state, validasi, akses ditolak, dan feedback.
 - **Responsif, aksesibilitas, dan token**: semua nilai visual berasal dari design token.
 
+**UI kit dan mockup.** AI tidak mengarang nilai token dan layout dari nol: ia memilih preset token yang dikurasi (`ops-dense`, `saas-neutral`, `consumer-warm`, `editorial-calm`, opsional `brand` warna utama/font) dan mengisi *slot* template pattern halaman (table, form, detail, dashboard, …). Foundry mengisi token dari preset, merender setiap halaman menjadi mockup HTML untuk ditinjau dan disetujui per viewport/state, lalu mengekspornya sebagai acuan coding agent. Evaluasi visual mencocokkan section implementasi (`data-foundry-section`) dengan mockup. Detail: [docs/UI_KIT.md](docs/UI_KIT.md).
+
 Validasi menolak basis keputusan yang tidak dikenal, halaman tanpa keputusan, item navigasi ke halaman yang tidak ada, dan state wajib yang kosong. Desain diekspor sebagai Markdown yang terbaca plus JSON untuk tools. Setiap command yang membangun layar wajib merujuk `design-rules` + `layout-spec` dan menyebut id halaman yang diimplementasikan.
 
 ### Evaluasi kualitas visual
@@ -179,7 +181,7 @@ docs/foundry/
 ├── traceability.md
 ├── blueprint/      requirements.md · architecture.md · threat-model.md · …
 ├── workflow/       CMD-001.md · CMD-002.md · workflow.json
-├── design/         design-rules.json · layout-spec.json
+├── design/         design-rules.json · layout-spec.json · mockups/*.html · patterns/*.html
 └── adr/            0001-stack.md · …
 ```
 
@@ -279,6 +281,7 @@ foundry mcp --print-config --project ~/kerja/klinik
 | `get_blueprint`    | `READ`   | Semua artefak blueprint (Markdown), state artefak, decision register, keputusan mengikat; `ids` hanya artefak itu, `outline` daftar tanpa isi |
 | `get_workflow`     | `READ`   | Command, dependency, gelombang eksekusi, isu validasi, command `needs_review`, progres pengerjaan |
 | `get_design`       | `READ`   | Design rules & layout spec terstruktur beserta isu validasi            |
+| `get_mockup`       | `READ`   | Mockup HTML satu halaman (atau daftar mockup) beserta status persetujuan |
 | `get_spec`         | `READ`   | Spesifikasi lengkap (JSON + Markdown) untuk implementasi di luar Foundry; `format` `json` atau `markdown` hanya satu salinan |
 | `get_progress`     | `READ`   | Progres pengerjaan workflow (hitungan, command siap, peringatan)       |
 | `get_visual_review` | `READ`  | Kualitas UI terukur per halaman: lulus/sebagian/gagal/belum diuji, temuan, kriteria |

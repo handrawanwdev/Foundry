@@ -1,0 +1,124 @@
+{
+ "id": "cards",
+ "name": "Kartu",
+ "use": "Set kecil record dengan identitas visual (produk, proyek, ruangan).",
+ "columns": "minmax(0,1fr)",
+ "areas": [
+  [
+   "toolbar"
+  ],
+  [
+   "cards"
+  ],
+  [
+   "pagination"
+  ]
+ ],
+ "slots": [
+  {
+   "id": "toolbar",
+   "name": "Toolbar",
+   "kind": "toolbar",
+   "guide": "Pencarian, filter, urutan.",
+   "match": [
+    "toolbar",
+    "filter",
+    "saring",
+    "cari",
+    "search",
+    "urut"
+   ]
+  },
+  {
+   "id": "cards",
+   "name": "Kartu",
+   "kind": "cards",
+   "guide": "Grid kartu: judul, meta, nilai utama, aksi.",
+   "required": true,
+   "match": [
+    "kartu",
+    "card",
+    "grid",
+    "galeri",
+    "katalog"
+   ]
+  },
+  {
+   "id": "pagination",
+   "name": "Paginasi",
+   "kind": "pagination",
+   "guide": "Muat lebih banyak.",
+   "match": [
+    "paginasi",
+    "pagination"
+   ]
+  }
+ ],
+ "panel": [
+  "toolbar",
+  "cards",
+  "pagination"
+ ],
+ "rules": [
+  "Kartu seragam tinggi dan struktur",
+  "Nilai utama paling menonjol"
+ ],
+ "avoid": [
+  "Card grid untuk data yang perlu dibandingkan (pakai tabel)"
+ ],
+ "example": {
+  "id": "produk",
+  "name": "Katalog produk",
+  "platform": "web",
+  "pattern": "cards",
+  "purpose": "Telusuri produk dan buka detailnya",
+  "sections": [
+   {
+    "id": "filter",
+    "name": "Filter",
+    "slot": "toolbar",
+    "content": [
+     "Cari produk",
+     "Kategori",
+     "Urutkan"
+    ]
+   },
+   {
+    "id": "katalog",
+    "name": "Katalog",
+    "slot": "cards",
+    "content": [
+     "Nama, kategori, harga, stok"
+    ]
+   }
+  ],
+  "primary_action": "Tambah produk",
+  "fields": [
+   {
+    "field": "Product.name",
+    "label": "Nama",
+    "presentation": "card-title"
+   },
+   {
+    "field": "Product.category",
+    "label": "Kategori",
+    "presentation": "card-meta"
+   },
+   {
+    "field": "Product.price",
+    "label": "Harga",
+    "presentation": "card-value"
+   },
+   {
+    "field": "Product.stock",
+    "label": "Stok",
+    "presentation": "badge"
+   }
+  ],
+  "states": {
+   "loading": "Kartu kerangka",
+   "empty": "Belum ada produk",
+   "error": "Gagal memuat"
+  }
+ }
+}

@@ -1,0 +1,53 @@
+{
+ "id": "sidebar",
+ "name": "Shell sidebar",
+ "use": "Aplikasi dengan banyak tujuan: navigasi vertikal di kiri, topbar, konten.",
+ "shell": true,
+ "slots": [
+  {
+   "id": "nav",
+   "name": "Navigasi",
+   "kind": "nav",
+   "guide": "Grup navigasi dan item tujuan utama.",
+   "match": [
+    "nav",
+    "menu",
+    "sidebar",
+    "navigasi",
+    "navbar"
+   ]
+  },
+  {
+   "id": "topbar",
+   "name": "Topbar",
+   "kind": "topbar",
+   "guide": "Judul/produk, pencarian global, akun.",
+   "match": [
+    "top",
+    "header",
+    "bar",
+    "akun",
+    "profil",
+    "user"
+   ]
+  },
+  {
+   "id": "content",
+   "name": "Konten",
+   "kind": "content",
+   "guide": "Area halaman.",
+   "match": [
+    "konten",
+    "content",
+    "main",
+    "utama"
+   ]
+  }
+ ],
+ "rules": [
+  "Satu shell per jenis frame; jangan menambah sidebar kedua"
+ ],
+ "avoid": [
+  "Item nav untuk form/detail"
+ ]
+}

@@ -50,6 +50,45 @@ func pageNodes() []core.VisualNode {
 			Attrs: map[string]string{"alt": "denah"}},
 		{Path: "body > main > p", Tag: "p", Text: "Tidak ada antrean", Bounds: core.VisualBounds{X: 32, Y: 210, Width: 240, Height: 20},
 			Style: core.VisualStyle{Color: "#111111", Background: "#ffffff", FontSize: 14}},
+		{Path: "body > main > section", Tag: "section", Bounds: core.VisualBounds{X: 32, Y: 240, Width: 300, Height: 200},
+			Attrs: map[string]string{SectionAttr: "tabel"}},
+	}
+}
+
+// A design built on the UI kit is measured against its mockup: every
+// section is present and, where sections stack, in the mockup's order.
+func TestReviewChecksMockupStructure(t *testing.T) {
+	p, dir := sampleProject(t)
+	pg := &p.UI.Layout.Pages[0]
+	pg.Sections = append(pg.Sections, core.Section{ID: "filter", Name: "Filter", Content: []string{"Status"}},
+		core.Section{ID: "paginasi", Name: "Paginasi", Content: []string{"20"}})
+	nodes := append(pageNodes(), core.VisualNode{Path: "body > main > nav", Tag: "nav", Bounds: core.VisualBounds{X: 32, Y: 120, Width: 300, Height: 40},
+		Attrs: map[string]string{SectionAttr: "filter"}})
+	in := core.VisualReviewIn{Page: "antrean", Snapshots: []core.VisualSnapshot{{Viewport: core.VisualViewport{Name: "mobile", Width: 375, Height: 812},
+		Screenshot: shot(t, dir, "m.png"), Background: "#ffffff", Nodes: nodes}}}
+	a, err := Review(p, in, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var missing, order bool
+	for _, f := range a.Findings {
+		if f.Criterion == "structure" && strings.Contains(f.Message, `"paginasi"`) && f.Severity == core.SeverityHigh {
+			missing = true
+		}
+		if f.Criterion == "structure" && strings.Contains(f.Message, "urutan") {
+			order = true
+		}
+	}
+	if !missing || !order {
+		t.Fatalf("findings = %+v", a.Findings)
+	}
+	// An older design is not measured against a mockup.
+	p.UI.Format = core.UIUXFormat
+	a, _ = Review(p, in, time.Now())
+	for _, f := range a.Findings {
+		if f.Criterion == "structure" {
+			t.Fatalf("format lama ikut dicek: %+v", f)
+		}
 	}
 }
 

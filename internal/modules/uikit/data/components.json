@@ -1,0 +1,130 @@
+[
+ {
+  "name": "Button",
+  "use": "aksi",
+  "variants": [
+   "primary",
+   "secondary",
+   "ghost",
+   "danger"
+  ],
+  "rules": [
+   "Satu primary per area",
+   "Label kata kerja spesifik",
+   "Disabled + indikator saat mengirim",
+   "Fokus terlihat (focus.ring)"
+  ]
+ },
+ {
+  "name": "Input",
+  "use": "isian teks",
+  "variants": [
+   "text",
+   "number",
+   "date",
+   "textarea",
+   "select"
+  ],
+  "rules": [
+   "Label di atas, tinggi size.control",
+   "Error di bawah field berwarna status.error + teks"
+  ]
+ },
+ {
+  "name": "Table",
+  "use": "membandingkan record",
+  "variants": [
+   "default",
+   "compact"
+  ],
+  "rules": [
+   "Header surface.muted type.label",
+   "Angka rata kanan",
+   "Loading, empty, error state",
+   "Selalu dengan pencarian, filter, dan paginasi"
+  ]
+ },
+ {
+  "name": "Badge",
+  "use": "status",
+  "variants": [
+   "neutral",
+   "success",
+   "warning",
+   "error",
+   "info"
+  ],
+  "rules": [
+   "Teks + warna, tidak hanya warna"
+  ]
+ },
+ {
+  "name": "Card",
+  "use": "panel pengelompok",
+  "variants": [
+   "default",
+   "metric"
+  ],
+  "rules": [
+   "surface.card, border.default, radius.lg",
+   "Jangan bersarang"
+  ]
+ },
+ {
+  "name": "Dialog",
+  "use": "konfirmasi, tugas pendek",
+  "variants": [
+   "default",
+   "danger"
+  ],
+  "rules": [
+   "Fokus terkunci di dialog",
+   "Aksi destruktif minta konfirmasi"
+  ]
+ },
+ {
+  "name": "Toast",
+  "use": "umpan balik aksi",
+  "variants": [
+   "success",
+   "error"
+  ],
+  "rules": [
+   "Hilang otomatis kecuali error"
+  ]
+ },
+ {
+  "name": "EmptyState",
+  "use": "tanpa data",
+  "variants": [
+   "empty",
+   "no_results",
+   "error"
+  ],
+  "rules": [
+   "Jelaskan sebab dan langkah berikutnya"
+  ]
+ },
+ {
+  "name": "Tabs",
+  "use": "facet satu record atau kategori",
+  "variants": [
+   "horizontal",
+   "vertical"
+  ],
+  "rules": [
+   "Tab aktif jelas"
+  ]
+ },
+ {
+  "name": "Pagination",
+  "use": "berpindah halaman data",
+  "variants": [
+   "pages",
+   "load-more"
+  ],
+  "rules": [
+   "Tampilkan total"
+  ]
+ }
+]

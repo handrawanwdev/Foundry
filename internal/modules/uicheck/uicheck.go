@@ -54,7 +54,7 @@ func Review(p *core.Project, in core.VisualReviewIn, now time.Time) (core.PageAu
 		}
 	}
 	now = now.UTC()
-	audit := inspect(p.Dir, p.UI.Rules, pg, in, now)
+	audit := inspect(p.Dir, p.UI.Rules, pg, in, now, p.UI.Format >= core.UIDesignFormat)
 	var prev core.PageAudit
 	if p.Visual != nil {
 		prev = p.Visual.Pages[pg.ID]
@@ -89,7 +89,9 @@ func Summary(p *core.Project) core.VisualSummary {
 }
 
 // inspect runs every check for one page.
-func inspect(dir string, rules *core.DesignRules, pg *core.LayoutPage, in core.VisualReviewIn, now time.Time) core.PageAudit {
+// mockup checks the page's sections against its mockup (designs built on
+// the UI kit).
+func inspect(dir string, rules *core.DesignRules, pg *core.LayoutPage, in core.VisualReviewIn, now time.Time, mockup bool) core.PageAudit {
 	a := core.PageAudit{Page: pg.ID, URL: strings.TrimSpace(in.URL), Source: strings.TrimSpace(in.Source),
 		CheckedAt: now, Findings: []core.VisualFinding{}}
 	if a.Source == "" {
@@ -253,6 +255,9 @@ func inspect(dir string, rules *core.DesignRules, pg *core.LayoutPage, in core.V
 	}
 	checkPrimaryAction(pg, in.Snapshots, add, mark)
 	stateChecks(pg, in.Snapshots, dir, add, mark)
+	if mockup && !pg.Existing {
+		checkStructure(pg, in.Snapshots, add, mark)
+	}
 
 	a.Findings = dedupe(a.Findings)
 	sortFindings(a.Findings)
@@ -475,6 +480,9 @@ func criteria(status map[string]string, pg *core.LayoutPage) []core.VisualCriter
 		{"accessibility", "Label, alt dan nama kontrol", core.SeverityHigh},
 		{"interaction", "Aksi utama dan target sentuh", core.SeverityMedium},
 		{"responsive", "Diuji pada lebih dari satu viewport", core.SeverityMedium},
+	}
+	if _, ok := status["structure"]; ok {
+		defs = append(defs, def{"structure", "Section dan urutannya sesuai mockup", core.SeverityHigh})
 	}
 	for _, st := range core.RequiredStates[pg.Pattern] {
 		defs = append(defs, def{"state:" + st, "State " + st + " terlihat", core.SeverityLow})
@@ -730,3 +738,83 @@ func truncate(s string, n int) string {
 }
 
 func strconvQuote(s string) string { return `"` + s + `"` }
+
+// SectionAttr marks the root element of a designed section in the
+// implementation, as in the mockup.
+const SectionAttr = "data-foundry-section"
+
+// checkStructure compares the implemented page with its mockup: every
+// section of the design is present (marked with data-foundry-section) and,
+// on a narrow viewport where sections stack, in the mockup's order.
+func checkStructure(pg *core.LayoutPage, snaps []core.VisualSnapshot, add func(core.VisualFinding), mark func(string, string)) {
+	known := map[string]int{}
+	for i, s := range pg.Sections {
+		known[s.ID] = i
+	}
+	found := map[string]bool{}
+	marked := false
+	for _, snap := range snaps {
+		if st := strings.TrimSpace(snap.State); st != "" && st != "default" {
+			continue
+		}
+		label := snapshotLabel(snap)
+		type seen struct {
+			id   string
+			y, x float64
+		}
+		var order []seen
+		first := map[string]bool{}
+		for _, n := range visible(snap.Nodes) {
+			id := strings.TrimSpace(n.Attrs[SectionAttr])
+			if id == "" {
+				continue
+			}
+			marked = true
+			if _, ok := known[id]; !ok {
+				add(core.VisualFinding{Page: pg.ID, Criterion: "structure", Severity: core.SeverityLow,
+					Message:  fmt.Sprintf("section %q tidak ada di layout spec", id),
+					Evidence: label + " " + n.Path, Fix: "Pakai id section dari layout spec/mockup, atau tambahkan section itu ke rancangan."})
+				continue
+			}
+			found[id] = true
+			if !first[id] {
+				first[id] = true
+				order = append(order, seen{id, n.Bounds.Y, n.Bounds.X})
+			}
+		}
+		if snap.Viewport.Width <= 0 || snap.Viewport.Width > 600 || len(order) < 2 {
+			continue
+		}
+		sort.SliceStable(order, func(i, j int) bool {
+			if abs(order[i].y-order[j].y) > 1 {
+				return order[i].y < order[j].y
+			}
+			return order[i].x < order[j].x
+		})
+		for i := 1; i < len(order); i++ {
+			if known[order[i].id] < known[order[i-1].id] {
+				mark("structure", core.VisualFail)
+				add(core.VisualFinding{Page: pg.ID, Criterion: "structure", Severity: core.SeverityMedium,
+					Message:  fmt.Sprintf("urutan section berbeda dari mockup: %q tampil sebelum %q", order[i-1].id, order[i].id),
+					Evidence: label, Fix: "Susun section dalam urutan mockup; di layar sempit section bertumpuk sesuai urutan itu."})
+				break
+			}
+		}
+	}
+	if !marked {
+		mark("structure", core.VisualFail)
+		add(core.VisualFinding{Page: pg.ID, Criterion: "structure", Severity: core.SeverityMedium,
+			Message: "section tidak ditandai, struktur halaman tidak bisa dicocokkan dengan mockup",
+			Fix:     "Tambahkan " + SectionAttr + "=\"<id section>\" pada elemen akar setiap section, lalu kirim ulang snapshot beserta attrs-nya."})
+		return
+	}
+	for _, s := range pg.Sections {
+		if !found[s.ID] {
+			mark("structure", core.VisualFail)
+			add(core.VisualFinding{Page: pg.ID, Criterion: "structure", Severity: core.SeverityHigh,
+				Message: fmt.Sprintf("section %q (%s) dari mockup tidak ditemukan", s.ID, s.Name),
+				Fix:     "Bangun section ini sesuai mockup dan tandai akarnya dengan " + SectionAttr + "=\"" + s.ID + "\"."})
+		}
+	}
+	mark("structure", core.VisualPass)
+}

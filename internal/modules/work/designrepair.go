@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/uikit"
 )
 
 // designDetailPrefix marks an internal follow-up: pages landed without
@@ -93,6 +94,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 			b.WriteString("SHELLS:\n" + mustJSON(d.Layout.Shells) + "\n\n")
 		}
 	}
+	b.WriteString(uikit.Default().PatternBrief() + "\n")
 	fmt.Fprintf(&b, layoutRules+"\n", strings.Join(core.LayoutPatterns, ", "), strings.Join(core.UIStates, ", "), requiredStates())
 	b.WriteString(outputDiscipline + "\n")
 	if d != nil && d.Request != nil && d.Request.Rejected != "" {
@@ -104,7 +106,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 		b.WriteString(`The design has rules but no pages yet. Return the layout of every page the features need, each in full (sections, fields, states, links).
 
 Reply with ONLY one JSON object in a ` + "```json" + ` block:
-{"pages": [{"id": "antrean", "name": "Antrean", "platform": "web", "route": "/antrean", "pattern": "table", "purpose": "Saring", "sections": [{"id": "tabel", "name": "Tabel", "content": ["No, Status"]}], "states": {"loading": "", "empty": "", "error": ""}}], "shells": [{"id": "app", "name": "App", "platform": "web", "pattern": "sidebar", "regions": [{"id": "nav", "name": "Nav", "content": ["Menu"]}]}]}`)
+{"pages": [{"id": "antrean", "name": "Antrean", "platform": "web", "route": "/antrean", "pattern": "table", "purpose": "Saring", "sections": [{"id": "tabel", "name": "Tabel", "slot": "table", "content": ["No, Status"]}], "states": {"loading": "", "empty": "", "error": ""}}], "shells": [{"id": "app", "name": "App", "platform": "web", "pattern": "sidebar", "regions": [{"id": "nav", "name": "Nav", "slot": "nav", "content": ["Menu"]}]}]}`)
 		return b.String()
 	}
 	if len(missing) > designDetailBatch {
@@ -113,7 +115,7 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block:
 	b.WriteString(fmt.Sprintf("DETAIL PHASE — fill sections, fields, states and links for these %d pages. Return each page in full, keeping its id. Do not omit these pages.\n", len(missing)))
 	b.WriteString(mustJSON(missing) + "\n\n")
 	b.WriteString(`Reply with ONLY one JSON object in a ` + "```json" + ` block:
-{"pages": [{"id": "antrean", "name": "Antrean", "platform": "web", "route": "/antrean", "pattern": "table", "purpose": "Saring", "goal": "GOAL-1", "shell": "app", "sections": [{"id": "tabel", "name": "Tabel", "content": ["No, Status"], "components": ["Button"]}], "fields": [{"field": "Appointment.status", "label": "Status", "presentation": "badge"}], "links": [{"to": "detail", "via": "Baris"}], "states": {"loading": "", "empty": "", "error": ""}}]}`)
+{"pages": [{"id": "antrean", "name": "Antrean", "platform": "web", "route": "/antrean", "pattern": "table", "purpose": "Saring", "goal": "GOAL-1", "shell": "app", "sections": [{"id": "tabel", "name": "Tabel", "slot": "table", "content": ["No, Status"], "components": ["Button"]}], "fields": [{"field": "Appointment.status", "label": "Status", "presentation": "badge"}], "links": [{"to": "detail", "via": "Baris"}], "states": {"loading": "", "empty": "", "error": ""}}]}`)
 	return b.String()
 }
 
@@ -124,7 +126,7 @@ func applyDesignDetails(p *core.Project, out designOut) error {
 	}
 	next := cloneDesign(p.UI)
 	if out.Rules != nil {
-		next.Rules = completeRules(p, normRules(*out.Rules))
+		next.Rules = completeRules(p, kitRules(p, normRules(*out.Rules)))
 	} else if next.Rules == nil {
 		next.Rules = defaultRules(p)
 	}
@@ -187,18 +189,12 @@ func applyDesignDetails(p *core.Project, out designOut) error {
 		return errors.New("rancangan UI tidak lengkap: pages wajib diisi")
 	}
 	flows := slices.Clone(p.Flows)
-	for id, pages := range out.Flows {
-		i := slices.IndexFunc(flows, func(f core.Flow) bool { return f.ID == id })
-		if i < 0 {
-			return fmt.Errorf("alur %q tidak ada", id)
-		}
-		flows[i].PageIDs = nil
-		for _, pg := range pages {
-			flows[i].PageIDs = append(flows[i].PageIDs, normID(pg))
-		}
+	if err := applyFlowsOut(flows, out.Flows); err != nil {
+		return err
 	}
 	applyExisting(p, next)
 	completeDesign(p, next)
+	completeFlows(p, next.Layout, flows)
 	if len(l.Users) > 0 && len(l.Goals) > 0 && len(l.Navigation) > 0 && len(l.Decisions) > 0 {
 		next.Format = core.UIDesignFormat
 	}
@@ -318,31 +314,7 @@ func defaultRules(p *core.Project) *core.DesignRules {
 		Direction:  "Jelas, konsisten, satu tugas utama per halaman",
 		Principles: []string{"Satu tugas utama per halaman", "Istilah produk, bukan jargon UI", "Aksi destruktif minta konfirmasi"},
 		UX:         []string{"Navigasi mengikuti tugas pengguna", "Validasi dekat field", "Empty state menjelaskan langkah berikutnya", "Error menyertakan cara pulih"},
-		Tokens: core.DesignTokens{
-			Colors: []core.Token{
-				{Name: "surface.page", Value: "#f8fafc", Use: "latar halaman"},
-				{Name: "surface.card", Value: "#ffffff", Use: "kartu dan panel"},
-				{Name: "text.primary", Value: "#0f172a", Use: "teks utama"},
-				{Name: "text.muted", Value: "#64748b", Use: "teks sekunder"},
-				{Name: "border.default", Value: "#e2e8f0", Use: "garis pemisah"},
-				{Name: "action.primary", Value: "#1f6feb", Use: "aksi utama"},
-				{Name: "status.success", Value: "#15803d", Use: "sukses"},
-				{Name: "status.warning", Value: "#b45309", Use: "peringatan"},
-				{Name: "status.error", Value: "#b91c1c", Use: "error"},
-				{Name: "focus.ring", Value: "#1d4ed8", Use: "fokus keyboard"},
-			},
-			Typography: []core.Token{
-				{Name: "type.body", Value: "Inter 14px/20px 400", Use: "teks isi"},
-				{Name: "type.title", Value: "Inter 20px/28px 600", Use: "judul halaman"},
-				{Name: "type.label", Value: "Inter 12px/16px 500", Use: "label field"},
-			},
-			Spacing: []core.Token{
-				{Name: "space.xs", Value: "4px"}, {Name: "space.sm", Value: "8px"},
-				{Name: "space.md", Value: "16px"}, {Name: "space.lg", Value: "24px"},
-			},
-			Radius:      []core.Token{{Name: "radius.md", Value: "8px"}},
-			Breakpoints: []core.Token{{Name: "breakpoint.tablet", Value: "768px"}, {Name: "breakpoint.desktop", Value: "1024px"}},
-		},
+		Preset:     uikit.DefaultPreset,
 		Components: []core.ComponentRule{
 			{Name: "Button", Use: "aksi", Variants: []string{"primary", "secondary"}, Rules: []string{"disabled saat kirim"}},
 		},
@@ -358,6 +330,7 @@ func defaultRules(p *core.Project) *core.DesignRules {
 	if p != nil && p.Structure != nil && p.Structure.Mode == core.StructureExisting {
 		r.Source = core.RulesExisting
 	}
+	uikit.Default().Materialize(r)
 	return r
 }
 

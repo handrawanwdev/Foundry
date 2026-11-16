@@ -168,8 +168,19 @@ func orDash(s string) string {
 // depend on it.
 func traceabilityMarkdown(p *core.Project) string {
 	var b strings.Builder
-	b.WriteString("# Traceability\n\nRequirement → fitur → use case → acceptance criteria → command. Dibuat ulang setiap ekspor.\n\n")
-	b.WriteString("| Requirement | Prioritas | Fitur | Use case | Kriteria | Command |\n|---|---|---|---|---|---|\n")
+	screens := map[string]core.ReqTrace{}
+	if p.UI != nil && p.UI.Layout != nil && len(p.UI.Layout.Pages) > 0 {
+		for _, t := range p.DesignGate().Requirements {
+			screens[t.ID] = t
+		}
+	}
+	if len(screens) > 0 {
+		b.WriteString("# Traceability\n\nRequirement → fitur → use case → layar dan aksi utama → acceptance criteria → command. Dibuat ulang setiap ekspor.\n\n")
+		b.WriteString("| Requirement | Prioritas | Fitur | Use case | Layar | Aksi utama | Kriteria | Command |\n|---|---|---|---|---|---|---|---|\n")
+	} else {
+		b.WriteString("# Traceability\n\nRequirement → fitur → use case → acceptance criteria → command. Dibuat ulang setiap ekspor.\n\n")
+		b.WriteString("| Requirement | Prioritas | Fitur | Use case | Kriteria | Command |\n|---|---|---|---|---|---|\n")
+	}
 	var uncovered []string
 	for _, r := range p.Requirements {
 		var feats, flows, crit, cmds []string
@@ -198,6 +209,13 @@ func traceabilityMarkdown(p *core.Project) string {
 		}
 		if len(cmds) == 0 && r.Priority == "MUST" {
 			uncovered = append(uncovered, r.ID)
+		}
+		if len(screens) > 0 {
+			t := screens[r.ID]
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s |\n", r.ID, r.Priority, orDash(strings.Join(feats, ", ")),
+				orDash(strings.Join(flows, ", ")), orDash(strings.Join(t.Pages, ", ")), orDash(strings.Join(t.Actions, "; ")),
+				orDash(strings.Join(crit, ", ")), orDash(strings.Join(cmds, ", ")))
+			continue
 		}
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n", r.ID, r.Priority, orDash(strings.Join(feats, ", ")),
 			orDash(strings.Join(flows, ", ")), orDash(strings.Join(crit, ", ")), orDash(strings.Join(cmds, ", ")))

@@ -23,6 +23,20 @@ func designRulesMarkdown(p *core.Project) string {
 	if len(r.Sources) > 0 {
 		fmt.Fprintf(&b, "Dibaca dari: %s\n\n", codeList(r.Sources))
 	}
+	if r.Preset != "" {
+		fmt.Fprintf(&b, "Preset UI kit: **%s** — token di bawah diisi dari preset ini", r.Preset)
+		if r.Brand != nil && (r.Brand.Primary != "" || r.Brand.Font != "") {
+			var parts []string
+			if r.Brand.Primary != "" {
+				parts = append(parts, "warna utama "+r.Brand.Primary)
+			}
+			if r.Brand.Font != "" {
+				parts = append(parts, "font "+r.Brand.Font)
+			}
+			fmt.Fprintf(&b, " dan disesuaikan dengan brand (%s)", strings.Join(parts, ", "))
+		}
+		b.WriteString("; skala spasi, ukuran huruf, radius, dan breakpoint mengikuti preset.\n\n")
+	}
 	if r.Reference != "" {
 		fmt.Fprintf(&b, "Referensi desain: **%s** — aturan di bawah diturunkan darinya dan disesuaikan dengan produk ini; bukan salinan merek, logo, atau aset proprietari.\n\n", r.Reference)
 	}
@@ -108,9 +122,18 @@ func layoutMarkdown(p *core.Project) string {
 			sections(&b, sh.Regions)
 		}
 	}
+	kit := p.UI.Format >= core.UIDesignFormat
+	if kit {
+		b.WriteString("## Mockup\n\nSetiap halaman punya mockup HTML di `design/mockups/<id>.html` (indeks: `design/mockups/index.html`), dirender dari preset token dan template pattern UI kit dengan data contoh. " +
+			"Bangun layar mengikuti urutan section, slot, kepadatan, dan token mockup memakai komponen project; jangan menyalin nilai literal atau data contohnya. " +
+			"Tandai elemen akar setiap section dengan `data-foundry-section=\"<id section>\"` agar evaluasi visual dapat mencocokkannya.\n\n")
+	}
 	b.WriteString("## Halaman\n\n")
 	for _, pg := range l.Pages {
 		fmt.Fprintf(&b, "### `%s` %s\n\n%s\n\n", pg.ID, pg.Name, pg.Purpose)
+		if kit && !pg.Existing {
+			fmt.Fprintf(&b, "Mockup: [`design/mockups/%s.html`](../design/mockups/%s.html)\n\n", pg.ID, pg.ID)
+		}
 		meta := []string{"Platform " + pg.Platform, "pattern **" + pg.Pattern + "**"}
 		if pg.Route != "" {
 			meta = append(meta, "route `"+pg.Route+"`")
@@ -246,17 +269,72 @@ func uxMarkdown(l *core.LayoutSpec) string {
 	return b.String()
 }
 
+// pageFlows walks every use case through the pages, step by step, so the
+// coding agent builds each step where the user takes it.
 func pageFlows(p *core.Project) string {
+	if p.UI == nil || p.UI.Layout == nil {
+		return ""
+	}
 	var b strings.Builder
-	for _, fl := range p.Flows {
-		if len(fl.PageIDs) > 0 {
-			fmt.Fprintf(&b, "- **%s %s**: %s\n", fl.ID, fl.Name, strings.Join(fl.PageIDs, " → "))
+	for _, w := range core.FlowWalks(p, p.UI.Layout) {
+		if len(w.Pages) == 0 || w.Inferred {
+			continue
+		}
+		fmt.Fprintf(&b, "**%s %s**: %s\n\n", w.ID, w.Name, strings.Join(w.Pages, " → "))
+		if w.Trigger != "" {
+			fmt.Fprintf(&b, "Pemicu: %s\n\n", w.Trigger)
+		}
+		for _, st := range w.Steps {
+			note := ""
+			switch {
+			case st.Decision:
+				note = "; keputusan: sediakan setujui dan tolak/kembalikan"
+			case st.Risky:
+				note = "; tidak dapat dibatalkan: minta konfirmasi"
+			}
+			switch {
+			case st.System:
+				fmt.Fprintf(&b, "%d. %s — otomatis, umpan balik di `%s`\n", st.N, st.Text, st.Page)
+			case !st.Placed:
+				fmt.Fprintf(&b, "%d. %s — `%s` (belum tergambar: tambahkan elemennya%s)\n", st.N, st.Text, st.Page, note)
+			case note != "":
+				fmt.Fprintf(&b, "%d. %s — `%s` (%s)\n", st.N, st.Text, st.Page, strings.TrimPrefix(note, "; "))
+			default:
+				fmt.Fprintf(&b, "%d. %s — `%s`\n", st.N, st.Text, st.Page)
+			}
+		}
+		b.WriteString("\n")
+		for _, br := range w.Branches {
+			kind := "Alternatif"
+			if br.Kind == core.BranchFailure {
+				kind = "Gagal"
+			}
+			fmt.Fprintf(&b, "- %s", kind)
+			if br.From > 0 {
+				fmt.Fprintf(&b, " di langkah %d", br.From)
+			}
+			fmt.Fprintf(&b, ": %s", br.Text)
+			switch {
+			case br.System:
+				b.WriteString(" — otomatis")
+			case br.Placed:
+				fmt.Fprintf(&b, " — `%s`", br.Page)
+			default:
+				fmt.Fprintf(&b, " — tampilkan di `%s` (pesan, state atau aksi)", br.Page)
+			}
+			if len(br.Flows) > 0 {
+				fmt.Fprintf(&b, "; lanjut ke %s", strings.Join(br.Flows, ", "))
+			}
+			b.WriteString("\n")
+		}
+		if len(w.Branches) > 0 {
+			b.WriteString("\n")
 		}
 	}
 	if b.Len() == 0 {
 		return ""
 	}
-	return "## Alur antarhalaman\n\n" + b.String() + "\n"
+	return "## Alur antarhalaman\n\nTiap langkah use case dan halaman tempat pengguna melakukannya. Halaman berikutnya dicapai lewat link halaman.\n\n" + b.String()
 }
 
 // sections lists each section as a bold line with its fields as bullets
@@ -276,6 +354,7 @@ func sections(b *strings.Builder, secs []core.Section) {
 				fmt.Fprintf(b, "- %s: %s\n", name, v)
 			}
 		}
+		sub("Slot template", s.Slot)
 		sub("Isi", strings.Join(s.Content, " · "))
 		sub("Komponen", strings.Join(s.Components, ", "))
 		sub("Grid", s.Grid)

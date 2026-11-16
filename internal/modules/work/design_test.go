@@ -106,7 +106,7 @@ func TestDesignPromptCoversEveryPageAndRowAction(t *testing.T) {
 func TestDesignPromptSeedsFromTemplate(t *testing.T) {
 	p := &core.Project{Story: "Aplikasi data pasar", Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}}}
 	prompt := DesignPrompt(p)
-	for _, want := range []string{"UI DESIGN TEMPLATE", "PRIORITAS KEPUTUSAN", "PAGE PATTERNS", "AKSESIBILITAS", "RESPONSIF"} {
+	for _, want := range []string{"UI DESIGN TEMPLATE", "PRIORITAS KEPUTUSAN", "UI KIT PRESETS", "UI KIT PAGE TEMPLATES", "AKSESIBILITAS", "RESPONSIF"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt missing template marker %q", want)
 		}
@@ -209,8 +209,11 @@ func TestApplyDesignRecordsReferenceWithConcreteRules(t *testing.T) {
 	if r.Reference != "Duolingo" {
 		t.Fatalf("reference = %q, want Duolingo", r.Reference)
 	}
-	if len(r.Tokens.Colors) != 1 || len(r.Tokens.Radius) != 1 || len(r.Components) != 2 {
-		t.Fatalf("concrete rules not landed: colors=%d radius=%d components=%d", len(r.Tokens.Colors), len(r.Tokens.Radius), len(r.Components))
+	// The tokens are the preset's, adapted to the reference's accent: the
+	// primary color becomes the brand, the curated scale stays.
+	if r.Preset == "" || tokenValue(r.Tokens.Colors, "action.primary") != "#58cc02" || tokenValue(r.Tokens.Radius, "radius.md") != "8px" ||
+		tokenValue(r.Tokens.Colors, "action.primary.hover") == "" || len(r.Components) != 2 {
+		t.Fatalf("concrete rules not landed: preset=%q colors=%+v radius=%+v components=%d", r.Preset, r.Tokens.Colors, r.Tokens.Radius, len(r.Components))
 	}
 	// A complete reference-derived design has no errors.
 	if errs := core.Errors(p.DesignIssues(nil)); len(errs) != 0 {
@@ -437,8 +440,10 @@ func TestDesignPromptStaysCompact(t *testing.T) {
 			t.Errorf("prompt missing %q", want)
 		}
 	}
-	if n := len(prompt); n > 18000 {
-		t.Errorf("clinic generate prompt is %d bytes; want ≤ 18000 so the LLM prefills less", n)
+	// The cap leaves room for the use-case-to-screen contract (step and
+	// branch pages); the quality of the mapping is worth those bytes.
+	if n := len(prompt); n > 18800 {
+		t.Errorf("clinic generate prompt is %d bytes; want ≤ 18800 so the LLM prefills less", n)
 	}
 }
 
@@ -561,7 +566,7 @@ func TestApplyDesignSalvagesTruncationAndAsksDetails(t *testing.T) {
 	if n := len(p.UI.Layout.Pages); n != 2 {
 		t.Fatalf("salvaged pages = %d, want 2 (truncated third dropped)", n)
 	}
-	if p.UI.Rules == nil || p.UI.Rules.Tokens.Colors[0].Name != "action.primary" {
+	if p.UI.Rules == nil || tokenValue(p.UI.Rules.Tokens.Colors, "action.primary") != "#000" {
 		t.Fatalf("rules = %+v", p.UI.Rules)
 	}
 	prompt := DesignPrompt(p)
@@ -647,4 +652,13 @@ func TestDesignPromptPutsRulesBeforeUX(t *testing.T) {
 	if rules < 0 || users < 0 || rules > users {
 		t.Fatalf("shape should emit rules before users (rules=%d users=%d)", rules, users)
 	}
+}
+
+func tokenValue(ts []core.Token, name string) string {
+	for _, t := range ts {
+		if t.Name == name {
+			return t.Value
+		}
+	}
+	return ""
 }

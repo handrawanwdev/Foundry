@@ -31,6 +31,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/modules/progress"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
 	"github.com/handrawanwdev/foundry/internal/modules/stack"
+	"github.com/handrawanwdev/foundry/internal/modules/uikit"
 	"github.com/handrawanwdev/foundry/internal/modules/work"
 	"github.com/handrawanwdev/foundry/internal/safefile"
 	"github.com/handrawanwdev/foundry/internal/transport/httpapi/respond"
@@ -433,6 +434,40 @@ func (s *Server) Handler() http.Handler {
 		}
 		return ok(svc.ReviseDesign(in.Text, in.Focus))
 	}))
+	// UI kit and mockups: the curated presets and page templates, every
+	// page rendered from them, and the user's approval of each mockup.
+	api("GET /api/v1/design/kit", func(r *http.Request) (any, error) {
+		k := uikit.Default()
+		return map[string]any{"version": k.Version, "presets": k.Presets, "patterns": k.Patterns, "components": k.Components}, nil
+	})
+	api("GET /api/v1/project/design/mockups", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		list, err := svc.Mockups()
+		if err != nil {
+			return nil, err
+		}
+		walks, err := svc.MockupWalks()
+		if err != nil {
+			return nil, err
+		}
+		gate, err := svc.DesignGate()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"mockups": list, "flows": walks, "gate": gate}, nil
+	}))
+	api("POST /api/v1/project/design/mockups/approve", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
+		var in struct{ Pages []string }
+		if err := decode(r, &in); err != nil {
+			return nil, err
+		}
+		list, err := svc.ApproveMockups(in.Pages)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"mockups": list}, nil
+	}))
+	mux.HandleFunc("GET /api/v1/project/design/mockups/{page}", s.mockup)
+	mux.HandleFunc("GET /api/v1/design/patterns/{id}", s.patternReference)
 	// Visual quality: measured snapshots and screenshots of implemented
 	// screens; findings feed a correction command in the workflow.
 	api("GET /api/v1/project/visual", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
@@ -792,6 +827,52 @@ func (s *Server) downloadExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.zip"`)
 	w.Write(buf.Bytes())
+}
+
+// mockupCSP keeps a rendered mockup inert: inline styles only, no script,
+// no request to anywhere, no form submission.
+const mockupCSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+
+func writeMockup(w http.ResponseWriter, html string) {
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Content-Security-Policy", mockupCSP)
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Cache-Control", "no-store")
+	w.Write([]byte(html))
+}
+
+// mockup serves one page's mockup as HTML (?state=loading|empty|...).
+// Links between pages stay inside the mockups.
+func (s *Server) mockup(w http.ResponseWriter, r *http.Request) {
+	svc, err := s.service()
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	state := r.URL.Query().Get("state")
+	out, err := svc.Mockup(r.PathValue("page"), state, func(id string) string {
+		return "/api/v1/project/design/mockups/" + url.PathEscape(id)
+	})
+	if err != nil {
+		if pipeline.IsMockupMissing(err) {
+			respond.Fail(w, respond.CodeNotFound, err.Error(), http.StatusNotFound)
+			return
+		}
+		fail(w, r, err)
+		return
+	}
+	writeMockup(w, out)
+}
+
+// patternReference serves the example page of a UI kit template.
+func (s *Server) patternReference(w http.ResponseWriter, r *http.Request) {
+	out, err := uikit.Default().RenderReference(r.PathValue("id"))
+	if err != nil {
+		respond.Fail(w, respond.CodeNotFound, err.Error(), http.StatusNotFound)
+		return
+	}
+	writeMockup(w, out)
 }
 
 func specDownloadName(name, ext string) string {

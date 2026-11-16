@@ -1,4 +1,4 @@
-import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, CommandHistory, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackAreas, StructureOp, Survey, TechArea, Flow, WorkflowView } from "./types";
+import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, CommandHistory, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, MockupStatus, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackAreas, StructureOp, Survey, TechArea, Flow, FlowWalk, DesignGate, WorkflowView } from "./types";
 
 // details lists what an invalid request broke (field = where).
 export interface ErrorDetail { field?: string; message: string }
@@ -91,6 +91,11 @@ export const api = {
   // Saved whole; refused with ApiError.details when invalid.
   editDesignRules: (rules: DesignRules) => call<Project>("PUT", "/project/design/rules", rules),
   editLayout: (layout: LayoutSpec) => call<Project>("PUT", "/project/design/layout", layout),
+  // Mockups: every page rendered from the UI kit; the user approves each one.
+  mockups: () => call<{ mockups: MockupStatus[]; flows?: FlowWalk[]; gate?: DesignGate }>("GET", "/project/design/mockups"),
+  approveMockups: (pages: string[] = []) => call<{ mockups: MockupStatus[] }>("POST", "/project/design/mockups/approve", { pages }),
+  mockupURL: (page: string, state = "") =>
+    `/api/v1/project/design/mockups/${encodeURIComponent(page)}${state ? `?state=${encodeURIComponent(state)}` : ""}`,
 
   // Blueprint: built-in artifacts plus the ones written for the project.
   blueprint: () => call<BlueprintView>("GET", "/project/blueprint"),

@@ -1,0 +1,110 @@
+{
+ "id": "form",
+ "name": "Form",
+ "use": "Membuat atau mengubah satu record.",
+ "columns": "minmax(0,1fr) minmax(0,280px)",
+ "areas": [
+  [
+   "form",
+   "aside"
+  ],
+  [
+   "actions",
+   "aside"
+  ]
+ ],
+ "slots": [
+  {
+   "id": "form",
+   "name": "Field",
+   "kind": "form",
+   "guide": "Field dikelompokkan per topik; label di atas field; validasi dekat field.",
+   "required": true,
+   "match": [
+    "form",
+    "field",
+    "data",
+    "isian",
+    "input",
+    "informasi"
+   ]
+  },
+  {
+   "id": "aside",
+   "name": "Bantuan",
+   "kind": "text",
+   "guide": "Bantuan, ringkasan, atau pratinjau.",
+   "match": [
+    "bantuan",
+    "help",
+    "ringkasan",
+    "pratinjau",
+    "preview",
+    "tips"
+   ]
+  },
+  {
+   "id": "actions",
+   "name": "Aksi",
+   "kind": "actions",
+   "guide": "Simpan (utama) dan Batal; kunci tombol saat mengirim.",
+   "match": [
+    "aksi",
+    "action",
+    "tombol",
+    "simpan",
+    "submit"
+   ]
+  }
+ ],
+ "rules": [
+  "Satu kolom field; dua kolom hanya untuk field pendek yang berkaitan",
+  "Jangan hapus input saat gagal"
+ ],
+ "avoid": [
+  "Placeholder sebagai pengganti label"
+ ],
+ "example": {
+  "id": "pesanan-baru",
+  "name": "Pesanan baru",
+  "platform": "web",
+  "pattern": "form",
+  "purpose": "Catat pesanan baru",
+  "sections": [
+   {
+    "id": "data",
+    "name": "Data pesanan",
+    "slot": "form",
+    "content": [
+     "Pelanggan",
+     "Tanggal kirim",
+     "Metode bayar",
+     "Catatan"
+    ]
+   },
+   {
+    "id": "ringkas",
+    "name": "Ringkasan",
+    "slot": "aside",
+    "content": [
+     "Total dihitung otomatis dari item"
+    ]
+   },
+   {
+    "id": "aksi",
+    "name": "Aksi",
+    "slot": "actions",
+    "content": [
+     "Simpan pesanan",
+     "Batal"
+    ]
+   }
+  ],
+  "primary_action": "Simpan pesanan",
+  "states": {
+   "error": "Pesan error di dekat field",
+   "success": "Toast tersimpan lalu ke detail",
+   "disabled": "Tombol terkunci saat mengirim"
+  }
+ }
+}

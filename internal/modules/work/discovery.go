@@ -242,7 +242,7 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 			continue
 		}
 		fl = normFlow(fl)
-		fl.ID, fl.FeatureID, fl.PageIDs = fmt.Sprintf("FLOW-%03d", len(flows)+1), fid, nil
+		fl.ID, fl.FeatureID, fl.PageIDs, fl.StepPages, fl.BranchPages = fmt.Sprintf("FLOW-%03d", len(flows)+1), fid, nil, nil, nil
 		flows = append(flows, fl)
 	}
 	var targets []core.PlatformTarget

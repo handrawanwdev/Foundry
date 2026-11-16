@@ -62,6 +62,23 @@ Kode sudah di-commit user: `2d490fa` (Phase 7), `9c9fa86` (coverage workflow), `
 - [ ] Race test `internal/modules/pipeline` butuh `-timeout 40m` (default 10m timeout; terakhir PASS 649,3 detik, 0 data race, 2026-11-12).
 - [x] gofmt lama: `learning.go`, `remove.go`, `context_test.go` (hanya spasi; `git diff -w` kosong).
 
+## D. UI kit & mockup (2026-11-15)
+
+- [x] Preset token dikurasi (`internal/modules/uikit/data/presets`), template pattern dengan slot (11 halaman + 2 shell), materialisasi token, penempatan slot, validasi (`presetIssues`, `slotIssues`), mockup HTML per halaman/state, persetujuan mockup, ekspor `design/mockups` + `design/patterns`, MCP `get_mockup`, kriteria visual `structure`, panel mockup di Blueprint.
+- [x] Render offline dari desain lama Parking-System dan distra (salinan, read-only): semua halaman terender; pemetaan slot desain lama heuristik dan kurang presisi dibanding desain baru yang menyebut slot.
+- [x] Mockup modern: ikon inline, topbar dari region header shell, panel data (toolbar + tabel + paginasi satu kartu), tabel jadi kartu di mobile, grafik area SVG, KPI dengan ikon/delta, form grid 2 kolom; grid area dijamin persegi (master-detail/settings tidak pecah).
+- [x] Aturan wajib: tabel/daftar punya pencarian + filter dan paginasi (`core.Collections`, `collectionIssues`), dilengkapi otomatis (`addCollectionControls`), digambar di mockup.
+- [x] Layar mengikuti use case (2026-11-16): langkah use case dipetakan ke halaman, link antarhalaman alur wajib, saran pecah halaman padat, stepper + tombol langkah berikutnya di mockup, storyboard "Alur use case", mode jalan-per-use-case di panel mockup, ekspor per langkah di layout-spec.
+- [x] Alur bisnis → UX → layar (2026-11-16): use case punya `trigger`; alternatif/kegagalan ditulis "Langkah N: … -> kembali ke langkah M | selesai | batal | FLOW-xxx" dan dibaca jadi cabang (`core.MapFlowBranches`). Desainer menempatkan tiap langkah dan cabang di halaman (`flows.FLOW-x.steps/branches` → `step_pages/branch_pages`); bentuk lama (daftar halaman) tetap diterima. Cek baru: titik keputusan butuh layar setujui+tolak, langkah tak bisa dibatalkan butuh konfirmasi, cabang ke use case lain butuh link, halaman penempatan yang tidak ada = error. Stemmer mengenali prefiks yang meluluhkan huruf (menyetujui→setuju, memutuskan→putus).
+- [x] Quality gate desain (`core.DesignGate`): 10 pemeriksaan (requirement→layar, use case→layar, alur→navigasi, peran→permission, data→komponen, aksi utama, alternatif/kegagalan, responsif, konsistensi visual, integritas prototype), traceability requirement→use case→halaman→aksi utama, daftar asumsi/unknown. Diekspor ke `review/design-gate.md` + kolom Layar/Aksi di `traceability.md`, API mockups dan MCP `get_design`, panel mockup. Gate gagal (requirement MUST ber-use case tanpa layar) memblokir persetujuan mockup.
+- [x] Prototype: mode jalan-per-use-case menampilkan pemicu, syarat, cabang (klik ke halamannya / use case tujuan), hasil; filter per peran; tombol tolak/hapus/batal bergaya destruktif + `data-foundry-confirm`; storyboard menampilkan cabang.
+- [x] Regression fixture: `FOUNDRY_UX_FIXTURES=<folder salinan proyek> go test ./internal/modules/work -run TestUXFixtures -v` (proyek tidak masuk repo).
+- [ ] **Belum terbukti live**: AI sungguhan memilih preset, mengisi slot, menulis "Filter:/Paginasi:", dan menulis `flows` per langkah/cabang (prompt klinik ≤ 18,8 KB).
+- [ ] Pemetaan langkah → halaman untuk desain lama tetap heuristik (kecocokan kata + kata dasar). Desain baru memakai penempatan dari desainer; desain lama perlu revisi desain untuk mendapatkannya.
+- [ ] Belum dimodelkan: proses paralel dan state machine status dokumen (status hanya dari teks `data_effects`). Gate tidak memeriksa konsistensi status antarhalaman.
+- [ ] Desain lama (format 2) tidak otomatis diberi preset; baru ikut UI kit setelah revisi desain yang mengembalikan rules.
+- [ ] Font preset (Inter, Nunito Sans, Source Serif 4) tidak dimuat di mockup (CSP tanpa jaringan); fallback system-ui.
+
 ## Bukti
 - Ukuran prompt sketch/revisi: `go test -tags foundrybench -run 'TestBench(Sketch|Revision)PromptSize'` (BENCH_PROJECT=…/project.json). Revisi live: `TestBenchWorkflowRevise` (BENCH_DIR, BENCH_REVISE_TEXT, BENCH_REVISE_FOCUS).
 - Ukuran prompt detail: `go test -tags foundrybench -run TestBenchDetailPromptSize` (BENCH_PROJECT=…/project.json). Live: `/tmp/claude-1000/-home-handrawan-Project-Foundry/6e73f342-d3ad-4d96-bbb4-925a76766846/scratchpad/wf/parking-detail2`

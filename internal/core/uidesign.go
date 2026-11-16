@@ -30,6 +30,16 @@ type UIDesign struct {
 	// against; a later version that affects it asks for a review.
 	TechVersion int       `json:"tech_version,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	// Mockups are the user's approvals of the rendered page mockups: page
+	// id → the mockup hash that was approved. A design change that alters
+	// the mockup leaves the approval stale until the user approves again.
+	Mockups map[string]MockupApproval `json:"mockups,omitempty"`
+}
+
+// MockupApproval records that the user approved one page's mockup.
+type MockupApproval struct {
+	Hash       string    `json:"hash"`
+	ApprovedAt time.Time `json:"approved_at"`
 }
 
 // Written reports whether rules or layout exist.
@@ -51,6 +61,12 @@ type DesignRules struct {
 	// derived from it, adapted to this product; the reference itself is the
 	// user's words and is never copied as brand identity or assets.
 	Reference string `json:"reference,omitempty"`
+	// Preset is the curated UI-kit token preset the tokens come from
+	// (ops-dense, saas-neutral, ...). Foundry fills the tokens from it; the
+	// AI only picks it and the brand.
+	Preset string `json:"preset,omitempty"`
+	// Brand adapts the preset to the product: primary color and font.
+	Brand *DesignBrand `json:"brand,omitempty"`
 	// Direction is the visual direction in one sentence.
 	Direction  string          `json:"direction,omitempty"`
 	Principles []string        `json:"principles"`
@@ -66,6 +82,12 @@ type DesignRules struct {
 	// Sources are the files of an existing project the tokens and
 	// components were read from.
 	Sources []string `json:"sources,omitempty"`
+}
+
+// DesignBrand is what a product changes on its preset.
+type DesignBrand struct {
+	Primary string `json:"primary,omitempty"` // hex color of the primary action
+	Font    string `json:"font,omitempty"`    // font family of every text style
 }
 
 // DesignTokens: the build maps them onto the project's styling instead of
@@ -113,8 +135,31 @@ type PlatformRules struct {
 	Rules    []string `json:"rules"`
 }
 
-// UIDesignFormat is the current schema generation of UIDesign.
-const UIDesignFormat = 2
+// Schema generations of UIDesign. Format 2 added the UX layer (users,
+// goals, navigation, decisions); format 3 builds on the UI kit (a token
+// preset and pattern slots), so its pages render as mockups.
+const (
+	UIUXFormat     = 2
+	UIDesignFormat = 3
+)
+
+// The UI kit is the curated set of token presets and page patterns
+// (module uikit). Core checks a design against it through these hooks;
+// they are nil when the kit is not loaded (core tests), and the checks are
+// then skipped.
+var (
+	// KitPreset returns the tokens of a preset.
+	KitPreset func(id string) (DesignTokens, bool)
+	// KitSlots returns the slots of a pattern that has a template.
+	KitSlots func(pattern string) ([]KitSlot, bool)
+)
+
+// KitSlot is one region of a pattern template.
+type KitSlot struct {
+	ID       string
+	Kind     string // table, list, toolbar, pagination, ...
+	Required bool
+}
 
 // LayoutSpec is the layout of every page: shared shells, then pages made of
 // sections in visual order. Users, goals, navigation and decisions are the
@@ -241,8 +286,11 @@ type LayoutPage struct {
 // Section is a region of a page or shell. Content lists its elements in
 // order; Components the shared components (design rules) it reuses.
 type Section struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Slot is the region of the page's pattern template the section fills
+	// (table, toolbar, form, ...).
+	Slot       string            `json:"slot,omitempty"`
 	Pattern    string            `json:"pattern,omitempty"`
 	Purpose    string            `json:"purpose,omitempty"`
 	Content    []string          `json:"content"`
@@ -566,6 +614,7 @@ func rulesIssues(r *DesignRules, platforms []string) []Issue {
 		}
 		seen[n] = true
 	}
+	out = append(out, presetIssues(r)...)
 	for _, pr := range r.Platforms {
 		switch {
 		case !slices.Contains(RulesPlatforms, pr.Platform):
@@ -575,6 +624,113 @@ func rulesIssues(r *DesignRules, platforms []string) []Issue {
 		}
 		if len(pr.Rules) == 0 {
 			add(IssueError, "aturan platform %q kosong", pr.Platform)
+		}
+	}
+	return out
+}
+
+// presetIssues checks the rules against their UI-kit preset: the preset
+// exists, the brand is usable, and spacing and type sizes stay on the
+// preset's scale so every screen keeps one rhythm.
+func presetIssues(r *DesignRules) []Issue {
+	var out []Issue
+	add := func(level, format string, a ...any) {
+		out = append(out, Issue{Level: level, Where: "rules", Message: fmt.Sprintf(format, a...)})
+	}
+	if KitPreset == nil {
+		return nil
+	}
+	if r.Preset == "" {
+		if r.Source == RulesNew {
+			add(IssueWarning, "belum memilih preset UI kit; token tanpa preset tidak punya skala yang dikurasi")
+		}
+		return out
+	}
+	preset, ok := KitPreset(r.Preset)
+	if !ok {
+		add(IssueError, "preset %q tidak ada di UI kit", r.Preset)
+		return out
+	}
+	if b := r.Brand; b != nil && b.Primary != "" && !hexColor.MatchString(b.Primary) {
+		add(IssueError, "brand.primary %q harus warna hex (#RRGGBB)", b.Primary)
+	}
+	scale := func(toks []Token, pick func(string) string) map[string]bool {
+		out := map[string]bool{}
+		for _, t := range toks {
+			if v := pick(t.Value); v != "" {
+				out[v] = true
+			}
+		}
+		return out
+	}
+	if r.Source != RulesNew {
+		return out // an existing design system keeps its own scale
+	}
+	space := scale(preset.Spacing, strings.TrimSpace)
+	for _, t := range r.Tokens.Spacing {
+		if !space[strings.TrimSpace(t.Value)] {
+			add(IssueWarning, "spacing %s = %s di luar skala preset %s", t.Name, t.Value, r.Preset)
+		}
+	}
+	sizes := scale(preset.Typography, fontSize)
+	for _, t := range r.Tokens.Typography {
+		if sz := fontSize(t.Value); sz != "" && !sizes[sz] {
+			add(IssueWarning, "ukuran huruf %s = %s di luar skala preset %s", t.Name, sz, r.Preset)
+		}
+	}
+	return out
+}
+
+var (
+	hexColor  = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+	fontSizeR = regexp.MustCompile(`\b(\d+(?:\.\d+)?(?:px|rem))\b`)
+)
+
+// fontSize is the first length of a typography value ("Inter 14px/20px 400" → 14px).
+func fontSize(v string) string {
+	if m := fontSizeR.FindStringSubmatch(v); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// slotIssues checks that the sections of a page or shell name slots of its
+// pattern template and that every required slot is filled. A pattern
+// without a template is allowed; its mockup is generic.
+func slotIssues(where, pattern string, secs []Section, format int) []Issue {
+	if KitSlots == nil || len(secs) == 0 {
+		return nil
+	}
+	slots, ok := KitSlots(pattern)
+	if !ok {
+		return nil
+	}
+	var out []Issue
+	level := IssueWarning
+	if format >= UIDesignFormat {
+		level = IssueError
+	}
+	known := map[string]bool{}
+	var ids []string
+	for _, s := range slots {
+		known[s.ID] = true
+		ids = append(ids, s.ID)
+	}
+	filled := map[string]bool{}
+	for _, s := range secs {
+		switch {
+		case s.Slot == "":
+			if format >= UIDesignFormat {
+				out = append(out, Issue{Level: level, Where: where + "/" + s.ID, Message: fmt.Sprintf("section belum menyebut slot pattern %s (%s)", pattern, strings.Join(ids, ", "))})
+			}
+		case !known[s.Slot]:
+			out = append(out, Issue{Level: level, Where: where + "/" + s.ID, Message: fmt.Sprintf("slot %q tidak ada di pattern %s (%s)", s.Slot, pattern, strings.Join(ids, ", "))})
+		}
+		filled[s.Slot] = true
+	}
+	for _, s := range slots {
+		if s.Required && !filled[s.ID] && format >= UIDesignFormat {
+			out = append(out, Issue{Level: level, Where: where, Message: fmt.Sprintf("slot wajib %q pattern %s belum diisi section", s.ID, pattern)})
 		}
 	}
 	return out
@@ -678,6 +834,7 @@ func layoutIssues(p *Project, l *LayoutSpec, rules *DesignRules, comps map[strin
 			}
 		}
 		checkSections(where, sh.Regions)
+		out = append(out, slotIssues(where, sh.Pattern, sh.Regions, format)...)
 	}
 
 	pages := map[string]bool{}
@@ -729,6 +886,10 @@ func layoutIssues(p *Project, l *LayoutSpec, rules *DesignRules, comps map[strin
 			add(IssueError, where, "fitur %q tidak ada", pg.FeatureID)
 		}
 		secs := checkSections(where, pg.Sections)
+		if !pg.Existing {
+			out = append(out, slotIssues(where, pg.Pattern, pg.Sections, format)...)
+			out = append(out, collectionIssues(where, &pg, format)...)
+		}
 		for _, v := range append([]string{pg.Grid}, pg.Responsive...) {
 			if lengthLiteral.MatchString(v) {
 				add(IssueWarning, where, "nilai visual %q hardcode; pakai token breakpoint/spacing", v)
@@ -776,6 +937,7 @@ func layoutIssues(p *Project, l *LayoutSpec, rules *DesignRules, comps map[strin
 			add(IssueWarning, "layout", "fitur %s %s belum punya halaman", f.ID, f.Name)
 		}
 	}
+	out = append(out, flowIssues(p, l, rules, format)...)
 	out = append(out, experienceIssues(p, l, rules, comps, format)...)
 	return out
 }
@@ -790,7 +952,7 @@ func experienceIssues(p *Project, l *LayoutSpec, rules *DesignRules, comps map[s
 		out = append(out, Issue{Level: level, Where: where, Message: fmt.Sprintf(format, a...)})
 	}
 	missing := IssueWarning
-	if format >= UIDesignFormat {
+	if format >= UIUXFormat {
 		missing = IssueError
 	}
 	known := designBasis(p, l, rules)
@@ -853,9 +1015,7 @@ func experienceIssues(p *Project, l *LayoutSpec, rules *DesignRules, comps map[s
 		}
 	}
 
-	nav := map[string]bool{}
-	navEmpty := len(l.Navigation) == 0
-	if navEmpty {
+	if len(l.Navigation) == 0 {
 		add(missing, "layout", "information architecture dan navigasi (navigation) belum diisi")
 	}
 	for _, g := range l.Navigation {
@@ -876,7 +1036,6 @@ func experienceIssues(p *Project, l *LayoutSpec, rules *DesignRules, comps map[s
 			case !slices.ContainsFunc(l.Pages, func(pg LayoutPage) bool { return pg.ID == it.Page }):
 				add(IssueError, where, "item %q menuju halaman %q yang tidak ada", it.Label, it.Page)
 			}
-			nav[it.Page] = true
 		}
 	}
 
@@ -947,32 +1106,9 @@ func experienceIssues(p *Project, l *LayoutSpec, rules *DesignRules, comps map[s
 	}
 
 	// Every page must be reachable from the navigation or from another page.
-	if !navEmpty {
-		reach := map[string]bool{}
-		var walk func(string)
-		walk = func(id string) {
-			if reach[id] {
-				return
-			}
-			reach[id] = true
-			for _, pg := range l.Pages {
-				if pg.ID != id {
-					continue
-				}
-				for _, ln := range pg.Links {
-					walk(ln.To)
-				}
-			}
-		}
-		for id := range nav {
-			walk(id)
-		}
-		// A page may be entered from a shell (login, settings) without a link.
-		for _, pg := range l.Pages {
-			if !reach[pg.ID] && !pg.Existing && !pg.AccessIsPublic() {
-				add(IssueWarning, "page:"+pg.ID, "halaman tidak dapat dicapai dari navigasi atau link halaman lain")
-			}
-		}
+	// A page may be entered from a shell (login, settings) without a link.
+	for _, id := range UnreachablePages(l) {
+		add(IssueWarning, "page:"+id, "halaman tidak dapat dicapai dari navigasi atau link halaman lain")
 	}
 	return out
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/handrawanwdev/foundry/internal/modules/pipeline"
 	"github.com/handrawanwdev/foundry/internal/modules/progress"
 	"github.com/handrawanwdev/foundry/internal/modules/spec"
+	"github.com/handrawanwdev/foundry/internal/modules/uikit"
 )
 
 type Perm string
@@ -123,7 +124,7 @@ func (s *Server) handle(req request) (any, *rpcError) {
 			"serverInfo":      map[string]any{"name": "foundry", "version": s.Version},
 			"instructions": "Foundry is the orchestrator and source of truth. Loop: call next_work, do exactly what its prompt says, " +
 				"then hand the result back with the tool named in `submit`. Never mark work done yourself; Foundry validates what you submit. " +
-				"To implement a finalized blueprint, take one command at a time with next_command and format json (it carries the instructions and what its dependencies left; format json leaves out the Markdown copy of the same command) and read only the artifacts it references with get_blueprint ids; call get_workflow or the whole get_blueprint only when you need the full picture. Screens follow the design-rules and layout-spec artifacts. " +
+				"To implement a finalized blueprint, take one command at a time with next_command and format json (it carries the instructions and what its dependencies left; format json leaves out the Markdown copy of the same command) and read only the artifacts it references with get_blueprint ids; call get_workflow or the whole get_blueprint only when you need the full picture. Screens follow the design-rules and layout-spec artifacts and match each page's mockup (get_mockup); mark every section root with data-foundry-section. " +
 				"Report every command with report_progress when you start, finish, fail, get blocked, skip (with a reason), or hand work for review. " +
 				"A command is not done until Foundry verifies evidence against its acceptance criteria. Call get_progress for the next eligible commands; do not start a command before its dependencies are verified. Do not assume Foundry ran the work. " +
 				"After implementing screens, submit measured browser snapshots with record_visual_review; without snapshots and screenshots the UI is untested, and a build or unit test is not visual proof. Call create_visual_fixes to turn findings into a workflow command.",
@@ -201,7 +202,9 @@ var tools = []tool{
 	{Name: "get_blueprint", perm: PermRead, Description: "Blueprint: every artifact (requirements, architecture, technology, design rules, layout spec, use cases, acceptance criteria, decisions and the project's own documents) as Markdown, the structured architecture, area coverage, artifact states, the decision register and binding_decisions (decided entries that override every other artifact). Pass ids to get only those artifacts with their body, or outline true for the artifact list without bodies.",
 		InputSchema: obj(map[string]any{"ids": map[string]any{"type": "array", "items": str}, "outline": map[string]any{"type": "boolean"}})},
 	{Name: "get_workflow", perm: PermRead, Description: "Command workflow for the coding agent: commands with objective, instructions, dependencies, feature and subfeature links, blueprint references, expected outputs and acceptance criteria; the execution waves; validation issues, commands that need review, feature-to-command impact, and current execution progress.", InputSchema: obj(nil)},
-	{Name: "get_design", perm: PermRead, Description: "UI design as structured data: design rules (principles, UX guidelines, tokens, components, accessibility, responsive, interaction, platform rules) and layout spec (shells, pages, sections, hierarchy, grid, states, links), plus validation issues.", InputSchema: obj(nil)},
+	{Name: "get_design", perm: PermRead, Description: "UI design as structured data: design rules (principles, UX guidelines, tokens, components, accessibility, responsive, interaction, platform rules) and layout spec (shells, pages, sections, hierarchy, grid, states, links), plus validation issues, the use cases walked step by step through the pages (flows) and the design quality gate (requirement and use case to screen traceability, navigation, roles, data, primary actions, exception flows, responsive, visual consistency, prototype integrity).", InputSchema: obj(nil)},
+	{Name: "get_mockup", perm: PermRead, Description: "HTML mockup of one designed page, rendered from the UI kit (token preset + page template) with sample data, and whether the user approved it. Build the screen to match its structure, slot order, density and tokens with the project's own components; mark each section's root element with data-foundry-section=\"<section id>\" so record_visual_review can match it. state renders loading, empty, error, ... instead of the populated page. Without page: the list of mockups and their approval.",
+		InputSchema: obj(map[string]any{"page": str, "state": str})},
 	{Name: "get_spec", perm: PermRead, Description: "Whole spec for implementation outside Foundry (JSON: requirements, flows, stack, structure, blueprint, artifacts, design rules, layout spec, workflow) plus the same as Markdown. format json or markdown returns only that one; both is the default.",
 		InputSchema: obj(map[string]any{"format": map[string]any{"type": "string", "enum": []string{"json", "markdown", "both"}}})},
 	{Name: "next_work", perm: PermModify, Description: "Get the next thing Foundry needs from you (feature_map, discovery, design, stack, tech, structure, repo, plan, blueprint or workflow).", InputSchema: obj(nil)},
@@ -284,6 +287,8 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		IDs     []string        `json:"ids"`
 		Outline bool            `json:"outline"`
 		Format  string          `json:"format"`
+		Page    string          `json:"page"`
+		State   string          `json:"state"`
 	}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &args); err != nil {
@@ -323,9 +328,36 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 		if p.UI.Written() {
 			issues = p.DesignIssues(nil)
 		}
-		return map[string]any{"design": p.UI, "issues": issues,
+		var walks []core.FlowWalk
+		var gate *core.DesignGate
+		if p.UI != nil {
+			walks = core.FlowWalks(p, p.UI.Layout)
+		}
+		if p.UI.Written() {
+			g := p.DesignGate()
+			gate = &g
+		}
+		return map[string]any{"design": p.UI, "issues": issues, "mockups": uikit.Default().Statuses(p), "flows": walks, "gate": gate,
 			"vocabulary": map[string]any{"patterns": core.LayoutPatterns, "states": core.UIStates, "required_states": core.RequiredStates,
 				"platforms": core.UIPlatform, "field_presentations": core.FieldPresentations, "decision_sources": core.DecisionSources}}, nil
+	case "get_mockup":
+		k := uikit.Default()
+		list := k.Statuses(p)
+		if strings.TrimSpace(args.Page) == "" {
+			return map[string]any{"mockups": list}, nil
+		}
+		html, err := k.RenderPage(uikit.DocOf(p), strings.TrimSpace(args.Page), args.State)
+		if err != nil {
+			return nil, err
+		}
+		out := map[string]any{"page": args.Page, "html": html,
+			"contract": "Match the mockup's section order and slots; use the design tokens, not the mockup's literal values; mark each section root with data-foundry-section=\"<id>\". Sample data is placeholder."}
+		for _, m := range list {
+			if m.Page == args.Page {
+				out["approval"] = m.Status
+			}
+		}
+		return out, nil
 	case "get_spec":
 		switch args.Format {
 		case "json":

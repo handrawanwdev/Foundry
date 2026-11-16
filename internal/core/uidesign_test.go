@@ -31,7 +31,7 @@ func uxDesign() *UIDesign {
 			Pages: []LayoutPage{{ID: "antrean", Name: "Antrean", Platform: PlatformWeb, Route: "/antrean", FeatureID: "FEAT-001",
 				Purpose: "Cek antrean", Goal: "GOAL-1", Pattern: "table", PrimaryAction: "Panggil",
 				Fields:   []FieldRule{{Field: "Queue.status", Label: "Status", Presentation: "table-column"}},
-				Sections: []Section{{ID: "tabel", Name: "Tabel", Content: []string{"No, Pasien, Status"}, Components: []string{"DataTable"}}},
+				Sections: []Section{{ID: "tabel", Name: "Tabel", Content: []string{"No, Pasien, Status", "Filter: cari pasien, status", "Paginasi: 20 per halaman"}, Components: []string{"DataTable"}}},
 				States:   map[string]string{"loading": "skeleton", "empty": "kosong", "error": "gagal"},
 				Data:     []string{"Queue: antrean hari ini"}}},
 		}}

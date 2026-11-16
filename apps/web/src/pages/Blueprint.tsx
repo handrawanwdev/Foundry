@@ -10,6 +10,7 @@ import { DeleteDialog } from "../components/DeleteDialog";
 import { BlueprintProgress, buildingInitialBlueprint, runBanner } from "../components/BlueprintProgress";
 import { Elapsed } from "../components/Elapsed";
 import { Markdown } from "../components/Markdown";
+import { MockupPanel } from "../components/MockupPanel";
 import { PromptBar } from "../components/PromptBar";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
@@ -270,7 +271,10 @@ function ArtifactDoc({ project, doc, locked, design, view, onOpen }: {
           : scopeDoc ? <ScopeEditor doc={doc.id} project={project} onDone={() => setEditing(false)} />
           : <ArtifactEditor doc={doc} onDone={() => setEditing(false)} />
         : decisions && !locked ? <DecisionList decisions={view?.decisions ?? []} />
-        : <Markdown text={doc.body} />}
+        : <>
+            {doc.id === DESIGN_DOCS.layout && <MockupPanel project={project} design={design} />}
+            <Markdown text={doc.body} />
+          </>}
       {(doc.refs?.length ?? 0) > 0 && (
         <footer className="doc-foot">
           <span className="muted small">Terkait:</span>
@@ -288,7 +292,7 @@ function DesignEmpty({ project, locked }: { project: Project; locked: boolean })
   return (
     <div className="doc">
       <h1>Aturan desain & layout</h1>
-      <p className="muted">Foundry menyusun aturan desain dan layout tiap halaman. Teks terstruktur, tanpa kanvas.</p>
+      <p className="muted">Foundry menyusun aturan desain dan layout tiap halaman dari preset token dan template UI kit, lalu merender mockup tiap halaman untuk ditinjau.</p>
       {busy
         ? <p><span className="spinner" /> {project.job?.message}… <Elapsed started={project.job?.started} /></p>
         : !locked && <p className="muted">Masuk dalam <strong>Susun rancangan</strong>: aturan desain dan layout ditulis bersama cakupan, teknologi, dan struktur.</p>}
@@ -323,8 +327,8 @@ function DesignEditor({ doc, design, onDone }: { doc: string; design: DesignView
     <JsonEditor
       initial={(rules ? design.design?.rules : design.design?.layout) ?? {}}
       hint={rules
-        ? "Token wajib: colors, typography, spacing. Wajib diisi: principles, ux_guidelines, accessibility, responsive."
-        : `Pattern: ${v.patterns.join(", ")}. State: ${v.states.join(", ")}. Id: huruf kecil, angka, tanda minus.`}
+        ? "preset: ops-dense, saas-neutral, consumer-warm, editorial-calm (token diisi dari preset). Wajib diisi: principles, ux_guidelines, accessibility, responsive."
+        : `Pattern: ${v.patterns.join(", ")}. State: ${v.states.join(", ")}. sections[].slot: slot template pattern (kosong = ditentukan Foundry). Id: huruf kecil, angka, tanda minus.`}
       save={(data) => (rules ? api.editDesignRules(data as never) : api.editLayout(data as never))}
       onDone={onDone}
     />

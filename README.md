@@ -194,7 +194,7 @@ docs/foundry/
 ├── traceability.md
 ├── blueprint/      requirements.md · architecture.md · threat-model.md · …
 ├── workflow/       CMD-001.md · CMD-002.md · workflow.json
-├── design/         design-rules.json · layout-spec.json
+├── design/         design-rules.json · layout-spec.json · mockups/*.html · patterns/*.html
 └── adr/            0001-stack.md · …
 ```
 
@@ -296,6 +296,7 @@ foundry mcp --print-config --project ~/work/clinic
 | `get_blueprint`    | `READ`     | All blueprint artifacts (Markdown), artifact states, decision register, binding decisions; `ids` returns only those artifacts, `outline` the list without bodies |
 | `get_workflow`     | `READ`     | Commands, dependencies, execution waves, validation issues, `needs_review` commands, execution progress |
 | `get_design`       | `READ`     | Structured design rules & layout spec with validation issues                |
+| `get_mockup`       | `READ`     | HTML mockup of one page (or the mockup list) with its approval status       |
 | `get_spec`         | `READ`     | Full specification (JSON + Markdown) for implementation outside Foundry; `format` `json` or `markdown` returns one copy |
 | `get_progress`     | `READ`     | Weighted project/module/feature/subfeature/workflow progress, dependency state, next eligible commands, warnings |
 | `get_visual_review` | `READ`    | Measured UI quality per page: pass/partial/fail/untested, findings, criteria |

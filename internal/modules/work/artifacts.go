@@ -117,7 +117,7 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block:
 }
 
 const (
-	useCaseShape   = `{"id": "FLOW-001", "name": "", "feature_id": "FEAT-001", "role": "", "goal": "", "preconditions": [""], "steps": [""], "postconditions": [""], "alternatives": [""], "failures": [""], "business_rules": [""], "permissions": [""], "data_effects": [""], "integrations": [""]}`
+	useCaseShape   = `{"id": "FLOW-001", "name": "", "feature_id": "FEAT-001", "role": "", "goal": "", "trigger": "", "preconditions": [""], "steps": [""], "postconditions": [""], "alternatives": [""], "failures": [""], "business_rules": [""], "permissions": [""], "data_effects": [""], "integrations": [""]}`
 	criterionShape = `{"id": "REQ-001-AC1", "kind": "behavior|negative|edge|security|performance|compatibility|accessibility", "text": "", "evidence": ""}`
 	decisionShape  = `{"id": "DEC-001", "kind": "assumption|question|conflict|risk", "text": "", "area": "", "critical": false, "resolution": ""}`
 )

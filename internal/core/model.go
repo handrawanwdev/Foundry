@@ -372,8 +372,17 @@ type Flow struct {
 	Role      string   `json:"role"`
 	Steps     []string `json:"steps"`
 	PageIDs   []string `json:"page_ids"`
-	Goal      string   `json:"goal,omitempty"`
-	Pre       []string `json:"preconditions,omitempty"`
+	// StepPages is the page each step happens on, by step ("" for a system
+	// step); BranchPages the page that shows each alternative, then each
+	// failure. The designer writes them; when they are absent or no longer
+	// match the steps, the pages are matched by the words of the steps.
+	StepPages   []string `json:"step_pages,omitempty"`
+	BranchPages []string `json:"branch_pages,omitempty"`
+	Goal        string   `json:"goal,omitempty"`
+	// Trigger is what starts the use case (a user action, a schedule, an
+	// event).
+	Trigger string   `json:"trigger,omitempty"`
+	Pre     []string `json:"preconditions,omitempty"`
 	// Post are the conditions that hold when the use case succeeds.
 	Post         []string `json:"postconditions,omitempty"`
 	Alternatives []string `json:"alternatives,omitempty"`
@@ -384,6 +393,22 @@ type Flow struct {
 	// Integrations the external systems the use case calls or notifies.
 	Data         []string `json:"data_effects,omitempty"`
 	Integrations []string `json:"integrations,omitempty"`
+}
+
+// KeepScreens carries the screen mapping of the stored version of a use
+// case over to a rewrite of it that does not name its own: the pages stay,
+// and the per-step and per-branch pages stay while the steps and branches
+// they describe are unchanged.
+func (f *Flow) KeepScreens(old Flow) {
+	if f.PageIDs == nil {
+		f.PageIDs = old.PageIDs
+	}
+	if f.StepPages == nil && slices.Equal(f.Steps, old.Steps) {
+		f.StepPages = old.StepPages
+	}
+	if f.BranchPages == nil && slices.Equal(f.Alternatives, old.Alternatives) && slices.Equal(f.Failures, old.Failures) {
+		f.BranchPages = old.BranchPages
+	}
 }
 
 // Platform kinds.

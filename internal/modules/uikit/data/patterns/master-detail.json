@@ -1,0 +1,126 @@
+{
+ "id": "master-detail",
+ "name": "Master-detail",
+ "use": "Berpindah cepat antar record sambil melihat detailnya.",
+ "columns": "minmax(0,1fr) minmax(0,2fr)",
+ "areas": [
+  [
+   "toolbar",
+   "detail"
+  ],
+  [
+   "list",
+   "detail"
+  ]
+ ],
+ "slots": [
+  {
+   "id": "toolbar",
+   "name": "Toolbar",
+   "kind": "toolbar",
+   "guide": "Pencarian daftar.",
+   "match": [
+    "toolbar",
+    "cari",
+    "search",
+    "filter"
+   ]
+  },
+  {
+   "id": "list",
+   "name": "Daftar",
+   "kind": "list",
+   "guide": "Daftar record; item aktif disorot.",
+   "required": true,
+   "match": [
+    "daftar",
+    "list",
+    "inbox",
+    "percakapan",
+    "item"
+   ]
+  },
+  {
+   "id": "detail",
+   "name": "Detail",
+   "kind": "detail",
+   "guide": "Detail record aktif.",
+   "required": true,
+   "match": [
+    "detail",
+    "isi",
+    "konten",
+    "pratinjau",
+    "preview"
+   ]
+  }
+ ],
+ "panel": [
+  "toolbar",
+  "list"
+ ],
+ "rules": [
+  "Item aktif jelas",
+  "Di layar sempit daftar dan detail jadi dua layar"
+ ],
+ "avoid": [
+  "Detail kosong tanpa petunjuk memilih item"
+ ],
+ "example": {
+  "id": "tiket",
+  "name": "Tiket bantuan",
+  "platform": "web",
+  "pattern": "master-detail",
+  "purpose": "Tangani tiket pelanggan satu per satu",
+  "sections": [
+   {
+    "id": "cari",
+    "name": "Cari",
+    "slot": "toolbar",
+    "content": [
+     "Cari tiket"
+    ]
+   },
+   {
+    "id": "daftar",
+    "name": "Daftar tiket",
+    "slot": "list",
+    "content": [
+     "Subjek, pelanggan, status",
+     "Paginasi: 20 per halaman"
+    ]
+   },
+   {
+    "id": "detail",
+    "name": "Detail tiket",
+    "slot": "detail",
+    "content": [
+     "Subjek, Pelanggan, Prioritas, Pesan"
+    ]
+   }
+  ],
+  "primary_action": "Balas",
+  "fields": [
+   {
+    "field": "Ticket.subject",
+    "label": "Subjek",
+    "presentation": "card-title"
+   },
+   {
+    "field": "Ticket.customer",
+    "label": "Pelanggan",
+    "presentation": "card-meta"
+   },
+   {
+    "field": "Ticket.status",
+    "label": "Status",
+    "presentation": "badge"
+   }
+  ],
+  "states": {
+   "loading": "Kerangka",
+   "empty": "Tidak ada tiket",
+   "error": "Gagal memuat"
+  }
+ }
+}

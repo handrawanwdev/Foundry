@@ -315,13 +315,13 @@ export interface DesignTokens {
 export interface ComponentRule { name: string; use: string; variants?: string[]; rules?: string[]; source?: string }
 // Design rules (internal/core/uidesign.go): what every screen follows.
 export interface DesignRules {
-  source: "new" | "existing"; reference?: string; direction?: string; principles: string[] | null; ux_guidelines: string[] | null;
+  source: "new" | "existing"; preset?: string; brand?: { primary?: string; font?: string }; reference?: string; direction?: string; principles: string[] | null; ux_guidelines: string[] | null;
   tokens: DesignTokens; components: ComponentRule[] | null; visual_hierarchy?: string[]; accessibility: string[] | null;
   responsive: string[] | null; interaction?: string[]; platforms?: { platform: string; rules: string[] }[]; sources?: string[];
 }
 export type UIState = "loading" | "empty" | "no_results" | "error" | "success" | "disabled" | "interactive";
 export interface Section {
-  id: string; name: string; pattern?: string; purpose?: string; content: string[] | null; components?: string[];
+  id: string; name: string; slot?: string; pattern?: string; purpose?: string; content: string[] | null; components?: string[];
   grid?: string; alignment?: string; spacing?: string; sizing?: string; responsive?: string; states?: Partial<Record<UIState, string>>;
 }
 export interface LayoutShell {
@@ -352,9 +352,41 @@ export interface LayoutSpec {
   users?: UIUser[]; goals?: UIGoal[]; navigation?: NavGroup[]; decisions?: DesignDecision[];
   assumptions?: string[]; unknowns?: string[];
 }
-// The UI design as text and structured data; never drawn or rendered.
+// The UI design as structured data; every page renders as an HTML mockup
+// from the UI kit (token preset + page template).
 export interface UIDesign {
   format?: number; rules?: DesignRules; layout?: LayoutSpec; request?: ChangeRequest; version: number; tech_version?: number; updated_at: string;
+  mockups?: Record<string, { hash: string; approved_at: string }>;
+}
+export type MockupApproval = "approved" | "changed" | "pending";
+export interface MockupStatus {
+  page: string; name: string; platform: string; pattern: string; template: boolean; hash: string; status: MockupApproval; approved_at?: string;
+}
+// A use case as the user walks it through the screens: each step placed on
+// a page; system steps are feedback, unplaced steps have no screen yet.
+export interface FlowStep { n: number; text: string; system?: boolean; page?: string; placed: boolean; decision?: boolean; risky?: boolean }
+export interface FlowBranch {
+  kind: "alternative" | "failure"; text: string; from?: number; next?: string; flows?: string[];
+  page?: string; system?: boolean; placed: boolean;
+}
+export interface FlowWalk {
+  id: string; name: string; role?: string; goal?: string; trigger?: string; preconditions?: string[]; postconditions?: string[];
+  data_effects?: string[]; pages: string[] | null; inferred?: boolean; declared?: boolean;
+  steps: FlowStep[]; branches?: FlowBranch[]; alternatives?: string[]; failures?: string[];
+}
+export type GateStatus = "pass" | "warn" | "fail" | "skip";
+export interface GateCheck { id: string; name: string; status: GateStatus; detail: string; items?: string[] }
+export interface ReqTrace {
+  id: string; text: string; priority?: string; features?: string[]; flows?: string[]; pages?: string[]; actions?: string[];
+  criteria: number; status: "covered" | "partial" | "missing" | "no-ui" | "unlinked";
+}
+export interface FlowTrace {
+  id: string; name: string; role?: string; pages: string[]; steps: number; placed: number; branches: number; shown: number;
+  inferred?: boolean; declared?: boolean; status: GateStatus;
+}
+export interface DesignGate {
+  ready: boolean; verdict: "ready" | "review" | "blocked"; summary: string; checks: GateCheck[]; requirements: ReqTrace[]; flows: FlowTrace[];
+  errors: number; warnings: number; notes: number; assumptions?: string[]; unknowns?: string[];
 }
 export interface DesignIssue { level: "error" | "warning" | "info"; where?: string; message: string; impact?: string; suggestion?: string }
 export interface DesignView {

@@ -1,0 +1,205 @@
+{
+ "id": "editorial-calm",
+ "name": "Editorial Calm",
+ "fit": "Konten dan pengetahuan: portal, dokumentasi, publikasi, landing; membaca panjang lebih penting dari input.",
+ "direction": "Tipografi memimpin: kolom baca sempit, kontras tenang, dekorasi minimal.",
+ "density": "comfortable",
+ "principles": [
+  "Lebar baca 60-75 karakter",
+  "Hierarki dibangun tipografi, bukan kotak dan warna",
+  "Navigasi tidak mengganggu bacaan"
+ ],
+ "tokens": {
+  "colors": [
+   {
+    "name": "surface.page",
+    "value": "#ffffff",
+    "use": "latar halaman"
+   },
+   {
+    "name": "surface.card",
+    "value": "#ffffff",
+    "use": "kartu, panel, tabel"
+   },
+   {
+    "name": "surface.muted",
+    "value": "#f5f5f4",
+    "use": "latar sekunder, header tabel, hover baris"
+   },
+   {
+    "name": "surface.inverse",
+    "value": "#1c1917",
+    "use": "sidebar gelap, tooltip"
+   },
+   {
+    "name": "text.primary",
+    "value": "#1c1917",
+    "use": "teks utama"
+   },
+   {
+    "name": "text.muted",
+    "value": "#57534e",
+    "use": "teks sekunder, label"
+   },
+   {
+    "name": "text.inverse",
+    "value": "#ffffff",
+    "use": "teks di atas surface.inverse"
+   },
+   {
+    "name": "border.default",
+    "value": "#e7e5e4",
+    "use": "garis pemisah"
+   },
+   {
+    "name": "border.strong",
+    "value": "#d6d3d1",
+    "use": "border input"
+   },
+   {
+    "name": "action.primary",
+    "value": "#0f766e",
+    "use": "aksi utama, tautan aktif"
+   },
+   {
+    "name": "action.primary.hover",
+    "value": "#115e59",
+    "use": "hover aksi utama"
+   },
+   {
+    "name": "action.primary.text",
+    "value": "#ffffff",
+    "use": "teks di atas action.primary"
+   },
+   {
+    "name": "action.secondary",
+    "value": "#effaf8",
+    "use": "latar aksi sekunder, item nav aktif"
+   },
+   {
+    "name": "status.success",
+    "value": "#15803d",
+    "use": "sukses"
+   },
+   {
+    "name": "status.warning",
+    "value": "#a16207",
+    "use": "peringatan"
+   },
+   {
+    "name": "status.error",
+    "value": "#b91c1c",
+    "use": "error, aksi destruktif"
+   },
+   {
+    "name": "status.info",
+    "value": "#1d4ed8",
+    "use": "informasi"
+   },
+   {
+    "name": "focus.ring",
+    "value": "#0f766e",
+    "use": "cincin fokus keyboard"
+   }
+  ],
+  "typography": [
+   {
+    "name": "type.display",
+    "value": "Source Serif 4 36px/44px 700",
+    "use": "angka KPI, judul hero"
+   },
+   {
+    "name": "type.title",
+    "value": "Source Serif 4 28px/36px 600",
+    "use": "judul halaman (h1)"
+   },
+   {
+    "name": "type.heading",
+    "value": "Inter 18px/26px 600",
+    "use": "judul section (h2)"
+   },
+   {
+    "name": "type.body",
+    "value": "Inter 17px/28px 400",
+    "use": "teks isi, sel tabel"
+   },
+   {
+    "name": "type.label",
+    "value": "Inter 14px/20px 500",
+    "use": "label field, header kolom"
+   },
+   {
+    "name": "type.caption",
+    "value": "Inter 13px/20px 400",
+    "use": "keterangan, meta"
+   }
+  ],
+  "spacing": [
+   {
+    "name": "space.xs",
+    "value": "4px"
+   },
+   {
+    "name": "space.sm",
+    "value": "8px"
+   },
+   {
+    "name": "space.md",
+    "value": "16px"
+   },
+   {
+    "name": "space.lg",
+    "value": "24px"
+   },
+   {
+    "name": "space.xl",
+    "value": "40px"
+   },
+   {
+    "name": "space.2xl",
+    "value": "64px"
+   },
+   {
+    "name": "size.control",
+    "value": "40px",
+    "use": "tinggi tombol dan input"
+   }
+  ],
+  "radius": [
+   {
+    "name": "radius.sm",
+    "value": "4px"
+   },
+   {
+    "name": "radius.md",
+    "value": "6px"
+   },
+   {
+    "name": "radius.lg",
+    "value": "10px"
+   }
+  ],
+  "shadow": [
+   {
+    "name": "shadow.sm",
+    "value": "0 1px 2px rgba(28,25,23,0.06)",
+    "use": "kartu, panel"
+   },
+   {
+    "name": "shadow.md",
+    "value": "0 8px 20px rgba(28,25,23,0.10)",
+    "use": "menu, dialog"
+   }
+  ],
+  "breakpoints": [
+   {
+    "name": "breakpoint.tablet",
+    "value": "768px"
+   },
+   {
+    "name": "breakpoint.desktop",
+    "value": "1100px"
+   }
+  ]
+ }
+}

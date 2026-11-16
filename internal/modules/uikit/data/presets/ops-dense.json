@@ -1,0 +1,205 @@
+{
+ "id": "ops-dense",
+ "name": "Ops Dense",
+ "fit": "Aplikasi operasional/admin/back-office: operator harian, tabel padat, banyak record, keputusan cepat.",
+ "direction": "Padat dan tenang: banyak informasi per layar, warna hanya untuk status dan aksi.",
+ "density": "compact",
+ "principles": [
+  "Kepadatan tinggi: baris tabel ringkas, sedikit klik per tugas berulang",
+  "Warna dipakai untuk status dan aksi, bukan dekorasi",
+  "Angka rata kanan dan tabular agar mudah dibandingkan"
+ ],
+ "tokens": {
+  "colors": [
+   {
+    "name": "surface.page",
+    "value": "#f4f6f8",
+    "use": "latar halaman"
+   },
+   {
+    "name": "surface.card",
+    "value": "#ffffff",
+    "use": "kartu, panel, tabel"
+   },
+   {
+    "name": "surface.muted",
+    "value": "#eef1f4",
+    "use": "latar sekunder, header tabel, hover baris"
+   },
+   {
+    "name": "surface.inverse",
+    "value": "#111827",
+    "use": "sidebar gelap, tooltip"
+   },
+   {
+    "name": "text.primary",
+    "value": "#111827",
+    "use": "teks utama"
+   },
+   {
+    "name": "text.muted",
+    "value": "#5b6472",
+    "use": "teks sekunder, label"
+   },
+   {
+    "name": "text.inverse",
+    "value": "#ffffff",
+    "use": "teks di atas surface.inverse"
+   },
+   {
+    "name": "border.default",
+    "value": "#dde2e8",
+    "use": "garis pemisah"
+   },
+   {
+    "name": "border.strong",
+    "value": "#c3cad3",
+    "use": "border input"
+   },
+   {
+    "name": "action.primary",
+    "value": "#2563eb",
+    "use": "aksi utama, tautan aktif"
+   },
+   {
+    "name": "action.primary.hover",
+    "value": "#1d4ed8",
+    "use": "hover aksi utama"
+   },
+   {
+    "name": "action.primary.text",
+    "value": "#ffffff",
+    "use": "teks di atas action.primary"
+   },
+   {
+    "name": "action.secondary",
+    "value": "#e8effd",
+    "use": "latar aksi sekunder, item nav aktif"
+   },
+   {
+    "name": "status.success",
+    "value": "#15803d",
+    "use": "sukses"
+   },
+   {
+    "name": "status.warning",
+    "value": "#b45309",
+    "use": "peringatan"
+   },
+   {
+    "name": "status.error",
+    "value": "#b91c1c",
+    "use": "error, aksi destruktif"
+   },
+   {
+    "name": "status.info",
+    "value": "#0369a1",
+    "use": "informasi"
+   },
+   {
+    "name": "focus.ring",
+    "value": "#2563eb",
+    "use": "cincin fokus keyboard"
+   }
+  ],
+  "typography": [
+   {
+    "name": "type.display",
+    "value": "Inter 24px/32px 600",
+    "use": "angka KPI, judul hero"
+   },
+   {
+    "name": "type.title",
+    "value": "Inter 18px/26px 600",
+    "use": "judul halaman (h1)"
+   },
+   {
+    "name": "type.heading",
+    "value": "Inter 14px/20px 600",
+    "use": "judul section (h2)"
+   },
+   {
+    "name": "type.body",
+    "value": "Inter 13px/20px 400",
+    "use": "teks isi, sel tabel"
+   },
+   {
+    "name": "type.label",
+    "value": "Inter 12px/16px 500",
+    "use": "label field, header kolom"
+   },
+   {
+    "name": "type.caption",
+    "value": "Inter 11px/16px 400",
+    "use": "keterangan, meta"
+   }
+  ],
+  "spacing": [
+   {
+    "name": "space.xs",
+    "value": "4px"
+   },
+   {
+    "name": "space.sm",
+    "value": "8px"
+   },
+   {
+    "name": "space.md",
+    "value": "12px"
+   },
+   {
+    "name": "space.lg",
+    "value": "16px"
+   },
+   {
+    "name": "space.xl",
+    "value": "24px"
+   },
+   {
+    "name": "space.2xl",
+    "value": "32px"
+   },
+   {
+    "name": "size.control",
+    "value": "32px",
+    "use": "tinggi tombol dan input"
+   }
+  ],
+  "radius": [
+   {
+    "name": "radius.sm",
+    "value": "3px"
+   },
+   {
+    "name": "radius.md",
+    "value": "4px"
+   },
+   {
+    "name": "radius.lg",
+    "value": "6px"
+   }
+  ],
+  "shadow": [
+   {
+    "name": "shadow.sm",
+    "value": "0 1px 2px rgba(15,23,42,0.06)",
+    "use": "kartu, panel"
+   },
+   {
+    "name": "shadow.md",
+    "value": "0 6px 16px rgba(15,23,42,0.12)",
+    "use": "menu, dialog"
+   }
+  ],
+  "breakpoints": [
+   {
+    "name": "breakpoint.tablet",
+    "value": "768px"
+   },
+   {
+    "name": "breakpoint.desktop",
+    "value": "1200px"
+   }
+  ]
+ }
+}

@@ -211,6 +211,10 @@ func TestWriteDocsIncludesDesignAndSpecJSON(t *testing.T) {
 	if err := json.Unmarshal(raw, &lj); err != nil || len(lj.Pages) != 1 || len(lj.Flows) != 1 {
 		t.Fatalf("layout-spec.json = %s, %v", raw, err)
 	}
+	gate, err := os.ReadFile(filepath.Join(root, "review", "design-gate.md"))
+	if err != nil || !strings.Contains(string(gate), "# Quality gate desain UI") || !strings.Contains(string(gate), "Use case → layar") {
+		t.Fatalf("design-gate.md = %s, %v", gate, err)
+	}
 	if _, err := os.Stat(filepath.Join(root, "design", "design-rules.json")); err != nil {
 		t.Error(err)
 	}

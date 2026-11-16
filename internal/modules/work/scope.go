@@ -40,7 +40,9 @@ type AcceptanceIn struct {
 
 // scopeRules tells the AI how to write the structured blueprint parts.
 const scopeRules = `Structured blueprint rules:
-- use cases (flows): role is the actor; goal, preconditions, steps (main flow), postconditions (what holds when it succeeds), alternatives and failures (at least one of them), business_rules, permissions (who may do it; use the project's own permission names, do not assume RBAC or JWT), data_effects (entity: what changes), integrations (external systems called or notified). Leave a list empty when it does not apply.
+- use cases (flows): role is the actor; goal, trigger (what starts it: a user action, a schedule or an event), preconditions, steps (main flow), postconditions (what holds when it succeeds), alternatives and failures (at least one of them), business_rules, permissions (who may do it; use the project's own permission names, do not assume RBAC or JWT), data_effects (entity: what changes; a status change as "Entity.status: from -> to"), integrations (external systems called or notified). Leave a list empty when it does not apply.
+- steps: one actor action or one system activity each. A system activity starts with "Sistem" (or the device, worker or provider doing it). A decision point is its own step naming who decides ("Supervisor menyetujui atau menolak PO"); an approval by another role is a step of that role, not hidden in "ajukan persetujuan".
+- alternatives and failures say where they branch and where the flow goes next: "Langkah 3: <condition> -> <what happens>; kembali ke langkah 2 | lanjut ke langkah 5 | selesai | batal | FLOW-004". This is how rejection, repetition, cancellation and hand-over to another use case are written.
 - acceptance criteria per requirement: kind is behavior | negative | edge | security | performance | compatibility | accessibility; text is one checkable condition (Given/When/Then is fine); evidence is the proof the coding agent must hand back (test, command output, screenshot). Every MUST requirement gets a negative or edge case. A requirement that cannot be tested gets "untestable" with the reason instead of criteria. Add performance numbers only when the story or survey gives them.
 - definition_of_done: checkable conditions every finished command meets (tests pass, criteria proven with evidence, no secret in code, docs updated, ...), sized to this project.
 - decisions: kind is assumption | question | conflict | risk; text says what is assumed, asked, conflicting or at risk and its impact; area is one of ui, use-cases, data, security, integration, operations, migration, acceptance (or empty); critical is true only when the blueprint cannot be finalized safely without the user's decision. Never resolve a question yourself; record what you assumed instead.
@@ -70,6 +72,7 @@ func areaGuide(b *strings.Builder, p *core.Project) {
 func normFlow(f core.Flow) core.Flow {
 	f.ID = strings.ToUpper(strings.TrimSpace(f.ID))
 	f.Name, f.FeatureID, f.Role, f.Goal = strings.TrimSpace(f.Name), strings.TrimSpace(f.FeatureID), strings.TrimSpace(f.Role), strings.TrimSpace(f.Goal)
+	f.Trigger = strings.TrimSpace(f.Trigger)
 	f.Steps, f.Pre, f.Post = nonEmpty(f.Steps), nonEmpty(f.Pre), nonEmpty(f.Post)
 	f.Alternatives, f.Failures, f.Rules = nonEmpty(f.Alternatives), nonEmpty(f.Failures), nonEmpty(f.Rules)
 	f.Permissions, f.Data, f.Integrations = nonEmpty(f.Permissions), nonEmpty(f.Data), nonEmpty(f.Integrations)
@@ -197,9 +200,7 @@ func applyScope(p *core.Project, o scopeOut) (bool, error) {
 	for _, f := range o.UseCases {
 		f = normFlow(f)
 		if i := slices.IndexFunc(flows, func(x core.Flow) bool { return x.ID == f.ID }); i >= 0 && f.ID != "" {
-			if f.PageIDs == nil {
-				f.PageIDs = flows[i].PageIDs
-			}
+			f.KeepScreens(flows[i])
 			flows[i] = f
 		} else {
 			f.ID = nextFlowID(flows)
@@ -268,8 +269,8 @@ func EditUseCases(p *core.Project, in []core.Flow) error {
 	for _, f := range in {
 		f = normFlow(f)
 		old := slices.IndexFunc(p.Flows, func(x core.Flow) bool { return x.ID == f.ID })
-		if old >= 0 && f.PageIDs == nil {
-			f.PageIDs = p.Flows[old].PageIDs
+		if old >= 0 {
+			f.KeepScreens(p.Flows[old])
 		}
 		if f.ID == "" {
 			f.ID = nextFlowID(append(slices.Clone(p.Flows), flows...))

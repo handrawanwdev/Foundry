@@ -1,0 +1,106 @@
+{
+ "id": "settings",
+ "name": "Pengaturan",
+ "use": "Konfigurasi yang dikelompokkan per area.",
+ "columns": "minmax(0,220px) minmax(0,1fr)",
+ "areas": [
+  [
+   "nav",
+   "main"
+  ],
+  [
+   "nav",
+   "actions"
+  ]
+ ],
+ "slots": [
+  {
+   "id": "nav",
+   "name": "Kategori",
+   "kind": "tabs",
+   "guide": "Daftar kategori pengaturan.",
+   "match": [
+    "kategori",
+    "menu",
+    "nav",
+    "tab",
+    "bagian"
+   ]
+  },
+  {
+   "id": "main",
+   "name": "Pengaturan",
+   "kind": "form",
+   "guide": "Field kategori aktif, dikelompokkan.",
+   "required": true,
+   "match": [
+    "pengaturan",
+    "setting",
+    "form",
+    "preferensi",
+    "profil",
+    "konfigurasi"
+   ]
+  },
+  {
+   "id": "actions",
+   "name": "Aksi",
+   "kind": "actions",
+   "guide": "Simpan perubahan.",
+   "match": [
+    "aksi",
+    "simpan",
+    "tombol"
+   ]
+  }
+ ],
+ "rules": [
+  "Simpan per kelompok atau satu tombol yang jelas"
+ ],
+ "avoid": [
+  "Semua pengaturan dalam satu form panjang"
+ ],
+ "example": {
+  "id": "pengaturan",
+  "name": "Pengaturan",
+  "platform": "web",
+  "pattern": "settings",
+  "purpose": "Atur profil dan notifikasi toko",
+  "sections": [
+   {
+    "id": "kategori",
+    "name": "Kategori",
+    "slot": "nav",
+    "content": [
+     "Profil",
+     "Notifikasi",
+     "Keamanan"
+    ]
+   },
+   {
+    "id": "profil",
+    "name": "Profil toko",
+    "slot": "main",
+    "content": [
+     "Nama toko",
+     "Email",
+     "Zona waktu"
+    ]
+   },
+   {
+    "id": "aksi",
+    "name": "Aksi",
+    "slot": "actions",
+    "content": [
+     "Simpan perubahan"
+    ]
+   }
+  ],
+  "primary_action": "Simpan perubahan",
+  "states": {
+   "error": "Error di field",
+   "success": "Perubahan tersimpan",
+   "disabled": "Simpan terkunci tanpa perubahan"
+  }
+ }
+}

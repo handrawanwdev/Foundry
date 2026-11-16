@@ -1,0 +1,164 @@
+{
+ "id": "table",
+ "name": "Tabel data",
+ "use": "Membandingkan banyak record dengan beberapa atribut; menyaring, mengurutkan, dan bertindak per baris.",
+ "columns": "minmax(0,1fr)",
+ "areas": [
+  [
+   "toolbar"
+  ],
+  [
+   "summary"
+  ],
+  [
+   "table"
+  ],
+  [
+   "pagination"
+  ]
+ ],
+ "slots": [
+  {
+   "id": "toolbar",
+   "name": "Toolbar",
+   "kind": "toolbar",
+   "guide": "Wajib: pencarian dan filter; aksi massal bila ada.",
+   "match": [
+    "toolbar",
+    "filter",
+    "saring",
+    "cari",
+    "search",
+    "pencarian"
+   ]
+  },
+  {
+   "id": "summary",
+   "name": "Ringkasan",
+   "kind": "metrics",
+   "guide": "Strip angka kecil (total, status) bila membantu menyaring.",
+   "match": [
+    "ringkasan",
+    "summary",
+    "kpi",
+    "total",
+    "statistik"
+   ]
+  },
+  {
+   "id": "table",
+   "name": "Tabel",
+   "kind": "table",
+   "guide": "Tabel utama: kolom sesuai tugas, kolom status sebagai badge, aksi per baris di kolom terakhir.",
+   "required": true,
+   "match": [
+    "tabel",
+    "table",
+    "daftar",
+    "list",
+    "grid",
+    "data"
+   ]
+  },
+  {
+   "id": "pagination",
+   "name": "Paginasi",
+   "kind": "pagination",
+   "guide": "Wajib: paginasi (ukuran halaman, rentang, halaman) atau muat lebih banyak.",
+   "match": [
+    "paginasi",
+    "pagination",
+    "halaman",
+    "page"
+   ]
+  }
+ ],
+ "panel": [
+  "toolbar",
+  "table",
+  "pagination"
+ ],
+ "rules": [
+  "Wajib pencarian + filter (toolbar) dan paginasi",
+  "Kolom sesuai tugas, bukan semua field entity",
+  "Angka rata kanan",
+  "Header tabel tetap terlihat saat scroll panjang"
+ ],
+ "avoid": [
+  "Tabel lebar di layar sempit tanpa scroll horizontal atau kolom prioritas",
+  "Aksi utama ganda di toolbar"
+ ],
+ "example": {
+  "id": "pesanan",
+  "name": "Pesanan",
+  "platform": "web",
+  "pattern": "table",
+  "purpose": "Saring dan proses pesanan masuk",
+  "sections": [
+   {
+    "id": "filter",
+    "name": "Filter",
+    "slot": "toolbar",
+    "content": [
+     "Cari no/pelanggan",
+     "Status",
+     "Tanggal"
+    ]
+   },
+   {
+    "id": "tabel",
+    "name": "Tabel pesanan",
+    "slot": "table",
+    "content": [
+     "Tabel: No, Pelanggan, Tanggal, Total, Status, Aksi"
+    ]
+   },
+   {
+    "id": "paginasi",
+    "name": "Paginasi",
+    "slot": "pagination",
+    "content": [
+     "20 per halaman"
+    ]
+   }
+  ],
+  "primary_action": "Buat pesanan",
+  "fields": [
+   {
+    "field": "Order.number",
+    "label": "No",
+    "presentation": "table-column"
+   },
+   {
+    "field": "Order.customer",
+    "label": "Pelanggan",
+    "presentation": "table-column"
+   },
+   {
+    "field": "Order.date",
+    "label": "Tanggal",
+    "presentation": "table-column"
+   },
+   {
+    "field": "Order.total",
+    "label": "Total",
+    "presentation": "table-column"
+   },
+   {
+    "field": "Order.status",
+    "label": "Status",
+    "presentation": "badge"
+   },
+   {
+    "field": "Order.open",
+    "label": "Buka",
+    "presentation": "row-action"
+   }
+  ],
+  "states": {
+   "loading": "Baris kerangka",
+   "empty": "Belum ada pesanan; buat pesanan pertama",
+   "error": "Gagal memuat; coba lagi"
+  }
+ }
+}

@@ -1,0 +1,105 @@
+{
+ "id": "search",
+ "name": "Pencarian",
+ "use": "Kumpulan besar/tak terbatas yang dicari dengan kueri dan facet.",
+ "columns": "minmax(0,240px) minmax(0,1fr)",
+ "areas": [
+  [
+   "query",
+   "query"
+  ],
+  [
+   "facets",
+   "results"
+  ]
+ ],
+ "slots": [
+  {
+   "id": "query",
+   "name": "Kueri",
+   "kind": "toolbar",
+   "guide": "Kotak pencarian besar dan urutan.",
+   "required": true,
+   "match": [
+    "cari",
+    "search",
+    "kueri",
+    "query",
+    "pencarian"
+   ]
+  },
+  {
+   "id": "facets",
+   "name": "Facet",
+   "kind": "facets",
+   "guide": "Filter facet di samping.",
+   "match": [
+    "facet",
+    "filter",
+    "saring",
+    "kategori"
+   ]
+  },
+  {
+   "id": "results",
+   "name": "Hasil",
+   "kind": "list",
+   "guide": "Daftar hasil dengan sorotan kecocokan.",
+   "required": true,
+   "match": [
+    "hasil",
+    "result",
+    "daftar",
+    "list"
+   ]
+  }
+ ],
+ "rules": [
+  "Jumlah hasil terlihat",
+  "Facet aktif dapat dihapus satu per satu"
+ ],
+ "avoid": [
+  "Hasil kosong tanpa saran"
+ ],
+ "example": {
+  "id": "cari",
+  "name": "Cari dokumen",
+  "platform": "web",
+  "pattern": "search",
+  "purpose": "Temukan dokumen dengan cepat",
+  "sections": [
+   {
+    "id": "kueri",
+    "name": "Kueri",
+    "slot": "query",
+    "content": [
+     "Cari dokumen"
+    ]
+   },
+   {
+    "id": "facet",
+    "name": "Filter",
+    "slot": "facets",
+    "content": [
+     "Jenis",
+     "Tahun",
+     "Penulis"
+    ]
+   },
+   {
+    "id": "hasil",
+    "name": "Hasil",
+    "slot": "results",
+    "content": [
+     "Judul, ringkasan, tanggal",
+     "Paginasi: 20 per halaman"
+    ]
+   }
+  ],
+  "states": {
+   "loading": "Kerangka hasil",
+   "no_results": "Tidak ada hasil; saran kata kunci",
+   "error": "Pencarian gagal"
+  }
+ }
+}
