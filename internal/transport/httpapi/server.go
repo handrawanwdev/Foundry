@@ -453,7 +453,11 @@ func (s *Server) Handler() http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"mockups": list, "flows": walks, "gate": gate}, nil
+		bench, err := svc.DesignBenchmark()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"mockups": list, "flows": walks, "gate": gate, "benchmark": bench}, nil
 	}))
 	api("POST /api/v1/project/design/mockups/approve", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct{ Pages []string }
@@ -830,8 +834,8 @@ func (s *Server) downloadExport(w http.ResponseWriter, r *http.Request) {
 }
 
 // mockupCSP keeps a rendered mockup inert: inline styles only, no script,
-// no request to anywhere, no form submission.
-const mockupCSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+// no request except GET of this same mockup (prototype simulation).
+const mockupCSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'self'; frame-ancestors 'self'"
 
 func writeMockup(w http.ResponseWriter, html string) {
 	h := w.Header()
@@ -851,7 +855,8 @@ func (s *Server) mockup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := r.URL.Query().Get("state")
-	out, err := svc.Mockup(r.PathValue("page"), state, func(id string) string {
+	sim := uikit.ParseSim(r.URL.Query())
+	out, err := svc.MockupSim(r.PathValue("page"), state, sim, func(id string) string {
 		return "/api/v1/project/design/mockups/" + url.PathEscape(id)
 	})
 	if err != nil {

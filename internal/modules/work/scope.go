@@ -24,11 +24,15 @@ type scopeOut struct {
 	Decisions      []core.Decision `json:"decisions"`
 	Skip           []core.AreaSkip `json:"skip"`
 	Unskip         []string        `json:"unskip"`
+	// Lifecycles are the document lifecycles added or changed, each in
+	// full; RemoveLifecycles the documents whose lifecycle goes.
+	Lifecycles       []core.Lifecycle `json:"lifecycles"`
+	RemoveLifecycles []string         `json:"remove_lifecycles"`
 }
 
 func (o scopeOut) empty() bool {
 	return len(o.UseCases) == 0 && len(o.RemoveUseCases) == 0 && len(o.Acceptance) == 0 && o.Done == nil &&
-		len(o.Decisions) == 0 && len(o.Skip) == 0 && len(o.Unskip) == 0
+		len(o.Decisions) == 0 && len(o.Skip) == 0 && len(o.Unskip) == 0 && len(o.Lifecycles) == 0 && len(o.RemoveLifecycles) == 0
 }
 
 // AcceptanceIn is the acceptance of one requirement.
@@ -40,9 +44,10 @@ type AcceptanceIn struct {
 
 // scopeRules tells the AI how to write the structured blueprint parts.
 const scopeRules = `Structured blueprint rules:
-- use cases (flows): role is the actor; goal, trigger (what starts it: a user action, a schedule or an event), preconditions, steps (main flow), postconditions (what holds when it succeeds), alternatives and failures (at least one of them), business_rules, permissions (who may do it; use the project's own permission names, do not assume RBAC or JWT), data_effects (entity: what changes; a status change as "Entity.status: from -> to"), integrations (external systems called or notified). Leave a list empty when it does not apply.
+- use cases (flows): role is the actor; goal, trigger (what starts it: a user action, a schedule or an event), preconditions, steps (main flow), postconditions (what holds when it succeeds), alternatives and failures (at least one of them), business_rules, permissions (who may do it; use the project's own permission names, do not assume RBAC or JWT), data_effects (entity: what changes; status changes go in lifecycles), integrations (external systems called or notified), parallel (steps done at the same time by different roles or systems: {steps: [3, 4], join: all|any|<number>, then: the step that waits for them, timeout and on_timeout such as an escalation only when the requirements give them}; steps that do not wait for each other are not forced into a sequence). Leave a list empty when it does not apply.
 - steps: one actor action or one system activity each. A system activity starts with "Sistem" (or the device, worker or provider doing it). A decision point is its own step naming who decides ("Supervisor menyetujui atau menolak PO"); an approval by another role is a step of that role, not hidden in "ajukan persetujuan".
 - alternatives and failures say where they branch and where the flow goes next: "Langkah 3: <condition> -> <what happens>; kembali ke langkah 2 | lanjut ke langkah 5 | selesai | batal | FLOW-004". This is how rejection, repetition, cancellation and hand-over to another use case are written.
+- lifecycles: one per business document whose status the use cases change (an order, a request, an invoice, a case), derived from the requirements and use cases; documents differ, and a record without status changes has none. states: id snake_case, label in the story language, kind initial (where it starts) or final (where it ends), locked true when it can no longer be edited. transitions: from (state ids), to, action (what the user activates), kind submit|approve|reject|revise|cancel|complete (empty otherwise), actor (a use case role, or "Sistem"), flow and step (the use case step that performs it; a new use case by its name), guard (what must hold). Every approval has a rejection or return from the same status; cancellation, revision and completion are transitions too; no status that no requirement or use case needs. When steps or use cases change, return the lifecycles they touch.
 - acceptance criteria per requirement: kind is behavior | negative | edge | security | performance | compatibility | accessibility; text is one checkable condition (Given/When/Then is fine); evidence is the proof the coding agent must hand back (test, command output, screenshot). Every MUST requirement gets a negative or edge case. A requirement that cannot be tested gets "untestable" with the reason instead of criteria. Add performance numbers only when the story or survey gives them.
 - definition_of_done: checkable conditions every finished command meets (tests pass, criteria proven with evidence, no secret in code, docs updated, ...), sized to this project.
 - decisions: kind is assumption | question | conflict | risk; text says what is assumed, asked, conflicting or at risk and its impact; area is one of ui, use-cases, data, security, integration, operations, migration, acceptance (or empty); critical is true only when the blueprint cannot be finalized safely without the user's decision. Never resolve a question yourself; record what you assumed instead.
@@ -197,18 +202,30 @@ func applyScope(p *core.Project, o scopeOut) (bool, error) {
 		}
 		flows = slices.Delete(flows, i, i+1)
 	}
+	ids := map[string]string{} // an id the answer gave a new use case -> its id
 	for _, f := range o.UseCases {
 		f = normFlow(f)
 		if i := slices.IndexFunc(flows, func(x core.Flow) bool { return x.ID == f.ID }); i >= 0 && f.ID != "" {
 			f.KeepScreens(flows[i])
 			flows[i] = f
 		} else {
+			given := f.ID
 			f.ID = nextFlowID(flows)
+			if given != "" {
+				ids[given] = f.ID
+			}
 			flows = append(flows, f)
 		}
 		touched[f.ID] = true
 	}
 	if err := refuseTouched("use case", p.UseCaseIssues(flows), touched); err != nil {
+		return false, err
+	}
+	lifecycles, lcTouched, err := mergeLifecycles(p.Lifecycles, o.Lifecycles, o.RemoveLifecycles, flows, ids)
+	if err != nil {
+		return false, err
+	}
+	if err := refuseTouched("siklus status", p.LifecycleIssues(lifecycles, flows), lcTouched); err != nil {
 		return false, err
 	}
 	reqs := slices.Clone(p.Requirements)
@@ -244,6 +261,7 @@ func applyScope(p *core.Project, o scopeOut) (bool, error) {
 		}
 	}
 	p.Flows, p.Requirements, p.Done, p.Decisions, p.Skips = flows, reqs, done, decisions, next.Skips
+	p.Lifecycles = lifecycles
 	return true, nil
 }
 

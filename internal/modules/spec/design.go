@@ -302,8 +302,18 @@ func pageFlows(p *core.Project) string {
 			default:
 				fmt.Fprintf(&b, "%d. %s — `%s`\n", st.N, st.Text, st.Page)
 			}
+			for _, s := range st.Status {
+				fmt.Fprintf(&b, "   - status %s\n", s)
+			}
 		}
 		b.WriteString("\n")
+		for _, g := range w.Parallel {
+			steps := make([]string, len(g.Steps))
+			for i, n := range g.Steps {
+				steps[i] = fmt.Sprint(n)
+			}
+			fmt.Fprintf(&b, "Langkah %s bersamaan (%s): halamannya tidak saling menyambung.\n\n", strings.Join(steps, ", "), core.JoinText(g.Join))
+		}
 		for _, br := range w.Branches {
 			kind := "Alternatif"
 			if br.Kind == core.BranchFailure {

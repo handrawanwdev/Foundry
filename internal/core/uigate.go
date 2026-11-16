@@ -127,6 +127,7 @@ func (p *Project) DesignGate() DesignGate {
 		dataCheck(l, issues),
 		actionCheck(l, walks),
 		exceptionCheck(walks),
+		lifecycleCheck(p, l),
 		responsiveCheck(d, issues),
 		visualCheck(issues),
 		prototypeCheck(p, l),
@@ -349,9 +350,13 @@ func navigationCheck(p *Project, l *LayoutSpec, walks []FlowWalk, format int) Ga
 			continue
 		}
 		for i := 1; i < len(w.Pages); i++ {
+			from, to := w.Pages[i-1], w.Pages[i]
+			if from == to || ParallelHop(w.Steps, from, to) {
+				continue
+			}
 			moves++
-			if !linked(l, w.Pages[i-1], w.Pages[i]) {
-				c.note(missing, "%s: %s belum punya link ke %s", w.ID, w.Pages[i-1], w.Pages[i])
+			if !linked(l, from, to) {
+				c.note(missing, "%s: %s belum punya link ke %s", w.ID, from, to)
 			}
 		}
 		for _, br := range w.Branches {

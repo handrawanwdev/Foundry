@@ -80,6 +80,9 @@ func TestStepWords(t *testing.T) {
 	if got := StepAction("buat penawaran atau langsung pesanan"); got != "Buat penawaran" {
 		t.Errorf("StepAction = %q", got)
 	}
+	if got := StepAction("Buat DeviceCommand dengan idempotency_key"); got != "Buat DeviceCommand" {
+		t.Errorf("cut label = %q", got)
+	}
 	if !CreateStep("Ajukan cuti") || CreateStep("Tinjau selisih") {
 		t.Error("CreateStep")
 	}
@@ -88,6 +91,9 @@ func TestStepWords(t *testing.T) {
 // Decision, approval request and irreversible steps are recognized through
 // the Indonesian affixes (menyetujui ← setuju, memutuskan ← putus).
 func TestStepKinds(t *testing.T) {
+	if DecisionStep("Approver langkah pertama menerima notifikasi") || !DecisionStep("Approver memutuskan") {
+		t.Error("an approver is not a decision")
+	}
 	for text, want := range map[string][3]bool{ // decision, approval request, risky
 		"Supervisor menyetujui":       {true, false, false},
 		"Approver memutuskan":         {true, false, false},

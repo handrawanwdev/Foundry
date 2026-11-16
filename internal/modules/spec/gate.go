@@ -64,3 +64,42 @@ func designGateMarkdown(p *core.Project) string {
 	bullets(&b, "**Belum diketahui**", g.Unknowns)
 	return b.String()
 }
+
+var benchKind = map[string]string{
+	core.BenchStructural: "struktural", core.BenchSemantic: "semantik", core.BenchVisual: "visual",
+	core.BenchInteraction: "interaksi", core.BenchBusiness: "bisnis",
+}
+
+// designBenchmarkMarkdown is the per-dimension quality report. Dimensions
+// stay separate so a passing visual check cannot hide a blocking failure.
+func designBenchmarkMarkdown(p *core.Project) string {
+	bch := p.DesignBenchmark()
+	var b strings.Builder
+	b.WriteString("# Benchmark kualitas desain\n\nSetiap dimensi diukur sendiri. Tidak ada skor gabungan. Dimensi yang memblokir (gagal) membuat desain belum siap, apa pun hasil dimensi lain.\n\n")
+	fmt.Fprintf(&b, "%s\n\n", bch.Summary)
+	if len(bch.Blocking) > 0 {
+		b.WriteString("**Memblokir:** " + strings.Join(bch.Blocking, "; ") + "\n\n")
+	}
+	b.WriteString("| Dimensi | Jenis | Status | Terukur | Ringkasan |\n|---|---|---|---|---|\n")
+	for _, d := range bch.Dimensions {
+		cov := "—"
+		if d.Total > 0 {
+			cov = fmt.Sprintf("%d/%d", d.Covered, d.Total)
+		}
+		block := ""
+		if d.Blocking {
+			block = " (memblokir bila gagal)"
+		}
+		fmt.Fprintf(&b, "| %s%s | %s | %s | %s | %s |\n", d.Name, block, benchKind[d.Kind], gateStatus[d.Status], cov, d.Detail)
+	}
+	for _, d := range bch.Dimensions {
+		if len(d.Items) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "\n### %s\n\n", d.Name)
+		for _, it := range d.Items {
+			fmt.Fprintf(&b, "- %s\n", it)
+		}
+	}
+	return b.String()
+}

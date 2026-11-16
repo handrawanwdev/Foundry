@@ -336,7 +336,10 @@ func TestDesignRoutes(t *testing.T) {
 	// list with approvals, and the approval route.
 	w = do("GET", "/api/v1/project/design/mockups/antrean?state=loading", "")
 	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") ||
-		!strings.Contains(w.Header().Get("Content-Security-Policy"), "default-src 'none'") || !strings.Contains(w.Body.String(), `data-foundry-page="antrean"`) {
+		!strings.Contains(w.Header().Get("Content-Security-Policy"), "default-src 'none'") ||
+		!strings.Contains(w.Header().Get("Content-Security-Policy"), "form-action 'self'") ||
+		!strings.Contains(w.Body.String(), `data-foundry-page="antrean"`) ||
+		!strings.Contains(w.Body.String(), `data-foundry-sim="banner"`) {
 		t.Fatalf("mockup: %d %v %s", w.Code, w.Header(), w.Body)
 	}
 	if w := do("GET", "/api/v1/project/design/mockups/tidak-ada", ""); w.Code != http.StatusNotFound {

@@ -33,6 +33,9 @@ func useCasesMarkdown(p *core.Project) string {
 		if f.Goal != "" {
 			fmt.Fprintf(&b, "**Tujuan:** %s\n\n", f.Goal)
 		}
+		if f.Trigger != "" {
+			fmt.Fprintf(&b, "**Pemicu:** %s\n\n", f.Trigger)
+		}
 		list := func(title string, items []string, numbered bool) {
 			if len(items) == 0 {
 				return
@@ -49,6 +52,7 @@ func useCasesMarkdown(p *core.Project) string {
 		}
 		list("Preconditions", f.Pre, false)
 		list("Alur utama", f.Steps, true)
+		list("Langkah paralel", parallelLines(f), false)
 		list("Postconditions (berhasil bila)", f.Post, false)
 		list("Alternatif", f.Alternatives, false)
 		list("Kegagalan", f.Failures, false)
@@ -56,6 +60,77 @@ func useCasesMarkdown(p *core.Project) string {
 		list("Otorisasi", f.Permissions, false)
 		list("Efek ke data", f.Data, false)
 		list("Integrasi", f.Integrations, false)
+	}
+	b.WriteString(lifecyclesMarkdown(p))
+	return b.String()
+}
+
+// parallelLines are the step groups of a use case done at the same time.
+func parallelLines(f core.Flow) []string {
+	var out []string
+	for _, g := range f.Parallel {
+		steps := make([]string, len(g.Steps))
+		for i, n := range g.Steps {
+			steps[i] = fmt.Sprint(n)
+		}
+		line := fmt.Sprintf("Langkah %s berjalan bersamaan (%s)", strings.Join(steps, ", "), core.JoinText(g.Join))
+		if g.Then > 0 {
+			line += fmt.Sprintf(", lalu langkah %d", g.Then)
+		}
+		if g.Timeout != "" {
+			line += "; batas waktu " + g.Timeout
+			if g.OnTimeout != "" {
+				line += ": " + g.OnTimeout
+			}
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+// lifecyclesMarkdown is the status model of each business document: its
+// statuses, and the transitions with the action, actor, guard and the use
+// case step that performs them.
+func lifecyclesMarkdown(p *core.Project) string {
+	if len(p.Lifecycles) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Siklus status dokumen\n\nStatus yang dimiliki setiap dokumen bisnis dan perpindahannya. Layar hanya menampilkan status ini, dan aksi sebuah halaman adalah transisi yang tersedia pada status dokumen saat itu.\n\n")
+	for _, lc := range p.Lifecycles {
+		fmt.Fprintf(&b, "### %s\n\n| Status | Label | Jenis | Terkunci |\n|---|---|---|---|\n", lc.Entity)
+		for _, st := range lc.States {
+			kind := map[string]string{core.StateInitial: "awal", core.StateFinal: "akhir"}[st.Kind]
+			locked := ""
+			if st.Locked {
+				locked = "ya"
+			}
+			fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", st.ID, cell(st.Label), orDash(kind), orDash(locked))
+		}
+		b.WriteString("\n| Dari | Ke | Aksi | Jenis | Aktor | Use case | Syarat |\n|---|---|---|---|---|---|---|\n")
+		for _, t := range lc.Transitions {
+			trace := t.Flow
+			if t.Step > 0 {
+				trace = fmt.Sprintf("%s langkah %d", t.Flow, t.Step)
+			}
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s |\n", strings.Join(t.From, ", "), t.To, cell(t.Action),
+				orDash(t.Kind), cell(t.Actor), orDash(trace), orDash(cell(t.Guard)))
+		}
+		b.WriteString("\n```mermaid\nstateDiagram-v2\n")
+		if s := lc.Initial(); s != "" {
+			fmt.Fprintf(&b, "  [*] --> %s\n", s)
+		}
+		for _, t := range lc.Transitions {
+			for _, f := range t.From {
+				fmt.Fprintf(&b, "  %s --> %s: %s\n", f, t.To, strings.ReplaceAll(t.Action, ":", " "))
+			}
+		}
+		for _, st := range lc.States {
+			if st.Kind == core.StateFinal {
+				fmt.Fprintf(&b, "  %s --> [*]\n", st.ID)
+			}
+		}
+		b.WriteString("```\n\n")
 	}
 	return b.String()
 }

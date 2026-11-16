@@ -938,6 +938,7 @@ func layoutIssues(p *Project, l *LayoutSpec, rules *DesignRules, comps map[strin
 		}
 	}
 	out = append(out, flowIssues(p, l, rules, format)...)
+	out = append(out, lifecycleUIIssues(p, l)...)
 	out = append(out, experienceIssues(p, l, rules, comps, format)...)
 	return out
 }

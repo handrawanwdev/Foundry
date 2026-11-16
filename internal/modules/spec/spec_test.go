@@ -215,6 +215,10 @@ func TestWriteDocsIncludesDesignAndSpecJSON(t *testing.T) {
 	if err != nil || !strings.Contains(string(gate), "# Quality gate desain UI") || !strings.Contains(string(gate), "Use case → layar") {
 		t.Fatalf("design-gate.md = %s, %v", gate, err)
 	}
+	bench, err := os.ReadFile(filepath.Join(root, "review", "design-benchmark.md"))
+	if err != nil || !strings.Contains(string(bench), "# Benchmark kualitas desain") || !strings.Contains(string(bench), "Tidak ada skor gabungan") {
+		t.Fatalf("design-benchmark.md = %s, %v", bench, err)
+	}
 	if _, err := os.Stat(filepath.Join(root, "design", "design-rules.json")); err != nil {
 		t.Error(err)
 	}

@@ -84,11 +84,19 @@ export interface FeatureModule { id: string; name: string; features: FeatureNode
 export interface FeatureMapRequest { action: string; node_id?: string; text?: string; rejected?: string }
 export interface FeatureMap { summary?: string; modules: FeatureModule[]; request?: FeatureMapRequest }
 // A use case: role is the actor, steps the main flow.
+export interface ParallelSteps { steps: number[]; join?: string; then?: number; timeout?: string; on_timeout?: string }
 export interface Flow {
   id: string; name: string; feature_id: string; role: string; steps: string[]; page_ids: string[] | null;
-  goal?: string; preconditions?: string[]; postconditions?: string[]; alternatives?: string[]; failures?: string[];
+  goal?: string; trigger?: string; preconditions?: string[]; postconditions?: string[]; alternatives?: string[]; failures?: string[];
   business_rules?: string[]; permissions?: string[]; data_effects?: string[]; integrations?: string[];
+  step_pages?: string[]; branch_pages?: string[]; parallel?: ParallelSteps[];
 }
+export interface LifeState { id: string; label?: string; kind?: "initial" | "final" | ""; locked?: boolean }
+export interface LifeTransition {
+  from: string[]; to: string; action: string; kind?: string; actor: string;
+  flow?: string; step?: number; guard?: string;
+}
+export interface Lifecycle { entity: string; states: LifeState[]; transitions: LifeTransition[] }
 // A target platform names where the product runs, not who uses it: roles
 // live in the requirements (discovery.roles) and security.
 export interface PlatformTarget { kind: PlatformKind; rationale: string }
@@ -364,7 +372,7 @@ export interface MockupStatus {
 }
 // A use case as the user walks it through the screens: each step placed on
 // a page; system steps are feedback, unplaced steps have no screen yet.
-export interface FlowStep { n: number; text: string; system?: boolean; page?: string; placed: boolean; decision?: boolean; risky?: boolean }
+export interface FlowStep { n: number; text: string; system?: boolean; page?: string; placed: boolean; decision?: boolean; risky?: boolean; group?: number; status?: string[] }
 export interface FlowBranch {
   kind: "alternative" | "failure"; text: string; from?: number; next?: string; flows?: string[];
   page?: string; system?: boolean; placed: boolean;
@@ -373,6 +381,7 @@ export interface FlowWalk {
   id: string; name: string; role?: string; goal?: string; trigger?: string; preconditions?: string[]; postconditions?: string[];
   data_effects?: string[]; pages: string[] | null; inferred?: boolean; declared?: boolean;
   steps: FlowStep[]; branches?: FlowBranch[]; alternatives?: string[]; failures?: string[];
+  parallel?: ParallelSteps[];
 }
 export type GateStatus = "pass" | "warn" | "fail" | "skip";
 export interface GateCheck { id: string; name: string; status: GateStatus; detail: string; items?: string[] }
@@ -387,6 +396,14 @@ export interface FlowTrace {
 export interface DesignGate {
   ready: boolean; verdict: "ready" | "review" | "blocked"; summary: string; checks: GateCheck[]; requirements: ReqTrace[]; flows: FlowTrace[];
   errors: number; warnings: number; notes: number; assumptions?: string[]; unknowns?: string[];
+}
+export type BenchKind = "structural" | "semantic" | "visual" | "interaction" | "business";
+export interface BenchDim {
+  id: string; name: string; kind: BenchKind; status: GateStatus; covered: number; total: number;
+  blocking?: boolean; detail: string; items?: string[];
+}
+export interface DesignBenchmark {
+  dimensions: BenchDim[]; blocking?: string[]; ready: boolean; summary: string;
 }
 export interface DesignIssue { level: "error" | "warning" | "info"; where?: string; message: string; impact?: string; suggestion?: string }
 export interface DesignView {
@@ -482,6 +499,7 @@ export interface Project {
   version: number; name: string; dir: string; stage: Stage; story: string;
   intent?: WorkIntent; change?: ChangePlan; survey?: Survey;
   discovery?: Discovery; feature_map?: FeatureMap; blueprint?: Blueprint; requirements: Requirement[] | null; features: Feature[] | null; flows: Flow[] | null;
+  lifecycles?: Lifecycle[];
   platform?: PlatformPlan; structure?: Structure; stack?: TechStack; ui?: UIDesign; visual?: VisualAudit;
   artifacts?: Artifact[]; artifact_request?: ChangeRequest; workflow?: Workflow;
   decisions?: Decision[]; area_skips?: AreaSkip[]; definition_of_done?: string[];

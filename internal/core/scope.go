@@ -204,7 +204,7 @@ func (p *Project) AreaIssues(area string) []Issue {
 			return p.DesignIssues(nil)
 		}
 	case AreaUseCases:
-		return p.UseCaseIssues(p.Flows)
+		return append(p.UseCaseIssues(p.Flows), p.LifecycleIssues(p.Lifecycles, p.Flows)...)
 	case AreaAcceptance:
 		return AcceptanceIssues(p.Requirements, p.Done)
 	}
@@ -255,6 +255,7 @@ func (p *Project) UseCaseIssues(flows []Flow) []Issue {
 		if len(f.Steps) > MaxDesignListSize {
 			add(IssueError, w, "alur utama terlalu panjang (maks %d langkah)", MaxDesignListSize)
 		}
+		parallelIssues(f, add)
 	}
 	return out
 }

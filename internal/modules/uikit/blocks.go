@@ -942,14 +942,14 @@ func (r *render) detail(s core.Section) {
 		r.w(`<div class="fk-actions fk-detail-actions">`)
 		primary := false
 		for _, a := range acts {
-			cls, confirm := "fk-btn", ""
+			cls := "fk-btn"
 			switch {
 			case core.DangerAction(a):
-				cls, confirm = "fk-btn fk-btn-danger", ` data-foundry-confirm="true"`
+				cls = "fk-btn fk-btn-danger"
 			case !primary:
 				cls, primary = "fk-btn fk-btn-primary", true
 			}
-			r.f(`<button class="%s"%s%s>%s</button>`, cls, confirm, r.disabled(), esc(a))
+			r.actionControl(a, cls, false)
 		}
 		r.w(`</div>`)
 	}
@@ -1008,15 +1008,36 @@ func (r *render) form(s core.Section) {
 		}
 		els = append(els, it)
 	}
-	r.w(`<div class="fk-form">`)
+	action := r.doc.Self
+	if action == "" {
+		action = "#"
+	}
+	r.f(`<form class="fk-form" method="get" action="%s" data-foundry-sim="form">`, esc(action))
+	to, flash := r.doc.Sim.Status, "ok"
+	submitLabel := submit
+	if submitLabel == "" {
+		submitLabel = r.page.PrimaryAction
+	}
+	if t := r.matchTransition(submitLabel); t != nil {
+		to, flash = t.T.To, "ok"
+	}
+	r.hiddenSim(to, flash)
+	lock := r.formLocked()
 	for i, it := range els {
 		l := strings.ToLower(it)
 		id := fmt.Sprintf("f-%s-%d", ident(s.ID), i)
+		req, dis := "", r.disabled()
+		if lock {
+			dis = " disabled"
+		}
+		if !has(l, "opsional", "optional") {
+			req = " required"
+		}
 		switch {
 		case has(l, "setuju", "ingat", "aktifkan", "centang"):
 			r.f(`<label class="fk-check"><span></span>%s</label>`, esc(it))
 		case has(l, "catatan", "deskripsi", "keterangan", "alamat", "pesan", "komentar", "note", "alasan"):
-			r.f(`<div class="fk-field fk-field-wide"><label for="%s">%s</label><textarea id="%s" class="fk-input" placeholder="Tulis %s"%s></textarea></div>`, id, esc(it), id, esc(strings.ToLower(it)), r.disabled())
+			r.f(`<div class="fk-field fk-field-wide"><label for="%s">%s</label><textarea id="%s" name="%s" class="fk-input" placeholder="Tulis %s"%s%s></textarea></div>`, id, esc(it), id, id, esc(strings.ToLower(it)), dis, req)
 		case has(l, "status", "jenis", "kategori", "peran", "tipe", "role", "metode", "pilih", "zona", "cabang", "lokasi"):
 			r.f(`<div class="fk-field"><label for="%s">%s</label><div id="%s" class="fk-select" role="combobox">Pilih %s%s</div></div>`, id, esc(it), id, esc(strings.ToLower(it)), icon("chevron"))
 		case has(l, "tanggal", "berlaku", "jadwal", "date"):
@@ -1029,7 +1050,7 @@ func (r *render) form(s core.Section) {
 			case has(l, "email", "surel"):
 				typ = "email"
 			}
-			r.f(`<div class="fk-field"><label for="%s">%s</label><input id="%s" type="%s" class="fk-input" placeholder="%s"%s></div>`, id, esc(it), id, typ, esc(placeholder(it)), r.disabled())
+			r.f(`<div class="fk-field"><label for="%s">%s</label><input id="%s" name="%s" type="%s" class="fk-input" placeholder="%s"%s%s></div>`, id, esc(it), id, id, typ, esc(placeholder(it)), dis, req)
 		}
 		if r.state == "error" && i == 0 {
 			r.f(`<p class="fk-help" style="color:var(--status-error)">%s</p>`, esc(r.stateText(&s, "error")))
@@ -1043,13 +1064,14 @@ func (r *render) form(s core.Section) {
 		if label == "" {
 			label = "Simpan"
 		}
-		r.f(`<div class="fk-actions"><button class="fk-btn fk-btn-primary"%s>%s%s</button>`, r.disabled(), actionIcon(label), esc(label))
+		r.w(`<div class="fk-actions">`)
+		r.actionControl(label, "fk-btn fk-btn-primary", true)
 		if r.page.Pattern != "auth" {
-			r.w(`<button class="fk-btn fk-btn-ghost">Batal</button>`)
+			r.w(`<button class="fk-btn fk-btn-ghost" type="button">Batal</button>`)
 		}
 		r.w(`</div>`)
 	}
-	r.w(`</div>`)
+	r.w(`</form>`)
 }
 
 func (r *render) hasActionsSlot() bool {

@@ -48,14 +48,33 @@ func (s *Service) DesignGate() (core.DesignGate, error) {
 	return p.DesignGate(), nil
 }
 
+// DesignBenchmark is the per-dimension quality report of the current design.
+func (s *Service) DesignBenchmark() (core.DesignBenchmark, error) {
+	p, err := s.Store.Load()
+	if err != nil {
+		return core.DesignBenchmark{}, err
+	}
+	return p.DesignBenchmark(), nil
+}
+
 // Mockup renders one page in a state; link makes the hrefs between pages.
 func (s *Service) Mockup(page, state string, link func(string) string) (string, error) {
+	return s.MockupSim(page, state, uikit.Sim{}, link)
+}
+
+// MockupSim renders one page with a prototype role and document status
+// taken from the URL. Nothing is stored.
+func (s *Service) MockupSim(page, state string, sim uikit.Sim, link func(string) string) (string, error) {
 	p, err := s.Store.Load()
 	if err != nil {
 		return "", err
 	}
 	d := uikit.DocOf(p)
+	d.Sim = sim
 	d.Link = link
+	if link != nil {
+		d.Self = link(strings.TrimSpace(page))
+	}
 	return uikit.Default().RenderPage(d, strings.TrimSpace(page), state)
 }
 

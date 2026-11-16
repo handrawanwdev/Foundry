@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useProject } from "../store/project";
-import type { DesignGate, DesignView, FlowStep, FlowWalk, GateStatus, MockupApproval, MockupStatus, Project } from "../types";
+import type { BenchKind, DesignBenchmark, DesignGate, DesignView, FlowStep, FlowWalk, GateStatus, Lifecycle, MockupApproval, MockupStatus, Project } from "../types";
 
 // Every designed page rendered as an HTML mockup from the UI kit (token
 // preset + page template). The user reviews each page per viewport and
 // state, then approves it; the approved mockup is the reference the coding
-// agent builds from. Mockups are rendered by Foundry and served inert
-// (no script, no network); the frame allows only same-origin loads so
-// links between mockups stay inside it. A use case can be walked step by
-// step (each step and each alternative or failure opens the page that
-// shows it), the pages narrowed to one role, and the design quality gate
-// read before the mockups are approved.
+// agent builds from. Mockups have no script; GET to the same URL simulates
+// role and document status and stores nothing. The frame allows same-origin
+// loads and form GET so links stay inside it. A use case can be walked
+// step by step, pages narrowed to one role, and the quality gate plus
+// per-dimension benchmark read before the mockups are approved.
 
 const VIEWPORTS = [
   { id: "desktop", label: "Desktop", width: 1280, height: 800 },
@@ -56,9 +55,14 @@ export function MockupPanel({ project, design }: { project: Project; design: Des
   const [step, setStep] = useState(0);
   const [role, setRole] = useState("");
   const [gate, setGate] = useState<DesignGate | null>(null);
+  const [bench, setBench] = useState<DesignBenchmark | null>(null);
+  const [docStatus, setDocStatus] = useState("");
+  const [docEntity, setDocEntity] = useState("");
 
   useEffect(() => {
-    api.mockups().then((r) => { setList(r.mockups); setFlows(r.flows ?? []); setGate(r.gate ?? null); }).catch(() => setList([]));
+    api.mockups().then((r) => {
+      setList(r.mockups); setFlows(r.flows ?? []); setGate(r.gate ?? null); setBench(r.benchmark ?? null);
+    }).catch(() => setList([]));
   }, [project.version, project.dir]);
 
   // Role preview: the use cases of one role and the pages they pass
@@ -78,7 +82,10 @@ export function MockupPanel({ project, design }: { project: Project; design: Des
   if (!list || list.length === 0 || !current) return null;
   const vp = VIEWPORTS.find((v) => v.id === viewport)!;
   const states = ["", ...Object.keys(spec?.states ?? {}).filter((k) => k in STATE_LABEL)];
-  const src = `${api.mockupURL(current.page, state)}${state ? "&" : "?"}v=${project.version}`;
+  const lifecycles = project.lifecycles ?? [];
+  const lc = lifecycles.find((l) => l.entity === docEntity) ?? lifecycles[0];
+  const mockupSrc = api.mockupURL(current.page, state, { role, status: docStatus, entity: docEntity || lc?.entity });
+  const src = `${mockupSrc}${mockupSrc.includes("?") ? "&" : "?"}v=${project.version}`;
   const approval = APPROVAL[current.status];
   const pendingAll = list.filter((m) => m.status !== "approved").length;
   const rules = design?.design?.rules;
@@ -122,6 +129,7 @@ export function MockupPanel({ project, design }: { project: Project; design: Des
         <span className="muted small">{list.length - pendingAll}/{list.length} disetujui</span>
       </header>
       {gate && gate.checks.length > 0 && <GatePanel gate={gate} />}
+      {bench && bench.dimensions.length > 0 && <BenchmarkPanel bench={bench} />}
       <div className="mockup-bar">
         {roles.length > 1 && (
           <select value={role} onChange={(e) => pickRole(e.target.value)} aria-label="Peran">
@@ -148,6 +156,18 @@ export function MockupPanel({ project, design }: { project: Project; design: Des
         {states.length > 1 && (
           <select value={state} onChange={(e) => setState(e.target.value)} aria-label="State">
             {states.map((s) => <option key={s} value={s}>{STATE_LABEL[s]}</option>)}
+          </select>
+        )}
+        {lifecycles.length > 1 && (
+          <select value={docEntity} onChange={(e) => { setDocEntity(e.target.value); setDocStatus(""); }} aria-label="Dokumen">
+            <option value="">Dokumen</option>
+            {lifecycles.map((l) => <option key={l.entity} value={l.entity}>{l.entity}</option>)}
+          </select>
+        )}
+        {lc && (
+          <select value={docStatus} onChange={(e) => setDocStatus(e.target.value)} aria-label="Status dokumen (simulasi)">
+            <option value="">Status awal</option>
+            {lc.states.map((s) => <option key={s.id} value={s.id}>{s.label || s.id}{s.locked ? " · terkunci" : ""}</option>)}
           </select>
         )}
         <button className="ghost" onClick={() => setFull(true)}>Perbesar</button>
@@ -177,6 +197,8 @@ export function MockupPanel({ project, design }: { project: Project; design: Des
                 <span className="muted small">{st.system ? "otomatis" : st.page ? pageName(st.page) : "tanpa halaman"}</span>
                 {st.decision && <span className="state" title="Titik keputusan: halamannya menyediakan setujui dan tolak/kembalikan.">keputusan</span>}
                 {st.risky && <span className="state st-review" title="Tidak dapat dibatalkan: perlu konfirmasi.">perlu konfirmasi</span>}
+                {(st.group ?? 0) > 0 && <span className="state" title="Berjalan bersamaan dengan langkah lain di kelompok ini.">paralel {st.group}</span>}
+                {(st.status?.length ?? 0) > 0 && <span className="muted small">{st.status!.join("; ")}</span>}
                 {!st.system && !st.placed && <span className="state st-issue" title="Belum ada section, field, atau aksi untuk langkah ini di halamannya.">belum tergambar</span>}
               </li>
             ))}
@@ -211,7 +233,65 @@ export function MockupPanel({ project, design }: { project: Project; design: Des
         </span>
       </footer>
       {full && <FullView src={src} title={`Mockup ${current.name}`} width={vp.width} onClose={() => setFull(false)} />}
+      {lifecycles.length > 0 && <LifecyclePanel lifecycles={lifecycles} />}
     </section>
+  );
+}
+
+const BENCH_KIND: Record<BenchKind, string> = {
+  structural: "struktural", semantic: "semantik", visual: "visual", interaction: "interaksi", business: "bisnis",
+};
+
+function BenchmarkPanel({ bench }: { bench: DesignBenchmark }) {
+  return (
+    <details className="mockup-gate" open={!bench.ready}>
+      <summary>
+        <strong>Benchmark per dimensi</strong>
+        <span className={`state ${bench.ready ? "st-final" : "st-issue"}`}>{bench.ready ? "tidak memblokir" : "memblokir"}</span>
+        <span className="muted small">{bench.summary}</span>
+      </summary>
+      <ul>
+        {bench.dimensions.map((d) => (
+          <li key={d.id}>
+            <span className={`state ${GATE[d.status].cls}`}>{GATE[d.status].label}</span>
+            <span>{d.name}</span>
+            <span className="muted small">{BENCH_KIND[d.kind]}{d.blocking ? " · memblokir bila gagal" : ""}{d.total > 0 ? ` · ${d.covered}/${d.total}` : ""} · {d.detail}</span>
+          </li>
+        ))}
+      </ul>
+      {(bench.blocking?.length ?? 0) > 0 && (
+        <div className="mockup-gate-items">
+          <b>Memblokir</b>
+          <ul>{bench.blocking!.map((it) => <li key={it} className="small">{it}</li>)}</ul>
+        </div>
+      )}
+    </details>
+  );
+}
+
+function LifecyclePanel({ lifecycles }: { lifecycles: Lifecycle[] }) {
+  return (
+    <details className="mockup-gate">
+      <summary>
+        <strong>Siklus status dokumen</strong>
+        <span className="muted small">{lifecycles.length} dokumen</span>
+      </summary>
+      {lifecycles.map((lc) => (
+        <div key={lc.entity} className="mockup-gate-items">
+          <b>{lc.entity}</b>
+          <ul>
+            {lc.states.map((s) => (
+              <li key={s.id} className="small">{s.label || s.id}{s.kind ? ` · ${s.kind === "initial" ? "awal" : "akhir"}` : ""}{s.locked ? " · terkunci" : ""}</li>
+            ))}
+          </ul>
+          <ul>
+            {lc.transitions.map((t, i) => (
+              <li key={i} className="small">{t.from.join("/")} → {t.to}: {t.action} ({t.actor}{t.flow ? ` · ${t.flow}${t.step ? ` langkah ${t.step}` : ""}` : ""})</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </details>
   );
 }
 
@@ -268,7 +348,7 @@ function Frame({ src, width, height, title }: { src: string; width: number; heig
       <iframe
         title={title}
         src={src}
-        sandbox="allow-same-origin"
+        sandbox="allow-same-origin allow-forms"
         style={{ width, height, transform: `scale(${scale})`, left: Math.max(0, (avail - width * scale) / 2) }}
       />
     </div>
@@ -287,7 +367,7 @@ function FullView({ src, title, width, onClose }: { src: string; title: string; 
         <span>{title}</span>
         <button onClick={onClose} autoFocus>Tutup (Esc)</button>
       </div>
-      <iframe title={title} src={src} sandbox="allow-same-origin" style={{ width: Math.min(width, window.innerWidth - 32) }} />
+      <iframe title={title} src={src} sandbox="allow-same-origin allow-forms" style={{ width: Math.min(width, window.innerWidth - 32) }} />
     </div>
   );
 }

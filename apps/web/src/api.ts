@@ -1,4 +1,4 @@
-import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, CommandHistory, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, MockupStatus, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackAreas, StructureOp, Survey, TechArea, Flow, FlowWalk, DesignGate, WorkflowView } from "./types";
+import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, CommandHistory, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, MockupStatus, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackAreas, StructureOp, Survey, TechArea, Flow, FlowWalk, DesignGate, DesignBenchmark, WorkflowView } from "./types";
 
 // details lists what an invalid request broke (field = where).
 export interface ErrorDetail { field?: string; message: string }
@@ -92,10 +92,17 @@ export const api = {
   editDesignRules: (rules: DesignRules) => call<Project>("PUT", "/project/design/rules", rules),
   editLayout: (layout: LayoutSpec) => call<Project>("PUT", "/project/design/layout", layout),
   // Mockups: every page rendered from the UI kit; the user approves each one.
-  mockups: () => call<{ mockups: MockupStatus[]; flows?: FlowWalk[]; gate?: DesignGate }>("GET", "/project/design/mockups"),
+  mockups: () => call<{ mockups: MockupStatus[]; flows?: FlowWalk[]; gate?: DesignGate; benchmark?: DesignBenchmark }>("GET", "/project/design/mockups"),
   approveMockups: (pages: string[] = []) => call<{ mockups: MockupStatus[] }>("POST", "/project/design/mockups/approve", { pages }),
-  mockupURL: (page: string, state = "") =>
-    `/api/v1/project/design/mockups/${encodeURIComponent(page)}${state ? `?state=${encodeURIComponent(state)}` : ""}`,
+  mockupURL: (page: string, state = "", sim?: { role?: string; status?: string; entity?: string }) => {
+    const q = new URLSearchParams();
+    if (state) q.set("state", state);
+    if (sim?.role) q.set("role", sim.role);
+    if (sim?.status) q.set("status", sim.status);
+    if (sim?.entity) q.set("entity", sim.entity);
+    const s = q.toString();
+    return `/api/v1/project/design/mockups/${encodeURIComponent(page)}${s ? `?${s}` : ""}`;
+  },
 
   // Blueprint: built-in artifacts plus the ones written for the project.
   blueprint: () => call<BlueprintView>("GET", "/project/blueprint"),

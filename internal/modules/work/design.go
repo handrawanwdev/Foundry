@@ -50,7 +50,7 @@ const designShape = `{
    "accessibility": [""], "responsive": [""]},
  "shells": [{"id": "app", "name": "App", "platform": "web", "pattern": "sidebar",
    "regions": [{"id": "nav", "name": "Nav", "slot": "nav", "content": ["Menu"]}]}],
- "pages": [{"id": "antrean", "name": "Antrean", "platform": "web", "route": "/antrean", "access": "auth", "feature_id": "FEAT-001",
+ "pages": [{"id": "antrean", "name": "Antrean", "platform": "web", "route": "/antrean", "access": "auth", "role": "Operator", "feature_id": "FEAT-001",
    "purpose": "Saring antrean", "goal": "GOAL-1", "shell": "app", "pattern": "table",
    "fields": [{"field": "Appointment.status", "label": "Status", "presentation": "badge"}],
    "sections": [{"id": "filter", "name": "Filter", "slot": "toolbar", "content": ["Cari pasien, Status"]}, {"id": "tabel", "name": "Tabel", "slot": "table", "content": ["No, Pasien, Status, Aksi"], "components": ["Table", "Badge"]}],
@@ -95,7 +95,7 @@ Work like a senior product designer: understand the users and their tasks BEFORE
 const layoutRules = `LAYOUT SPECIFICATION (shells, pages)
 - Text and structured data only. No images, mockups, HTML, CSS or code.
 - shells: the layouts pages share (app frame with sidebar or navbar, auth frame, ...): id, name, platform, pattern, regions (sections), navigation, grid, responsive.
-- pages: every screen the user tasks need, per platform with screens. route: web starts with /, mobile/desktop is the screen name. access: public or auth. shell: a shell id, or empty for a page with its own frame.
+- pages: every screen the user tasks need, per platform with screens. route: web starts with /, mobile/desktop is the screen name. access: public or auth. role: the users[].role(s) the page is for, comma-separated (the actors of its use cases); a page a permission limits says in permission_denied what the others see. shell: a shell id, or empty for a page with its own frame.
 - pages[].goal names the goal id the page serves; pages[].fields maps data fields to their presentation.
 - pattern (page, shell and optional for a section) is one of: %s.
 - sections[].slot: the slot of the page pattern's template (UI KIT PAGE TEMPLATES) the section fills; every required slot gets a section; no header section (the page header comes from name, purpose and primary_action). Shell regions take the shell template's slots.
@@ -105,7 +105,7 @@ const layoutRules = `LAYOUT SPECIFICATION (shells, pages)
 - states (page or section): keys %s; the value says what the user sees and can do. Required per page pattern: %s.
 - links: {to: page id, via: what the user activates}; together they are the navigation between pages.
 - navigation: groups named by the user's job, each with items[{label, page}]. Empty groups are invalid. Every page is reachable from navigation or from a link.
-- flows: every use case with screens -> {"steps": the page id of each step in order, "" for a system step (feedback on the current page, not a page); "branches": the page that shows each alternative, then each failure, "" when no screen shows it}. Each step and branch has a section, field, state or action on its page; consecutive pages are linked (via = the step); a decision step's page offers approve and reject/return; an irreversible step (delete, cancel, post) names its confirmation; a long document flow (draft, submit, approve) gets form/detail pages or a wizard; a branch that hands over to another use case links to that one's first page.
+- flows: every use case with screens -> {"steps": the page id of each step in order, "" for a system step (feedback on the current page, not a page); "branches": the page that shows each alternative, then each failure, "" when no screen shows it}. Each step and branch has a section, field, state or action on its page; consecutive pages are linked (via = the step); a decision step's page offers approve and reject/return; an irreversible step (delete, cancel, post) names its confirmation; a long document flow (draft, submit, approve) gets form/detail pages or a wizard; a branch that hands over to another use case links to that one's first page; steps done at the same time (parallel) are on their own pages without links between them; a page of a document with a lifecycle shows its status and the actions its transitions allow in that status.
 - ids: lowercase letters, digits and dashes. Page ids are unique; section ids are unique within their page.
 `
 
@@ -319,7 +319,37 @@ func uxBrief(p *core.Project) string {
 			if len(fl.Failures) > 0 {
 				fmt.Fprintf(&b, "; fail %s", strings.Join(fl.Failures, " | "))
 			}
+			for _, g := range fl.Parallel {
+				fmt.Fprintf(&b, "; parallel steps %v join %s", g.Steps, firstNonEmpty(g.Join, "all"))
+			}
 			b.WriteString("\n")
+		}
+	}
+	if len(p.Lifecycles) > 0 {
+		b.WriteString("- Document lifecycles (a page showing the document shows its status, offers only the transitions available in that status, keeps a locked status read-only, and shows no status not listed):\n")
+		for _, lc := range p.Lifecycles {
+			states := make([]string, len(lc.States))
+			for i, st := range lc.States {
+				states[i] = st.ID
+				if st.Kind != "" || st.Locked {
+					var tags []string
+					if st.Kind != "" {
+						tags = append(tags, st.Kind)
+					}
+					if st.Locked {
+						tags = append(tags, "locked")
+					}
+					states[i] += " (" + strings.Join(tags, ", ") + ")"
+				}
+			}
+			trans := make([]string, len(lc.Transitions))
+			for i, t := range lc.Transitions {
+				trans[i] = fmt.Sprintf("%s->%s %q by %s", strings.Join(t.From, "/"), t.To, t.Action, t.Actor)
+				if t.Flow != "" && t.Step > 0 {
+					trans[i] += fmt.Sprintf(" at %s step %d", t.Flow, t.Step)
+				}
+			}
+			fmt.Fprintf(&b, "  - %s: %s; transitions %s\n", lc.Entity, strings.Join(states, ", "), strings.Join(trans, " | "))
 		}
 	}
 	if bp := p.Blueprint; bp != nil {

@@ -202,7 +202,7 @@ var tools = []tool{
 	{Name: "get_blueprint", perm: PermRead, Description: "Blueprint: every artifact (requirements, architecture, technology, design rules, layout spec, use cases, acceptance criteria, decisions and the project's own documents) as Markdown, the structured architecture, area coverage, artifact states, the decision register and binding_decisions (decided entries that override every other artifact). Pass ids to get only those artifacts with their body, or outline true for the artifact list without bodies.",
 		InputSchema: obj(map[string]any{"ids": map[string]any{"type": "array", "items": str}, "outline": map[string]any{"type": "boolean"}})},
 	{Name: "get_workflow", perm: PermRead, Description: "Command workflow for the coding agent: commands with objective, instructions, dependencies, feature and subfeature links, blueprint references, expected outputs and acceptance criteria; the execution waves; validation issues, commands that need review, feature-to-command impact, and current execution progress.", InputSchema: obj(nil)},
-	{Name: "get_design", perm: PermRead, Description: "UI design as structured data: design rules (principles, UX guidelines, tokens, components, accessibility, responsive, interaction, platform rules) and layout spec (shells, pages, sections, hierarchy, grid, states, links), plus validation issues, the use cases walked step by step through the pages (flows) and the design quality gate (requirement and use case to screen traceability, navigation, roles, data, primary actions, exception flows, responsive, visual consistency, prototype integrity).", InputSchema: obj(nil)},
+	{Name: "get_design", perm: PermRead, Description: "UI design as structured data: design rules (principles, UX guidelines, tokens, components, accessibility, responsive, interaction, platform rules) and layout spec (shells, pages, sections, hierarchy, grid, states, links), plus validation issues, the use cases walked step by step through the pages (flows), the design quality gate (requirement and use case to screen traceability, navigation, roles, data, primary actions, exception flows, document lifecycle, responsive, visual consistency, prototype integrity) and the per-dimension design benchmark (structural, semantic, visual, interaction, business — never one combined score).", InputSchema: obj(nil)},
 	{Name: "get_mockup", perm: PermRead, Description: "HTML mockup of one designed page, rendered from the UI kit (token preset + page template) with sample data, and whether the user approved it. Build the screen to match its structure, slot order, density and tokens with the project's own components; mark each section's root element with data-foundry-section=\"<section id>\" so record_visual_review can match it. state renders loading, empty, error, ... instead of the populated page. Without page: the list of mockups and their approval.",
 		InputSchema: obj(map[string]any{"page": str, "state": str})},
 	{Name: "get_spec", perm: PermRead, Description: "Whole spec for implementation outside Foundry (JSON: requirements, flows, stack, structure, blueprint, artifacts, design rules, layout spec, workflow) plus the same as Markdown. format json or markdown returns only that one; both is the default.",
@@ -337,7 +337,12 @@ func (s *Server) call(name string, raw json.RawMessage) (any, error) {
 			g := p.DesignGate()
 			gate = &g
 		}
-		return map[string]any{"design": p.UI, "issues": issues, "mockups": uikit.Default().Statuses(p), "flows": walks, "gate": gate,
+		var bench *core.DesignBenchmark
+		if gate != nil {
+			b := p.DesignBenchmark()
+			bench = &b
+		}
+		return map[string]any{"design": p.UI, "issues": issues, "mockups": uikit.Default().Statuses(p), "flows": walks, "gate": gate, "benchmark": bench,
 			"vocabulary": map[string]any{"patterns": core.LayoutPatterns, "states": core.UIStates, "required_states": core.RequiredStates,
 				"platforms": core.UIPlatform, "field_presentations": core.FieldPresentations, "decision_sources": core.DecisionSources}}, nil
 	case "get_mockup":

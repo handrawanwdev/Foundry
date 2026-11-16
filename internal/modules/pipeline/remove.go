@@ -89,8 +89,11 @@ func deleteDoc(p *core.Project, id string) (*Impact, error) {
 		}
 	case id == core.ArtifactUseCases:
 		im.Erases = fmt.Sprintf("%d use case dihapus.", len(p.Flows))
+		if n := len(p.Lifecycles); n > 0 {
+			im.Erases = fmt.Sprintf("%d use case dan %d siklus status dokumen dihapus.", len(p.Flows), n)
+		}
 		im.Docs = []string{id}
-		p.Flows = nil
+		p.Flows, p.Lifecycles = nil, nil
 	case id == core.ArtifactAcceptance:
 		n := 0
 		for k := range p.Requirements {

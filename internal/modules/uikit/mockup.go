@@ -36,11 +36,18 @@ type Doc struct {
 	Walks []core.FlowWalk
 	// Link is the href of another page's mockup; nil links nowhere.
 	Link func(pageID string) string
+	// Project is the source of lifecycles and roles; nil for a pattern
+	// reference. Sim is the prototype role and document status chosen in
+	// the URL. Self is this page's mockup URL (form action); empty on a
+	// static export, which cannot change status.
+	Project *core.Project
+	Sim     Sim
+	Self    string
 }
 
 // DocOf is the design of a project.
 func DocOf(p *core.Project) Doc {
-	d := Doc{Name: p.Name}
+	d := Doc{Name: p.Name, Project: p}
 	if p.UI != nil {
 		d.Rules, d.Layout = p.UI.Rules, p.UI.Layout
 		d.Walks = core.FlowWalks(p, p.UI.Layout)
@@ -73,11 +80,26 @@ func (d Doc) shell(id string) *core.LayoutShell {
 }
 
 func (d Doc) href(id string) string {
-	if d.Link == nil {
-		return "#"
+	h := "#"
+	if d.Link != nil {
+		h = d.Link(id)
 	}
-	return d.Link(id)
+	return WithSim(h, d.Sim.Nav())
 }
+
+// hrefAt is a prototype navigation that arrives on id in status, flashing
+// feedback. Static exports ignore the query; the live mockup re-renders.
+func (d Doc) hrefAt(id, status, feedback string) string {
+	sim := d.Sim.Nav()
+	sim.Status, sim.Feedback = status, feedback
+	h := "#"
+	if d.Link != nil {
+		h = d.Link(id)
+	}
+	return WithSim(h, sim)
+}
+
+func (d Doc) live() bool { return strings.TrimSpace(d.Self) != "" }
 
 // RenderPage renders one page of the design in a state ("" or "default"
 // is the populated page; loading, empty, error, ... show that state).
@@ -100,7 +122,7 @@ func (k *Kit) RenderPage(d Doc, id, state string) (string, error) {
 // PageHash identifies the populated mockup of a page: an approval holds
 // while the hash does.
 func (k *Kit) PageHash(d Doc, id string) string {
-	d.Link = nil
+	d.Link, d.Sim, d.Self = nil, Sim{}, ""
 	out, err := k.RenderPage(d, id, "")
 	if err != nil {
 		return ""
@@ -242,15 +264,20 @@ func (r *render) html() string {
 	centered := hasPat && pat.Frame == "centered" && (shell == nil || shell.Pattern == "auth")
 	switch {
 	case centered:
-		r.w(`<body><div class="fk-centered">`)
+		r.w(`<body>`)
+		r.simBanner()
+		r.w(`<div class="fk-centered">`)
 		r.centered = true
 		r.pageBody(pat, hasPat, secs)
 		r.w(`</div>`)
 	case shell != nil && (shell.Pattern == "sidebar" || shell.Pattern == "navbar"):
 		r.w(`<body>`)
+		r.simBanner()
 		r.shell(shell, pat, hasPat, secs)
 	default:
-		r.w(`<body class="fk-frame-plain"><main class="fk-main">`)
+		r.w(`<body class="fk-frame-plain">`)
+		r.simBanner()
+		r.w(`<main class="fk-main">`)
 		r.pageBody(pat, hasPat, secs)
 		r.w(`</main>`)
 	}
@@ -645,6 +672,12 @@ func (r *render) pageBody(pat *Pattern, ok bool, secs []core.Section) {
 		r.w(`</p>`)
 	}
 	r.w(`<h1>` + esc(pg.Name) + `</h1>`)
+	if lc, st := r.simLifecycle(), r.simState(); lc != nil && st != nil {
+		r.f(`<p class="fk-note"><span class="fk-badge" data-foundry-sim="status">%s</span> %s</p>`, esc(lc.StateLabel(st.ID)), esc(lc.Entity))
+	}
+	if r.doc.Sim.Role != "" && !core.RoleAllowed(pg.Role, r.doc.Sim.Role) {
+		r.f(`<p class="fk-note" data-foundry-sim="role">Peran %s tidak memakai halaman ini.</p>`, esc(r.doc.Sim.Role))
+	}
 	if pg.Purpose != "" {
 		r.w(`<p>` + esc(pg.Purpose) + `</p>`)
 	}

@@ -28,6 +28,7 @@ type discoveryOut struct {
 	Requirements []core.Requirement `json:"requirements"`
 	Features     []core.Feature     `json:"features"`
 	Flows        []core.Flow        `json:"flows"`
+	Lifecycles   []core.Lifecycle   `json:"lifecycles"`
 	Platform     core.PlatformPlan  `json:"platform"`
 	Artifacts    []core.Artifact    `json:"artifacts"`
 	Done         []string           `json:"definition_of_done"`
@@ -110,7 +111,7 @@ Do not use the ids requirements, survey-decisions, architecture, technology, des
 FOR THIS ANSWER ONLY: return "artifacts" as an empty list []. Foundry asks for each blueprint area document (data, security,
 integration, operations, migration, and other documents) in its own next step, one area at a time, so do not write any now.
 This overrides every rule above that asks you to write area or extra documents in this answer. Still return the structured
-parts (discovery, blueprint, requirements, features, flows, platform, decisions, skip, definition_of_done) in full.
+parts (discovery, blueprint, requirements, features, flows, lifecycles, platform, decisions, skip, definition_of_done) in full.
 Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
 {
   "name": "short product name",
@@ -138,6 +139,7 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block, shape:
   "features": [{"id": "FEAT-001", "source_id": "feature map node id", "name": "", "description": "", "requirement_ids": ["REQ-001"], "platforms": ["web","backend"],
                 "sub_features": [{"id": "FEAT-001.1", "source_id": "child node id", "name": ""}]}],
   "flows": [` + useCaseShape + `],
+  "lifecycles": [` + lifecycleShape + `],
   "platform": {"targets": [{"kind": "web", "rationale": ""}], "reason": "one short sentence for a non-technical user"},
   "artifacts": [{"id": "threat-model", "title": "", "category": "quality", "area": "security", "summary": "", "body": "Markdown", "refs": []}],
   "definition_of_done": [""],
@@ -236,14 +238,23 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 		}
 	}
 	var flows []core.Flow
+	flowIDs := map[string]string{} // the answer's use case id -> its number here
 	for _, fl := range out.Flows {
 		fid, ok := featMap[fl.FeatureID]
 		if !ok || len(fl.Steps) == 0 {
 			continue
 		}
 		fl = normFlow(fl)
+		given := fl.ID
 		fl.ID, fl.FeatureID, fl.PageIDs, fl.StepPages, fl.BranchPages = fmt.Sprintf("FLOW-%03d", len(flows)+1), fid, nil, nil, nil
+		if given != "" {
+			flowIDs[given] = fl.ID
+		}
 		flows = append(flows, fl)
+	}
+	lifecycles, _, err := mergeLifecycles(nil, out.Lifecycles, nil, flows, flowIDs)
+	if err != nil {
+		return err
 	}
 	var targets []core.PlatformTarget
 	for _, t := range out.Platform.Targets {
@@ -280,7 +291,7 @@ func ApplyDiscovery(p *core.Project, raw string) error {
 	} else {
 		p.Blueprint = nextBP
 	}
-	p.Requirements, p.Features, p.Flows = reqs, feats, flows
+	p.Requirements, p.Features, p.Flows, p.Lifecycles = reqs, feats, flows, lifecycles
 	if p.FeatureMap.Empty() {
 		p.FeatureMap = core.FeatureMapFromFeatures(feats)
 	}

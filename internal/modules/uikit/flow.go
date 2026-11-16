@@ -38,11 +38,11 @@ func (r *render) headActions() {
 		r.f(`<a class="fk-btn" href="%s" data-foundry-link="%s">%s%s</a>`, esc(r.doc.href(n.page)), esc(n.page), esc(n.label), icon("right"))
 	}
 	if pa != "" {
-		cls, confirm := "fk-btn fk-btn-primary", ""
+		cls := "fk-btn fk-btn-primary"
 		if core.DangerAction(pa) {
-			cls, confirm = "fk-btn fk-btn-danger", ` data-foundry-confirm="true"`
+			cls = "fk-btn fk-btn-danger"
 		}
-		r.f(`<button class="%s"%s%s>%s%s</button>`, cls, confirm, r.disabled(), actionIcon(pa), esc(pa))
+		r.actionControl(pa, cls, true)
 	}
 	r.w(`</div>`)
 }
@@ -215,6 +215,12 @@ func writeWalks(b *strings.Builder, d Doc) {
 			}
 			if st.Risky {
 				b.WriteString(` <span class="fk-badge fk-badge-error">Perlu konfirmasi</span>`)
+			}
+			if st.Group > 0 {
+				fmt.Fprintf(b, ` <span class="fk-badge">Paralel %d</span>`, st.Group)
+			}
+			for _, s := range st.Status {
+				fmt.Fprintf(b, ` <span class="fk-meta">%s</span>`, esc(s))
 			}
 			b.WriteString(`</li>`)
 		}

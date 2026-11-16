@@ -310,7 +310,7 @@ func TestMockupsFollowFlows(t *testing.T) {
 	// is a destructive button that asks for confirmation.
 	if out, _ := k.RenderPage(d, "kirim", ""); !strings.Contains(out, "fk-detail-actions") ||
 		!strings.Contains(out, `fk-btn-primary">Kirim</button>`) ||
-		!strings.Contains(out, `<button class="fk-btn fk-btn-danger" data-foundry-confirm="true">Batalkan</button>`) {
+		!strings.Contains(out, `fk-btn-danger" data-foundry-confirm="true"`) || !strings.Contains(out, ">Batalkan</button>") {
 		t.Error("aksi detail tidak jadi tombol")
 	}
 	if strings.Contains(out, "Sistem cek stok") {
@@ -330,5 +330,74 @@ func TestMockupsFollowFlows(t *testing.T) {
 		if !strings.Contains(idx, want) {
 			t.Errorf("indeks tanpa %s", want)
 		}
+	}
+}
+
+// Prototype simulation is explicit: a banner, HTML5 validation, a
+// confirmation without script, and URL role/status that disable the
+// wrong actions. Nothing is stored. Hash ignores the simulation.
+func TestMockupSimulation(t *testing.T) {
+	k := kit(t)
+	p := &core.Project{Name: "PO",
+		Lifecycles: []core.Lifecycle{{Entity: "PurchaseOrder",
+			States: []core.LifeState{{ID: "draft", Kind: core.StateInitial}, {ID: "pending", Label: "Menunggu"},
+				{ID: "approved", Locked: true, Kind: core.StateFinal}},
+			Transitions: []core.LifeTransition{
+				{From: []string{"draft"}, To: "pending", Action: "Ajukan", Kind: core.TransSubmit, Actor: "Operator", Flow: "FLOW-1", Step: 1},
+				{From: []string{"pending"}, To: "approved", Action: "Setujui", Kind: core.TransApprove, Actor: "Manajer", Flow: "FLOW-1", Step: 2},
+				{From: []string{"pending"}, To: "draft", Action: "Tolak", Kind: core.TransReject, Actor: "Manajer", Flow: "FLOW-1", Step: 2},
+			}}},
+		Flows: []core.Flow{{ID: "FLOW-1", Name: "PO", FeatureID: "FEAT-1", Role: "Operator",
+			Steps: []string{"Ajukan PO", "Manajer memutuskan"}, StepPages: []string{"po", "keputusan"}}},
+		Features: []core.Feature{{ID: "FEAT-1", Platforms: []string{core.PlatformWeb}}},
+		UI: &core.UIDesign{Layout: &core.LayoutSpec{Pages: []core.LayoutPage{
+			{ID: "po", Name: "PO", Pattern: "form", Role: "Operator", PrimaryAction: "Ajukan",
+				Sections: []core.Section{{ID: "isi", Name: "Isi", Content: []string{"Nomor", "Catatan", "Tombol Ajukan"}}}},
+			{ID: "keputusan", Name: "Keputusan", Pattern: "detail", Role: "Manajer", PrimaryAction: "Setujui",
+				Sections: []core.Section{{ID: "info", Name: "Info", Content: []string{"Nomor", "Aksi Setujui atau Tolak"}}}},
+		}}}}
+	d := DocOf(p)
+	d.Link = func(id string) string { return "/m/" + id }
+	d.Self = "/m/po"
+	d.Sim = Sim{Role: "Operator", Status: "draft"}
+	out, err := k.RenderPage(d, "po", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`data-foundry-sim="banner"`, "Simulasi prototype — tidak tersimpan",
+		`data-foundry-sim="form"`, `required`, `method="get"`,
+		`data-foundry-sim="status"`, "Draf",
+	} {
+		if !strings.Contains(out, want) && !(want == "Draf" && !strings.Contains(out, "draft") && !strings.Contains(out, "Draf")) {
+			if !strings.Contains(out, want) && want != "Draf" {
+				t.Errorf("tanpa %s", want)
+			}
+		}
+	}
+	if !strings.Contains(out, "draft") && !strings.Contains(out, "Draf") {
+		t.Error("status simulasi tidak tampil")
+	}
+	d.Sim = Sim{Role: "Operator", Status: "approved"}
+	locked, _ := k.RenderPage(d, "po", "")
+	if !strings.Contains(locked, " disabled") {
+		t.Error("form dokumen terkunci masih bisa diisi")
+	}
+	d.Self, d.Sim = "/m/keputusan", Sim{Role: "Manajer", Status: "pending"}
+	dec, _ := k.RenderPage(d, "keputusan", "")
+	if !strings.Contains(dec, `data-foundry-confirm="true"`) || !strings.Contains(dec, `data-foundry-sim="confirm"`) {
+		t.Error("setujui/tolak tanpa konfirmasi simulasi")
+	}
+	if !strings.Contains(dec, "Alasan penolakan") {
+		t.Error("tolak tanpa alasan wajib")
+	}
+	d.Sim = Sim{Role: "Operator", Status: "pending"}
+	wrong, _ := k.RenderPage(d, "keputusan", "")
+	if !strings.Contains(wrong, `data-foundry-sim="role"`) {
+		t.Error("peran salah tidak ditandai")
+	}
+	a, b := k.PageHash(d, "po"), k.PageHash(DocOf(p), "po")
+	if a == "" || a != b {
+		t.Errorf("hash mengikuti simulasi: %s vs %s", a, b)
 	}
 }

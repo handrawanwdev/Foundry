@@ -126,10 +126,10 @@ func completeFlows(p *core.Project, l *core.LayoutSpec, flows []core.Flow) {
 		if !check.ScreenFlow(fl) {
 			continue
 		}
-		steps := core.MapFlowSteps(l, fl)
+		steps := check.FlowSteps(l, fl)
 		for i := 1; i < len(fl.PageIDs); i++ {
 			to := page(l, fl.PageIDs[i])
-			if to == nil {
+			if to == nil || core.ParallelHop(steps, fl.PageIDs[i-1], to.ID) {
 				continue
 			}
 			via := "Lanjut ke " + to.Name

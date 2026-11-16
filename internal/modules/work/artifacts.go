@@ -102,7 +102,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 	b.WriteString(scopeRules)
 	b.WriteString(`Revision rules:
 - change only what the request needs. Return only the artifacts, use cases, acceptance entries and decisions you add or change, each in full; the others stay as they are. Omit definition_of_done to keep it.
-- use-cases, acceptance and decisions are built-in artifacts: change them through use_cases, acceptance, definition_of_done and decisions. requirements, survey-decisions, architecture, technology, design-rules, layout-spec and system-overview cannot be rewritten here. A passage there that contradicts a decided decision does not win: name the contradiction and follow the decision. Do not create a new artifact whose only job is to restate a decided decision (that document would hang on its own and other agents would miss it). For a technology change also add an open decision asking the user to change it in Foundry's technology step.
+- use-cases, acceptance and decisions are built-in artifacts: change them through use_cases, lifecycles, acceptance, definition_of_done and decisions. requirements, survey-decisions, architecture, technology, design-rules, layout-spec and system-overview cannot be rewritten here. A passage there that contradicts a decided decision does not win: name the contradiction and follow the decision. Do not create a new artifact whose only job is to restate a decided decision (that document would hang on its own and other agents would miss it). For a technology change also add an open decision asking the user to change it in Foundry's technology step.
 - a new use case or decision gets an empty id; keep the id of a changed one.
 - when you decide, change or reopen a decision, also return in this answer every artifact, use case and acceptance entry that contradicts its new state, rewritten to follow it. The commands are brought in line after this answer.
 - do not drop content that still applies.
@@ -110,6 +110,7 @@ PROJECT: ` + p.Name + "\nSTORY:\n" + p.Story + "\n\n")
 Reply with ONLY one JSON object in a ` + "```json" + ` block:
 {"artifacts": [{"id": "threat-model", "title": "", "category": "quality", "area": "security", "summary": "", "body": "", "refs": []}], "remove": ["artifact-id"],
  "use_cases": [` + useCaseShape + `], "remove_use_cases": ["FLOW-009"],
+ "lifecycles": [` + lifecycleShape + `], "remove_lifecycles": ["Entity"],
  "acceptance": [{"requirement": "REQ-001", "criteria": [` + criterionShape + `], "untestable": ""}],
  "definition_of_done": [""], "decisions": [` + decisionShape + `],
  "skip": [{"area": "migration", "reason": ""}], "unskip": ["area"]}`)
@@ -117,7 +118,8 @@ Reply with ONLY one JSON object in a ` + "```json" + ` block:
 }
 
 const (
-	useCaseShape   = `{"id": "FLOW-001", "name": "", "feature_id": "FEAT-001", "role": "", "goal": "", "trigger": "", "preconditions": [""], "steps": [""], "postconditions": [""], "alternatives": [""], "failures": [""], "business_rules": [""], "permissions": [""], "data_effects": [""], "integrations": [""]}`
+	useCaseShape   = `{"id": "FLOW-001", "name": "", "feature_id": "FEAT-001", "role": "", "goal": "", "trigger": "", "preconditions": [""], "steps": [""], "postconditions": [""], "alternatives": [""], "failures": [""], "business_rules": [""], "permissions": [""], "data_effects": [""], "integrations": [""], "parallel": [{"steps": [3, 4], "join": "all", "then": 5, "timeout": "", "on_timeout": ""}]}`
+	lifecycleShape = `{"entity": "PurchaseOrder", "states": [{"id": "draft", "label": "", "kind": "initial|final", "locked": false}], "transitions": [{"from": ["draft"], "to": "", "action": "", "kind": "submit|approve|reject|revise|cancel|complete", "actor": "", "flow": "FLOW-001", "step": 2, "guard": ""}]}`
 	criterionShape = `{"id": "REQ-001-AC1", "kind": "behavior|negative|edge|security|performance|compatibility|accessibility", "text": "", "evidence": ""}`
 	decisionShape  = `{"id": "DEC-001", "kind": "assumption|question|conflict|risk", "text": "", "area": "", "critical": false, "resolution": ""}`
 )

@@ -48,8 +48,12 @@ type Project struct {
 	Requirements []Requirement `json:"requirements"`
 	Features     []Feature     `json:"features"`
 	Flows        []Flow        `json:"flows"`
-	Platform     *PlatformPlan `json:"platform,omitempty"`
-	Structure    *Structure    `json:"structure,omitempty"`
+	// Lifecycles are the status models of the business documents the use
+	// cases move (an order, a request, an invoice): written with the use
+	// cases, each transition traced to the step that performs it.
+	Lifecycles []Lifecycle   `json:"lifecycles,omitempty"`
+	Platform   *PlatformPlan `json:"platform,omitempty"`
+	Structure  *Structure    `json:"structure,omitempty"`
 	// Stack is the technology decision every later stage builds with.
 	Stack *TechStack `json:"stack,omitempty"`
 	// UI is the design rules and layout specification of a product with
@@ -393,6 +397,22 @@ type Flow struct {
 	// Integrations the external systems the use case calls or notifies.
 	Data         []string `json:"data_effects,omitempty"`
 	Integrations []string `json:"integrations,omitempty"`
+	// Parallel are the groups of steps that happen at the same time; the
+	// other steps follow each other in order.
+	Parallel []ParallelSteps `json:"parallel,omitempty"`
+}
+
+// ParallelSteps are steps of a use case done at the same time (approvals by
+// several roles, a system job beside a user task). Join says when the flow
+// goes on: "all" of them, "any" one, or a number of them; Then is the step
+// that waits for them (0: the step after the group). Timeout and OnTimeout
+// say what happens when they take too long (an escalation).
+type ParallelSteps struct {
+	Steps     []int  `json:"steps"`
+	Join      string `json:"join,omitempty"`
+	Then      int    `json:"then,omitempty"`
+	Timeout   string `json:"timeout,omitempty"`
+	OnTimeout string `json:"on_timeout,omitempty"`
 }
 
 // KeepScreens carries the screen mapping of the stored version of a use

@@ -343,7 +343,8 @@ function ScopeEditor({ doc, project, onDone }: { doc: string; project: Project; 
       <JsonEditor
         initial={project.flows ?? []}
         hint={"Per use case wajib: role (aktor), goal, steps (alur utama), postconditions, dan alternatives atau failures. " +
-          "Opsional: preconditions, business_rules, permissions, data_effects, integrations. feature_id harus ada; id kosong = use case baru."}
+          "Opsional: trigger, preconditions, business_rules, permissions, data_effects, integrations, parallel (langkah bersamaan: steps, join all|any|N, then, timeout). " +
+          "feature_id harus ada; id kosong = use case baru. Siklus status dokumen (lifecycles) ditulis AI bersama use case, bukan di editor ini."}
         save={(data) => api.editUseCases(data as Flow[])}
         onDone={onDone}
       />

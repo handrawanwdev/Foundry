@@ -28,6 +28,11 @@ type FlowStep struct {
 	// that cannot be undone (delete, cancel, post) and needs confirmation.
 	Decision bool `json:"decision,omitempty"`
 	Risky    bool `json:"risky,omitempty"`
+	// Group is the parallel group (1-based) the step runs in, 0 when it
+	// follows the step before it; Status the document status changes it
+	// makes ("PurchaseOrder: Draft → Diajukan").
+	Group  int      `json:"group,omitempty"`
+	Status []string `json:"status,omitempty"`
 }
 
 // FlowBranch is an alternative or failure scenario of a use case: the step
@@ -68,6 +73,8 @@ type FlowWalk struct {
 	Branches     []FlowBranch `json:"branches,omitempty"`
 	Alternatives []string     `json:"alternatives,omitempty"`
 	Failures     []string     `json:"failures,omitempty"`
+	// Parallel are the step groups done at the same time.
+	Parallel []ParallelSteps `json:"parallel,omitempty"`
 }
 
 // FlowWalks lists the use cases that have screens, each step placed on a
@@ -86,11 +93,60 @@ func FlowWalks(p *Project, l *LayoutSpec) []FlowWalk {
 		if len(flowPages(l, fl)) == 0 {
 			fl.PageIDs, w.Inferred = InferFlowPages(l, fl), true
 		}
-		w.Pages, w.Steps = flowPages(l, fl), MapFlowSteps(l, fl)
+		w.Pages, w.Steps = flowPages(l, fl), p.FlowSteps(l, fl)
 		w.Branches = MapFlowBranches(l, fl, w.Steps)
+		w.Parallel = fl.Parallel
 		out = append(out, w)
 	}
 	return out
+}
+
+// FlowSteps places the steps of a use case on its pages (MapFlowSteps)
+// with what the use case declares about them (markSteps).
+func (p *Project) FlowSteps(l *LayoutSpec, fl Flow) []FlowStep {
+	steps := MapFlowSteps(l, fl)
+	p.markSteps(fl, steps)
+	return steps
+}
+
+// markSteps adds what the use case declares to its placed steps: the
+// parallel group of each step, and the document status changes from the
+// lifecycles. A flow whose transitions name their steps decides where the
+// words would only guess: a step is a decision when it approves or rejects
+// a document.
+func (p *Project) markSteps(fl Flow, steps []FlowStep) {
+	trans := p.StepTransitions(fl.ID)
+	for i := range steps {
+		st := &steps[i]
+		st.Group = ParallelGroup(fl, st.N)
+		if len(trans) == 0 {
+			continue
+		}
+		st.Decision = false
+		for _, t := range trans[st.N] {
+			st.Status = append(st.Status, p.LifecycleOf(t.Entity).TransitionText(t.T))
+			if !st.System && (t.T.Kind == TransApprove || t.T.Kind == TransReject) {
+				st.Decision = true
+			}
+		}
+	}
+}
+
+// ParallelHop reports whether moving from one page of a flow to the next
+// goes between two steps done at the same time: no one walks from one to
+// the other, so the pages need no link.
+func ParallelHop(steps []FlowStep, from, to string) bool {
+	last := -1
+	for j, st := range steps {
+		switch {
+		case st.Page == from:
+			last = j
+		case st.Page == to && last >= 0:
+			g := steps[last].Group
+			return g != 0 && g == st.Group
+		}
+	}
+	return false
 }
 
 // StepsDeclared reports whether the designer placed every step of the flow
@@ -181,8 +237,11 @@ func MapFlowSteps(l *LayoutSpec, fl Flow) []FlowStep {
 			case id == "":
 				st.System, st.Page, st.Placed = true, cur, cur != ""
 			case layoutPage(l, id) != nil:
+				// A system activity the designer shows on a page (its
+				// feedback) stays a system step: it is not a task of the
+				// user to place.
 				cur = id
-				st.Page, st.Placed = id, true
+				st.Page, st.Placed, st.System = id, true, SystemStep(st.Text)
 			default:
 				st.Page = cur // a page that does not exist: reported by flowIssues
 			}
@@ -539,16 +598,16 @@ func flowIssues(p *Project, l *LayoutSpec, rules *DesignRules, format int) []Iss
 			add(IssueWarning, where, "use case %s %s belum dipetakan ke halaman (flows): layar tidak bisa ditelusuri per langkah", fl.ID, fl.Name)
 			continue
 		}
+		steps := p.FlowSteps(l, fl)
 		for i := 1; i < len(pages); i++ {
 			from, to := pages[i-1], pages[i]
-			if from == to {
+			if from == to || ParallelHop(steps, from, to) {
 				continue
 			}
 			if pg := layoutPage(l, from); !slices.ContainsFunc(pg.Links, func(ln PageLink) bool { return ln.To == to }) {
 				add(level, "page:"+from, "use case %s berlanjut ke %q tetapi halaman ini belum punya link ke sana", fl.ID, to)
 			}
 		}
-		steps := MapFlowSteps(l, fl)
 		perPage := map[string]int{}
 		decision := 0
 		for _, st := range steps {
@@ -756,7 +815,8 @@ func DecisionStep(text string) bool {
 	if ApprovalRequest(text) {
 		return false
 	}
-	w := stems(text)
+	// "Approver" names who decides, not the decision.
+	w := slices.DeleteFunc(stems(text), func(x string) bool { return strings.HasPrefix(x, "approver") })
 	return hasStem(w, "setuju", "approv", "tolak", "reject") || hasStem(w, "putus")
 }
 
@@ -829,12 +889,21 @@ func StepAction(text string) string {
 			t = t[:i]
 		}
 	}
+	// A label cut in the middle does not end on a joining word ("Buat
+	// DeviceCommand dengan").
+	for f := strings.Fields(t); len(f) > 1 && joinWords[strings.ToLower(f[len(f)-1])]; f = f[:len(f)-1] {
+		t = strings.Join(f[:len(f)-1], " ")
+	}
 	if t == "" {
 		return t
 	}
 	r := []rune(t)
 	return strings.ToUpper(string(r[0])) + string(r[1:])
 }
+
+// joinWords end a phrase that was cut short.
+var joinWords = map[string]bool{"dan": true, "atau": true, "dengan": true, "untuk": true, "ke": true, "di": true, "dari": true,
+	"yang": true, "pada": true, "and": true, "or": true, "with": true, "for": true, "to": true, "of": true, "the": true}
 
 // ActionPatterns are the page patterns whose header carries the action
 // that starts a task.

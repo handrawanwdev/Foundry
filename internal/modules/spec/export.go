@@ -448,6 +448,7 @@ func filesOf(p *core.Project, m Manifest, docs []core.Artifact) map[string]strin
 				Flows []core.Flow `json:"flows,omitempty"`
 			}{d.Layout, pageFlowList(p.Flows)})
 			out["review/design-gate.md"] = designGateMarkdown(p)
+			out["review/design-benchmark.md"] = designBenchmarkMarkdown(p)
 		}
 	}
 	for path, body := range mockupFiles(p) {
@@ -573,6 +574,7 @@ func packageReadme(p *core.Project, m Manifest, docs []core.Artifact) string {
 	if p.UI != nil && p.UI.Layout != nil && len(p.UI.Layout.Pages) > 0 {
 		b.WriteString("Mockup HTML tiap halaman (acuan tampilan untuk dibangun): [design/mockups/index.html](design/mockups/index.html).\n")
 		b.WriteString("Quality gate desain (requirement dan use case ke layar, navigasi, peran, skenario gagal): [review/design-gate.md](review/design-gate.md).\n")
+		b.WriteString("Benchmark kualitas desain per dimensi (struktural, semantik, visual, interaksi, bisnis — tidak digabung jadi satu skor): [review/design-benchmark.md](review/design-benchmark.md).\n")
 	}
 	if p.Visual != nil && len(p.Visual.Pages) > 0 {
 		b.WriteString("Evaluasi visual UI yang diimplementasikan: [review/visual.md](review/visual.md). Halaman tanpa screenshot belum diuji.\n")
