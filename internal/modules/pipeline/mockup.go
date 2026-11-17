@@ -49,6 +49,16 @@ func (s *Service) DesignGate() (core.DesignGate, error) {
 	return p.DesignGate(), nil
 }
 
+// DesignDrift is what changed in the features, use cases and blueprint
+// since the design, and so the mockups, were last written or synced.
+func (s *Service) DesignDrift() (core.DesignDrift, error) {
+	p, err := s.Store.Load()
+	if err != nil {
+		return core.DesignDrift{}, err
+	}
+	return p.DesignDrift(), nil
+}
+
 // DesignBenchmark is the per-dimension quality report of the current design.
 func (s *Service) DesignBenchmark() (core.DesignBenchmark, error) {
 	p, err := s.Store.Load()

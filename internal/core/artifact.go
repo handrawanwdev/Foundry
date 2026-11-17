@@ -130,8 +130,9 @@ type ChangeRequest struct {
 	// decisions: the artifact request is followed by the workflow request.
 	Cascade bool `json:"cascade,omitempty"`
 	// Sync marks a request that brings the blueprint or the commands in
-	// line with changed decisions; an answer without changes is valid,
-	// nothing contradicted them.
+	// line with changed decisions, or the design in line with its features,
+	// use cases and blueprint; an answer without changes is valid, nothing
+	// contradicted them.
 	Sync bool `json:"sync,omitempty"`
 	// Handled lists what the earlier rounds of a workflow revision did
 	// ("changed CMD-002", "added CMD-007", "removed CMD-004"): a revision

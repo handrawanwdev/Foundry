@@ -399,6 +399,12 @@ export interface FlowTrace {
   id: string; name: string; role?: string; pages: string[]; steps: number; placed: number; branches: number; shown: number;
   inferred?: boolean; declared?: boolean; status: GateStatus;
 }
+// DesignDrift is what changed in the features, use cases and blueprint
+// since the design (and its mockups) was last written or synced; known is
+// false for a design written before Foundry kept track.
+export interface DriftItem { kind: "feature" | "flow" | "data" | "access" | "requirements"; id?: string; name?: string; change: "added" | "changed" | "removed" }
+export interface DesignDrift { known: boolean; items: DriftItem[] }
+
 export interface DesignGate {
   ready: boolean; verdict: "ready" | "review" | "blocked"; summary: string; checks: GateCheck[]; requirements: ReqTrace[]; flows: FlowTrace[];
   errors: number; warnings: number; notes: number; assumptions?: string[]; unknowns?: string[];

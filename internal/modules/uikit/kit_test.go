@@ -863,7 +863,7 @@ func TestDetailActions(t *testing.T) {
 	d.Layout.Pages = append(d.Layout.Pages, core.LayoutPage{ID: "pesanan-detail", Name: "Detail Pesanan", Pattern: "detail", Shell: "app",
 		Sections: []core.Section{{ID: "info", Name: "Identitas dan aksi", Content: []string{"Nomor, pelanggan", "Aksi sesuai status: Konfirmasi, Batalkan untuk Admin, Buat retur"}}}})
 	out, _ := k.RenderPage(d, "pesanan-detail", "")
-	for _, want := range []string{`<div class="fk-actions fk-detail-actions fk-detail-actions-sep">`, `fk-btn fk-btn-primary`,
+	for _, want := range []string{`<div class="fk-actions fk-hero-acts">`, `fk-btn fk-btn-primary`, `<h3>Pesanan #1048</h3>`,
 		`<div class="fk-actions fk-actions-end"><button class="fk-btn fk-btn-danger"`, `title="Batalkan untuk Admin"`, `>Batalkan</button>`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("aksi detail tanpa %s", want)

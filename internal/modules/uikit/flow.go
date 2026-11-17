@@ -45,6 +45,11 @@ func (r *render) headActions() {
 	}
 	r.w(`<div class="fk-actions">`)
 	for _, ln := range links {
+		if has(strings.ToLower(ln.label), "kembali", "back") {
+			// The way back points back.
+			r.f(`<a class="fk-btn fk-btn-ghost" href="%s" data-foundry-link="%s">%s%s</a>`, esc(r.doc.href(ln.page)), esc(ln.page), icon("left"), esc(ln.label))
+			continue
+		}
 		r.f(`<a class="fk-btn" href="%s" data-foundry-link="%s">%s%s</a>`, esc(r.doc.href(ln.page)), esc(ln.page), esc(ln.label), icon("right"))
 	}
 	switch {

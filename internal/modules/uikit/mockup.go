@@ -272,7 +272,9 @@ type render struct {
 	forms []formRec
 	// fplan is the page's form, mapped once (plan).
 	fplan *formPlan
-	asks  []ask
+	// heroUsed marks the page fields the record's header shows.
+	heroUsed []bool
+	asks     []ask
 	// steppers and collections count the page's steppers and tables/lists;
 	// contentIssues are what they show wrongly, for the quality gate.
 	steppers, collections int
@@ -287,12 +289,14 @@ func (r *render) html() string {
 	pg := r.page
 	tokens := r.kit.Resolve(r.doc.Rules)
 	pat, hasPat := r.kit.Pattern(pg.Pattern)
+	hero := r.heroSection() != ""
 	secs := slices.DeleteFunc(r.kit.AssignSlots(pg.Pattern, pg.Sections), func(s core.Section) bool {
 		if core.DialogSection(pg.Pattern, s) {
 			r.dialogs = append(r.dialogs, parseDialog(s))
 			return true
 		}
-		return false
+		// A record's buttons stand beside its title.
+		return hero && actionOnly(s) && r.state == ""
 	})
 	placed := *pg
 	placed.Sections = secs
@@ -360,7 +364,8 @@ const mobileCSS = `.fk-side{display:none}.fk-burger{display:inline-grid}.fk-top-
 	`.fk-detail-actions>.fk-btn{flex:1 1 auto}.fk-actions-end{margin-left:0;width:100%}.fk-actions-end>.fk-btn{flex:1}` +
 	`.fk-pager{padding:var(--space-sm) var(--space-md)}.fk-pager-size{display:none}.fk-pages .fk-pg:not(.fk-nav-pg):not(.on){display:none}.fk-gap{display:none}` +
 	`.fk-sec-head{padding:var(--space-md)}.fk-list li{padding:var(--space-sm) var(--space-md)}` +
-	`.fk-form-bar .fk-form-note{display:none}.fk-form-bar>.fk-btn{flex:1}`
+	`.fk-form-bar .fk-form-note{display:none}.fk-form-bar>.fk-btn{flex:1}` +
+	`.fk-hero-acts{width:100%;justify-content:stretch}.fk-hero-acts>.fk-btn{flex:1}.fk-hero-acts>.fk-actions-end{width:100%;margin:0}.fk-hero-acts>.fk-actions-end>.fk-btn{flex:1}.fk-feed li{flex-direction:column;gap:4px}.fk-feed-when{text-align:left}.fk-figures{grid-template-columns:repeat(2,minmax(0,1fr))}`
 
 func breakpoint(t core.DesignTokens, def int) int {
 	for _, tok := range t.Breakpoints {

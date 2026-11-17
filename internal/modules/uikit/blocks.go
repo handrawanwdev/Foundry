@@ -92,6 +92,20 @@ func (r *render) section(s core.Section, sl Slot, slotted bool) {
 	s, r.secLinks = r.sectionLinks(s)
 	defer func() { r.secLinks = nil }()
 	kind := r.kindOf(s, sl)
+	if r.page.Pattern == "detail" && r.state == "" {
+		switch {
+		case s.ID == r.heroSection():
+			kind = "hero"
+		case actionOnly(s) && r.heroSection() != "":
+			return // its buttons stand beside the record's title
+		case kind == "tabbar" || slices.ContainsFunc(s.Components, func(c string) bool { return strings.EqualFold(c, "Tabs") }):
+			kind = "recordtabs"
+		case (kind == "activity" || kind == "list" || kind == "table") && r.historyColumns(s) != nil:
+			kind = "history"
+		case kind == "activity" && r.namesShown(s):
+			kind = "detail" // the record's values, not a history
+		}
+	}
 	slot := ""
 	if slotted {
 		slot = fmt.Sprintf(` data-slot="%s"`, esc(s.Slot))
@@ -112,7 +126,7 @@ func (r *render) section(s core.Section, sl Slot, slotted bool) {
 		cls += " fk-flush"
 	}
 	h2 := `<h2>`
-	if r.panelOpen && (kind == "toolbar" || kind == "pagination" || kind == "tabbar") {
+	if kind == "hero" || r.panelOpen && (kind == "toolbar" || kind == "pagination" || kind == "tabbar") {
 		h2 = `<h2 class="fk-sr">`
 	}
 	if len(r.secLinks) > 0 && r.state != "loading" {
@@ -127,6 +141,20 @@ func (r *render) section(s core.Section, sl Slot, slotted bool) {
 		return
 	}
 	switch kind {
+	case "hero":
+		r.hero(s)
+	case "recordtabs":
+		tabs := tabItems(s)
+		if len(tabs) == 0 {
+			tabs = items(s)
+		}
+		r.tabPanel(s, tabs)
+	case "history":
+		_, _, notes := r.recordFacts(core.Section{Content: slices.DeleteFunc(slices.Clone(s.Content), func(c string) bool { return strings.Contains(c, ":") })}, make([]bool, len(r.fields(shownPres...))))
+		r.feed(r.historyColumns(s), 5)
+		for _, n := range notes {
+			r.f(`<p class="fk-help">%s</p>`, esc(n))
+		}
 	case "toolbar":
 		var els []string
 		for _, c := range s.Content {
@@ -1281,6 +1309,20 @@ func (r *render) cards(s core.Section) {
 }
 
 func (r *render) detail(s core.Section) {
+	if r.page.Pattern == "detail" {
+		// A detail page names its record's values by its own fields.
+		used := r.heroUsed
+		if used == nil {
+			used = make([]bool, len(r.fields(shownPres...)))
+		}
+		facts, acts, notes := r.recordFacts(s, used)
+		for _, n := range notes {
+			r.f(`<p class="fk-sec-desc">%s</p>`, esc(n))
+		}
+		r.factList(facts, true)
+		r.recordActions(acts, "fk-detail-actions")
+		return
+	}
 	// "Aksi sesuai status: Konfirmasi, Batalkan" lists the record's
 	// actions, not its fields.
 	var acts []string
@@ -2086,7 +2128,7 @@ func sample(label string, row int) string {
 		return pick("24", "8", "130", "3", "57", "12")
 	case has(l, "email", "surel"):
 		return pick("andi@contoh.id", "sari@contoh.id", "budi@contoh.id", "rina@contoh.id", "dewi@contoh.id", "eko@contoh.id")
-	case has(l, "telepon", "phone", "whatsapp", "no hp", "nomor hp", "ponsel"):
+	case has(l, "telepon", "phone", "whatsapp", "no hp", "nomor hp", "ponsel", "kontak"):
 		return pick("0812-3456-7890", "0813-2222-1010", "0857-1111-2020", "0819-8765-4321", "0821-5555-0101", "0878-9090-1212")
 	case strings.HasPrefix(l, "nama ") && !has(l[5:], "lengkap", "pelanggan", "customer", "pasien", "pengguna", "user", "penulis", "pemilik", "karyawan",
 		"siswa", "member", "anggota", "kontak", "pelapor", "wali", "admin", "guru", "pegawai", "petugas", "pengemudi", "staf", "penerima", "pengirim", "orang"):
@@ -2094,6 +2136,9 @@ func sample(label string, row int) string {
 		return capital(l[5:]) + " " + pick("Alfa", "Beta", "Gamma", "Delta", "Prima", "Omega")
 	case has(l, "nama", "name", "pelanggan", "customer", "pasien", "pengguna", "user", "penulis", "pemilik", "karyawan", "siswa"):
 		return pick("Andi Pratama", "Sari Wulandari", "Budi Santoso", "Rina Kusuma", "Dewi Lestari", "Eko Saputra")
+	case slices.Contains([]string{"nis", "nisn", "nik", "npsn", "nip", "npwp", "nim"}, l):
+		// A national number is digits.
+		return fmt.Sprintf("%010d", 51234561+row*7919)
 	case l == "no" || has(l, "nomor", "kode", "id", "no.", "ref", "sku"):
 		return fmt.Sprintf("#%04d", 1048-row*7)
 	case status(l):

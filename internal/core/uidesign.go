@@ -34,6 +34,9 @@ type UIDesign struct {
 	// id → the mockup hash that was approved. A design change that alters
 	// the mockup leaves the approval stale until the user approves again.
 	Mockups map[string]MockupApproval `json:"mockups,omitempty"`
+	// Basis fingerprints the features, use cases and blueprint the AI last
+	// wrote or synced the design from (DesignBasis); DesignDrift compares.
+	Basis map[string]string `json:"basis,omitempty"`
 }
 
 // MockupApproval records that the user approved one page's mockup.

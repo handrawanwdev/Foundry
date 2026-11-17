@@ -1,4 +1,4 @@
-import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, CommandHistory, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, MockupStatus, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackAreas, StructureOp, Survey, TechArea, Flow, FlowWalk, DesignGate, DesignBenchmark, WorkflowView } from "./types";
+import type { AcceptanceEdit, AgentOptions, AIState, Artifact, BlueprintView, Browse, CommandEdit, CommandHistory, DeleteImpact, DesignRules, DesignView, ExportView, FeatureMap, LayoutSpec, MockupStatus, PlatformTarget, ProgressSnapshot, Project, RecentProject, RepoOp, StackAreas, StructureOp, Survey, TechArea, Flow, FlowWalk, DesignGate, DesignBenchmark, DesignDrift, WorkflowView } from "./types";
 
 // details lists what an invalid request broke (field = where).
 export interface ErrorDetail { field?: string; message: string }
@@ -93,7 +93,10 @@ export const api = {
   editDesignRules: (rules: DesignRules) => call<Project>("PUT", "/project/design/rules", rules),
   editLayout: (layout: LayoutSpec) => call<Project>("PUT", "/project/design/layout", layout),
   // Mockups: every page rendered from the UI kit; the user approves each one.
-  mockups: () => call<{ mockups: MockupStatus[]; flows?: FlowWalk[]; gate?: DesignGate; benchmark?: DesignBenchmark }>("GET", "/project/design/mockups"),
+  mockups: () => call<{ mockups: MockupStatus[]; flows?: FlowWalk[]; gate?: DesignGate; benchmark?: DesignBenchmark; drift?: DesignDrift }>("GET", "/project/design/mockups"),
+  // syncDesign asks the AI to update the layout spec, and so the mockups,
+  // to the features, use cases and blueprint as they are now.
+  syncDesign: () => call("POST", "/project/design/sync", {}),
   approveMockups: (pages: string[] = []) => call<{ mockups: MockupStatus[] }>("POST", "/project/design/mockups/approve", { pages }),
   mockupURL: (page: string, state = "", sim?: { role?: string; status?: string; entity?: string }) => {
     const q = new URLSearchParams();

@@ -58,6 +58,21 @@ func (s *Service) ReviseDesign(text string, focus []string) error {
 	})
 }
 
+// SyncDesign asks the AI to update the design, and so the mockups, to the
+// features, use cases and blueprint as they are now.
+func (s *Service) SyncDesign() error {
+	return s.startAIIf(work.KindDesign, func(p *core.Project) error {
+		if err := designEditable(p); err != nil {
+			return err
+		}
+		if err := work.SyncDesign(p); err != nil {
+			return err
+		}
+		p.Log("ui", "Perbarui mockup dari fitur, use case, dan blueprint")
+		return nil
+	})
+}
+
 // EditDesignRules saves the user's design rules; invalid rules are refused.
 func (s *Service) EditDesignRules(in core.DesignRules) (*core.Project, error) {
 	return s.Store.Update(func(p *core.Project) error {

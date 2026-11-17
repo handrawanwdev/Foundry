@@ -693,3 +693,39 @@ func TestNormPageFeatureList(t *testing.T) {
 		t.Fatalf("feature = %q", got)
 	}
 }
+
+// A written design keeps what it was drawn from; a sync asks the AI to
+// follow what changed since, and an answer without changes still records
+// the design as synced.
+func TestSyncDesign(t *testing.T) {
+	p := &core.Project{Platform: &core.PlatformPlan{Targets: []core.PlatformTarget{{Kind: core.PlatformWeb}}},
+		Features: []core.Feature{{ID: "F1", Name: "Pesanan"}}}
+	if err := ApplyDesign(p, existingDesign); err != nil {
+		t.Fatal(err)
+	}
+	if !p.DesignDrift().Known || len(p.DesignDrift().Items) != 0 {
+		t.Fatalf("desain baru tanpa basis: %+v", p.DesignDrift())
+	}
+	p.Features = append(p.Features, core.Feature{ID: "F2", Name: "Anggaran"})
+	if err := SyncDesign(p); err != nil {
+		t.Fatal(err)
+	}
+	if r := p.UI.Request; r == nil || !r.Sync || !strings.Contains(r.Text, "Fitur F2 (Anggaran): baru") || !strings.Contains(DesignPrompt(p), "Fitur F2") {
+		t.Fatalf("permintaan sinkron: %+v", p.UI.Request)
+	}
+	if err := ApplyDesign(p, `{"note": "sudah sesuai"}`); err != nil {
+		t.Fatal(err)
+	}
+	if p.UI.Request != nil || len(p.DesignDrift().Items) != 0 {
+		t.Fatalf("sinkron tanpa perubahan tidak tercatat: %+v %+v", p.UI.Request, p.DesignDrift())
+	}
+	// A request about something else leaves the drift as it is.
+	p.Features = append(p.Features, core.Feature{ID: "F3", Name: "Laporan"})
+	if err := RequestDesignChange(p, "Ubah warna tombol", nil); err != nil {
+		t.Fatal(err)
+	}
+	_ = ApplyDesign(p, existingDesign)
+	if len(p.DesignDrift().Items) != 1 {
+		t.Fatalf("revisi biasa menghapus drift: %+v", p.DesignDrift().Items)
+	}
+}

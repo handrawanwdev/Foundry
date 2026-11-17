@@ -418,6 +418,30 @@ func uxBrief(p *core.Project) string {
 // Foundry asks for the missing page details instead of refusing the whole
 // result.
 func ApplyDesign(p *core.Project, raw string) error {
+	fresh := !p.UI.Written()
+	sync := p.UI != nil && p.UI.Request != nil && p.UI.Request.Sync
+	err := applyDesign(p, raw)
+	if sync && errors.Is(err, ErrNoChange) {
+		// The design already follows its sources.
+		p.UI.Request, err = nil, nil
+	}
+	if err == nil && (fresh || sync) && p.UI != nil {
+		p.UI.Basis = core.DesignBasis(p)
+	}
+	return err
+}
+
+// SyncDesign asks the AI to make the design follow what changed in the
+// features, use cases and blueprint since it was last written or synced.
+func SyncDesign(p *core.Project) error {
+	if !p.UI.Written() {
+		return errors.New("aturan desain dan layout belum disusun")
+	}
+	p.UI.Request = &core.ChangeRequest{Text: p.DesignDrift().SyncRequest(), Sync: true}
+	return nil
+}
+
+func applyDesign(p *core.Project, raw string) error {
 	var out designOut
 	hasDesign := func() bool { return out.Rules != nil || len(out.Pages) > 0 || len(out.Shells) > 0 }
 	if err := ExtractJSONFunc(raw, &out, hasDesign); err != nil {

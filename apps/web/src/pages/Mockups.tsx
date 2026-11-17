@@ -2,10 +2,12 @@ import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject }
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { DESIGN_DOCS, SCOPE_DOCS } from "../blueprint";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { APPROVAL, BenchmarkPanel, Frame, FullView, GatePanel, LifecyclePanel, STATE_LABEL, VIEWPORTS, type Viewport } from "../components/Mockup";
 import { frameGroups, mobilePlatform, mockupGroups, pageFindings, withQuery } from "../mockups";
+import { isWorking } from "../flow";
 import { useProject } from "../store/project";
-import type { DesignBenchmark, DesignGate, DesignView, FlowStep, FlowWalk, LayoutPage, MockupFrame, MockupStatus, Project } from "../types";
+import type { DesignBenchmark, DesignDrift, DesignGate, DriftItem, DesignView, FlowStep, FlowWalk, LayoutPage, MockupFrame, MockupStatus, Project } from "../types";
 
 // Mockup workspace: the designed pages on their own, like a design tool.
 // The pages panel lists them by the navigation of the layout spec, and
@@ -40,7 +42,13 @@ function useCtrlWheel(ref: RefObject<HTMLElement | null>, zoomBy: (dir: number) 
   }, [ref]);
 }
 
-interface Mockups { list: MockupStatus[]; flows: FlowWalk[]; gate: DesignGate | null; bench: DesignBenchmark | null }
+interface Mockups { list: MockupStatus[]; flows: FlowWalk[]; gate: DesignGate | null; bench: DesignBenchmark | null; drift: DesignDrift | null }
+
+const DRIFT_KIND: Record<DriftItem["kind"], string> = {
+  feature: "Fitur", flow: "Use case", data: "Data blueprint", access: "Akses blueprint", requirements: "Requirement",
+};
+const DRIFT_CHANGE: Record<DriftItem["change"], string> = { added: "baru", changed: "berubah", removed: "dihapus" };
+const driftLabel = (it: DriftItem) => `${DRIFT_KIND[it.kind]}${it.id ? ` ${it.id}` : ""}${it.name ? ` · ${it.name}` : ""} — ${DRIFT_CHANGE[it.change]}`;
 
 const blueprintDoc = (id: string) => `/blueprint?doc=${id}`;
 
@@ -55,13 +63,14 @@ export function MockupsPage() {
   const [flowID, setFlowID] = useState("");
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState<number>(ZOOM.start);
+  const [confirmSync, setConfirmSync] = useState(false);
 
   useEffect(() => {
     if (!project?.discovery) return;
     api.design().then(setDesign).catch(() => setDesign(null));
     api.mockups()
-      .then((r) => setData({ list: r.mockups, flows: r.flows ?? [], gate: r.gate ?? null, bench: r.benchmark ?? null }))
-      .catch(() => setData({ list: [], flows: [], gate: null, bench: null }));
+      .then((r) => setData({ list: r.mockups, flows: r.flows ?? [], gate: r.gate ?? null, bench: r.benchmark ?? null, drift: r.drift ?? null }))
+      .catch(() => setData({ list: [], flows: [], gate: null, bench: null, drift: null }));
   }, [project?.version, project?.dir]);
 
   if (!project) return null;
@@ -76,7 +85,21 @@ export function MockupsPage() {
     );
   }
 
-  const { list, flows, gate, bench } = data;
+  const { list, flows, gate, bench, drift } = data;
+  const working = isWorking(project);
+  const syncing = pending === "syncDesign" || (working && project.job?.kind === "design");
+  const changes = drift?.known ? drift.items : [];
+  const sync = () => void run("syncDesign", async () => {
+    await api.syncDesign();
+    setConfirmSync(false);
+  });
+  const syncButton = (
+    <button type="button" className={changes.length > 0 ? "primary" : ""} disabled={working || syncing}
+      title="Perbarui spesifikasi layout dan mockup dari fitur, use case, dan blueprint terbaru"
+      onClick={() => setConfirmSync(true)}>
+      {syncing ? <span className="inline"><span className="spinner" /> Memperbarui mockup…</span> : "↻ Generate ulang mockup"}
+    </button>
+  );
   const layout = design?.design?.layout;
   const specs = layout?.pages ?? [];
   const pageID = params.get("page") ?? "";
@@ -163,7 +186,32 @@ export function MockupsPage() {
           </div>
         ))}
         {groups.length === 0 && <p className="muted small mw-none">Tidak ada halaman yang cocok.</p>}
+        {changes.length > 0 && (
+        <div className="mw-sync">
+            <div className="mw-drift" role="status">
+              <strong>{changes.length} perubahan sejak mockup dibuat</strong>
+              <ul>{changes.slice(0, 4).map((it) => <li key={`${it.kind}${it.id}`}>{driftLabel(it)}</li>)}</ul>
+              {changes.length > 4 && <span className="muted small">+{changes.length - 4} lainnya</span>}
+            </div>
+          {syncButton}
+        </div>
+        )}
       </nav>
+      {confirmSync && (
+        <ConfirmDialog
+          title="Generate ulang mockup?"
+          body={changes.length > 0
+            ? `AI memperbarui spesifikasi layout mengikuti ${changes.length} perubahan di fitur, use case, dan blueprint, lalu mockup digambar ulang. Halaman yang tidak terdampak beserta perubahan manualnya dipertahankan. Halaman yang berubah perlu disetujui lagi.`
+            : drift?.known
+              ? "Belum ada perubahan tercatat di fitur, use case, atau blueprint. AI tetap memeriksa kesesuaian halaman dan hanya mengubah yang tidak sesuai. Halaman yang berubah perlu disetujui lagi."
+              : "AI memeriksa semua fitur, use case, dan blueprint terhadap halaman yang ada, lalu memperbarui yang tidak sesuai. Halaman yang tidak terdampak dipertahankan. Halaman yang berubah perlu disetujui lagi."}
+          confirmLabel="Ya, generate ulang"
+          busy={pending === "syncDesign"}
+          busyLabel="Memulai…"
+          onCancel={() => setConfirmSync(false)}
+          onConfirm={sync}
+        />
+      )}
       <main className="mw-main">
         {current && frame
           ? <PageView key={current.page} project={project} mockup={current} frame={frame} spec={specs.find((p) => p.id === current.page)}
@@ -191,9 +239,12 @@ export function MockupsPage() {
                   <strong>Overview kanvas</strong>
                   <span className="muted small">Klik halaman untuk membuka frame-nya. Geser latar untuk menggeser, Ctrl+scroll atau pinch untuk zoom.</span>
                 </>}
-                end={list.length - approved > 0 && (
-                  <button className="primary" disabled={busy} onClick={() => approve([])}>Setujui semua ({list.length - approved})</button>
-                )}
+                end={<>
+                  {syncButton}
+                  {list.length - approved > 0 && (
+                    <button className={changes.length > 0 ? "" : "primary"} disabled={busy} onClick={() => approve([])}>Setujui semua ({list.length - approved})</button>
+                  )}
+                </>}
                 groups={groups.map((g) => ({
                   name: g.name,
                   cards: g.pages.map((m, i) => ({

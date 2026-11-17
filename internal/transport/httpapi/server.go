@@ -425,6 +425,7 @@ func (s *Server) Handler() http.Handler {
 		return map[string]any{"design": p.UI, "issues": issues, "has_ui": p.HasUI(), "platforms": p.UIPlatforms(), "vocabulary": vocab}, nil
 	}))
 	api("POST /api/v1/project/design/generate", s.action(func(svc *pipeline.Service) error { return svc.GenerateDesign() }))
+	api("POST /api/v1/project/design/sync", s.action(func(svc *pipeline.Service) error { return svc.SyncDesign() }))
 	api("POST /api/v1/project/design/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct {
 			Text  string
@@ -458,7 +459,11 @@ func (s *Server) Handler() http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"mockups": list, "flows": walks, "gate": gate, "benchmark": bench}, nil
+		drift, err := svc.DesignDrift()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"mockups": list, "flows": walks, "gate": gate, "benchmark": bench, "drift": drift}, nil
 	}))
 	api("POST /api/v1/project/design/mockups/approve", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {
 		var in struct{ Pages []string }
