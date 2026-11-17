@@ -147,3 +147,32 @@ func TestFontTokenNote(t *testing.T) {
 		}
 	}
 }
+
+// A page of a pattern without a template, with a form section, renders.
+func TestUnknownPatternForm(t *testing.T) {
+	k := kit(t)
+	d := design()
+	d.Layout.Pages = append(d.Layout.Pages, core.LayoutPage{ID: "x", Name: "X", Pattern: "split", Shell: "app",
+		Sections: []core.Section{{ID: "f", Name: "Shift", Content: []string{"Input uang dihitung, selisih, tombol Konfirmasi serah terima"}, Components: []string{"Field", "Button"}}}})
+	out, err := k.RenderPage(d, "x", "")
+	if err != nil || strings.Contains(out, ">Tombol ") {
+		t.Fatalf("halaman pola tanpa template: %v", err)
+	}
+}
+
+// A button line names its actions only: a permission, the page it opens
+// and how it is confirmed are no buttons; a state toggle is its way out.
+func TestButtonActions(t *testing.T) {
+	for in, want := range map[string]string{
+		"Ubah data (item:update), membuka barang-ubah":                                                          "Ubah data",
+		"Aktifkan atau Nonaktifkan (item:manage-status), dengan konfirmasi":                                     "Nonaktifkan",
+		"Hapus (item:delete) hanya untuk barang tanpa riwayat mutasi, dengan konfirmasi; bila ada riwayat, 409": "Hapus hanya untuk barang tanpa riwayat mutasi",
+		"Simpan draf dan Konfirmasi pesanan":                                                                    "Simpan draf|Konfirmasi pesanan",
+		"Catat masuk/keluar (stock:record)":                                                                     "Catat masuk/keluar",
+		"Simpan Order sebagai aksi utama":                                                                       "Simpan Order",
+	} {
+		if got := strings.Join(buttonActions(in), "|"); got != want {
+			t.Errorf("%q: %q, mau %q", in, got, want)
+		}
+	}
+}

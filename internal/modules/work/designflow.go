@@ -110,6 +110,9 @@ func completeFlows(p *core.Project, l *core.LayoutSpec, flows []core.Flow) {
 		if core.StepsDeclared(*fl) {
 			fl.PageIDs = core.RouteOf(fl.StepPages)
 		}
+		// A page of another feature the use case shares no word with is a
+		// wrong mapping: it would link pages no one walks between.
+		fl.PageIDs = slices.DeleteFunc(fl.PageIDs, func(id string) bool { return !core.FlowPageFits(l, *fl, id) })
 		if len(fl.PageIDs) > 0 || !check.ScreenFlow(*fl) {
 			continue
 		}

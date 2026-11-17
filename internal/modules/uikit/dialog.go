@@ -54,7 +54,7 @@ func parseDialog(s core.Section) *dialog {
 		switch b, isButton := buttonLabel(c); {
 		case c == "":
 		case isButton:
-			d.buttons = append(d.buttons, splitList(b)...)
+			d.buttons = append(d.buttons, buttonActions(b)...)
 		case fieldLine(c):
 			_, list, _ := strings.Cut(c, " ")
 			for _, f := range splitList(strings.TrimPrefix(strings.TrimSpace(list), ":")) {

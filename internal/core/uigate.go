@@ -393,6 +393,14 @@ func navigationCheck(p *Project, l *LayoutSpec, walks []FlowWalk, format int) Ga
 			}
 		}
 	}
+	// A use case mapped to a page of another feature it shares no word with
+	// walks without it; the mapping is the design's to fix.
+	misplaced := MisplacedFlowPages(p, l)
+	for _, w := range walks {
+		if ids := misplaced[w.ID]; len(ids) > 0 {
+			c.note(GateWarn, "%s %s dipetakan ke halaman di luar fiturnya: %s (diabaikan; perbaiki pemetaan lewat generate ulang mockup)", w.ID, w.Name, strings.Join(ids, ", "))
+		}
+	}
 	// A flow whose pages are guessed cannot be checked: say so instead of
 	// reporting nothing to check.
 	if guessed > 0 {

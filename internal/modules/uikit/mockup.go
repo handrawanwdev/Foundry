@@ -272,8 +272,10 @@ type render struct {
 	forms []formRec
 	// fplan is the page's form, mapped once (plan).
 	fplan *formPlan
-	// heroUsed marks the page fields the record's header shows.
+	// heroUsed marks the page fields the record's header shows; headActs
+	// are the actions the page header offers.
 	heroUsed []bool
+	headActs []string
 	asks     []ask
 	// steppers and collections count the page's steppers and tables/lists;
 	// contentIssues are what they show wrongly, for the quality gate.
@@ -713,8 +715,11 @@ func (r *render) linksTo(page string) bool {
 	if page == r.page.ID {
 		return true
 	}
-	if !r.inNav(r.page.ID) && core.ParentPage(r.doc.Layout, r.page.ID) == page {
-		return true
+	if !r.inNav(r.page.ID) {
+		// One menu item is where a page outside the menu sits.
+		if parent := core.ParentPage(r.doc.Layout, r.page.ID); parent != "" {
+			return parent == page
+		}
 	}
 	for _, pg := range r.doc.Layout.Pages {
 		if pg.ID != page {

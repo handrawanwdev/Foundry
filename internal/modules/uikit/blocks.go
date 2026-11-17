@@ -100,7 +100,7 @@ func (r *render) section(s core.Section, sl Slot, slotted bool) {
 			return // its buttons stand beside the record's title
 		case kind == "tabbar" || slices.ContainsFunc(s.Components, func(c string) bool { return strings.EqualFold(c, "Tabs") }):
 			kind = "recordtabs"
-		case (kind == "activity" || kind == "list" || kind == "table") && r.historyColumns(s) != nil:
+		case (kind == "activity" || kind == "list" || kind == "table" || kind == "detail") && r.historyColumns(s) != nil:
 			kind = "history"
 		case kind == "activity" && r.namesShown(s):
 			kind = "detail" // the record's values, not a history
@@ -533,7 +533,12 @@ func (r *render) tools(els []string) {
 		switch {
 		case has(l, "tombol", "tambah", "ekspor", "unduh", "impor", "buat", "export", "add", "download"):
 			b, _ := buttonLabel(e)
-			buttons = append(buttons, capital(b))
+			for _, a := range buttonActions(b) {
+				// The header already offers the page's main action.
+				if !slices.ContainsFunc(r.headActs, func(h string) bool { return h != "" && strings.EqualFold(actionName(h), actionName(a)) }) {
+					buttons = append(buttons, a)
+				}
+			}
 		case search == "" && has(l, "cari", "search", "pencarian", "kata kunci"):
 			search = capital(strings.TrimRight(e, ".… "))
 		default:
@@ -566,7 +571,7 @@ func (r *render) tools(els []string) {
 	if len(buttons) > 0 {
 		r.w(`<div class="fk-tools-end">`)
 		for _, b := range buttons {
-			r.w(`<button class="fk-btn">` + actionIcon(b) + esc(b) + `</button>`)
+			r.actionControl(b, "fk-btn", true)
 		}
 		r.w(`</div>`)
 	}
@@ -675,7 +680,9 @@ func (r *render) statePanel(state string, s *core.Section) {
 	case "error":
 		r.w(`<button class="fk-btn">Coba lagi</button>`)
 	case "empty":
-		if a := r.page.PrimaryAction; a != "" {
+		// An empty list invites making its first record; any other main
+		// action is in the header already.
+		if a := r.page.PrimaryAction; a != "" && core.StartsCreate(a) {
 			r.w(`<button class="fk-btn fk-btn-primary">` + actionIcon(a) + esc(a) + `</button>`)
 		}
 	}
@@ -704,8 +711,11 @@ func items(s core.Section) []string {
 			c = c[i+1:]
 		}
 		if strings.Contains(c, ",") {
-			for _, p := range strings.Split(c, ",") {
-				if p = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(p), ".")); p != "" {
+			// "Aksi (Lihat, Arsipkan)" is one element; "…, dan Status"
+			// lists Status.
+			for _, p := range splitOutside(c) {
+				p = strings.TrimSpace(leadWords.ReplaceAllString(strings.TrimSpace(p), ""))
+				if p = strings.TrimSpace(strings.TrimSuffix(p, ".")); p != "" {
 					out = append(out, p)
 				}
 			}
@@ -716,6 +726,28 @@ func items(s core.Section) []string {
 		}
 	}
 	return out
+}
+
+// splitOutside splits c at the commas outside parentheses.
+func splitOutside(c string) []string {
+	var out []string
+	depth, start := 0, 0
+	for i, r := range c {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				out = append(out, c[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(out, c[start:])
 }
 
 // fields are the page's fields shown as one of the presentations.
@@ -782,6 +814,15 @@ func metricItems(s core.Section) []string {
 			// "Label: value" when the value is one short figure, else a
 			// list named by its label.
 			label, value, _ := strings.Cut(c, ":")
+			if slices.Contains(componentWords, strings.ToLower(strings.TrimSpace(label))) {
+				// "StatCard: kehadiran, tagihan" lists the metrics.
+				for _, p := range splitOutside(fontNoteRe.ReplaceAllString(value, "")) {
+					if p = strings.TrimSpace(leadWords.ReplaceAllString(strings.TrimSpace(p), "")); p != "" {
+						out = append(out, capital(p))
+					}
+				}
+				continue
+			}
 			if strings.Contains(value, ",") && !strings.ContainsAny(value, "0123456789") {
 				out = append(out, strings.TrimSpace(label))
 			} else {
@@ -790,8 +831,8 @@ func metricItems(s core.Section) []string {
 		case !strings.Contains(c, ","):
 			out = append(out, c)
 		default:
-			for _, p := range strings.Split(c, ",") {
-				if p = strings.TrimSpace(p); p != "" {
+			for _, p := range splitOutside(c) {
+				if p = strings.TrimSpace(leadWords.ReplaceAllString(strings.TrimSpace(p), "")); p != "" {
 					out = append(out, p)
 				}
 			}
@@ -955,7 +996,7 @@ func (r *render) table(s core.Section) {
 				// "Aksi Catat masuk" names the actions of its own column.
 				ca := acts
 				if f := strings.Fields(c); len(ca) == 0 && len(f) > 1 {
-					for _, a := range splitList(strings.Join(f[1:], " ")) {
+					for _, a := range splitList(strings.Trim(strings.Join(f[1:], " "), "() ")) {
 						ca = append(ca, capital(a))
 					}
 				}
@@ -1328,6 +1369,12 @@ func (r *render) detail(s core.Section) {
 	var acts []string
 	var content []string
 	for _, c := range s.Content {
+		if b, ok := buttonLabel(strings.TrimSpace(c)); ok {
+			// "Tombol Buat Cadangan: pilih lokasi file" names one button;
+			// what follows the colon describes it.
+			acts = append(acts, buttonActions(b)...)
+			continue
+		}
 		if label, list, ok := strings.Cut(c, ":"); ok && actionLabel(label) {
 			for _, a := range splitList(list) {
 				acts = append(acts, capital(a))
@@ -1650,7 +1697,10 @@ func (r *render) barSections() []core.Section {
 			out = append(out, s)
 			continue
 		}
-		if sl, found := pat.Slot(s.Slot); ok && found && sl.Kind == "text" && r.page.Pattern == "form" {
+		if !ok || r.page.Pattern != "form" {
+			continue // a page without a template has no aside
+		}
+		if sl, found := pat.Slot(s.Slot); found && sl.Kind == "text" {
 			out = append(out, s)
 		}
 	}
@@ -1702,28 +1752,28 @@ func (r *render) pageSubmit() (id, label string) {
 		return "", ""
 	}
 	for _, s := range fs {
-		for _, it := range items(s) {
-			if b, ok := buttonLabel(it); ok {
-				return s.ID, submitOf(b)
+		for _, c := range s.Content {
+			for _, seg := range strings.Split(c, ";") {
+				if b, ok := buttonLabel(strings.TrimSpace(seg)); ok {
+					return s.ID, submitOf(b)
+				}
 			}
 		}
 	}
 	id = fs[len(fs)-1].ID
 	// The buttons of the actions or an aside of a form page send it.
 	for _, s := range r.barSections() {
-		for _, it := range items(core.Section{Content: s.Content}) {
-			if b, ok := buttonLabel(it); ok {
-				var all []string
-				for _, x := range items(core.Section{Content: s.Content}) {
-					if b, ok := buttonLabel(x); ok {
-						all = append(all, splitList(b)...)
-					}
-				}
-				if l := sendButton(all); l != "" {
-					return "", capital(l)
-				}
-				return "", submitOf(b)
+		var all []string
+		for _, c := range s.Content {
+			if b, ok := buttonLabel(strings.TrimSpace(c)); ok {
+				all = append(all, buttonActions(b)...)
 			}
+		}
+		if len(all) > 0 {
+			if l := sendButton(all); l != "" {
+				return "", capital(l)
+			}
+			return "", capital(all[0])
 		}
 	}
 	if r.hasActionsSlot() {
@@ -1738,11 +1788,60 @@ func (r *render) pageSubmit() (id, label string) {
 // submitOf is the sending button a button line names: "Simpan mutasi dan
 // Batal" is Simpan mutasi.
 func submitOf(b string) string {
-	if l := sendButton(splitList(b)); l != "" {
+	acts := buttonActions(b)
+	if l := sendButton(acts); l != "" {
 		return capital(l)
+	}
+	if len(acts) > 0 {
+		return capital(acts[0])
 	}
 	return capital(b)
 }
+
+// buttonEnd ends the names of a button line; what follows says what the
+// button needs, opens or limits ("Tombol Ubah data (item:update), membuka
+// barang-ubah", "Tombol Hapus hanya untuk barang tanpa riwayat").
+var buttonEnd = regexp.MustCompile(`(?i)\s*\(|\s*[,;:]|\s+(hanya|untuk|dengan|bila|jika|saat|ketika|membuka|menuju|sebagai|setelah|sebelum|bagi|oleh)\b`)
+
+// limitWords start a part of a button line that limits who or when: it is
+// kept as the button's tooltip.
+var limitWords = regexp.MustCompile(`(?i)^\s+(hanya|untuk|bagi)\b[^,;(]*`)
+
+// buttonActions are the actions a button line names: "Simpan draf dan
+// Konfirmasi pesanan" names two, "Aktifkan atau Nonaktifkan" one that
+// turns the record's state (Nonaktifkan), and what follows the names (a
+// permission, the page it opens, "dengan konfirmasi") names none.
+func buttonActions(b string) []string {
+	b = strings.TrimSpace(b)
+	names, rest := b, ""
+	if loc := buttonEnd.FindStringIndex(b); loc != nil && loc[0] > 0 {
+		names, rest = b[:loc[0]], b[loc[0]:]
+	}
+	limit := ""
+	if m := limitWords.FindString(fontNoteRe.ReplaceAllString(rest, "")); m != "" {
+		limit = " " + strings.TrimSpace(m)
+	}
+	var out []string
+	for _, n := range strings.Split(strings.NewReplacer(" atau ", "|", " dan ", "|", " or ", "|", " and ", "|", " / ", "|").Replace(names), "|") {
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, capital(n)+limit)
+		}
+	}
+	// A pair that turns a state shows the way out of the usual one.
+	if len(out) == 2 {
+		a, c := strings.ToLower(actionName(out[0])), strings.ToLower(actionName(out[1]))
+		switch {
+		case c == "non"+a || c == "non-"+a:
+			out = out[1:]
+		case a == "non"+c || a == "non-"+c:
+			out = out[:1]
+		}
+	}
+	return out
+}
+
+// fontNoteRe is a note in parentheses.
+var fontNoteRe = regexp.MustCompile(`\s*\([^)]*\)`)
 
 // sendButton is the button of a list that sends the form: the first that
 // neither leaves it nor keeps a draft ("Simpan draf" is the other way to
@@ -1788,6 +1887,10 @@ func buttonLabel(it string) (string, bool) {
 	for _, p := range []string{"tombol ", "button "} {
 		if strings.HasPrefix(l, p) {
 			b := strings.TrimSpace(it[len(p):])
+			// "Tombol utama Registrasi siswa" says how it is drawn.
+			if w, rest, ok := strings.Cut(b, " "); ok && slices.Contains([]string{"utama", "primer", "primary", "sekunder", "secondary"}, strings.ToLower(w)) {
+				b = strings.TrimSpace(rest)
+			}
 			// "Tombol primer 'Kirim pengajuan' menempel di bawah" is Kirim
 			// pengajuan.
 			if m := quotedText.FindStringSubmatch(b); m != nil {
@@ -1800,20 +1903,19 @@ func buttonLabel(it string) (string, bool) {
 }
 
 func (r *render) actions(s core.Section) {
-	els := items(s)
 	var buttons, facts []string
-	for _, it := range els {
-		if b, ok := buttonLabel(it); ok {
-			// "Tombol Simpan draf dan Konfirmasi pesanan" names two; "sebagai
-			// aksi utama" says how it is drawn.
-			for _, x := range splitList(b) {
-				if i := strings.Index(strings.ToLower(x), " sebagai "); i > 0 {
-					x = x[:i]
-				}
-				buttons = append(buttons, x)
+	for _, c := range s.Content {
+		if b, ok := buttonLabel(strings.TrimSpace(c)); ok {
+			buttons = append(buttons, buttonActions(b)...)
+			continue
+		}
+		for _, it := range items(core.Section{Content: []string{c}}) {
+			// "Input uang, selisih, tombol Konfirmasi serah terima"
+			if b, ok := buttonLabel(it); ok {
+				buttons = append(buttons, buttonActions(b)...)
+			} else {
+				facts = append(facts, it)
 			}
-		} else {
-			facts = append(facts, it)
 		}
 	}
 	if len(buttons) == 0 {
@@ -1877,6 +1979,11 @@ func (r *render) actions(s core.Section) {
 			} else if at, _ := r.pageSubmit(); it == primary && at == "" && r.mainForm() != "" {
 				opens = ` type="submit" form="` + r.pageFormID() + `"`
 			}
+		}
+		if f := strings.Fields(it); cancel(it) && len(f) > 1 {
+			// "Batal kembali ke daftar" is Batal, as on the live page.
+			opens += ` title="` + esc(capital(it)) + `"`
+			it = capital(f[0])
 		}
 		// The button names the action; when it holds is its tooltip.
 		if text := capital(strings.TrimSpace(actionName(it))); text != "" && text != it && r.disabled() == "" {

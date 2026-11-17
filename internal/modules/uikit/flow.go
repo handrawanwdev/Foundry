@@ -40,6 +40,31 @@ func (r *render) headActions() {
 		createForm, createLabel = primary.page, primary.label
 	}
 	docActs := r.documentActions(pa)
+	// The primary action a next step also names is that step, once: a
+	// primary link to its page.
+	same := func(a, b string) bool { return strings.EqualFold(actionName(a), actionName(b)) }
+	paPage := ""
+	if pa != "" {
+		if i := slices.IndexFunc(next, func(n nextStep) bool { return same(n.label, pa) }); i >= 0 {
+			paPage, next = next[i].page, slices.Delete(slices.Clone(next), i, i+1)
+		} else if i := slices.IndexFunc(links, func(n nextStep) bool { return same(n.label, pa) }); i >= 0 {
+			paPage, links = links[i].page, slices.Delete(slices.Clone(links), i, i+1)
+		}
+	}
+	// One button per action: a link or next step named like the primary
+	// or create action is that action.
+	dup := func(n nextStep) bool {
+		return pa != "" && same(n.label, pa) || createLabel != "" && same(n.label, createLabel)
+	}
+	links, next = slices.DeleteFunc(slices.Clone(links), dup), slices.DeleteFunc(slices.Clone(next), dup)
+	links = slices.DeleteFunc(links, func(n nextStep) bool {
+		return slices.ContainsFunc(next, func(m nextStep) bool { return same(m.label, n.label) })
+	})
+	for _, n := range append(slices.Clone(next), links...) {
+		r.headActs = append(r.headActs, n.label)
+	}
+	r.headActs = append(r.headActs, pa, createLabel)
+	r.headActs = append(r.headActs, docActs...)
 	if pa == "" && createLabel == "" && len(next) == 0 && len(links) == 0 && len(docActs) == 0 {
 		return
 	}
@@ -67,7 +92,10 @@ func (r *render) headActions() {
 		}
 		r.f(`<a class="fk-btn" href="%s" data-foundry-link="%s">%s%s</a>`, esc(r.doc.href(n.page)), esc(n.page), esc(n.label), icon("right"))
 	}
-	if pa != "" {
+	switch {
+	case paPage != "":
+		r.f(`<a class="fk-btn fk-btn-primary" href="%s" data-foundry-link="%s">%s%s</a>`, esc(r.actionHref(paPage, pa)), esc(paPage), actionIcon(pa), esc(capital(actionName(pa))))
+	case pa != "":
 		cls := "fk-btn fk-btn-primary"
 		if core.DangerAction(pa) {
 			cls = "fk-btn fk-btn-danger"
@@ -377,7 +405,7 @@ func (r *render) offersCreate() bool {
 		}
 		for _, c := range s.Content {
 			if b, ok := buttonLabel(strings.TrimSpace(c)); ok {
-				for _, x := range splitList(b) {
+				for _, x := range buttonActions(b) {
 					if core.StartsCreate(x) {
 						return true
 					}

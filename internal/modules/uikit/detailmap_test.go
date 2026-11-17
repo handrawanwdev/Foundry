@@ -40,3 +40,17 @@ func TestRecordPage(t *testing.T) {
 		}
 	}
 }
+
+// An action shows once: the header's primary action that a next step or a
+// toolbar also names is not drawn again.
+func TestActionsOnce(t *testing.T) {
+	k := kit(t)
+	d := design()
+	d.Link = func(id string) string { return id + ".html" }
+	d.Layout.Pages[0].PrimaryAction = "Terapkan filter"
+	d.Layout.Pages[0].Sections = append(d.Layout.Pages[0].Sections, core.Section{ID: "filter", Name: "Filter", Content: []string{"Status", "Tombol Terapkan filter"}, Components: []string{"Button"}})
+	out, _ := k.RenderPage(d, "pesanan", "")
+	if n := strings.Count(out, ">Terapkan filter</"); n != 1 {
+		t.Errorf("Terapkan filter tergambar %d kali", n)
+	}
+}

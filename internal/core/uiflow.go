@@ -188,13 +188,69 @@ func flowPages(l *LayoutSpec, fl Flow) []string {
 	var out []string
 	if StepsDeclared(fl) {
 		if out = RouteOf(fl.StepPages); len(out) > 0 {
-			out = slices.DeleteFunc(out, func(id string) bool { return layoutPage(l, id) == nil })
+			out = slices.DeleteFunc(out, func(id string) bool { return layoutPage(l, id) == nil || !FlowPageFits(l, fl, id) })
 			return slices.Compact(out)
 		}
 	}
 	for _, id := range fl.PageIDs {
-		if layoutPage(l, id) != nil {
+		if layoutPage(l, id) != nil && FlowPageFits(l, fl, id) {
 			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// FlowPageFits reports whether a use case can pass through a page it is
+// mapped to: the page serves the use case's feature, or names what the use
+// case is about. A page of another feature that shares no word with it
+// ("Daftarkan barang baru" on Pengguna) is a wrong mapping; the use case
+// walks without it.
+func FlowPageFits(l *LayoutSpec, fl Flow, id string) bool {
+	pg := layoutPage(l, id)
+	if pg == nil || pg.FeatureID == "" || fl.FeatureID == "" || pg.FeatureID == fl.FeatureID || pg.Pattern == "auth" {
+		return true
+	}
+	var page []string
+	page = append(page, pg.Name)
+	for _, sec := range pg.Sections {
+		page = append(page, sec.Name)
+		page = append(page, sec.Content...)
+	}
+	text := fl.Name
+	for _, st := range fl.Steps {
+		if !SystemStep(st) {
+			text += " " + st // what the server does names no page
+		}
+	}
+	flow := slices.DeleteFunc(stems(text), genericStem)
+	return overlap(flow, slices.DeleteFunc(stems(strings.Join(page, " ")), genericStem)) > 0
+}
+
+// genericStem reports whether a word is on every screen ("tambah",
+// "simpan", "nama"): sharing it says nothing about a page's subject.
+func genericStem(w string) bool {
+	for _, g := range []string{"tambah", "simpan", "ubah", "hapus", "isi", "klik", "buka", "lihat", "pilih", "kirim", "nama",
+		"data", "daftar", "halaman", "tombol", "form", "status", "aksi", "batal", "cari", "detail", "baru", "sistem", "tampil",
+		"buat", "filter", "tabel", "total", "jumlah", "tanggal", "waktu", "catatan", "kolom", "baris"} {
+		if stemMatch(w, g) {
+			return true
+		}
+	}
+	return false
+}
+
+// MisplacedFlowPages are the pages each use case is mapped to that do not
+// fit it (FlowPageFits).
+func MisplacedFlowPages(p *Project, l *LayoutSpec) map[string][]string {
+	out := map[string][]string{}
+	if l == nil {
+		return out
+	}
+	for _, fl := range p.Flows {
+		for _, id := range append(slices.Clone(fl.PageIDs), RouteOf(fl.StepPages)...) {
+			if layoutPage(l, id) != nil && !FlowPageFits(l, fl, id) && !slices.Contains(out[fl.ID], id) {
+				out[fl.ID] = append(out[fl.ID], id)
+			}
 		}
 	}
 	return out

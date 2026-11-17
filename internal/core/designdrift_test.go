@@ -41,3 +41,20 @@ func TestDesignDrift(t *testing.T) {
 		t.Errorf("permintaan sinkron tanpa fitur dihapus:\n%s", d.SyncRequest())
 	}
 }
+
+// A use case mapped to a page of another feature it shares no subject
+// word with walks without it; a page of another feature it names stays.
+func TestFlowPageFits(t *testing.T) {
+	l := &LayoutSpec{Pages: []LayoutPage{
+		{ID: "barang-form", Name: "Tambah Barang", FeatureID: "F3"},
+		{ID: "pengguna", Name: "Pengguna", FeatureID: "F1", Sections: []Section{{Name: "Tabel", Content: []string{"Nama, Email, Status, Tambah pengguna"}}}},
+		{ID: "kirim", Name: "Pengiriman", FeatureID: "F2", Sections: []Section{{Name: "Daftar", Content: []string{"Surat jalan, kurir"}}}},
+	}}
+	fl := Flow{ID: "UC1", FeatureID: "F3", Name: "Daftarkan barang baru", Steps: []string{"Isi nama dan stok awal", "Cetak surat jalan"}, PageIDs: []string{"barang-form", "pengguna", "kirim"}}
+	if got := flowPages(l, fl); strings.Join(got, ",") != "barang-form,kirim" {
+		t.Fatalf("halaman alur: %v", got)
+	}
+	if m := MisplacedFlowPages(&Project{Flows: []Flow{fl}}, l); strings.Join(m["UC1"], ",") != "pengguna" {
+		t.Fatalf("pemetaan salah: %v", m)
+	}
+}

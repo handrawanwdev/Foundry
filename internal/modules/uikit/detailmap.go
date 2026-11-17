@@ -38,6 +38,10 @@ func (r *render) recordFacts(s core.Section, used []bool) (facts []fact, acts, n
 	shown := r.fields(shownPres...)
 	for _, c := range s.Content {
 		c = strings.TrimSpace(c)
+		if b, ok := buttonLabel(c); ok && !strings.Contains(c, ";") {
+			acts = append(acts, buttonActions(b)...)
+			continue
+		}
 		if label, list, ok := strings.Cut(c, ":"); ok && actionLabel(label) {
 			for _, a := range splitList(list) {
 				acts = append(acts, capital(a))
@@ -102,13 +106,7 @@ func nameLabel(label string) bool {
 }
 
 // buttonList are the actions a button line names ("Ubah dan Arsipkan").
-func buttonList(b string) []string {
-	var out []string
-	for _, a := range splitList(b) {
-		out = append(out, capital(a))
-	}
-	return out
-}
+func buttonList(b string) []string { return buttonActions(b) }
 
 // factLabel is the value a part of a line names: without the screen part
 // it sits in, the words joining it to the list, and how it is drawn.
@@ -236,13 +234,7 @@ func (r *render) heroActions() []string {
 		}
 		for _, c := range s.Content {
 			b, _ := buttonLabel(strings.TrimSpace(c))
-			// "Nonaktifkan barang untuk Admin dengan konfirmasi" is one
-			// action, its limits in its tooltip.
-			if !strings.Contains(b, ",") && !strings.Contains(strings.ToLower(b), " dan ") {
-				out = append(out, capital(b))
-				continue
-			}
-			out = append(out, buttonList(b)...)
+			out = append(out, buttonActions(b)...)
 		}
 	}
 	return out
@@ -387,10 +379,11 @@ func (r *render) recordActions(acts []string, cls string) {
 	var safe, danger []string
 	seen := map[string]bool{}
 	for _, a := range acts {
-		if a == "" || seen[strings.ToLower(a)] || r.offeredAbove(a) {
-			continue
+		key := strings.ToLower(actionName(a))
+		if a == "" || seen[key] || r.offeredAbove(a) || slices.ContainsFunc(r.headActs, func(h string) bool { return h != "" && strings.EqualFold(actionName(h), actionName(a)) }) {
+			continue // the page header already offers it
 		}
-		seen[strings.ToLower(a)] = true
+		seen[key] = true
 		if core.DangerAction(a) {
 			danger = append(danger, a)
 		} else {

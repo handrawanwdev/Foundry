@@ -54,23 +54,25 @@ func FeatureHome(l *LayoutSpec, f string) string {
 	return first
 }
 
-// ParentPage is the page a page outside the menu is entered from: the page
-// that links to it, else the home of its feature. "" for a menu page.
+// ParentPage is the page a page outside the menu sits under: the home of
+// its feature, else the page that links to it. "" for a menu page.
 func ParentPage(l *LayoutSpec, id string) string {
 	if l == nil || inMenu(l, id) {
 		return ""
 	}
-	for _, pg := range l.Pages {
-		if pg.ID != id && slices.ContainsFunc(pg.Links, func(ln PageLink) bool { return ln.To == id }) {
-			return pg.ID
-		}
-	}
 	pg := layoutPage(l, id)
-	if pg == nil || pg.Pattern == "auth" {
+	if pg == nil {
 		return ""
 	}
-	if home := FeatureHome(l, pg.FeatureID); home != id {
+	// The menu page of its feature first: a link from elsewhere (a form's
+	// "after saving") is a way in, not where the page sits.
+	if home := FeatureHome(l, pg.FeatureID); home != "" && home != id && pg.Pattern != "auth" {
 		return home
+	}
+	for _, from := range l.Pages {
+		if from.ID != id && slices.ContainsFunc(from.Links, func(ln PageLink) bool { return ln.To == id }) {
+			return from.ID
+		}
 	}
 	return ""
 }
