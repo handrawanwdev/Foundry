@@ -575,6 +575,9 @@ type Job struct {
 	Steps []JobStep `json:"steps,omitempty"`
 	// ETAMS is remaining-time guess from JobHistory, 0 when there is not enough data.
 	ETAMS int64 `json:"eta_ms,omitempty"`
+	// Stopped marks a failed job the user stopped: its answer is no longer
+	// accepted, and a retry continues the work.
+	Stopped bool `json:"stopped,omitempty"`
 }
 
 const (

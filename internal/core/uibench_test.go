@@ -96,3 +96,44 @@ func containsStr(in []string, s string) bool {
 	}
 	return false
 }
+
+// Nothing measured is not a pass. Seen live on the Parking-System and
+// distra designs: flows whose pages are guessed made navigation "skip",
+// use cases that change statuses without a lifecycle made the state
+// dimension "skip", and page lists without a page per step counted as
+// mapped by the designer.
+func TestDesignBenchmarkUnmeasuredIsNotPass(t *testing.T) {
+	flow := poFlow()
+	flow.StepPages = nil
+	flow.Data = []string{"PurchaseOrder: status menunggu persetujuan"}
+	p, _ := scenario(lifecyclePages(), flow)
+	b := p.DesignBenchmark()
+	if st := dimOf(b, "state-consistency"); st.Status != GateWarn || !strings.Contains(strings.Join(st.Items, " "), "FLOW-002") {
+		t.Errorf("status changes without a lifecycle = %+v", st)
+	}
+	if sm := dimOf(b, "screen-mapping"); sm.Status != GateWarn {
+		t.Errorf("words matched as designer mapping = %+v", sm)
+	}
+	for i := range p.Flows {
+		p.Flows[i].PageIDs = nil
+	}
+	if nav := dimOf(p.DesignBenchmark(), "navigation-integrity"); nav.Status != GateWarn {
+		t.Errorf("guessed pages leave navigation = %+v", nav)
+	}
+}
+
+// A flow placed step by step whose branches are matched by words is not
+// fully mapped by the designer.
+func TestDesignBenchmarkBranchesDeclared(t *testing.T) {
+	flow := poFlow()
+	flow.Alternatives = []string{"Langkah 2: Manajer menolak -> kembali ke langkah 1"}
+	p, _ := scenario(lifecyclePages(), flow)
+	p.Lifecycles = []Lifecycle{poLifecycle()}
+	if sm := dimOf(p.DesignBenchmark(), "screen-mapping"); sm.Status != GateWarn || !strings.Contains(strings.Join(sm.Items, " "), "cabang") {
+		t.Fatalf("words-matched branches counted as mapped: %+v", sm)
+	}
+	p.Flows[len(p.Flows)-1].BranchPages = []string{"keputusan"}
+	if sm := dimOf(p.DesignBenchmark(), "screen-mapping"); strings.Contains(strings.Join(sm.Items, " "), "FLOW-002") {
+		t.Fatalf("declared branches still reported: %+v", sm)
+	}
+}

@@ -155,6 +155,15 @@ func fakeAgent() {
 		os.Exit(3)
 	}
 	mode := os.Getenv("FAKE_MODE")
+	if hang := os.Getenv("FAKE_HANG"); hang != "" && strings.Contains(prompt, hang) {
+		// A long agent run: its pid goes to FAKE_PIDS so a test can see
+		// that stopping the job killed it.
+		if f, err := os.OpenFile(os.Getenv("FAKE_PIDS"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			fmt.Fprintln(f, os.Getpid())
+			f.Close()
+		}
+		time.Sleep(10 * time.Minute)
+	}
 	if strings.HasPrefix(mode, "overloaded") {
 		runs, _ := os.ReadFile(os.Getenv("FAKE_RUNS"))
 		countRun("attempt")

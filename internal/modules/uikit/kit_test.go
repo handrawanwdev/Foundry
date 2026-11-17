@@ -300,7 +300,6 @@ func TestMockupsFollowFlows(t *testing.T) {
 	for _, want := range []string{
 		`<a class="fk-btn" href="kirim.html" data-foundry-link="kirim">Kirim pesanan`, // next page, via label
 		`fk-btn-primary"><svg`, ">Buat pesanan</button>", // primary action from the flow's create step
-		`data-foundry-flow="FLOW-001"`, `<li class="here on"`, `href="kirim.html"><span class="fk-flow-n">3</span>Cetak surat jalan`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("mockup tanpa %s", want)
@@ -313,8 +312,8 @@ func TestMockupsFollowFlows(t *testing.T) {
 		!strings.Contains(out, `fk-btn-danger" data-foundry-confirm="true"`) || !strings.Contains(out, ">Batalkan</button>") {
 		t.Error("aksi detail tidak jadi tombol")
 	}
-	if strings.Contains(out, "Sistem cek stok") {
-		t.Error("langkah sistem tampil sebagai langkah pengguna")
+	if strings.Contains(out, "fk-flow") || strings.Contains(out, "Sistem cek stok") {
+		t.Error("halaman mockup masih menampilkan langkah use case")
 	}
 	d.Walks[0].Inferred = true
 	if out, _ := k.RenderPage(d, "pesanan", ""); strings.Contains(out, `data-foundry-link="kirim"`) {
@@ -399,5 +398,193 @@ func TestMockupSimulation(t *testing.T) {
 	a, b := k.PageHash(d, "po"), k.PageHash(DocOf(p), "po")
 	if a == "" || a != b {
 		t.Errorf("hash mengikuti simulasi: %s vs %s", a, b)
+	}
+}
+
+// A page's document actions follow the lifecycle whatever words the page
+// uses for them (seen live on distra: "Aksi sesuai status: Ajukan (draft);
+// Setujui atau Tolak (submitted)" rendered as text): every transition
+// taken there becomes a control, enabled only in its status for its actor;
+// a next-step link that is a transition of another page is gated too.
+func TestMockupDocumentActionsFollowLifecycle(t *testing.T) {
+	k := kit(t)
+	p := &core.Project{Name: "PR",
+		Lifecycles: []core.Lifecycle{{Entity: "PurchaseRequest",
+			States: []core.LifeState{{ID: "draft", Label: "Draf", Kind: core.StateInitial}, {ID: "submitted", Label: "Diajukan", Locked: true},
+				{ID: "approved", Label: "Disetujui", Locked: true}, {ID: "converted", Kind: core.StateFinal}},
+			Transitions: []core.LifeTransition{
+				{From: []string{"draft"}, To: "submitted", Action: "Ajukan", Kind: core.TransSubmit, Actor: "Purchasing", Flow: "FLOW-1", Step: 1},
+				{From: []string{"submitted"}, To: "approved", Action: "Setujui", Kind: core.TransApprove, Actor: "Manajer", Flow: "FLOW-1", Step: 2},
+				{From: []string{"submitted"}, To: "draft", Action: "Tolak", Kind: core.TransReject, Actor: "Manajer", Flow: "FLOW-1", Step: 2},
+				{From: []string{"approved"}, To: "converted", Action: "Konversi menjadi RFQ", Kind: core.TransComplete, Actor: "Purchasing", Flow: "FLOW-1", Step: 3},
+			}}},
+		Flows: []core.Flow{{ID: "FLOW-1", Name: "PR", FeatureID: "FEAT-1", Role: "Purchasing",
+			Steps: []string{"Ajukan PR", "Manajer memutuskan", "Konversi menjadi RFQ"}, StepPages: []string{"pr", "pr", "rfq"}}},
+		Features: []core.Feature{{ID: "FEAT-1", Platforms: []string{core.PlatformWeb}}},
+		UI: &core.UIDesign{Layout: &core.LayoutSpec{Pages: []core.LayoutPage{
+			{ID: "pr", Name: "PR", Pattern: "detail", Role: "Purchasing, Manajer", Data: []string{"PurchaseRequest"},
+				Links:    []core.PageLink{{To: "rfq", Via: "Konversi menjadi RFQ"}},
+				Sections: []core.Section{{ID: "info", Name: "Info", Content: []string{"Nomor", "Aksi sesuai status: Ajukan (draft); Setujui atau Tolak (submitted)"}}}},
+			{ID: "rfq", Name: "RFQ", Pattern: "detail", Role: "Purchasing", Sections: []core.Section{{ID: "info", Name: "Info", Content: []string{"Nomor"}}}},
+		}}}}
+	d := DocOf(p)
+	d.Link = func(id string) string { return "/m/" + id }
+	d.Self = "/m/pr"
+	button := func(out, label string) string {
+		i := strings.Index(out, ">"+label+"</button>")
+		if i < 0 {
+			return ""
+		}
+		return out[strings.LastIndex(out[:i], "<button"):i]
+	}
+	d.Sim = Sim{Role: "Manajer", Status: "submitted"}
+	out, _ := k.RenderPage(d, "pr", "")
+	if b := button(out, "Setujui"); b == "" || strings.Contains(b, "disabled") {
+		t.Errorf("manajer cannot approve a submitted PR: %q", b)
+	}
+	if b := button(out, "Tolak"); b == "" || strings.Contains(b, "disabled") || !strings.Contains(b, "fk-btn-danger") {
+		t.Errorf("rejection = %q", b)
+	}
+	if b := button(out, "Ajukan PR"); !strings.Contains(b, "disabled") {
+		t.Errorf("submit offered in status submitted: %q", b)
+	}
+	if b := button(out, "Konversi menjadi RFQ"); !strings.Contains(b, "disabled") {
+		t.Errorf("link to a later transition not gated: %q", b)
+	}
+	d.Sim = Sim{Role: "Purchasing", Status: "approved"}
+	out, _ = k.RenderPage(d, "pr", "")
+	if !strings.Contains(out, `data-foundry-link="rfq"`) {
+		t.Error("link not taken in the status that allows it")
+	}
+	if b := button(out, "Setujui"); !strings.Contains(b, "disabled") {
+		t.Errorf("approve offered after approval: %q", b)
+	}
+	// A plain mockup (no scenario) stays as designed: its hash is stable.
+	if a, b := k.PageHash(d, "pr"), k.PageHash(DocOf(p), "pr"); a == "" || a != b {
+		t.Errorf("hash follows the simulation: %s vs %s", a, b)
+	}
+}
+
+// Seen live on distra: "Sales" enabled the approval of "Sales Manager"
+// (one name contains the other), and "Batalkan sebelum konfirmasi" was
+// enabled on a confirmed order because another cancel transition was.
+func TestMockupSimRolesAndSameKindActions(t *testing.T) {
+	k := kit(t)
+	p := &core.Project{Name: "SO",
+		Lifecycles: []core.Lifecycle{{Entity: "SalesOrder",
+			States: []core.LifeState{{ID: "draft", Kind: core.StateInitial}, {ID: "pending"}, {ID: "confirmed", Locked: true},
+				{ID: "cancelled", Kind: core.StateFinal}},
+			Transitions: []core.LifeTransition{
+				{From: []string{"draft"}, To: "pending", Action: "Ajukan", Kind: core.TransSubmit, Actor: "Sales", Flow: "FLOW-1", Step: 1},
+				{From: []string{"pending"}, To: "confirmed", Action: "Setujui pesanan", Kind: core.TransApprove, Actor: "Sales Manager", Flow: "FLOW-1", Step: 2},
+				{From: []string{"pending"}, To: "draft", Action: "Tolak pesanan", Kind: core.TransReject, Actor: "Sales Manager", Flow: "FLOW-1", Step: 2},
+				{From: []string{"draft"}, To: "cancelled", Action: "Batalkan sebelum konfirmasi", Kind: core.TransCancel, Actor: "Sales", Flow: "FLOW-1", Step: 1},
+				{From: []string{"confirmed"}, To: "cancelled", Action: "Batalkan pesanan terkonfirmasi", Kind: core.TransCancel, Actor: "Sales", Flow: "FLOW-1", Step: 1},
+			}}},
+		Flows: []core.Flow{{ID: "FLOW-1", Name: "SO", FeatureID: "FEAT-1", Role: "Sales",
+			Steps: []string{"Ajukan pesanan", "Sales Manager memutuskan"}, StepPages: []string{"so", "so"}},
+			{ID: "FLOW-2", Name: "Approve", FeatureID: "FEAT-1", Role: "Sales Manager", Steps: []string{"Lihat"}}},
+		Features: []core.Feature{{ID: "FEAT-1", Platforms: []string{core.PlatformWeb}}},
+		UI: &core.UIDesign{Layout: &core.LayoutSpec{Pages: []core.LayoutPage{
+			{ID: "so", Name: "SO", Pattern: "detail", Role: "Sales, Sales Manager", Data: []string{"SalesOrder"},
+				Sections: []core.Section{{ID: "info", Name: "Info", Content: []string{"Nomor"}}}},
+		}}}}
+	d := DocOf(p)
+	d.Link = func(id string) string { return "/m/" + id }
+	d.Self = "/m/so"
+	enabled := func(out, label string) bool {
+		i := strings.Index(out, ">"+label+"</button>")
+		return i >= 0 && !strings.Contains(out[strings.LastIndex(out[:i], "<button"):i], "disabled")
+	}
+	d.Sim = Sim{Role: "Sales", Status: "pending"}
+	out, _ := k.RenderPage(d, "so", "")
+	if enabled(out, "Setujui pesanan") || enabled(out, "Tolak pesanan") {
+		t.Error("Sales may decide for Sales Manager")
+	}
+	d.Sim = Sim{Role: "Sales Manager", Status: "pending"}
+	if out, _ = k.RenderPage(d, "so", ""); !enabled(out, "Setujui pesanan") {
+		t.Error("Sales Manager cannot approve")
+	}
+	d.Sim = Sim{Role: "Sales", Status: "confirmed"}
+	out, _ = k.RenderPage(d, "so", "")
+	if enabled(out, "Batalkan sebelum konfirmasi") || !enabled(out, "Batalkan pesanan terkonfirmasi") {
+		t.Error("cancel transitions matched by kind instead of words")
+	}
+}
+
+// A stepper numbers the step names itself; one step is no stepper; what
+// names no step is a quality gate finding, not a step.
+func TestStepsBlock(t *testing.T) {
+	k := kit(t)
+	d := design()
+	pg := &d.Layout.Pages[0]
+	pg.Pattern = "wizard"
+	pg.Sections = []core.Section{{ID: "langkah", Name: "Langkah", Slot: "steps", Content: []string{"1 Data sekolah, 2 Akun admin, lalu 3D model"}}}
+	out, _ := k.RenderPage(d, pg.ID, "")
+	if !strings.Contains(out, `<b>1</b>Data sekolah</li>`) || !strings.Contains(out, `<b>3</b>3D model</li>`) {
+		t.Error("stepper tidak memakai nomornya sendiri")
+	}
+	p := &core.Project{UI: &core.UIDesign{Rules: d.Rules, Layout: d.Layout}}
+	if c := k.ContentCheck(p); c.Status != core.GatePass || !strings.HasPrefix(c.Detail, "1 stepper,") {
+		t.Errorf("stepper rapi tidak lolos: %+v", c)
+	}
+
+	pg.Sections[0].Content = []string{"Langkah: pilih file, validasi checksum", "Gagal validasi: data lama tetap utuh"}
+	out, _ = k.RenderPage(d, pg.ID, "")
+	if !strings.Contains(out, `<b>2</b>Validasi checksum</li>`) || strings.Contains(out, "data lama tetap utuh") {
+		t.Error("catatan tampil sebagai langkah")
+	}
+	if c := k.ContentCheck(p); c.Status != core.GateWarn || len(c.Items) != 1 || !strings.Contains(c.Items[0], `"Gagal validasi: data lama tetap utuh" bukan nama langkah`) {
+		t.Errorf("catatan di stepper tidak dilaporkan: %+v", c)
+	}
+
+	pg.Sections[0].Content = []string{"Pilih rentang tanggal lalu simpan CSV"}
+	if out, _ := k.RenderPage(d, pg.ID, ""); strings.Contains(out, `class="fk-steps"`) {
+		t.Error("satu langkah tampil sebagai stepper")
+	}
+	if c := k.ContentCheck(p); c.Status != core.GateWarn || !strings.Contains(strings.Join(c.Items, " "), "minimal 2 nama langkah") {
+		t.Errorf("stepper satu langkah tidak dilaporkan: %+v", c)
+	}
+	if g := p.DesignGate(); !slices.ContainsFunc(g.Checks, func(c core.GateCheck) bool { return c.ID == "component-content" }) {
+		t.Error("pemeriksaan stepper tidak ada di quality gate")
+	}
+}
+
+// A dialog the page opens is drawn after the page's content as a dialog,
+// not in a slot of the page; a form drawn as a table is a gate finding.
+func TestPageDialogs(t *testing.T) {
+	k := kit(t)
+	d := design()
+	pg := &d.Layout.Pages[0]
+	pg.Sections = append(pg.Sections, core.Section{ID: "dialog-pengguna", Name: "Dialog pengguna", Slot: "table",
+		Content: []string{"Field Nama, Email, Kata sandi sementara dan Peran", "Dialog konfirmasi hapus pengguna"}})
+	out, _ := k.RenderPage(d, pg.ID, "")
+	i := strings.Index(out, `class="fk-dialogs"`)
+	if i < 0 {
+		t.Fatal("dialog tidak tergambar")
+	}
+	dlg := out[i:]
+	for _, want := range []string{`role="dialog" aria-label="Dialog pengguna"`, `<span class="fk-badge">Dialog</span>`,
+		`>Kata sandi sementara</label>`, `type="password"`, `Batal</button><button class="fk-btn fk-btn-primary" type="button">Simpan`,
+		`role="alertdialog"`, `<p>Konfirmasi hapus pengguna</p>`, `fk-btn-danger" type="button">Hapus</button>`} {
+		if !strings.Contains(dlg, want) {
+			t.Errorf("dialog tanpa %s", want)
+		}
+	}
+	if strings.Contains(out[:i], "dialog-pengguna") {
+		t.Error("dialog ikut tergambar di slot halaman")
+	}
+	if out, _ := k.RenderPage(d, pg.ID, "loading"); strings.Contains(out, `class="fk-dialogs"`) {
+		t.Error("dialog tampil di state loading")
+	}
+	p := &core.Project{UI: &core.UIDesign{Rules: d.Rules, Layout: d.Layout}}
+	if c := k.ContentCheck(p); c.Status != core.GatePass {
+		t.Errorf("dialog dilaporkan: %+v", c)
+	}
+
+	pg.Sections[len(pg.Sections)-1].ID, pg.Sections[len(pg.Sections)-1].Name = "pengguna-baru", "Pengguna baru"
+	pg.Sections[len(pg.Sections)-1].Content = []string{"Field Nama, Email", "Tombol Simpan"}
+	if c := k.ContentCheck(p); c.Status != core.GateWarn || !strings.Contains(strings.Join(c.Items, " "), "Pengguna baru: tergambar sebagai tabel padahal isinya field form") {
+		t.Errorf("form yang jadi tabel tidak dilaporkan: %+v", c)
 	}
 }

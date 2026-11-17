@@ -43,6 +43,9 @@ type Doc struct {
 	Project *core.Project
 	Sim     Sim
 	Self    string
+	// trans are the project's lifecycle transitions by page, worked out
+	// once for every page DocOf renders.
+	trans map[string][]core.PageTransition
 }
 
 // DocOf is the design of a project.
@@ -51,6 +54,7 @@ func DocOf(p *core.Project) Doc {
 	if p.UI != nil {
 		d.Rules, d.Layout = p.UI.Rules, p.UI.Layout
 		d.Walks = core.FlowWalks(p, p.UI.Layout)
+		d.trans = p.TransitionsByPage(p.UI.Layout)
 	}
 	return d
 }
@@ -228,7 +232,17 @@ type render struct {
 	panelHead string
 	// colls are the page's collections and where their controls are.
 	colls map[string]core.Collection
-	b     strings.Builder
+	// docActs are the document transitions the header already offers;
+	// the page body does not repeat them.
+	docActs []string
+	// dialogs are the sections the page opens as dialogs, drawn after
+	// its content.
+	dialogs []core.Section
+	// steppers and collections count the page's steppers and tables/lists;
+	// contentIssues are what they show wrongly, for the quality gate.
+	steppers, collections int
+	contentIssues         []string
+	b                     strings.Builder
 }
 
 func (r *render) w(s string)                { r.b.WriteString(s) }
@@ -238,7 +252,13 @@ func (r *render) html() string {
 	pg := r.page
 	tokens := r.kit.Resolve(r.doc.Rules)
 	pat, hasPat := r.kit.Pattern(pg.Pattern)
-	secs := r.kit.AssignSlots(pg.Pattern, pg.Sections)
+	secs := slices.DeleteFunc(r.kit.AssignSlots(pg.Pattern, pg.Sections), func(s core.Section) bool {
+		if core.DialogSection(pg.Pattern, s) {
+			r.dialogs = append(r.dialogs, s)
+			return true
+		}
+		return false
+	})
 	placed := *pg
 	placed.Sections = secs
 	r.colls = map[string]core.Collection{}
@@ -684,7 +704,6 @@ func (r *render) pageBody(pat *Pattern, ok bool, secs []core.Section) {
 	r.w(`</div>`)
 	r.headActions()
 	r.w(`</header>`)
-	r.flowSteps()
 	if r.state == "success" {
 		r.w(`<div class="fk-toast" role="status">` + esc(r.stateText(nil, "success")) + `</div>`)
 	}
@@ -701,7 +720,9 @@ func (r *render) pageBody(pat *Pattern, ok bool, secs []core.Section) {
 		for i := range secs {
 			r.section(secs[i], Slot{Kind: guessKind(secs[i])}, false)
 		}
-		r.w(`</div></div>`)
+		r.w(`</div>`)
+		r.pageDialogs()
+		r.w(`</div>`)
 		return
 	}
 	body := r.panelBody(pat, secs)
@@ -721,7 +742,9 @@ func (r *render) pageBody(pat *Pattern, ok bool, secs []core.Section) {
 		}
 		r.w(`</div>`)
 	}
-	r.w(`</div></div>`)
+	r.w(`</div>`)
+	r.pageDialogs()
+	r.w(`</div>`)
 }
 
 func inSlot(secs []core.Section, slot string) []core.Section {

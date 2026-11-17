@@ -8,6 +8,7 @@ import type {
   BlueprintSectionStatus, BlueprintSkipKind, BlueprintTask, Project,
 } from "../types";
 import { Elapsed } from "./Elapsed";
+import { StopJobButton } from "./StopJobButton";
 
 // Everything shown here comes from the backend run: statuses, counts, percent
 // and estimate. This file only renders them; it derives no status of its own.
@@ -239,7 +240,7 @@ export function BlueprintProgress({ project }: { project: Project }) {
     return (
       <div className="bp-progress">
         <header className="bp-head">
-          <h1><span className="spinner" />Merancang Blueprint</h1>
+          <h1><span className="spinner" />Merancang Blueprint<StopJobButton job={project.job} label="Hentikan perancangan" /></h1>
           <p className="bp-activity-now">{project.job?.message ?? "Menyiapkan rancangan…"}</p>
         </header>
       </div>
@@ -247,6 +248,7 @@ export function BlueprintProgress({ project }: { project: Project }) {
   }
 
   const failed = bp.status === "failed" || project.job?.status === "failed";
+  const stopped = project.job?.status === "failed" && !!project.job.stopped;
   const applicable = bp.sections.filter((s) => s.status !== "skipped");
   const skipped = bp.sections.filter((s) => s.status === "skipped");
   const active = applicable.filter((s) => ACTIVE.has(s.status));
@@ -259,7 +261,8 @@ export function BlueprintProgress({ project }: { project: Project }) {
       <header className="bp-head">
         <h1>
           {failed ? null : <span className="spinner" />}
-          {failed ? "Perancangan Blueprint gagal" : "Merancang Blueprint"}
+          {stopped ? "Perancangan Blueprint dihentikan" : failed ? "Perancangan Blueprint gagal" : "Merancang Blueprint"}
+          {!failed && <StopJobButton job={project.job} runOpen={bp.status === "running"} label="Hentikan perancangan" />}
         </h1>
         {active.length > 1 && <p className="bp-activity-now">AI mengerjakan {active.length} bagian paralel: {active.map((s) => s.name).join(", ")}</p>}
         {active.length <= 1 && !failed && <p className="bp-activity-now">{active[0]?.activity ?? bp.activity}</p>}
@@ -299,9 +302,9 @@ export function BlueprintProgress({ project }: { project: Project }) {
       {timeline.length > 0 && <Timeline events={timeline} />}
       {failed && (
         <div className="bp-fail">
-          <p className="bp-err">{bp.error || project.job?.error || "Proses gagal."}</p>
+          <p className="bp-err">{stopped ? project.job?.error : bp.error || project.job?.error || "Proses gagal."}</p>
           <div className="bp-actions">
-            <button className="primary" disabled={pending === "retry"} onClick={() => void act("retry", api.retry)}>Coba lagi</button>
+            <button className="primary" disabled={pending === "retry"} onClick={() => void act("retry", api.retry)}>{stopped ? "Lanjutkan" : "Coba lagi"}</button>
             <button className="ghost" disabled={pending === "dismiss"} onClick={() => void act("dismiss", api.dismissJob)}>Tutup</button>
           </div>
         </div>

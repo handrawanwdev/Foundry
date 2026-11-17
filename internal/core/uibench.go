@@ -66,7 +66,7 @@ func (p *Project) DesignBenchmark() DesignBenchmark {
 		stepCov, stepTot = stepCov+f.Placed, stepTot+f.Steps
 		brCov, brTot = brCov+f.Shown, brTot+f.Branches
 		mapped++
-		if f.Declared && !f.Inferred {
+		if f.Declared && !f.Inferred && (f.Branches == 0 || f.BranchesDeclared) {
 			declared++
 		}
 	}
@@ -128,17 +128,28 @@ func fromCheck(id, name, kind string, c GateCheck, covered, total int, blocking 
 
 func screenMapCheck(flows []FlowTrace) GateCheck {
 	c := check("screen-mapping", "Akurasi pemetaan layar")
-	n := 0
+	declared := 0
 	for _, f := range flows {
-		if f.Inferred {
-			n++
+		switch {
+		case f.Inferred:
 			c.note(GateWarn, "%s %s: halaman ditebak, belum dipetakan desainer", f.ID, f.Name)
+		case !f.Declared:
+			// A page list without a page per step: the steps are placed by
+			// matching words, which is a guess too.
+			c.note(GateWarn, "%s %s: halaman per langkah belum ditulis desainer (dicocokkan dari kata)", f.ID, f.Name)
+		case f.Branches > 0 && !f.BranchesDeclared:
+			// Seen live: the rejection branch of an approval counted as
+			// shown because its words matched a page the designer never
+			// chose for it.
+			c.note(GateWarn, "%s %s: halaman cabang alternatif/kegagalan belum ditulis desainer (dicocokkan dari kata)", f.ID, f.Name)
+		default:
+			declared++
 		}
 	}
 	if len(flows) == 0 {
 		c.Status = GateSkip
 	}
-	c.Detail = fmt.Sprintf("%d dari %d use case dipetakan desainer", len(flows)-n, len(flows))
+	c.Detail = fmt.Sprintf("%d dari %d use case dipetakan desainer per langkah", declared, len(flows))
 	return c
 }
 

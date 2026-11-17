@@ -2,6 +2,7 @@ package uikit
 
 import (
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/handrawanwdev/foundry/internal/core"
@@ -80,7 +81,7 @@ func (r *render) simLifecycle() *core.Lifecycle {
 		return p.LifecycleOf(e)
 	}
 	if r.doc.Layout != nil {
-		for _, pt := range p.TransitionsByPage(r.doc.Layout)[r.page.ID] {
+		for _, pt := range r.pageTransitions() {
 			if lc := p.LifecycleOf(pt.Entity); lc != nil {
 				return lc
 			}
@@ -112,10 +113,13 @@ func (r *render) simState() *core.LifeState {
 }
 
 func (r *render) pageTransitions() []core.PageTransition {
-	if r.doc.Project == nil || r.doc.Layout == nil {
+	if r.doc.Project == nil || r.doc.Layout == nil || r.page == nil {
 		return nil
 	}
-	return r.doc.Project.TransitionsByPage(r.doc.Layout)[r.page.ID]
+	if r.doc.trans == nil {
+		r.doc.trans = r.doc.Project.TransitionsByPage(r.doc.Layout)
+	}
+	return r.doc.trans[r.page.ID]
 }
 
 func (r *render) matchTransition(label string) *core.PageTransition {
@@ -124,12 +128,32 @@ func (r *render) matchTransition(label string) *core.PageTransition {
 	if st := r.simState(); st != nil {
 		status = st.ID
 	}
+	// A page that decides several documents: the simulated one's
+	// transitions answer for it.
+	if lc := r.simLifecycle(); lc != nil {
+		var own []core.PageTransition
+		for _, pt := range ts {
+			if strings.EqualFold(pt.Entity, lc.Entity) {
+				own = append(own, pt)
+			}
+		}
+		if slices.ContainsFunc(own, func(pt core.PageTransition) bool { return core.MatchAction(label, pt.T) }) {
+			ts = own
+		}
+	}
+	// A label that names a transition by its words is that transition;
+	// only a label naming none falls back to the kind ("Batalkan sebelum
+	// konfirmasi" is not "Batalkan pesanan terkonfirmasi", seen live).
+	match := core.MatchActionWords
+	if !slices.ContainsFunc(ts, func(pt core.PageTransition) bool { return core.MatchActionWords(label, pt.T) }) {
+		match = core.MatchAction
+	}
 	var fallback *core.PageTransition
 	for i := range ts {
-		if !core.MatchAction(label, ts[i].T) {
+		if !match(label, ts[i].T) {
 			continue
 		}
-		if ts[i].T.Available(status, r.doc.Sim.Role) {
+		if r.available(ts[i].T, status) {
 			return &ts[i]
 		}
 		if fallback == nil {
@@ -137,6 +161,11 @@ func (r *render) matchTransition(label string) *core.PageTransition {
 		}
 	}
 	return fallback
+}
+
+// available reports whether the simulated role may take t in status.
+func (r *render) available(t core.LifeTransition, status string) bool {
+	return r.doc.Project.AvailableFor(t, status, r.doc.Sim.Role)
 }
 
 func (r *render) actionState(label string) (disabled bool, t *core.PageTransition, why string) {
@@ -154,12 +183,12 @@ func (r *render) actionState(label string) (disabled bool, t *core.PageTransitio
 	if st := r.simState(); st != nil {
 		status = st.ID
 	}
-	if !t.T.Available(status, r.doc.Sim.Role) {
+	if !r.available(t.T, status) {
 		why = "Tidak tersedia"
 		if status != "" && r.simLifecycle() != nil {
 			why = "Tidak tersedia pada status " + r.simLifecycle().StateLabel(status)
 		}
-		if r.doc.Sim.Role != "" && !core.ActorAllowed(t.T.Actor, r.doc.Sim.Role) {
+		if r.doc.Sim.Role != "" && !r.doc.Project.ActorAllows(t.T.Actor, r.doc.Sim.Role) {
 			why = "Aksi ini untuk " + t.T.Actor
 		}
 		return true, t, why
@@ -230,4 +259,11 @@ func (r *render) hiddenSim(status, feedback string) {
 func (r *render) formLocked() bool {
 	st := r.simState()
 	return st != nil && st.Locked
+}
+
+// offeredAbove reports whether the header already offers this document
+// action.
+func (r *render) offeredAbove(label string) bool {
+	t := r.matchTransition(label)
+	return t != nil && slices.ContainsFunc(r.docActs, func(a string) bool { return core.MatchAction(a, t.T) })
 }

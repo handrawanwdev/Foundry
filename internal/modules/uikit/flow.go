@@ -30,11 +30,18 @@ func (r *render) headActions() {
 		pa = core.FlowPrimaryAction(r.doc.Walks, pg.ID)
 	}
 	next := r.nextSteps()
-	if pa == "" && len(next) == 0 {
+	docActs := r.documentActions(pa)
+	if pa == "" && len(next) == 0 && len(docActs) == 0 {
 		return
 	}
 	r.w(`<div class="fk-actions">`)
 	for _, n := range next {
+		// A next step that is a document transition follows its status:
+		// in a status it is not available in, it is no way forward.
+		if why := r.unavailableStep(n.label); why != "" {
+			r.f(`<button class="fk-btn" disabled title="%s" data-foundry-sim="unavailable">%s</button>`, esc(why), esc(n.label))
+			continue
+		}
 		r.f(`<a class="fk-btn" href="%s" data-foundry-link="%s">%s%s</a>`, esc(r.doc.href(n.page)), esc(n.page), esc(n.label), icon("right"))
 	}
 	if pa != "" {
@@ -44,7 +51,84 @@ func (r *render) headActions() {
 		}
 		r.actionControl(pa, cls, true)
 	}
+	for _, a := range docActs {
+		cls := "fk-btn"
+		if core.DangerAction(a) || actionKindOf(r, a) == core.TransReject {
+			cls = "fk-btn fk-btn-danger"
+		}
+		r.actionControl(a, cls, false)
+	}
 	r.w(`</div>`)
+}
+
+// unavailableStep says why a next-step link that is a transition of the
+// simulated document cannot be taken in its status or by the role; ""
+// when it can, or when it is no transition. The transition may belong to
+// the page the link leads to.
+func (r *render) unavailableStep(label string) string {
+	lc, st := r.simLifecycle(), r.simState()
+	if !r.simulating() || lc == nil || st == nil {
+		return ""
+	}
+	var found *core.LifeTransition
+	for i, t := range lc.Transitions {
+		// By its words only: a link is no transition just because it is
+		// of the same kind ("Kirim ke gudang" is not "Ajukan PO").
+		a, b := strings.ToLower(strings.TrimSpace(label)), strings.ToLower(strings.TrimSpace(t.Action))
+		if core.SystemActor(t.Actor) || b == "" || !(a == b || strings.Contains(a, b) || strings.Contains(b, a)) {
+			continue
+		}
+		if r.available(t, st.ID) {
+			return ""
+		}
+		if found == nil {
+			found = &lc.Transitions[i]
+		}
+	}
+	switch {
+	case found == nil:
+		return ""
+	case slices.Contains(found.From, st.ID):
+		return "Aksi ini untuk " + found.Actor
+	}
+	return "Tidak tersedia pada status " + lc.StateLabel(st.ID)
+}
+
+// simulating reports whether the prototype runs a document scenario (a
+// status or document chosen); a plain mockup stays as designed.
+func (r *render) simulating() bool {
+	return r.doc.Sim.Status != "" || r.doc.Sim.Entity != ""
+}
+
+// documentActions are the lifecycle transitions people take on this page
+// for the simulated document, besides the primary action: each becomes a
+// control enabled only in the statuses and for the roles that allow it.
+// The page's text may describe them in any words; the lifecycle decides.
+func (r *render) documentActions(primary string) []string {
+	lc := r.simLifecycle()
+	if !r.simulating() || lc == nil {
+		return nil
+	}
+	var out []string
+	for _, pt := range r.pageTransitions() {
+		if !strings.EqualFold(pt.Entity, lc.Entity) || primary != "" && core.MatchAction(primary, pt.T) {
+			continue
+		}
+		if !slices.ContainsFunc(out, func(a string) bool { return strings.EqualFold(a, pt.T.Action) }) {
+			out = append(out, pt.T.Action)
+		}
+	}
+	if len(out) > 0 {
+		r.docActs = out
+	}
+	return out
+}
+
+func actionKindOf(r *render, label string) string {
+	if t := r.matchTransition(label); t != nil {
+		return t.T.Kind
+	}
+	return ""
 }
 
 // nextSteps are the pages the page's flows continue on, labelled by the
@@ -96,64 +180,6 @@ func (r *render) nextLabel(w core.FlowWalk, to string) string {
 		return "Ke " + pg.Name
 	}
 	return "Lanjut"
-}
-
-// MinStepperSteps is how many user steps of one flow a page must host for
-// the page to show the flow's steps in order.
-const MinStepperSteps = 2
-
-// flowSteps shows the user steps of the flow the page hosts most of: the
-// steps done here are marked, the others lead to their pages.
-func (r *render) flowSteps() {
-	if r.centered || formLike(r.page.Pattern) {
-		return
-	}
-	var walk *core.FlowWalk
-	most := 0
-	for i, w := range r.doc.Walks {
-		here, user := 0, 0
-		for _, st := range w.Steps {
-			if !st.System {
-				user++
-				if st.Page == r.page.ID {
-					here++
-				}
-			}
-		}
-		if here >= MinStepperSteps && user >= 3 && here > most {
-			walk, most = &r.doc.Walks[i], here
-		}
-	}
-	if walk == nil {
-		return
-	}
-	r.f(`<nav class="fk-flow" aria-label="Alur %s" data-foundry-flow="%s"><span class="fk-flow-name">%s</span><ol>`,
-		esc(walk.Name), esc(walk.ID), esc(walk.Name))
-	n, first := 0, true
-	for _, st := range walk.Steps {
-		if st.System {
-			continue
-		}
-		n++
-		label := fmt.Sprintf(`<span class="fk-flow-n">%d</span>%s`, n, esc(core.StepAction(st.Text)))
-		cls := ""
-		if st.Decision {
-			cls = "dec"
-		}
-		switch {
-		case st.Page == r.page.ID:
-			cls += " here"
-			if first {
-				cls, first = cls+" on", false
-			}
-			r.f(`<li class="%s" title="%s">%s</li>`, strings.TrimSpace(cls), esc(st.Text), label)
-		case st.Page != "":
-			r.f(`<li class="%s" title="%s"><a href="%s">%s</a></li>`, cls, esc(st.Text), esc(r.doc.href(st.Page)), label)
-		default:
-			r.f(`<li class="%s" title="%s">%s</li>`, cls, esc(st.Text), label)
-		}
-	}
-	r.w(`</ol></nav>`)
 }
 
 // writeWalks lists every use case step by step with the page it happens

@@ -308,7 +308,12 @@ func (p *Project) LifecycleIssues(lcs []Lifecycle, flows []Flow) []Issue {
 			for _, t := range outs {
 				switch t.Kind {
 				case TransApprove:
-					approve = t.Action
+					// An automatic approval (a rule, not a person) has no
+					// one to refuse it; only a person's approval needs a way
+					// to say no.
+					if !SystemActor(t.Actor) {
+						approve = t.Action
+					}
 				case TransReject, TransRevise, TransCancel:
 					refuse = true
 				}

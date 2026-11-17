@@ -24,6 +24,8 @@ const (
 const (
 	reasonAfterDiscovery = "Relevansinya ditentukan setelah Penjelasan Sistem selesai"
 	reasonSatisfied      = "Sudah ada dari proses sebelumnya dan masih valid"
+	reasonTechProposal   = "Menunggu keputusanmu: tinjau usulan teknologi dari AI, lalu Susun rancangan untuk melanjutkan"
+	reasonNoJob          = "Belum ada proses yang mengerjakan bagian ini. Jalankan Susun rancangan untuk melanjutkan"
 	reasonStopped        = "Ditunda: proses ditutup sebelum bagian ini dikerjakan. Jalankan Susun rancangan untuk melanjutkan"
 )
 
@@ -141,6 +143,8 @@ func planSections(p *core.Project) []core.BlueprintSection {
 			s.Status, s.SkipKind, s.Reason = core.BPSkipped, core.BPSkipNotApplicable, "Project yang sudah ada memakai struktur repository-nya sendiri"
 		case planPartLanded(p, part):
 			s.Status = core.BPCompleted
+		case part == work.KindTech && p.Stack != nil && p.Stack.Proposal != nil:
+			s.Reason = reasonTechProposal
 		}
 		return s
 	}
@@ -392,7 +396,7 @@ func syncCompleted(p *core.Project, own string) {
 // finishRunIfDone closes the run once nothing can still move it.
 func finishRunIfDone(p *core.Project) {
 	t := liveRun(p)
-	if t == nil || p.BlueprintBatch > 0 || t.Running() {
+	if t == nil || p.BlueprintBatch > 0 {
 		return
 	}
 	if p.Job != nil && (p.Job.Status == core.JobRunning || p.Job.Status == core.JobWaiting || p.Job.Status == core.JobFailed) {
@@ -400,7 +404,22 @@ func finishRunIfDone(p *core.Project) {
 	}
 	now := time.Now().UTC()
 	t.ReconcilePlan(planSections(p), now)
+	// No job and no queue are left: a section still marked in progress
+	// (a plan round that needs a decision before its next round) has no
+	// owner. It waits, and the run ends instead of spinning forever.
+	reason := waitingReason(p)
+	for i := range t.Sections {
+		t.ParkSection(t.Sections[i].ID, reason, now)
+	}
 	t.CompleteRun(now)
+}
+
+// waitingReason says what a section left without a job waits for.
+func waitingReason(p *core.Project) string {
+	if p.Stack != nil && p.Stack.Proposal != nil {
+		return reasonTechProposal
+	}
+	return reasonNoJob
 }
 
 func trackFail(p *core.Project, kind string, err error) {

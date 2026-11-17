@@ -439,6 +439,7 @@ export interface Job {
   kind: string; status: "running" | "done" | "failed" | "waiting_host";
   message: string; error?: string; started: string;
   steps?: JobStep[]; eta_ms?: number;
+  stopped?: boolean;
 }
 export interface Event { at: string; source: string; message: string }
 

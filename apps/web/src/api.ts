@@ -50,6 +50,7 @@ export const api = {
   startBlueprint: () => call("POST", "/project/discover", {}),
   retry: () => call("POST", "/project/retry", {}),
   dismissJob: () => call("POST", "/project/job/dismiss", {}),
+  stopJob: () => call("POST", "/project/job/stop", {}),
   setPlatform: (targets: PlatformTarget[]) => call<Project>("PUT", "/project/platform", { targets }),
   // Structure edits become a proposal; applyStructure/discardStructure decide it.
   proposeStructure: (ops: StructureOp[]) => call<Project>("PUT", "/project/structure", { ops }),

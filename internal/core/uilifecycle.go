@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // The screens follow the document lifecycles: a transition's action sits
@@ -51,6 +52,34 @@ func (t LifeTransition) Available(status, role string) bool {
 	}
 	return ActorAllowed(t.Actor, role)
 }
+
+// ActorAllows is ActorAllowed with the project's roles: when the actor and
+// the preview role are both roles of the project and differ, they are
+// different people ("Sales" does not act for "Sales Manager", seen live on
+// distra), even though one name contains the other.
+func (p *Project) ActorAllows(actor, simRole string) bool {
+	if !ActorAllowed(actor, simRole) {
+		return false
+	}
+	a, s := roleKey(actor), roleKey(simRole)
+	if a == "" || s == "" || a == s || SystemActor(actor) || p == nil {
+		return true
+	}
+	roles := p.knownRoles(p.Flows)
+	return !(slices.Contains(roles, a) && slices.Contains(roles, s))
+}
+
+// AvailableFor is Available with the project's roles (ActorAllows).
+func (p *Project) AvailableFor(t LifeTransition, status, role string) bool {
+	if status != "" && !slices.Contains(t.From, status) {
+		return false
+	}
+	return p.ActorAllows(t.Actor, role)
+}
+
+// MatchActionWords reports whether a control label names this transition
+// by its words (not merely by its kind).
+func MatchActionWords(label string, t LifeTransition) bool { return actionMatches(label, t.Action) }
 
 // MatchAction reports whether a control label is this transition.
 func MatchAction(label string, t LifeTransition) bool {
@@ -130,7 +159,7 @@ func statusValues(text string) []string {
 	var out []string
 	for _, m := range statusList.FindAllStringSubmatch(text, -1) {
 		for _, v := range regexp.MustCompile(`,|/| atau | dan | or | and `).Split(m[1], -1) {
-			if v = strings.Trim(strings.TrimSpace(v), ".'\""); v != "" && len([]rune(v)) <= 32 && len(strings.Fields(v)) <= 3 {
+			if v = strings.Trim(strings.TrimSpace(v), ".'\""); v != "" && len([]rune(v)) <= 32 && len(strings.Fields(v)) <= 3 && !typeName(v) {
 				out = append(out, v)
 			}
 		}
@@ -216,20 +245,37 @@ func lifecycleUIIssues(p *Project, l *LayoutSpec) []Issue {
 			if pg.Pattern != "form" && pg.Pattern != "wizard" || pt.T.Kind == TransCancel || pt.T.Kind == TransRevise {
 				continue
 			}
-			if !slices.ContainsFunc(pt.T.From, func(f string) bool { s := lc.State(f); return s == nil || !s.Locked }) {
+			// Leaving a locked status is what the lifecycle allows (a
+			// delivery closed with its proof, a PO sent): only a form that
+			// changes the document and keeps it in the locked status edits
+			// what can no longer be edited.
+			if slices.Contains(pt.T.From, pt.T.To) && !slices.ContainsFunc(pt.T.From, func(f string) bool { s := lc.State(f); return s == nil || !s.Locked }) {
 				add(IssueWarning, "page:"+id, "formulir ini menjalankan %q pada %s yang terkunci (%s): dokumen terkunci tidak diubah lewat form",
 					pt.T.Action, lc.Entity, strings.Join(pt.T.From, ", "))
 			}
 		}
-		for _, v := range statusValues(pageText(pg)) {
-			if !slices.ContainsFunc(entities, func(lc *Lifecycle) bool {
+		known := func(v string) bool {
+			return slices.ContainsFunc(entities, func(lc *Lifecycle) bool {
 				return slices.ContainsFunc(lc.States, func(s LifeState) bool { return stateMatches(v, s) })
-			}) {
-				names := make([]string, len(entities))
-				for i, lc := range entities {
-					names[i] = lc.Entity
+			})
+		}
+		names := make([]string, len(entities))
+		for i, lc := range entities {
+			names[i] = lc.Entity
+		}
+		// A text is a list of the document's statuses when at least one of
+		// its values is one; otherwise "status" introduces something else
+		// ("Status dikonfirmasi: read-only", "status (default menunggu)")
+		// and nothing is claimed about it.
+		for _, part := range pageParts(pg) {
+			vals := statusValues(part)
+			if !slices.ContainsFunc(vals, known) {
+				continue
+			}
+			for _, v := range vals {
+				if !known(v) {
+					add(IssueWarning, "page:"+id, "status %q tidak ada di siklus %s: tampilkan hanya status yang dimiliki dokumennya", v, strings.Join(names, ", "))
 				}
-				add(IssueWarning, "page:"+id, "status %q tidak ada di siklus %s: tampilkan hanya status yang dimiliki dokumennya", v, strings.Join(names, ", "))
 			}
 		}
 	}
@@ -242,6 +288,13 @@ func lifecycleCheck(p *Project, l *LayoutSpec) GateCheck {
 	c := check("lifecycle", "Siklus status dokumen")
 	if len(p.Lifecycles) == 0 {
 		c.Status, c.Detail = GateSkip, "use case belum menulis siklus status dokumen"
+		// Use cases that change a status without a lifecycle leave the
+		// screens' actions and statuses unchecked: not "nothing to check".
+		if ids := statusFlows(p); len(ids) > 0 {
+			c.Detail = fmt.Sprintf("%d use case mengubah status dokumen tetapi siklus statusnya belum ditulis", len(ids))
+			c.Status = GateWarn
+			c.Items = append(c.Items, fmt.Sprintf("status tidak dapat diperiksa: %s mengubah status tanpa siklus status dokumen", strings.Join(ids, ", ")))
+		}
 		return c
 	}
 	trans, traced := 0, 0
@@ -263,4 +316,33 @@ func lifecycleCheck(p *Project, l *LayoutSpec) GateCheck {
 		c.note(levelStatus(is.Level), "%s: %s", is.Where, is.Message)
 	}
 	return c
+}
+
+// statusFlows are the use cases whose data effects change a status.
+func statusFlows(p *Project) []string {
+	var out []string
+	for _, f := range p.Flows {
+		if slices.ContainsFunc(f.Data, func(d string) bool { return hasStem(stems(d), "status") }) {
+			out = append(out, f.ID)
+		}
+	}
+	return out
+}
+
+// typeName reports whether a word is a code identifier ("CommandStatus",
+// "paid_status") naming the status field or type, not one of its values.
+func typeName(v string) bool {
+	if strings.ContainsAny(v, " ") {
+		return false
+	}
+	if strings.Contains(v, "_") && strings.Contains(strings.ToLower(v), "status") {
+		return true
+	}
+	rs := []rune(v)
+	for i := 1; i < len(rs); i++ {
+		if unicode.IsLower(rs[i-1]) && unicode.IsUpper(rs[i]) {
+			return true
+		}
+	}
+	return false
 }

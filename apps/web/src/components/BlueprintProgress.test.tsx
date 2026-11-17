@@ -190,3 +190,19 @@ describe("buildingInitialBlueprint", () => {
     expect(buildingInitialBlueprint(proj({ discovery: {}, blueprint_progress: { status: "incomplete", sections: [] } }))).toBe(false);
   });
 });
+
+describe("stop", () => {
+  it("offers a stop while the run works, and says it was stopped after", () => {
+    const working = proj({ job: { kind: "artifacts", status: "running", message: "Merancang Blueprint", started: "2026-11-07T10:00:00Z" }, blueprint_progress: run() });
+    expect(renderToStaticMarkup(<BlueprintProgress project={working} />)).toContain("Hentikan perancangan");
+
+    const stopped = proj({
+      job: { kind: "artifacts", status: "failed", stopped: true, message: "Merancang Blueprint", error: "Dihentikan pengguna.", started: "2026-11-07T10:00:00Z" },
+      blueprint_progress: run({ status: "failed" }),
+    });
+    const html = renderToStaticMarkup(<BlueprintProgress project={stopped} />);
+    expect(html).toContain("Perancangan Blueprint dihentikan");
+    expect(html).toContain("Lanjutkan");
+    expect(html).not.toContain("Hentikan perancangan");
+  });
+});

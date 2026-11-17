@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // A collection is a section that shows records as a table or a list. Every
@@ -102,6 +103,9 @@ func slotKind(pattern, slot string) string {
 // IsCollection reports whether the section shows records as a table or a
 // list: its pattern, its own words or its slot in the page template say so.
 func IsCollection(pagePattern string, s Section) bool {
+	if DialogSection(pagePattern, s) {
+		return false
+	}
 	switch s.Pattern {
 	case "table", "list", "feed":
 		return true
@@ -116,9 +120,31 @@ func IsCollection(pagePattern string, s Section) bool {
 	return false
 }
 
+// DialogSection reports whether a section is a dialog its page opens (a
+// create or edit form, a confirmation): it is drawn over the page, not in
+// a slot of the page's template. The sections of a modal page are the
+// dialog's own content.
+func DialogSection(pagePattern string, s Section) bool {
+	if pagePattern == "modal" {
+		return false
+	}
+	if s.Pattern == "modal" || s.Pattern == "dialog" {
+		return true
+	}
+	for _, w := range strings.FieldsFunc(strings.ToLower(s.ID+" "+s.Name), func(r rune) bool { return !unicode.IsLetter(r) }) {
+		if w == "dialog" || w == "modal" || w == "popup" {
+			return true
+		}
+	}
+	return false
+}
+
 // ControlSection is the data control a whole section is: a toolbar or
 // facets section filters, a pagination section pages.
 func ControlSection(pagePattern string, s Section) string {
+	if DialogSection(pagePattern, s) {
+		return ""
+	}
 	switch slotKind(pagePattern, s.Slot) {
 	case "toolbar", "facets":
 		return ControlFilter

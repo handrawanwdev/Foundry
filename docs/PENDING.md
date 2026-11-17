@@ -79,6 +79,21 @@ Kode sudah di-commit user: `2d490fa` (Phase 7), `9c9fa86` (coverage workflow), `
 - [ ] Desain lama (format 2) tidak otomatis diberi preset; baru ikut UI kit setelah revisi desain yang mengembalikan rules.
 - [ ] Font preset (Inter, Nunito Sans, Source Serif 4) tidak dimuat di mockup (CSP tanpa jaringan); fallback system-ui.
 
+## E. Validasi AI sungguhan: desain, lifecycle, prototype (2026-11-17)
+
+Salinan Parking-System dan distra (fixture asli tidak diubah, hash sama). Pipeline normal, `claude-haiku-5-5` (config user). 14 run, $1,37 (dilaporkan CLI).
+
+- [x] **Live terbukti**: revisi use case menulis trigger semua flow, siklus status (Parking 9 dokumen/27 transisi, distra 16/82), paralel (1 dan 3 kelompok); desain baru dan revisi desain lolos validasi.
+- [x] **Prompt desain**: `primary_action` kini ada di shape + aturan (sebelumnya 0 halaman menulisnya); cabang diberi nomor b1..bn (sebelumnya 3–6 flow cabangnya dibuang diam-diam karena jumlah tidak cocok). Setelah fix: aksi utama 18/18 dan 29/29, cabang ditempatkan 11/11 dan 14/15. Budget prompt klinik 18.800 → 19.000 byte.
+- [x] **Gate tanpa false confidence**: navigasi/flow ditebak, status berubah tanpa siklus, pemetaan kata, dan cabang yang tidak ditempatkan desainer kini `warn`, bukan `skip`/`pass`. Status halaman dibaca per teks (bukan lintas field) dan hanya bila daftar menyebut status yang dikenal. Persetujuan otomatis (Sistem) tidak diminta penolakan. Form yang **keluar** dari status terkunci tidak lagi diperingatkan (keputusan lama berubah: hanya edit yang tetap di status terkunci).
+- [x] **Normalisasi** yang sebelumnya menolak seluruh desain (biaya 1 run ulang): user dengan banyak platform, halaman dengan banyak fitur.
+- [x] **Prototype**: transisi dokumen di halaman dirender sebagai aksi bergerbang status/peran saat simulasi; link langkah berikut yang merupakan transisi ikut digerbang; aksi dicocokkan per kata sebelum per jenis; peran "Sales" tidak lagi bertindak sebagai "Sales Manager"; hash mockup tanpa simulasi tidak berubah.
+- [ ] **Biaya cascade**: revisi use case Parking memicu 2 run sinkron workflow 700 KB (331k token cache write, $0,54) — lebih mahal dari revisinya sendiri ($0,04).
+- [ ] **Kualitas AI belum ditegakkan validator**: aktor transisi ditulis sebagai permission ("Approver dengan purchase_request:approve") → simulasi persetujuan tak bisa dijalankan peran mana pun (hanya warning); status akhir dengan transisi keluar (PurchaseRequest rejected→draft); `Payment.menunggu` tanpa timeout/batal; siklus untuk field (`ParkingSession.paid_status`); paralel lemah (indikator UI dan pekerjaan berjalan dijadikan join); hasil penolakan tidak ditampilkan ke pemohon (FLOW-007 Parking).
+- [ ] **Variasi jumlah halaman**: distra 24 / 64 / 29 halaman antar-run. Run 64 halaman memecah list/form/detail per entitas; aturan "Never a reason to add a page" ditambahkan, 1 run ulang 29 halaman — sampel kecil.
+- [ ] `TestUXFixtures/distrub-project` gagal (langkah FLOW-005 tanpa halaman) — sudah gagal sebelum perubahan ini.
+- [ ] Harness live: `design_bench_test.go` (`TestBenchScopeRevise`, `TestBenchDesignGenerate`, `TestBenchDesignReport`, tag `foundrybench`). Hasil: `/tmp/claude-1000/-home-handrawan-Project-Foundry/86be4564-1161-4d4f-a8f7-b0fcfd22e6b2/scratchpad/ai` (sementara).
+
 ## Bukti
 - Ukuran prompt sketch/revisi: `go test -tags foundrybench -run 'TestBench(Sketch|Revision)PromptSize'` (BENCH_PROJECT=…/project.json). Revisi live: `TestBenchWorkflowRevise` (BENCH_DIR, BENCH_REVISE_TEXT, BENCH_REVISE_FOCUS).
 - Ukuran prompt detail: `go test -tags foundrybench -run TestBenchDetailPromptSize` (BENCH_PROJECT=…/project.json). Live: `/tmp/claude-1000/-home-handrawan-Project-Foundry/6e73f342-d3ad-4d96-bbb4-925a76766846/scratchpad/wf/parking-detail2`

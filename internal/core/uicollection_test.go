@@ -41,3 +41,19 @@ func issueText(issues []Issue, where string) string {
 	}
 	return ""
 }
+
+func TestDialogSection(t *testing.T) {
+	dlg := Section{ID: "dialog-kategori", Name: "Dialog kategori", Content: []string{"Tabel: Nama, Deskripsi"}}
+	if !DialogSection("table", dlg) || IsCollection("table", dlg) || ControlSection("table", dlg) != "" {
+		t.Error("dialog dianggap bagian tata letak halaman")
+	}
+	if DialogSection("modal", Section{ID: "aksi", Name: "Aksi dialog"}) {
+		t.Error("isi halaman modal dianggap dialog terpisah")
+	}
+	if DialogSection("table", Section{ID: "dialogue-log", Name: "Riwayat"}) {
+		t.Error("kata yang hanya memuat dialog dianggap dialog")
+	}
+	if !DialogSection("detail", Section{ID: "x", Name: "Hapus", Pattern: "modal"}) {
+		t.Error("section pattern modal bukan dialog")
+	}
+}

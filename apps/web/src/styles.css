@@ -761,6 +761,9 @@ button.link:hover { text-decoration: underline; background: none; }
 
 .bp-progress { max-width: 36rem; text-align: left; }
 .bp-head h1 { display: flex; align-items: center; gap: .55rem; }
+.bp-head h1 .stop-job { margin-left: auto; font-size: 13px; font-weight: 500; }
+button.stop-job { border-color: var(--bad); color: var(--bad); white-space: nowrap; }
+button.stop-job:not(:disabled):hover { background: var(--bad-soft); border-color: var(--bad); }
 .bp-activity-now { margin: 0 0 .35rem; color: var(--heading); }
 .bp-bar { height: 4px; background: var(--dot); border-radius: 99px; overflow: hidden; margin: .65rem 0 0; }
 .bp-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .25s ease; }

@@ -68,7 +68,10 @@ type FlowTrace struct {
 	Shown    int      `json:"shown"`    // of those, the ones a page shows
 	Inferred bool     `json:"inferred,omitempty"`
 	Declared bool     `json:"declared,omitempty"`
-	Status   string   `json:"status"` // pass | warn
+	// BranchesDeclared: every alternative and failure has the page the
+	// designer chose.
+	BranchesDeclared bool   `json:"branches_declared,omitempty"`
+	Status           string `json:"status"` // pass | warn
 }
 
 // Gate verdicts.
@@ -95,6 +98,16 @@ type DesignGate struct {
 	Assumptions []string `json:"assumptions,omitempty"`
 	Unknowns    []string `json:"unknowns,omitempty"`
 }
+
+// gateChecks are the checks other modules add to every design gate: what
+// only the mockup renderer knows, such as how a section is drawn, is
+// checked where it is drawn.
+var gateChecks []func(*Project) GateCheck
+
+// RegisterGateCheck adds a check to every design gate, after the core
+// ones. It is meant for package init and is not safe to call concurrently
+// with DesignGate.
+func RegisterGateCheck(f func(*Project) GateCheck) { gateChecks = append(gateChecks, f) }
 
 // DesignGate runs the quality gate over the current design.
 func (p *Project) DesignGate() DesignGate {
@@ -131,6 +144,9 @@ func (p *Project) DesignGate() DesignGate {
 		responsiveCheck(d, issues),
 		visualCheck(issues),
 		prototypeCheck(p, l),
+	}
+	for _, f := range gateChecks {
+		g.Checks = append(g.Checks, f(p))
 	}
 	g.Assumptions, g.Unknowns = slices.Clone(l.Assumptions), slices.Clone(l.Unknowns)
 	for _, dc := range l.Decisions {
@@ -242,7 +258,8 @@ func pageAction(l *LayoutSpec, walks []FlowWalk, id string) string {
 func flowTraces(walks []FlowWalk) []FlowTrace {
 	out := []FlowTrace{}
 	for _, w := range walks {
-		t := FlowTrace{ID: w.ID, Name: w.Name, Role: w.Role, Pages: w.Pages, Inferred: w.Inferred, Declared: w.Declared, Status: GatePass}
+		t := FlowTrace{ID: w.ID, Name: w.Name, Role: w.Role, Pages: w.Pages, Inferred: w.Inferred, Declared: w.Declared,
+			BranchesDeclared: w.BranchesDeclared, Status: GatePass}
 		if t.Pages == nil {
 			t.Pages = []string{}
 		}
@@ -344,9 +361,10 @@ func navigationCheck(p *Project, l *LayoutSpec, walks []FlowWalk, format int) Ga
 	if format >= UIDesignFormat {
 		missing = GateFail
 	}
-	moves := 0
+	moves, guessed := 0, 0
 	for _, w := range walks {
 		if w.Inferred {
+			guessed++
 			continue
 		}
 		for i := 1; i < len(w.Pages); i++ {
@@ -374,10 +392,18 @@ func navigationCheck(p *Project, l *LayoutSpec, walks []FlowWalk, format int) Ga
 			}
 		}
 	}
-	if moves == 0 {
+	// A flow whose pages are guessed cannot be checked: say so instead of
+	// reporting nothing to check.
+	if guessed > 0 {
+		c.note(GateWarn, "%d use case belum dipetakan desainer: navigasi alurnya tidak dapat diperiksa", guessed)
+	}
+	if moves == 0 && guessed == 0 {
 		c.Status = GateSkip
 	}
 	c.Detail = fmt.Sprintf("%d perpindahan halaman di alur use case", moves)
+	if guessed > 0 {
+		c.Detail += fmt.Sprintf("; %d use case tidak terukur", guessed)
+	}
 	return c
 }
 

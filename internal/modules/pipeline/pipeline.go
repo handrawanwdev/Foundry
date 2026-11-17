@@ -79,6 +79,10 @@ type Service struct {
 	ctx  context.Context
 	stop context.CancelFunc
 
+	// jobs is the context of the running jobs, a child of ctx that StopJob
+	// cancels alone (stop.go).
+	jobs jobControl
+
 	wg sync.WaitGroup
 }
 
@@ -112,12 +116,14 @@ func (s *Service) Snapshot() (*core.Project, error) {
 	return p, nil
 }
 
-// context is the parent of every job: cancelled by Shutdown.
+// context is the context of the running jobs: cancelled by Shutdown, and by
+// StopJob for the jobs running when it is called.
 func (s *Service) context() context.Context {
-	if s.ctx == nil {
-		return context.Background()
+	parent := s.ctx
+	if parent == nil {
+		parent = context.Background()
 	}
-	return s.ctx
+	return s.jobs.current(parent)
 }
 
 // Shutdown stops every job of this service: agents and the processes they
@@ -335,6 +341,9 @@ func (s *Service) startAI(kind string) error { return s.startAIIf(kind, nil) }
 // that starts the job, so two callers can never both start it. A failed
 // precondition starts nothing and writes nothing.
 func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error {
+	if s.jobs.held(kind) {
+		return errStopped
+	}
 	runner, isMCP, err := s.AI.Runner()
 	if err != nil {
 		s.failJobIf(kind, err, expect)
@@ -387,6 +396,9 @@ func (s *Service) startAIIf(kind string, expect func(*core.Project) error) error
 		}
 		saveAIRaw(p.Dir, kind, out)
 		if err := s.applyAI(kind, out, "agent"); err != nil {
+			if errors.Is(err, errStopped) {
+				return // the answer landed; the user stopped what came next
+			}
 			if s.noteRejection(kind, err) {
 				s.startAI(kind) // one retry with the rejection in the prompt
 				return
@@ -528,6 +540,9 @@ func (s *Service) runWorkflow(runner *agent.Runner) {
 	}
 	saveAIRaw(p.Dir, kind, out)
 	if err := s.applyAI(kind, out, "agent"); err != nil {
+		if errors.Is(err, errStopped) {
+			return
+		}
 		// The last refused answer stays for audit: the next round overwrites
 		// the plain copy.
 		saveAIRaw(p.Dir, kind+"-rejected", out)
@@ -553,8 +568,8 @@ func (s *Service) runWorkflow(runner *agent.Runner) {
 func (s *Service) startNextWorkflowRound() error {
 	err := s.startAIIf(work.KindWorkflow, workflowRoundOpen)
 	switch {
-	case errors.Is(err, ErrBusy), errors.Is(err, ErrNothingToDo):
-		return nil // started by someone else, or nothing left
+	case errors.Is(err, ErrBusy), errors.Is(err, ErrNothingToDo), errors.Is(err, errStopped):
+		return nil // started by someone else, nothing left, or stopped
 	case err != nil:
 		s.failJob(work.KindWorkflow, err)
 	}
@@ -592,6 +607,9 @@ func (s *Service) failJob(kind string, err error) { s.failJobIf(kind, err, nil) 
 // failJobIf records a failed job only while expect holds (nil: always), so
 // a late failure never overwrites a job that started after it.
 func (s *Service) failJobIf(kind string, err error, expect func(*core.Project) error) {
+	if s.jobs.stopping() {
+		return // StopJob records the stopped job itself
+	}
 	s.Store.Update(func(p *core.Project) error {
 		if expect != nil {
 			if err := expect(p); err != nil {
@@ -610,7 +628,7 @@ func (s *Service) applyAI(kind, raw, source string) error {
 	s.markValidating(kind, "")
 	var next string
 	_, err := s.Store.Update(func(p *core.Project) error {
-		if p.Job == nil || p.Job.Kind != kind || p.Job.Status == core.JobDone {
+		if p.Job == nil || p.Job.Kind != kind || p.Job.Status == core.JobDone || p.Job.Stopped {
 			return fmt.Errorf("%w: tidak ada job %s yang aktif", ErrWrongStage, kind)
 		}
 		own := sectionForJob(p, kind)
@@ -1017,7 +1035,8 @@ func (s *Service) RetryJob() error {
 	case work.KindWorkflow:
 		return s.startAIIf(kind, failedJob(kind))
 	}
-	if p.BlueprintBatch > 0 {
+	// A stopped blueprint step continues with what is still missing.
+	if p.BlueprintBatch > 0 || p.Job.Stopped && isBlueprintStep(kind) {
 		return s.GenerateBlueprint()
 	}
 	return ErrNothingToDo

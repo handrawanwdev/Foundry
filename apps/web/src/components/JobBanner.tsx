@@ -2,6 +2,7 @@ import { api } from "../api";
 import { formatElapsed } from "../elapsed";
 import { useProject } from "../store/project";
 import { Elapsed } from "./Elapsed";
+import { StopJobButton } from "./StopJobButton";
 
 // Shows what Foundry is doing right now.
 export function JobBanner() {
@@ -13,10 +14,10 @@ export function JobBanner() {
     return (
       <div className="banner error">
         <div>
-          <strong>{job.message} gagal.</strong> <JobError text={job.error ?? ""} />
+          <strong>{job.message} {job.stopped ? "dihentikan" : "gagal"}.</strong> <JobError text={job.error ?? ""} />
         </div>
         <div className="banner-actions">
-          <button disabled={pending === "retry"} onClick={() => run("retry", api.retry)}>Coba lagi</button>
+          <button disabled={pending === "retry"} onClick={() => run("retry", api.retry)}>{job.stopped ? "Lanjutkan" : "Coba lagi"}</button>
           <button className="ghost" title="Tutup" aria-label="Tutup" disabled={pending === "dismiss"} onClick={() => run("dismiss", api.dismissJob)}>✕</button>
         </div>
       </div>
@@ -29,6 +30,7 @@ export function JobBanner() {
         <span className="spinner" /> <strong>{job.message}</strong>
         <Elapsed started={job.started} />
         {typical && <span className="muted small">biasanya {typical}</span>}
+        <div className="banner-actions"><StopJobButton job={job} /></div>
         <div className="muted small banner-hint">
           Di AI Host kamu, minta: <code>Lanjutkan pekerjaan Foundry (panggil next_work)</code>
         </div>
@@ -40,6 +42,7 @@ export function JobBanner() {
       <span className="spinner" /> <strong>{job.message}…</strong>
       <Elapsed started={job.started} />
       {typical && <span className="muted small">biasanya {typical}</span>}
+      <div className="banner-actions"><StopJobButton job={job} /></div>
     </div>
   );
 }

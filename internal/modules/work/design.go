@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -51,7 +52,7 @@ const designShape = `{
  "shells": [{"id": "app", "name": "App", "platform": "web", "pattern": "sidebar",
    "regions": [{"id": "nav", "name": "Nav", "slot": "nav", "content": ["Menu"]}]}],
  "pages": [{"id": "antrean", "name": "Antrean", "platform": "web", "route": "/antrean", "access": "auth", "role": "Operator", "feature_id": "FEAT-001",
-   "purpose": "Saring antrean", "goal": "GOAL-1", "shell": "app", "pattern": "table",
+   "purpose": "Saring antrean", "goal": "GOAL-1", "shell": "app", "pattern": "table", "primary_action": "Panggil berikutnya",
    "fields": [{"field": "Appointment.status", "label": "Status", "presentation": "badge"}],
    "sections": [{"id": "filter", "name": "Filter", "slot": "toolbar", "content": ["Cari pasien, Status"]}, {"id": "tabel", "name": "Tabel", "slot": "table", "content": ["No, Pasien, Status, Aksi"], "components": ["Table", "Badge"]}],
    "states": {"loading": "", "empty": "", "error": ""}}],
@@ -97,6 +98,7 @@ const layoutRules = `LAYOUT SPECIFICATION (shells, pages)
 - shells: the layouts pages share (app frame with sidebar or navbar, auth frame, ...): id, name, platform, pattern, regions (sections), navigation, grid, responsive.
 - pages: every screen the user tasks need, per platform with screens. route: web starts with /, mobile/desktop is the screen name. access: public or auth. role: the users[].role(s) the page is for, comma-separated (the actors of its use cases); a page a permission limits says in permission_denied what the others see. shell: a shell id, or empty for a page with its own frame.
 - pages[].goal names the goal id the page serves; pages[].fields maps data fields to their presentation.
+- primary_action: the page's main action, a verb phrase from the use case step done there (table, list, detail, dashboard, form, wizard). Never a reason to add a page. On a decision page it is the approval, with the rejection beside it.
 - pattern (page, shell and optional for a section) is one of: %s.
 - sections[].slot: the slot of the page pattern's template (UI KIT PAGE TEMPLATES) the section fills; every required slot gets a section; no header section (the page header comes from name, purpose and primary_action). Shell regions take the shell template's slots.
 - sections: in visual order (top to bottom, start to end). content lists the elements in order, concretely ("Tabel antrean: No, Pasien, Dokter, Status, Aksi"). components are names from rules.components. grid, alignment, spacing, sizing and responsive use the tokens (space.md, breakpoint.tablet), never arbitrary values.
@@ -105,7 +107,7 @@ const layoutRules = `LAYOUT SPECIFICATION (shells, pages)
 - states (page or section): keys %s; the value says what the user sees and can do. Required per page pattern: %s.
 - links: {to: page id, via: what the user activates}; together they are the navigation between pages.
 - navigation: groups named by the user's job, each with items[{label, page}]. Empty groups are invalid. Every page is reachable from navigation or from a link.
-- flows: every use case with screens -> {"steps": the page id of each step in order, "" for a system step (feedback on the current page, not a page); "branches": the page that shows each alternative, then each failure, "" when no screen shows it}. Each step and branch has a section, field, state or action on its page; consecutive pages are linked (via = the step); a decision step's page offers approve and reject/return; an irreversible step (delete, cancel, post) names its confirmation; a long document flow (draft, submit, approve) gets form/detail pages or a wizard; a branch that hands over to another use case links to that one's first page; steps done at the same time (parallel) are on their own pages without links between them; a page of a document with a lifecycle shows its status and the actions its transitions allow in that status.
+- flows: every use case with screens -> {"steps": the page id of each step in order, "" for a system step (feedback on the current page, not a page); "branches": exactly one entry per b1..bn, in order: the page that shows it, "" when none}. Each step and branch has a section, field, state or action on its page; consecutive pages are linked (via = the step); a decision step's page offers approve and reject/return; an irreversible step (delete, cancel, post) names its confirmation; a long document flow (draft, submit, approve) gets form/detail pages or a wizard; a branch that hands over to another use case links to that one's first page; steps done at the same time (parallel) are on their own pages without links between them; a page of a document with a lifecycle shows its status and the actions its transitions allow in that status.
 - ids: lowercase letters, digits and dashes. Page ids are unique; section ids are unique within their page.
 `
 
@@ -304,8 +306,22 @@ func uxBrief(p *core.Project) string {
 				}
 				fmt.Fprintf(&b, "; steps %s", strings.Join(steps, " "))
 			}
+			// Branches are numbered b1..bn, alternatives then failures: the
+			// order of flows[].branches, so the designer can count them.
+			n := 0
+			numbered := func(in []string) string {
+				out := make([]string, len(in))
+				for i, s := range in {
+					n++
+					out[i] = fmt.Sprintf("b%d) %s", n, s)
+				}
+				return strings.Join(out, " | ")
+			}
 			if len(fl.Alternatives) > 0 {
-				fmt.Fprintf(&b, "; alt %s", strings.Join(fl.Alternatives, " | "))
+				fmt.Fprintf(&b, "; alt %s", numbered(fl.Alternatives))
+			}
+			if len(fl.Failures) > 0 {
+				fmt.Fprintf(&b, "; fail %s", numbered(fl.Failures))
 			}
 			if len(fl.Rules) > 0 {
 				fmt.Fprintf(&b, "; rules %s", strings.Join(fl.Rules, " | "))
@@ -315,9 +331,6 @@ func uxBrief(p *core.Project) string {
 			}
 			if len(fl.Data) > 0 {
 				fmt.Fprintf(&b, "; data %s", strings.Join(fl.Data, " | "))
-			}
-			if len(fl.Failures) > 0 {
-				fmt.Fprintf(&b, "; fail %s", strings.Join(fl.Failures, " | "))
 			}
 			for _, g := range fl.Parallel {
 				fmt.Fprintf(&b, "; parallel steps %v join %s", g.Steps, firstNonEmpty(g.Join, "all"))
@@ -804,11 +817,34 @@ func normUsers(in []core.UIUser) []core.UIUser {
 	for _, u := range in {
 		u = core.UIUser{Role: strings.TrimSpace(u.Role), Platform: normID(u.Platform), Context: strings.TrimSpace(u.Context),
 			Goals: nonEmpty(u.Goals), Tasks: nonEmpty(u.Tasks)}
+		u.Platform, u.Context = userPlatform(u.Platform, u.Context)
 		if u.Role != "" {
 			out = append(out, u)
 		}
 	}
 	return out
+}
+
+// userPlatform keeps one platform with screens for a user. A user written
+// with several ("web, android, ios", seen live) keeps the first; one
+// without screens ("backend") keeps none. The words the designer wrote stay
+// in the context, so the design is not refused for them.
+func userPlatform(platform, context string) (string, string) {
+	if platform == "" || slices.Contains(core.UIPlatform, platform) {
+		return platform, context
+	}
+	first := ""
+	for _, part := range regexp.MustCompile(`,|/|;| dan | and | atau | or `).Split(platform, -1) {
+		if f := strings.Fields(part); len(f) > 0 && slices.Contains(core.UIPlatform, f[0]) {
+			first = f[0]
+			break
+		}
+	}
+	note := "platform: " + platform
+	if context != "" {
+		note = context + "; " + note
+	}
+	return first, note
 }
 
 func normGoals(in []core.UIGoal) []core.UIGoal {
@@ -894,6 +930,11 @@ func normPage(pg core.LayoutPage) core.LayoutPage {
 		pg.Pattern = a
 	}
 	pg.FeatureID = strings.ToUpper(strings.TrimSpace(pg.FeatureID))
+	// A page has one feature; a list ("FEAT-029, FEAT-005", seen live)
+	// keeps the first instead of refusing the design.
+	if f := strings.FieldsFunc(pg.FeatureID, func(r rune) bool { return r == ',' || r == ';' || r == '/' || r == ' ' }); len(f) > 1 {
+		pg.FeatureID = f[0]
+	}
 	for _, f := range []*string{&pg.Name, &pg.Route, &pg.Role, &pg.Purpose, &pg.Goal, &pg.PrimaryAction} {
 		*f = strings.TrimSpace(*f)
 	}
@@ -991,9 +1032,26 @@ func completeDesign(p *core.Project, d *core.UIDesign) {
 	completePageGoals(l)
 	completeNavigation(l)
 	completePageStates(l.Pages)
+	completePageData(l.Pages)
 	completePageDecisions(l)
 	sanitizeDecisions(p, l, d.Rules)
 	repairDecisions(p, l, d.Rules)
+}
+
+// completePageData names the entities a page shows from its field
+// mapping ("Payment.amount" → Payment) when the designer left data empty.
+func completePageData(pages []core.LayoutPage) {
+	for i := range pages {
+		pg := &pages[i]
+		if len(pg.Data) > 0 || pg.Existing {
+			continue
+		}
+		for _, f := range pg.Fields {
+			if e, _, ok := strings.Cut(f.Field, "."); ok && strings.TrimSpace(e) != "" && !slices.Contains(pg.Data, strings.TrimSpace(e)) {
+				pg.Data = append(pg.Data, strings.TrimSpace(e))
+			}
+		}
+	}
 }
 
 func completeUsers(p *core.Project, l *core.LayoutSpec) {

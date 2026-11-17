@@ -55,6 +55,9 @@ func (s *Service) areaLimit() int {
 // startAreaWave starts the wave at the head of the queue. false means the
 // head is sequential work (or the AI is an MCP host): the caller goes on.
 func (s *Service) startAreaWave(steps []string, total int) (bool, error) {
+	if s.jobs.held(work.KindArtifacts) {
+		return false, errStopped
+	}
 	limit := s.areaLimit()
 	if limit < 2 {
 		return false, nil
@@ -223,6 +226,9 @@ func (s *Service) failArea(id string, cause error) {
 // finishAreaWave settles the job once every area ended. A failed wave keeps
 // the queue, so a retry regenerates only the areas still open.
 func (s *Service) finishAreaWave(steps []string, n int, failed error) {
+	if s.jobs.stopping() {
+		return // StopJob settles the job; the areas that landed stay
+	}
 	if failed != nil {
 		s.Store.Update(func(p *core.Project) error {
 			msg := fmt.Sprintf("Sebagian area gagal dan area lain tetap tersimpan: %v", failed)

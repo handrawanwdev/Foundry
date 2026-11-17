@@ -441,9 +441,11 @@ func TestDesignPromptStaysCompact(t *testing.T) {
 		}
 	}
 	// The cap leaves room for the use-case-to-screen contract (step and
-	// branch pages); the quality of the mapping is worth those bytes.
-	if n := len(prompt); n > 18800 {
-		t.Errorf("clinic generate prompt is %d bytes; want ≤ 18800 so the LLM prefills less", n)
+	// branch pages) and the primary action rule (live runs on
+	// Parking-System and distra wrote no primary_action without it); the
+	// quality of the mapping is worth those bytes.
+	if n := len(prompt); n > 19000 {
+		t.Errorf("clinic generate prompt is %d bytes; want ≤ 19000 so the LLM prefills less", n)
 	}
 }
 
@@ -661,4 +663,32 @@ func tokenValue(ts []core.Token, name string) string {
 		}
 	}
 	return ""
+}
+
+// A user on several platforms (seen live on Parking-System: "web,
+// android, ios", "backend") does not refuse the whole design: the first
+// platform with screens stays, the words go to the context.
+func TestNormUsersPlatformList(t *testing.T) {
+	got := normUsers([]core.UIUser{{Role: "Kasir", Platform: "web, android, ios"}, {Role: "Klien", Platform: "backend"},
+		{Role: "Petugas", Platform: "web responsif, android", Context: "di gerbang"}, {Role: "Admin", Platform: "web"}})
+	want := []string{"web", "", "web", "web"}
+	for i, u := range got {
+		if u.Platform != want[i] {
+			t.Errorf("%s platform = %q, want %q", u.Role, u.Platform, want[i])
+		}
+	}
+	if !strings.Contains(got[0].Context, "android") || !strings.HasPrefix(got[2].Context, "di gerbang") || got[3].Context != "" {
+		t.Errorf("context = %q / %q / %q", got[0].Context, got[2].Context, got[3].Context)
+	}
+}
+
+// A page written with several features (seen live on distra) keeps the
+// first instead of refusing the whole design.
+func TestNormPageFeatureList(t *testing.T) {
+	if got := normPage(core.LayoutPage{ID: "x", FeatureID: "feat-029, FEAT-005"}).FeatureID; got != "FEAT-029" {
+		t.Fatalf("feature = %q", got)
+	}
+	if got := normPage(core.LayoutPage{ID: "x", FeatureID: "FEAT-001"}).FeatureID; got != "FEAT-001" {
+		t.Fatalf("feature = %q", got)
+	}
 }

@@ -719,6 +719,8 @@ func slotIssues(where, pattern string, secs []Section, format int) []Issue {
 	filled := map[string]bool{}
 	for _, s := range secs {
 		switch {
+		case DialogSection(pattern, s):
+			continue // drawn over the page, in no slot
 		case s.Slot == "":
 			if format >= UIDesignFormat {
 				out = append(out, Issue{Level: level, Where: where + "/" + s.ID, Message: fmt.Sprintf("section belum menyebut slot pattern %s (%s)", pattern, strings.Join(ids, ", "))})

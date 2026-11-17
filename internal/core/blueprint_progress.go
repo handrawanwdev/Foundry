@@ -595,6 +595,19 @@ func (t *BlueprintProgress) ReopenSection(id, reason string, at time.Time) {
 	t.emit(bpNote{typ: EvSectionReopened, section: id, status: BPPending, msg: s.Name + " dibuka kembali: " + reason}, at)
 }
 
+// ParkSection returns a section no job works on any more to pending, with
+// why it waits; its open attempt, if any, is closed as canceled. A run whose
+// last job ended must not show work in progress that nothing does.
+func (t *BlueprintProgress) ParkSection(id, reason string, at time.Time) {
+	s := t.Section(id)
+	if s == nil || !s.Active() {
+		return
+	}
+	t.closeExecution(s, BPExecCanceled, "", "", at)
+	s.Status, s.Validation, s.Activity, s.Reason = BPPending, BPValNone, "", reason
+	t.emit(bpNote{typ: EvSectionWaiting, section: id, status: BPPending, msg: s.Name + ": " + reason}, at)
+}
+
 // ReworkSection brings a finished section back because the pipeline is about
 // to work on it again.
 func (t *BlueprintProgress) ReworkSection(id, reason string, at time.Time) {

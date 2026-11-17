@@ -155,6 +155,10 @@ func (r *render) dataState(s core.Section, main bool, kind string) bool {
 // section; missing ones are drawn with defaults, since every collection
 // must have them.
 func (r *render) collection(s core.Section, kind, slot string, main bool) {
+	r.collections++
+	if is := formContentIssue(r.page, s, kind); is != "" {
+		r.contentIssues = append(r.contentIssues, is)
+	}
 	c, ok := r.colls[s.ID]
 	if !ok {
 		c = r.pageControls()
@@ -942,6 +946,9 @@ func (r *render) detail(s core.Section) {
 		r.w(`<div class="fk-actions fk-detail-actions">`)
 		primary := false
 		for _, a := range acts {
+			if r.offeredAbove(a) {
+				continue
+			}
 			cls := "fk-btn"
 			switch {
 			case core.DangerAction(a):
@@ -1008,6 +1015,12 @@ func (r *render) form(s core.Section) {
 		}
 		els = append(els, it)
 	}
+	r.formWith(s, els, submit)
+}
+
+// formWith renders a form of the fields named els; submit is the label of
+// its submit button ("" for the page's primary action).
+func (r *render) formWith(s core.Section, els []string, submit string) {
 	action := r.doc.Self
 	if action == "" {
 		action = "#"
@@ -1091,7 +1104,7 @@ func (r *render) mainForm() string {
 			if sl, ok := pat.Slot(s.Slot); ok && sl.Kind == "form" {
 				return s.ID
 			}
-		} else if guessKind(s) == "form" {
+		} else if guessKind(s) == "form" && !core.DialogSection(r.page.Pattern, s) {
 			return s.ID
 		}
 	}
@@ -1205,8 +1218,17 @@ func (r *render) activity(s core.Section) {
 	r.w(`</ul>`)
 }
 
+// steps is a stepper of the section's step names, numbered by the
+// stepper itself. Content that names no step is left to the quality gate;
+// one step is no stepper and the section shows as text.
 func (r *render) steps(s core.Section) {
-	els := items(s)
+	els, notes := stepList(s)
+	r.steppers++
+	r.contentIssues = append(r.contentIssues, stepIssues(r.page, s, els, notes)...)
+	if len(els) < 2 {
+		r.text(s)
+		return
+	}
 	r.w(`<ol class="fk-steps">`)
 	for i, it := range els {
 		cls := ""

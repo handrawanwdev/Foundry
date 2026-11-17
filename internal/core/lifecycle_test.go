@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -50,6 +51,15 @@ func TestLifecycleIssues(t *testing.T) {
 	}
 	if !strings.Contains(issueMessages(p.LifecycleIssues([]Lifecycle{lc, lc}, flows)), "lebih dari satu siklus") {
 		t.Error("duplicate lifecycle not reported")
+	}
+	// An automatic approval below a threshold (seen live on distra) is a
+	// rule, not a person deciding: nobody is there to refuse it.
+	auto := poLifecycle()
+	auto.Transitions = append(auto.Transitions, LifeTransition{From: []string{"draft"}, To: "approved", Action: "Setujui otomatis",
+		Kind: TransApprove, Actor: "Sistem", Flow: "FLOW-002", Step: 1, Guard: "nilai di bawah ambang"})
+	auto.Transitions = slices.DeleteFunc(auto.Transitions, func(t LifeTransition) bool { return t.Kind == TransCancel })
+	if msg := issueMessages(p.LifecycleIssues([]Lifecycle{auto}, flows)); strings.Contains(msg, `"draft" bisa disetujui`) {
+		t.Errorf("automatic approval asked for a rejection: %s", msg)
 	}
 }
 
@@ -107,8 +117,16 @@ func TestLifecycleUIIssues(t *testing.T) {
 	lc.Transitions[2].Step = 1 // rejected on the PO page, approved on the decision page
 	p.Flows[1].StepPages[2] = "kirim"
 	d.Layout.Pages = append(d.Layout.Pages, LayoutPage{ID: "kirim", Name: "Kirim", Pattern: "form", Sections: []Section{sec("isi", "Catatan")}})
+	// A form that leaves a locked status runs a transition the lifecycle
+	// allows (seen live: proof of delivery closing a dispatched delivery);
+	// a form that changes the document and keeps it locked edits it.
+	lc.Transitions = append(lc.Transitions, LifeTransition{From: []string{"approved"}, To: "approved", Action: "Ubah harga",
+		Actor: "Operator", Flow: "FLOW-002", Step: 3})
 	msg := issueMessages(lifecycleUIIssues(p, d.Layout))
-	for _, want := range []string{"ditolak di po", `status "Ditunda" tidak ada di siklus PurchaseOrder`, `menjalankan "Kirim ke supplier" pada PurchaseOrder yang terkunci`} {
+	if strings.Contains(msg, `menjalankan "Kirim ke supplier"`) {
+		t.Errorf("a transition out of a locked status reported as an edit: %s", msg)
+	}
+	for _, want := range []string{"ditolak di po", `status "Ditunda" tidak ada di siklus PurchaseOrder`, `menjalankan "Ubah harga" pada PurchaseOrder yang terkunci`} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("missing %q in %s", want, msg)
 		}
@@ -149,5 +167,25 @@ func TestParallelSteps(t *testing.T) {
 		if !strings.Contains(msg, want) {
 			t.Errorf("missing %q in %s", want, msg)
 		}
+	}
+}
+
+// Status values are read inside one text of a page. Seen live on
+// Parking-System: a "Status" badge label followed by the field "Jenis
+// (refund atau void)" read as statuses refund and void, and a type name in
+// parentheses read as a status.
+func TestStatusValuesStayInOneText(t *testing.T) {
+	p, d := scenario(lifecyclePages(), poFlow())
+	p.Lifecycles = []Lifecycle{poLifecycle()}
+	pg := &d.Layout.Pages[1]
+	pg.Fields = append(pg.Fields, FieldRule{Field: "PurchaseOrder.status", Label: "Status", Presentation: "badge"},
+		FieldRule{Field: "PurchaseOrder.kind", Label: "Jenis (biasa atau mendesak)", Presentation: "table-column"})
+	pg.Sections[0].Content = append(pg.Sections[0].Content, "Status perintah (CommandStatus)",
+		// Live texts that describe behavior per status, not a status list.
+		"Status Terkirim: read-only dengan penerima dan waktu", "Filter: jenis dokumen, status (default menunggu), rentang nilai",
+		"Aksi sesuai status: Ajukan (draft); Setujui atau Tolak dengan alasan (pending_approval)")
+	if msg := issueMessages(lifecycleUIIssues(p, d.Layout)); strings.Contains(msg, "biasa") || strings.Contains(msg, "CommandStatus") ||
+		strings.Contains(msg, "read-only") || strings.Contains(msg, "default") || strings.Contains(msg, "Ajukan") {
+		t.Fatalf("status read across texts or from a type name: %s", msg)
 	}
 }

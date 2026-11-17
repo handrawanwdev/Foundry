@@ -67,12 +67,15 @@ type FlowWalk struct {
 	// Inferred is set when the design names no pages for the flow and
 	// they are guessed from the steps; Declared when the designer placed
 	// every step on its page (step_pages) instead of the words matching.
-	Inferred     bool         `json:"inferred,omitempty"`
-	Declared     bool         `json:"declared,omitempty"`
-	Steps        []FlowStep   `json:"steps"`
-	Branches     []FlowBranch `json:"branches,omitempty"`
-	Alternatives []string     `json:"alternatives,omitempty"`
-	Failures     []string     `json:"failures,omitempty"`
+	Inferred bool `json:"inferred,omitempty"`
+	Declared bool `json:"declared,omitempty"`
+	// BranchesDeclared: the designer placed every alternative and failure
+	// (branch_pages) instead of the words matching.
+	BranchesDeclared bool         `json:"branches_declared,omitempty"`
+	Steps            []FlowStep   `json:"steps"`
+	Branches         []FlowBranch `json:"branches,omitempty"`
+	Alternatives     []string     `json:"alternatives,omitempty"`
+	Failures         []string     `json:"failures,omitempty"`
 	// Parallel are the step groups done at the same time.
 	Parallel []ParallelSteps `json:"parallel,omitempty"`
 }
@@ -89,7 +92,8 @@ func FlowWalks(p *Project, l *LayoutSpec) []FlowWalk {
 			continue
 		}
 		w := FlowWalk{ID: fl.ID, Name: fl.Name, Role: fl.Role, Goal: fl.Goal, Trigger: fl.Trigger, Pre: fl.Pre, Post: fl.Post,
-			Data: fl.Data, Alternatives: fl.Alternatives, Failures: fl.Failures, Declared: StepsDeclared(fl)}
+			Data: fl.Data, Alternatives: fl.Alternatives, Failures: fl.Failures, Declared: StepsDeclared(fl),
+			BranchesDeclared: branchesDeclared(fl)}
 		if len(flowPages(l, fl)) == 0 {
 			fl.PageIDs, w.Inferred = InferFlowPages(l, fl), true
 		}
@@ -370,7 +374,12 @@ func weighted(step, page []string, df map[string]int) float64 {
 }
 
 // pageText is everything a page shows or names.
-func pageText(pg *LayoutPage) string {
+func pageText(pg *LayoutPage) string { return strings.Join(pageParts(pg), " ") }
+
+// pageParts are the separate texts of a page (name, purpose, each content
+// item, field label, link and state), so a pattern never runs from one
+// into the next.
+func pageParts(pg *LayoutPage) []string {
 	parts := []string{pg.Name, pg.Purpose, pg.PrimaryAction}
 	for _, s := range pg.Sections {
 		parts = append(parts, s.Name)
@@ -390,7 +399,7 @@ func pageText(pg *LayoutPage) string {
 			parts = append(parts, v)
 		}
 	}
-	return strings.Join(parts, " ")
+	return parts
 }
 
 var systemWords = map[string]bool{
