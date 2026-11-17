@@ -103,6 +103,15 @@ func (d Doc) hrefAt(id, status, feedback string) string {
 	return WithSim(h, sim)
 }
 
+// hrefSim is a prototype navigation to id with sim.
+func (d Doc) hrefSim(id string, sim Sim) string {
+	h := "#"
+	if d.Link != nil {
+		h = d.Link(id)
+	}
+	return WithSim(h, sim)
+}
+
 func (d Doc) live() bool { return strings.TrimSpace(d.Self) != "" }
 
 // RenderPage renders one page of the design in a state ("" or "default"
@@ -158,6 +167,8 @@ type MockupStatus struct {
 	Hash       string `json:"hash"`
 	Status     string `json:"status"` // approved | changed | pending
 	ApprovedAt string `json:"approved_at,omitempty"`
+	// Frames are the moments of the page the workspace lays out.
+	Frames []Frame `json:"frames,omitempty"`
 }
 
 // Mockup approval statuses.
@@ -188,6 +199,16 @@ func (k *Kit) Statuses(p *core.Project) []MockupStatus {
 		out = append(out, s)
 	}
 	return out
+}
+
+// WithFrames adds each page's frames to list: the mockup workspace lays
+// them out; an agent reading the design has no use for them.
+func (k *Kit) WithFrames(p *core.Project, list []MockupStatus) []MockupStatus {
+	d := DocOf(p)
+	for i := range list {
+		list[i].Frames = k.Frames(d, list[i].Page)
+	}
+	return list
 }
 
 // RenderIndex is the page list of the exported mockups.
@@ -221,6 +242,14 @@ func esc(s string) string { return html.EscapeString(s) }
 
 // render is one page being rendered.
 type render struct {
+	// cmdkItems are the pages the global search lists; set once the top
+	// bar drew its search.
+	cmdkItems []navItem
+	// account is set once the top bar drew the account menu: its
+	// dialogs follow the page.
+	account bool
+	// secLinks are the links of the section being drawn (sectionLinks).
+	secLinks []secLink
 	kit      *Kit
 	doc      Doc
 	page     *core.LayoutPage
@@ -237,7 +266,13 @@ type render struct {
 	docActs []string
 	// dialogs are the sections the page opens as dialogs, drawn after
 	// its content.
-	dialogs []core.Section
+	dialogs []*dialog
+	// forms are the forms drawn, asks the confirmations a control opens:
+	// the frames of the page.
+	forms []formRec
+	// fplan is the page's form, mapped once (plan).
+	fplan *formPlan
+	asks  []ask
 	// steppers and collections count the page's steppers and tables/lists;
 	// contentIssues are what they show wrongly, for the quality gate.
 	steppers, collections int
@@ -254,7 +289,7 @@ func (r *render) html() string {
 	pat, hasPat := r.kit.Pattern(pg.Pattern)
 	secs := slices.DeleteFunc(r.kit.AssignSlots(pg.Pattern, pg.Sections), func(s core.Section) bool {
 		if core.DialogSection(pg.Pattern, s) {
-			r.dialogs = append(r.dialogs, s)
+			r.dialogs = append(r.dialogs, parseDialog(s))
 			return true
 		}
 		return false
@@ -269,7 +304,7 @@ func (r *render) html() string {
 	tablet := breakpoint(tokens, 768)
 
 	r.w(`<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>`)
-	r.w(esc(pg.Name + " · " + r.doc.Name))
+	r.w(esc(r.formTitle() + " · " + r.doc.Name))
 	r.w(`</title><style>`)
 	r.w(RootCSS(tokens))
 	r.w(r.kit.CSS)
@@ -305,22 +340,27 @@ func (r *render) html() string {
 	if r.state != "" {
 		state = r.state
 	}
+	r.accountDialogs()
+	r.commandPalette()
 	r.f(`<div class="fk-mark" aria-hidden="true">mockup · %s · %s · data contoh</div></body></html>`, esc(pg.ID), esc(state))
 	return r.b.String()
 }
 
 // mobileCSS applies below the tablet breakpoint: the navigation folds into
 // the menu button and table rows become label/value cards.
-const mobileCSS = `.fk-side{display:none}.fk-menu,.fk-top-brand{display:inline-grid}.fk-main{padding:var(--space-md)}.fk-top{padding:0 var(--space-md)}` +
-	`.fk-top-nav,.fk-top .fk-search,.fk-user>span,.fk-top-end .fk-chip{display:none}.fk-head{align-items:flex-start}` +
+const mobileCSS = `.fk-side{display:none}.fk-burger{display:inline-grid}.fk-top-brand{display:flex;flex:1;min-width:0;overflow:hidden}.fk-top-brand .fk-brand{min-width:0;overflow:hidden;text-overflow:ellipsis}.fk-main{padding:var(--space-md)}.fk-top{padding:0 var(--space-md)}` +
+	`.fk-top .fk-search{flex:none;width:var(--size-control);padding:0;justify-content:center}.fk-top .fk-search>span{display:none}.fk-top-nav,.fk-user-text,.fk-user>.fk-i,.fk-top-end .fk-chip{display:none}.fk-head{align-items:flex-start}` +
 	`.fk-head .fk-actions{width:100%}.fk-head .fk-actions .fk-btn{flex:1}.fk-tools-wrap,.fk-panel>section.fk-tools-wrap{padding:var(--space-sm) var(--space-md)}` +
 	`.fk-table thead{display:none}.fk-table,.fk-table tbody,.fk-table tr{display:block;width:100%}` +
 	`.fk-table tr{padding:var(--space-sm) var(--space-md);border-bottom:1px solid var(--border-default)}.fk-table tr:last-child{border-bottom:0}` +
 	`.fk-table td,.fk-table td:first-child,.fk-table td:last-child{display:flex;justify-content:space-between;align-items:center;gap:var(--space-md);height:auto;padding:4px 0;border:0;white-space:normal;text-align:right}` +
 	`.fk-table td::before{content:attr(data-label);font:var(--type-caption);color:var(--text-muted);text-align:left}` +
-	`.fk-table td.fk-act{justify-content:flex-end;width:auto}.fk-table td.fk-act::before{content:none}` +
+	`.fk-table td.fk-act{position:static;box-shadow:none;background:none;justify-content:flex-end;width:auto;margin-top:var(--space-xs);padding-top:var(--space-sm);border-top:1px solid var(--border-default)}.fk-table td.fk-act::before{content:none}` +
+	`.fk-row-acts{width:100%}.fk-row-btn{flex:1;min-height:var(--size-control)}.fk-row-more{width:var(--size-control);height:var(--size-control);border-color:var(--border-default)}` +
+	`.fk-detail-actions>.fk-btn{flex:1 1 auto}.fk-actions-end{margin-left:0;width:100%}.fk-actions-end>.fk-btn{flex:1}` +
 	`.fk-pager{padding:var(--space-sm) var(--space-md)}.fk-pager-size{display:none}.fk-pages .fk-pg:not(.fk-nav-pg):not(.on){display:none}.fk-gap{display:none}` +
-	`.fk-sec-head{padding:var(--space-md)}.fk-list li{padding:var(--space-sm) var(--space-md)}`
+	`.fk-sec-head{padding:var(--space-md)}.fk-list li{padding:var(--space-sm) var(--space-md)}` +
+	`.fk-form-bar .fk-form-note{display:none}.fk-form-bar>.fk-btn{flex:1}`
 
 func breakpoint(t core.DesignTokens, def int) int {
 	for _, tok := range t.Breakpoints {
@@ -483,7 +523,9 @@ func (r *render) shell(sh *core.LayoutShell, pat *Pattern, ok bool, secs []core.
 	items := r.navItems(sh)
 	brand := r.brand()
 	if sh.Pattern == "navbar" {
-		r.w(`<div class="fk-body" data-foundry-shell="` + esc(sh.ID) + `"><header class="fk-top"><button class="fk-icon-btn fk-menu" aria-label="Menu">` + icon("menu") + `</button>` + brand + `<nav class="fk-top-nav" aria-label="Navigasi utama">`)
+		r.w(`<div class="fk-body" data-foundry-shell="` + esc(sh.ID) + `"><header class="fk-top">`)
+		r.drawer(items)
+		r.w(brand + `<nav class="fk-top-nav" aria-label="Navigasi utama">`)
 		for _, it := range items {
 			r.navLink(it)
 		}
@@ -503,9 +545,11 @@ func (r *render) shell(sh *core.LayoutShell, pat *Pattern, ok bool, secs []core.
 		}
 		r.navLink(it)
 	}
-	r.w(`</nav></aside><div class="fk-body"><header class="fk-top"><button class="fk-icon-btn fk-menu" aria-label="Menu">` + icon("menu") + `</button><span class="fk-top-brand">` + r.brand() + `</span>`)
-	if regionMentions(sh, "cari", "search", "pencarian") {
-		r.w(`<div class="fk-search" role="searchbox">` + icon("search") + `<span>Cari…</span><span class="fk-kbd" style="flex:none">⌘K</span></div>`)
+	r.w(`</nav></aside><div class="fk-body"><header class="fk-top">`)
+	r.drawer(items)
+	r.w(`<span class="fk-top-brand">` + r.brand() + `</span>`)
+	if regionMentions(sh, "cari", "search", "pencarian") || r.signedIn() {
+		r.searchButton(items)
 	}
 	r.topEnd(sh)
 	r.w(`</header><main class="fk-main">`)
@@ -513,8 +557,25 @@ func (r *render) shell(sh *core.LayoutShell, pat *Pattern, ok bool, secs []core.
 	r.w(`</main></div></div>`)
 }
 
+// drawer is the menu button of a small screen and the navigation it
+// slides in.
+func (r *render) drawer(items []navItem) {
+	r.w(`<button class="fk-icon-btn fk-burger" aria-label="Menu" aria-haspopup="dialog" popovertarget="fk-drawer">` + icon("menu") + `</button>`)
+	r.w(`<div id="fk-drawer" popover class="fk-drawer" role="dialog" aria-label="Navigasi"><div class="fk-drawer-head">` + r.brand() +
+		`<button class="fk-icon-btn" aria-label="Tutup" popovertarget="fk-drawer" popovertargetaction="hide">` + icon("close") + `</button></div><nav class="fk-nav" aria-label="Navigasi utama">`)
+	group := ""
+	for _, it := range items {
+		if it.group != group && it.group != "" {
+			group = it.group
+			r.w(`<div class="fk-nav-group">` + esc(group) + `</div>`)
+		}
+		r.navLink(it)
+	}
+	r.w(`</nav></div>`)
+}
+
 func (r *render) brand() string {
-	return fmt.Sprintf(`<div class="fk-brand"><span class="fk-logo">%s</span>%s</div>`, esc(strings.ToUpper(string(firstRune(r.doc.Name)))), esc(r.doc.Name))
+	return fmt.Sprintf(`<div class="fk-brand" title="%s"><span class="fk-logo">%s</span><span class="fk-brand-name">%s</span></div>`, esc(r.doc.Name), esc(strings.ToUpper(string(firstRune(r.doc.Name)))), esc(r.doc.Name))
 }
 
 // topEnd is the right side of the topbar: what the shell's header region
@@ -522,8 +583,9 @@ func (r *render) brand() string {
 // user menu.
 func (r *render) topEnd(sh *core.LayoutShell) {
 	r.w(`<div class="fk-top-end">`)
-	if sh.Pattern == "navbar" && regionMentions(sh, "cari", "search", "pencarian") {
-		r.w(`<button class="fk-icon-btn" aria-label="Cari">` + icon("search") + `</button>`)
+	if sh.Pattern == "navbar" && (regionMentions(sh, "cari", "search", "pencarian") || r.signedIn()) {
+		r.cmdkItems = r.navItems(sh)
+		r.w(`<button class="fk-icon-btn" aria-label="Cari" aria-haspopup="dialog" aria-keyshortcuts="Meta+K Control+K" popovertarget="fk-cmdk">` + icon("search") + `</button>`)
 	}
 	for _, it := range topbarItems(sh) {
 		l := strings.ToLower(it)
@@ -537,11 +599,8 @@ func (r *render) topEnd(sh *core.LayoutShell) {
 			r.w(`<span class="fk-chip fk-chip-solid">` + icon(iconFor(noun)) + `Semua ` + esc(noun) + icon("chevron") + `</span>`)
 		}
 	}
-	role := strings.TrimSpace(r.page.Role)
-	if role == "" {
-		role = "Pengguna"
-	}
-	r.f(`<div class="fk-user"><span class="fk-avatar">%s</span><span>%s</span></div></div>`, esc(initials(role)), esc(role))
+	r.userMenu()
+	r.w(`</div>`)
 }
 
 // topbarItems are the content of the shell's header region.
@@ -649,6 +708,9 @@ func (r *render) linksTo(page string) bool {
 	if page == r.page.ID {
 		return true
 	}
+	if !r.inNav(r.page.ID) && core.ParentPage(r.doc.Layout, r.page.ID) == page {
+		return true
+	}
 	for _, pg := range r.doc.Layout.Pages {
 		if pg.ID != page {
 			continue
@@ -676,7 +738,11 @@ func (r *render) inNav(page string) bool {
 // pageBody is the page header and the slot grid.
 func (r *render) pageBody(pat *Pattern, ok bool, secs []core.Section) {
 	pg := r.page
-	r.f(`<div class="fk-page" data-foundry-page="%s">`, esc(pg.ID))
+	cls := "fk-page"
+	if r.formPage() {
+		cls += " fk-form-page"
+	}
+	r.f(`<div class="%s" data-foundry-page="%s">`, cls, esc(pg.ID))
 	if r.centered {
 		r.w(r.brand())
 	}
@@ -687,11 +753,15 @@ func (r *render) pageBody(pat *Pattern, ok bool, secs []core.Section) {
 			if i > 0 {
 				r.w(icon("right"))
 			}
-			r.w(`<span>` + esc(c) + `</span>`)
+			if c.page != "" {
+				r.f(`<a href="%s" data-foundry-link="%s">%s</a>`, esc(r.doc.href(c.page)), esc(c.page), esc(c.label))
+				continue
+			}
+			r.w(`<span>` + esc(c.label) + `</span>`)
 		}
 		r.w(`</p>`)
 	}
-	r.w(`<h1>` + esc(pg.Name) + `</h1>`)
+	r.w(`<h1>` + esc(r.formTitle()) + `</h1>`)
 	if lc, st := r.simLifecycle(), r.simState(); lc != nil && st != nil {
 		r.f(`<p class="fk-note"><span class="fk-badge" data-foundry-sim="status">%s</span> %s</p>`, esc(lc.StateLabel(st.ID)), esc(lc.Entity))
 	}
@@ -705,7 +775,7 @@ func (r *render) pageBody(pat *Pattern, ok bool, secs []core.Section) {
 	r.headActions()
 	r.w(`</header>`)
 	if r.state == "success" {
-		r.w(`<div class="fk-toast" role="status">` + esc(r.stateText(nil, "success")) + `</div>`)
+		r.toast("ok", "", r.stateText(nil, "success"))
 	}
 	if r.state == "disabled" {
 		r.w(`<p class="fk-note">` + esc(r.stateText(nil, "disabled")) + `</p>`)
@@ -827,6 +897,12 @@ func (r *render) panel(pat *Pattern, secs []core.Section, body Slot, in []core.S
 func actionIcon(label string) string {
 	l := strings.ToLower(label)
 	switch {
+	case has(l, "ubah", "edit", "perbarui", "update"):
+		return icon("edit")
+	case has(l, "hapus", "delete", "remove"):
+		return icon("trash")
+	case has(l, "detail", "lihat", "view"):
+		return icon("eye")
 	case has(l, "tambah", "buat", "baru", "add", "new", "create", "daftarkan", "catat"):
 		return icon("plus")
 	case has(l, "ekspor", "unduh", "export", "download"):
@@ -843,25 +919,56 @@ func formLike(pattern string) bool {
 	return false
 }
 
-func (r *render) crumb() []string {
-	for _, g := range r.doc.Layout.Navigation {
-		for _, it := range g.Items {
-			if it.Page == r.page.ID {
-				if len(r.doc.Layout.Navigation) > 1 {
-					return []string{g.Name, r.page.Name}
+// crumbItem is a step of the breadcrumb; page is where it leads ("" for
+// a menu group or the page itself).
+type crumbItem struct{ label, page string }
+
+// crumb is where the page sits: its menu group, or the page it is entered
+// from (core.ParentPage) under that page's group.
+func (r *render) crumb() []crumbItem {
+	l := r.doc.Layout
+	group := func(id string) string {
+		if len(l.Navigation) < 2 {
+			return ""
+		}
+		for _, g := range l.Navigation {
+			for _, it := range g.Items {
+				if it.Page == id {
+					return g.Name
 				}
-				return nil
 			}
+		}
+		return ""
+	}
+	var out []crumbItem
+	add := func(label, page string) {
+		if label != "" {
+			out = append(out, crumbItem{label, page})
 		}
 	}
-	for _, pg := range r.doc.Layout.Pages {
-		for _, ln := range pg.Links {
-			if ln.To == r.page.ID && pg.ID != r.page.ID {
-				return []string{pg.Name, r.page.Name}
-			}
+	if parent := core.ParentPage(l, r.page.ID); parent != "" {
+		pp, _ := r.doc.page(parent)
+		if pp == nil {
+			return nil
 		}
+		add(group(parent), "")
+		add(pp.Name, parent)
+		add(r.formTitle(), "")
+		return out
+	}
+	if g := group(r.page.ID); g != "" {
+		return []crumbItem{{g, ""}, {r.page.Name, ""}}
 	}
 	return nil
+}
+
+// parentHref leads back to the page this one is entered from; "" when
+// there is none.
+func (r *render) parentHref() string {
+	if p := core.ParentPage(r.doc.Layout, r.page.ID); p != "" {
+		return r.doc.href(p)
+	}
+	return ""
 }
 
 func (r *render) disabled() string {

@@ -10,7 +10,7 @@ import { DeleteDialog } from "../components/DeleteDialog";
 import { BlueprintProgress, buildingInitialBlueprint, runBanner } from "../components/BlueprintProgress";
 import { Elapsed } from "../components/Elapsed";
 import { Markdown } from "../components/Markdown";
-import { MockupPanel } from "../components/MockupPanel";
+import { MockupSummary } from "../components/Mockup";
 import { PromptBar } from "../components/PromptBar";
 import { isWorking } from "../flow";
 import { useProject } from "../store/project";
@@ -272,7 +272,7 @@ function ArtifactDoc({ project, doc, locked, design, view, onOpen }: {
           : <ArtifactEditor doc={doc} onDone={() => setEditing(false)} />
         : decisions && !locked ? <DecisionList decisions={view?.decisions ?? []} />
         : <>
-            {doc.id === DESIGN_DOCS.layout && <MockupPanel project={project} design={design} />}
+            {doc.id === DESIGN_DOCS.layout && <MockupSummary project={project} />}
             <Markdown text={doc.body} />
           </>}
       {(doc.refs?.length ?? 0) > 0 && (

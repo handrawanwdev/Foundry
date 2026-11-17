@@ -172,13 +172,27 @@ var unsafeCSS = regexp.MustCompile(`[;{}<>\\]|/\*|\*/`)
 
 func cssValue(group, v string) string {
 	v = strings.TrimSpace(unsafeCSS.ReplaceAllString(v, " "))
-	if group == "typography" {
+	switch group {
+	case "typography":
 		if f, ok := parseFont(v); ok {
 			return f.shorthand()
+		}
+	case "spacing", "radius", "breakpoints":
+		// A size with a note ("36px; 44px untuk sentuh") is its first
+		// length; the rest would void the property.
+		if !lengths.MatchString(v) {
+			if m := firstLength.FindString(v); m != "" {
+				return m
+			}
 		}
 	}
 	return v
 }
+
+var (
+	lengths     = regexp.MustCompile(`^-?\d+(?:\.\d+)?(?:px|rem|em|%)?(?:\s+-?\d+(?:\.\d+)?(?:px|rem|em|%)?)*$`)
+	firstLength = regexp.MustCompile(`-?\d+(?:\.\d+)?(?:px|rem|em|%)`)
+)
 
 // RootCSS is the :root block of every token as a CSS variable.
 func RootCSS(t core.DesignTokens) string {
@@ -201,10 +215,16 @@ type font struct {
 	family, size, line, weight string
 }
 
-var fontParts = regexp.MustCompile(`^(.*?)\s*(\d+(?:\.\d+)?(?:px|rem))(?:\s*/\s*(\d+(?:\.\d+)?(?:px|rem)?))?\s*(\d{3})?\s*$`)
+var (
+	fontParts = regexp.MustCompile(`^(.*?)\s*(\d+(?:\.\d+)?(?:px|rem))(?:\s*/\s*(\d+(?:\.\d+)?(?:px|rem)?))?\s*(\d{3})?(?:\s+[a-z][a-z-]*)*\s*$`)
+	// fontNote is a note a token carries: "(mobile 16px/24px)".
+	fontNote = regexp.MustCompile(`\s*\([^)]*\)`)
+)
 
+// parseFont reads a typography token; a note in parentheses and words
+// after the weight ("tabular-nums") are left out.
 func parseFont(v string) (font, bool) {
-	m := fontParts.FindStringSubmatch(strings.TrimSpace(v))
+	m := fontParts.FindStringSubmatch(strings.TrimSpace(fontNote.ReplaceAllString(v, "")))
 	if m == nil {
 		return font{}, false
 	}

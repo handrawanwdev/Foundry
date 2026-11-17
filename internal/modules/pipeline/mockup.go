@@ -23,7 +23,8 @@ func (s *Service) Mockups() ([]uikit.MockupStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	return uikit.Default().Statuses(p), nil
+	k := uikit.Default()
+	return k.WithFrames(p, k.Statuses(p)), nil
 }
 
 // MockupWalks lists the use cases step by step with the page each step
@@ -128,7 +129,7 @@ func (s *Service) ApproveMockups(pages []string) ([]uikit.MockupStatus, error) {
 			}
 		}
 		p.Log("ui", fmt.Sprintf("Mockup disetujui: %s", strings.Join(pages, ", ")))
-		out = k.Statuses(p)
+		out = k.WithFrames(p, k.Statuses(p))
 		return nil
 	})
 	return out, err

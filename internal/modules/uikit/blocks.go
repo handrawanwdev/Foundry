@@ -54,7 +54,30 @@ func (r *render) kindOf(s core.Section, sl Slot) string {
 			kind = "notice"
 		}
 	}
+	// A section of a form page built from display components only (a
+	// StatCard of the stock in context) shows values; it takes no input.
+	if kind == "form" && !takesInput(s) {
+		kind = "detail"
+	}
 	return kind
+}
+
+// takesInput reports whether a section takes input: it names no
+// components, an input one, or a line naming a choice ("Pilihan segmen:
+// Pendapatan atau Biaya" drawn with buttons).
+func takesInput(s core.Section) bool {
+	if len(s.Components) == 0 || slices.ContainsFunc(s.Components, inputComponent) {
+		return true
+	}
+	return slices.ContainsFunc(s.Content, func(c string) bool {
+		l := strings.ToLower(c)
+		return has(l, segWords...) && (strings.HasPrefix(l, "pilihan") || strings.HasPrefix(l, "segmen"))
+	})
+}
+
+// inputComponent reports whether a design component takes input.
+func inputComponent(c string) bool {
+	return has(strings.ToLower(c), "field", "input", "select", "textarea", "form", "check", "radio", "picker", "segmented", "toggle", "switch", "upload", "combobox", "dropdown")
 }
 
 // collectionKind reports whether a block renders as a collection with its
@@ -66,6 +89,8 @@ func (r *render) collectionKind(kind string) bool {
 
 // section renders one section in its slot.
 func (r *render) section(s core.Section, sl Slot, slotted bool) {
+	s, r.secLinks = r.sectionLinks(s)
+	defer func() { r.secLinks = nil }()
 	kind := r.kindOf(s, sl)
 	slot := ""
 	if slotted {
@@ -90,14 +115,29 @@ func (r *render) section(s core.Section, sl Slot, slotted bool) {
 	if r.panelOpen && (kind == "toolbar" || kind == "pagination" || kind == "tabbar") {
 		h2 = `<h2 class="fk-sr">`
 	}
-	r.f(`<section class="%s" data-foundry-section="%s"%s aria-label="%s">%s%s</h2>`, cls, esc(s.ID), slot, esc(s.Name), h2, esc(s.Name))
+	if len(r.secLinks) > 0 && r.state != "loading" {
+		r.f(`<section class="%s" data-foundry-section="%s"%s aria-label="%s"><div class="fk-sec-top">%s%s</h2>`, cls, esc(s.ID), slot, esc(s.Name), h2, esc(s.Name))
+		r.sectionMore()
+		r.w(`</div>`)
+	} else {
+		r.f(`<section class="%s" data-foundry-section="%s"%s aria-label="%s">%s%s</h2>`, cls, esc(s.ID), slot, esc(s.Name), h2, esc(s.Name))
+	}
 	if dataKinds[kind] && r.dataState(s, sl.Required || !slotted, kind) {
 		r.w(`</section>`)
 		return
 	}
 	switch kind {
 	case "toolbar":
-		els := r.labels(s, 8, "filter")
+		var els []string
+		for _, c := range s.Content {
+			els = append(els, filterEntry(c)...)
+		}
+		if len(els) < 2 {
+			els = r.labels(s, 8, "filter")
+		}
+		if len(els) > 8 {
+			els = els[:8]
+		}
 		r.tools(els)
 	case "metrics":
 		r.metrics(s)
@@ -131,6 +171,58 @@ func (r *render) section(s core.Section, sl Slot, slotted bool) {
 		r.text(s)
 	}
 	r.w(`</section>`)
+}
+
+// secLink is a link a section names to another page.
+type secLink struct{ label, page string }
+
+// linkWords start a content line that is a link: "Tautan ke riwayat
+// mutasi", "Lihat semua barang menipis".
+var linkWords = []string{"tautan ", "link ", "lihat semua ", "see all "}
+
+// sectionLinks takes the links out of s's content: those that lead to a
+// page (core.LinkTarget) become the section's footer links.
+func (r *render) sectionLinks(s core.Section) (core.Section, []secLink) {
+	var keep []string
+	var out []secLink
+	for _, c := range s.Content {
+		t := strings.TrimSpace(c)
+		l := strings.ToLower(t)
+		i := slices.IndexFunc(linkWords, func(w string) bool { return strings.HasPrefix(l, w) })
+		if i < 0 {
+			keep = append(keep, c)
+			continue
+		}
+		rest := strings.TrimSpace(t[len(linkWords[i]):])
+		if strings.HasPrefix(linkWords[i], "lihat") || strings.HasPrefix(linkWords[i], "see") {
+			rest = t
+		}
+		to := core.LinkTarget(r.doc.Layout, rest, r.page.ID)
+		if to == "" {
+			keep = append(keep, c)
+			continue
+		}
+		label := rest
+		if f := strings.Fields(rest); len(f) > 1 && has(strings.ToLower(f[0]), "ke", "to") && len(f[0]) <= 2 {
+			label = "Lihat " + strings.Join(f[1:], " ")
+		}
+		out = append(out, secLink{capital(label), to})
+	}
+	s.Content = keep
+	return s, out
+}
+
+// sectionMore draws the section's links at the end of its header ("Lihat
+// semua ›"), where a card says where its full list is.
+func (r *render) sectionMore() {
+	if len(r.secLinks) == 0 || r.state == "loading" {
+		return
+	}
+	r.w(`<div class="fk-sec-links">`)
+	for _, ln := range r.secLinks {
+		r.f(`<a href="%s" data-foundry-link="%s">%s%s</a>`, esc(r.doc.href(ln.page)), esc(ln.page), esc(ln.label), icon("right"))
+	}
+	r.w(`</div>`)
 }
 
 // dataState renders the loading, empty or error state in place of a data
@@ -235,6 +327,7 @@ func (r *render) collHead(s core.Section) {
 		}
 		r.w(`</nav>`)
 	}
+	r.sectionMore()
 	r.w(`</header>`)
 }
 
@@ -264,16 +357,32 @@ func entryKind(c string) string {
 func dataContent(s core.Section) core.Section {
 	out := s
 	out.Content = nil
+	cols := ""
 	for _, c := range s.Content {
 		if entryKind(c) == "" {
 			out.Content = append(out.Content, c)
+		} else if _, tc, ok := core.TabColumns(c); ok && cols == "" {
+			cols = tc // the first tab is the one shown
 		}
+	}
+	if cols != "" {
+		out.Content = append([]string{"Kolom: " + cols}, out.Content...)
 	}
 	return out
 }
 
-// tabItems are the tabs a section names: "Tab Aktif dan Selesai".
+// tabItems are the tabs a section names: "Tab Aktif dan Selesai", or one
+// "Tab <nama>: <kolom>" entry per tab.
 func tabItems(s core.Section) []string {
+	var named []string
+	for _, c := range s.Content {
+		if tab, _, ok := core.TabColumns(c); ok {
+			named = append(named, capital(tab))
+		}
+	}
+	if len(named) > 1 {
+		return named
+	}
 	for _, c := range s.Content {
 		if entryKind(c) != "tabs" {
 			continue
@@ -319,7 +428,7 @@ func (r *render) defaultFilters(s core.Section, kind string) []string {
 	what, st := entityNoun(s), "Status"
 	if kind == "table" {
 		cols := r.tableColumns(dataContent(s))
-		if what == "" && len(cols) > 0 {
+		if what == "" && len(cols) > 0 && len(strings.Fields(cols[0])) <= 3 {
 			what = strings.ToLower(cols[0])
 		}
 		st = ""
@@ -348,22 +457,42 @@ func filterElements(s core.Section, defaults bool, def []string) []string {
 		if core.ControlEntry(c) != core.ControlFilter {
 			continue
 		}
-		c = strings.TrimSpace(c)
-		if l := strings.ToLower(c); strings.HasPrefix(l, "filter") {
-			c = strings.TrimLeft(c[len("filter"):], " :")
-			if c == "" {
-				continue
-			}
-		}
-		if strings.Contains(c, ":") {
-			c = c[strings.Index(c, ":")+1:]
-		}
-		out = append(out, splitList(c)...)
+		out = append(out, filterEntry(c)...)
 	}
 	if len(out) == 0 && defaults {
 		out = def
 	}
 	return out
+}
+
+// filterEntry is what one toolbar entry filters by. "Filter status stok:
+// semua, menipis" is one filter (status stok) with its options; "Filter:
+// status, tanggal" and "status, tanggal" are two.
+func filterEntry(c string) []string {
+	c = strings.TrimSpace(c)
+	if parts := strings.Split(c, ";"); len(parts) > 1 {
+		var out []string
+		for _, p := range parts {
+			out = append(out, filterEntry(p)...)
+		}
+		return out
+	}
+	list := false // "Filter status dan tanggal" lists; "Cari SKU atau nama" is one search
+	for _, p := range []string{"filter", "saring"} {
+		if strings.HasPrefix(strings.ToLower(c), p) {
+			c, list = strings.TrimLeft(c[len(p):], " "), true
+		}
+	}
+	if name, opts, ok := strings.Cut(c, ":"); ok {
+		if name = strings.TrimSpace(name); name != "" && !strings.EqualFold(name, "toolbar") {
+			return []string{name}
+		}
+		c, list = opts, true
+	}
+	if list {
+		return splitList(strings.TrimSpace(c))
+	}
+	return items(core.Section{Content: []string{c}})
 }
 
 // tools is a search box, filter chips and toolbar buttons. Every toolbar
@@ -380,10 +509,9 @@ func (r *render) tools(els []string) {
 		case search == "" && has(l, "cari", "search", "pencarian", "kata kunci"):
 			search = capital(strings.TrimRight(e, ".… "))
 		default:
-			for _, p := range []string{"filter ", "saring ", "Filter ", "Saring "} {
-				e = strings.TrimPrefix(e, p)
+			if f := filterLabel(e); f != "" {
+				filters = append(filters, f)
 			}
-			filters = append(filters, capital(e))
 		}
 	}
 	if search == "" {
@@ -415,6 +543,32 @@ func (r *render) tools(els []string) {
 		r.w(`</div>`)
 	}
 	r.w(`</div>`)
+}
+
+// filterLabel is the name a filter chip shows: what it filters, without
+// its default, range or options ("Rentang tanggal dengan default 30 hari
+// terakhir" is Rentang tanggal, "Kategori opsional" is Kategori).
+func filterLabel(e string) string {
+	e = strings.TrimSpace(e)
+	for _, p := range []string{"filter ", "saring "} {
+		if strings.HasPrefix(strings.ToLower(e), p) {
+			e = e[len(p):]
+		}
+	}
+	l := strings.ToLower(e)
+	cut := len(e)
+	for _, q := range []string{" dengan ", " default ", " dari ", " (", "; ", ": "} {
+		if i := strings.Index(l, q); i > 0 && i < cut {
+			cut = i
+		}
+	}
+	e = strings.TrimSpace(e[:cut])
+	for _, q := range []string{" opsional", " optional", " wajib"} {
+		if strings.HasSuffix(strings.ToLower(e), q) {
+			e = strings.TrimSpace(e[:len(e)-len(q)])
+		}
+	}
+	return capital(e)
 }
 
 var firstNumber = regexp.MustCompile(`\d+`)
@@ -633,6 +787,8 @@ func (r *render) metrics(s core.Section) {
 	}
 	r.w(`<div class="fk-metrics">`)
 	for i, it := range els {
+		// "StatCard Total barang" names the component, not the metric.
+		it = stripWord(it, componentWords)
 		label, value := it, metricValue(it, i)
 		if j := strings.Index(it, ":"); j > 0 {
 			label, value = strings.TrimSpace(it[:j]), strings.TrimSpace(it[j+1:])
@@ -721,7 +877,12 @@ func (r *render) tableColumns(s core.Section) []string {
 		cols = append(cols, "Aksi")
 	}
 	if len(cols) > 7 {
-		cols = cols[:7]
+		// The row actions stay: they are the way to each record.
+		if i := slices.IndexFunc(cols[7:], r.isAction); i >= 0 {
+			cols = append(cols[:6:6], cols[7+i])
+		} else {
+			cols = cols[:7]
+		}
 	}
 	if len(cols) == 0 {
 		cols = []string{s.Name}
@@ -745,18 +906,212 @@ func (r *render) table(s core.Section) {
 	}
 	r.w(`</tr></thead><tbody>`)
 	noun := entityNoun(s)
+	acts := rowActions(s)
+	// A row opens the record's detail page: its first cell links there.
+	detail := core.DetailPage(r.doc.Layout, r.page.ID)
+	if r.state != "" {
+		detail = ""
+	}
 	for row := 0; row < 5; row++ {
 		r.w(`<tr>`)
 		for i, c := range cols {
 			if l := strings.ToLower(c); i == 0 && (l == "nama" || l == "name") && noun != "" && !person(noun) {
-				r.f(`<td data-label="%s"><span class="fk-strong">%s %s</span></td>`, esc(c), esc(capital(noun)), []string{"A1", "A2", "B1", "B2", "C1", "C2"}[row])
+				r.w(r.rowLink(fmt.Sprintf(`<td data-label="%s"><span class="fk-strong">%s %s</span></td>`, esc(c), esc(capital(noun)), []string{"A1", "A2", "B1", "B2", "C1", "C2"}[row]), detail))
 				continue
+			}
+			if i == 0 && detail != "" {
+				r.w(r.rowLink(r.cell(c, row, true), detail))
+				continue
+			}
+			if r.isAction(c) && has(strings.ToLower(c), "aksi", "action", "opsi") {
+				// "Aksi Catat masuk" names the actions of its own column.
+				ca := acts
+				if f := strings.Fields(c); len(ca) == 0 && len(f) > 1 {
+					for _, a := range splitList(strings.Join(f[1:], " ")) {
+						ca = append(ca, capital(a))
+					}
+				}
+				if len(ca) > 0 {
+					r.rowMenu(s, c, row, ca)
+					continue
+				}
 			}
 			r.w(r.cell(c, row, i == 0))
 		}
 		r.w(`</tr>`)
 	}
 	r.w(`</tbody></table></div>`)
+}
+
+// rowActions are the actions a table section names for each row: "Aksi
+// baris: Ubah, Hapus untuk Admin" names Ubah and Hapus.
+func rowActions(s core.Section) []string {
+	var out []string
+	for _, c := range s.Content {
+		c = strings.TrimSpace(c)
+		l := strings.ToLower(c)
+		p := ""
+		for _, w := range []string{"aksi baris", "row action"} {
+			if strings.HasPrefix(l, w) {
+				p = w
+			}
+		}
+		if p == "" {
+			continue
+		}
+		rest := c[len(p):]
+		if p == "row action" {
+			rest = strings.TrimPrefix(rest, "s")
+		}
+		for _, a := range splitList(strings.TrimPrefix(strings.TrimSpace(rest), ":")) {
+			a = actionName(a)
+			f := strings.Fields(strings.ToLower(a))
+			if len(f) == 0 || slices.Contains([]string{"untuk", "hanya", "bila", "jika", "sesuai", "for", "only"}, f[0]) {
+				continue
+			}
+			if a = capital(strings.TrimSpace(a)); !slices.Contains(out, a) {
+				out = append(out, a)
+			}
+		}
+	}
+	return out
+}
+
+// actionName is an action without what follows it to say who or when
+// ("Hapus untuk Admin" is Hapus).
+func actionName(a string) string {
+	cut := len(a)
+	for _, q := range []string{"(", " untuk ", " hanya ", " bila ", " jika ", " dengan ", " for ", " only "} {
+		if i := strings.Index(strings.ToLower(a), q); i >= 0 && i < cut {
+			cut = i
+		}
+	}
+	return a[:cut]
+}
+
+// rowMenu is a row's actions: the first one that is not destructive as
+// a button in the row, the others in the menu its more button opens,
+// destructive ones last. Each opens the dialog or confirmation it names,
+// leads to the page it names, else does nothing (closes the menu).
+func (r *render) rowMenu(s core.Section, label string, row int, acts []string) {
+	id := fmt.Sprintf("m-%s-%d", ident(s.ID), row)
+	var inline string
+	var safe, danger []string
+	for _, a := range acts {
+		switch {
+		case core.DangerAction(a):
+			danger = append(danger, a)
+		case inline == "":
+			inline = a
+		default:
+			safe = append(safe, a)
+		}
+	}
+	var confirms [][2]string
+	// item draws action a: a menu item when menu, else a row button.
+	item := func(a string, menu bool) {
+		cls, role := "fk-btn fk-btn-sm fk-row-btn", ""
+		if menu {
+			cls, role = "fk-menu-item", ` role="menuitem"`
+			if core.DangerAction(a) {
+				cls += " fk-menu-danger"
+			}
+		}
+		text := actionIcon(a) + esc(a)
+		target, action := r.dialogFor(a), "show"
+		if target == "" {
+			pg := r.actionPage(a, s)
+			if pg == "" {
+				pg = r.formPageFor(a)
+			}
+			if pg != "" {
+				r.f(`<a class="%s"%s href="%s" data-foundry-link="%s">%s</a>`, cls, role, esc(r.actionHref(pg, a)), esc(pg), text)
+				return
+			}
+			target, action = "", ""
+			if menu {
+				target, action = id, "hide"
+			}
+			// An action that needs confirming asks it, as the header does.
+			var lt *core.LifeTransition
+			if t := r.matchTransition(a); t != nil {
+				lt = &t.T
+			}
+			if core.ConfirmAction(a, lt) {
+				target, action = fmt.Sprintf("c-%s-%s", ident(s.ID), ident(a)), "show"
+				confirms = append(confirms, [2]string{target, a})
+			}
+		}
+		if target == "" {
+			r.f(`<button class="%s" type="button">%s</button>`, cls, text)
+			return
+		}
+		r.f(`<button class="%s" type="button"%s popovertarget="%s" popovertargetaction="%s">%s</button>`, cls, role, target, action, text)
+	}
+	r.f(`<td data-label="%s" class="fk-act"><div class="fk-row-acts">`, esc(label))
+	if inline != "" {
+		item(inline, false)
+	}
+	if len(safe)+len(danger) > 0 {
+		r.f(`<button class="fk-icon-btn fk-row-more" aria-label="%s lainnya" aria-haspopup="menu" popovertarget="%s" style="anchor-name:--%s">%s</button>`, esc(label), id, id, icon("more"))
+		r.f(`<div id="%s" popover class="fk-menu" role="menu" style="position-anchor:--%s">`, id, id)
+		for _, a := range safe {
+			item(a, true)
+		}
+		if len(safe) > 0 && len(danger) > 0 {
+			r.w(`<hr class="fk-menu-sep" role="separator">`)
+		}
+		for _, a := range danger {
+			item(a, true)
+		}
+		r.w(`</div>`)
+	}
+	r.w(`</div>`)
+	// Every row asks the same confirmation; it is drawn once.
+	for _, c := range confirms {
+		if row == 0 {
+			r.asked(c[0], c[1], c[1])
+			r.confirmBox(c[0], c[1], r.matchTransition(c[1]))
+		}
+	}
+	r.w(`</td>`)
+}
+
+// rowLink makes the title of a row's first cell td a link to page.
+func (r *render) rowLink(td, page string) string {
+	const open = `<span class="fk-strong">`
+	i := strings.Index(td, open)
+	if page == "" || i < 0 {
+		return td
+	}
+	j := strings.Index(td[i:], "</span>")
+	if j < 0 {
+		return td
+	}
+	j += i
+	return td[:i] + fmt.Sprintf(`<a class="fk-strong fk-row-link" href="%s" data-foundry-link="%s">`, esc(r.doc.href(page)), esc(page)) + td[i+len(open):j] + `</a>` + td[j+len("</span>"):]
+}
+
+// actionPage is the one other page a row action of section s leads to:
+// the page whose name holds every word of the action ("Detail" leads to
+// "Detail Barang"). An action of one word must also meet the page or the
+// section in that name, so "Ubah" on Pengguna does not lead to "Ubah
+// Barang". "" when no page, or more than one, fits.
+func (r *render) actionPage(a string, s core.Section) string {
+	found := ""
+	for _, pg := range r.doc.Layout.Pages {
+		if pg.ID == r.page.ID || !core.StemsCovered(a, pg.Name) {
+			continue
+		}
+		if len(strings.Fields(a)) < 2 && !core.SharesStem(pg.Name, r.page.Name+" "+s.Name) {
+			continue
+		}
+		if found != "" {
+			return ""
+		}
+		found = pg.ID
+	}
+	return found
 }
 
 // entityNoun is what a table lists when its content or name says so:
@@ -926,12 +1281,43 @@ func (r *render) cards(s core.Section) {
 }
 
 func (r *render) detail(s core.Section) {
-	els := r.labels(s, 12, "detail")
+	// "Aksi sesuai status: Konfirmasi, Batalkan" lists the record's
+	// actions, not its fields.
 	var acts []string
-	r.w(`<dl class="fk-dl">`)
-	for i, it := range els {
+	var content []string
+	for _, c := range s.Content {
+		if label, list, ok := strings.Cut(c, ":"); ok && actionLabel(label) {
+			for _, a := range splitList(list) {
+				acts = append(acts, capital(a))
+			}
+			continue
+		}
+		content = append(content, c)
+	}
+	var warns []string
+	if r.formPage() {
+		// Beside a form the section shows the record the form works on:
+		// its values by the page's names, its warnings as warnings.
+		content, warns = splitWarnings(content)
+	}
+	s.Content = content
+	els := r.labels(s, 12, "detail")
+	if r.formPage() {
+		els = r.contextLabels(els)
+	}
+	facts := 0
+	for _, it := range els {
 		if a, ok := actionEntry(it); ok {
 			acts = append(acts, a...)
+		} else {
+			facts++
+		}
+	}
+	if facts > 0 {
+		r.w(`<dl class="fk-dl">`)
+	}
+	for i, it := range els {
+		if _, ok := actionEntry(it); ok {
 			continue
 		}
 		if status(strings.ToLower(it)) {
@@ -941,25 +1327,54 @@ func (r *render) detail(s core.Section) {
 		}
 		r.f(`<div><dt>%s</dt><dd>%s</dd></div>`, esc(capital(it)), esc(sample(it, i)))
 	}
-	r.w(`</dl>`)
-	if len(acts) > 0 {
-		r.w(`<div class="fk-actions fk-detail-actions">`)
-		primary := false
-		for _, a := range acts {
-			if r.offeredAbove(a) {
-				continue
-			}
-			cls := "fk-btn"
-			switch {
-			case core.DangerAction(a):
-				cls = "fk-btn fk-btn-danger"
-			case !primary:
-				cls, primary = "fk-btn fk-btn-primary", true
-			}
-			r.actionControl(a, cls, false)
+	if facts > 0 {
+		r.w(`</dl>`)
+	}
+	for _, w := range warns {
+		r.callout(w)
+	}
+	var safe, danger []string
+	for _, a := range acts {
+		switch {
+		case r.offeredAbove(a):
+		case core.DangerAction(a):
+			danger = append(danger, a)
+		default:
+			safe = append(safe, a)
+		}
+	}
+	if len(safe)+len(danger) == 0 {
+		return
+	}
+	// The record's actions: the first primary, the destructive ones
+	// apart at the end.
+	cls := "fk-actions fk-detail-actions"
+	if facts > 0 {
+		cls += " fk-detail-actions-sep"
+	}
+	r.f(`<div class="%s">`, cls)
+	for i, a := range safe {
+		c := "fk-btn"
+		if i == 0 {
+			c = "fk-btn fk-btn-primary"
+		}
+		r.actionControl(a, c, true)
+	}
+	if len(danger) > 0 {
+		r.w(`<div class="fk-actions fk-actions-end">`)
+		for _, a := range danger {
+			r.actionControl(a, "fk-btn fk-btn-danger", true)
 		}
 		r.w(`</div>`)
 	}
+	r.w(`</div>`)
+}
+
+// actionLabel reports whether label names a list of actions ("Aksi
+// sesuai status", "Tombol").
+func actionLabel(label string) bool {
+	f := strings.Fields(strings.ToLower(label))
+	return len(f) > 0 && slices.Contains([]string{"aksi", "tombol", "button", "buttons", "action", "actions"}, f[0])
 }
 
 // actionEntry reads "Aksi ajukan atau kirim" as the buttons Ajukan and
@@ -1000,91 +1415,204 @@ func (r *render) summary(s core.Section) {
 }
 
 func (r *render) form(s core.Section) {
-	var els []string
-	submit := ""
-	for _, it := range r.labels(s, 10, "form-input") {
-		if b, ok := buttonLabel(it); ok {
-			submit = b
-			continue
-		}
-		for _, p := range []string{"Input ", "input ", "Field ", "field "} {
-			it = strings.TrimPrefix(it, p)
-		}
-		if rs := []rune(it); len(rs) > 0 {
-			it = strings.ToUpper(string(rs[:1])) + string(rs[1:])
-		}
-		els = append(els, it)
+	p := r.plan()
+	for _, n := range p.desc[s.ID] {
+		r.f(`<p class="fk-sec-desc">%s</p>`, esc(n))
 	}
-	r.formWith(s, els, submit)
+	r.formWith(s, p.bySec[s.ID], nil)
 }
 
-// formWith renders a form of the fields named els; submit is the label of
-// its submit button ("" for the page's primary action).
-func (r *render) formWith(s core.Section, els []string, submit string) {
+// formFields are the fields a form section names, and its texts. A line
+// that is a text or the place of an alert is no field: the text is shown
+// above the form, the alert where the form fails. A button line is the
+// page's submit button (see pageSubmit).
+func (r *render) formFields(s core.Section) (els, notes []string) {
+	fields := s
+	fields.Content = nil
+	for _, c := range s.Content {
+		switch kind, text := formLine(c); kind {
+		case "note":
+			notes = append(notes, text)
+		case "alert":
+		default:
+			fields.Content = append(fields.Content, c)
+		}
+	}
+	for _, it := range r.labels(fields, 10, "form-input") {
+		if _, ok := buttonLabel(it); !ok {
+			els = append(els, capital(it))
+		}
+	}
+	return els, notes
+}
+
+// pageFail is the failure of the page's form, over all its sections: one
+// part of the error state, marking at most one field.
+func (r *render) pageFail(act string) failure {
+	var labels []string
+	p := r.plan()
+	for _, s := range r.formSections() {
+		for _, f := range p.bySec[s.ID] {
+			labels = append(labels, f.label)
+		}
+	}
+	for _, f := range p.unplaced {
+		labels = append(labels, f.label)
+	}
+	return r.failure(act, labels)
+}
+
+// componentWords name the component that shows a value.
+var componentWords = []string{"statcard", "kpicard", "metriccard", "kpi", "card", "kartu", "stat"}
+
+// controlWords name the control of a field ("Textarea catatan" is the
+// field Catatan).
+var controlWords = []string{"input", "field", "textarea", "pilihan", "searchselect", "select", "dropdown", "combobox"}
+
+// stripWord drops the first word of s when it is one of words.
+func stripWord(s string, words []string) string {
+	s = strings.TrimSpace(s)
+	if w, rest, ok := strings.Cut(s, " "); ok && slices.Contains(words, strings.ToLower(w)) {
+		return strings.TrimSpace(rest)
+	}
+	return s
+}
+
+// formLine says what a line of a form section is besides a field: a text
+// ("Teks 'Akun dibuat oleh Admin'", with its words) or the place of an
+// alert ("Alert error generik").
+func formLine(c string) (kind, text string) {
+	c = strings.TrimSpace(c)
+	w, rest, _ := strings.Cut(c, " ")
+	switch strings.ToLower(w) {
+	case "teks", "text", "info", "informasi", "keterangan", "helper":
+		return "note", capital(strings.Trim(strings.TrimSpace(rest), `'"‘’“”`))
+	case "alert", "banner", "peringatan", "warning":
+		return "alert", ""
+	}
+	return "", ""
+}
+
+// formWith renders a form of the inputs fs. in is the dialog it is
+// drawn in, which holds the buttons; nil for (a section of) the page's
+// form, sent as pageSubmit says. A
+// required field is marked *, an optional one "opsional"; the browser
+// checks them before the form is sent. The form the URL shows sent
+// incomplete marks its empty required fields; the one whose action
+// failed says why and marks the field the error state names.
+func (r *render) formWith(s core.Section, fs []formField, in *dialog) {
 	action := r.doc.Self
 	if action == "" {
 		action = "#"
 	}
-	r.f(`<form class="fk-form" method="get" action="%s" data-foundry-sim="form">`, esc(action))
-	to, flash := r.doc.Sim.Status, "ok"
-	submitLabel := submit
+	view := ""
+	if in != nil {
+		view = in.id
+	}
+	submitLabel, sendHere, formAttr, formID := "", true, "", ""
+	if in != nil {
+		submitLabel = submitOf(strings.Join(in.buttons, ", "))
+	} else {
+		var at string
+		at, submitLabel = r.pageSubmit()
+		sendHere = at == s.ID
+		formAttr = ` form="` + r.pageFormID() + `"`
+		if sendHere || at == "" && s.ID == r.mainForm() {
+			formID = ` id="` + r.pageFormID() + `"`
+		}
+	}
 	if submitLabel == "" {
-		submitLabel = r.page.PrimaryAction
+		submitLabel = "Simpan"
 	}
-	if t := r.matchTransition(submitLabel); t != nil {
-		to, flash = t.T.To, "ok"
+	var labels []string
+	required := 0
+	for _, f := range fs {
+		labels = append(labels, f.label)
+		if f.required() && f.kind != "check" && f.kind != "bool" {
+			required++
+		}
 	}
-	r.hiddenSim(to, flash)
+	r.forms = append(r.forms, formRec{view: view, submit: submitLabel, required: required})
+	here := r.doc.Sim.View == view
+	fb := ""
+	if here {
+		fb = r.doc.Sim.Feedback
+	}
+	var fail failure
+	switch {
+	case fb == "error" && in != nil:
+		fail = r.failure(submitLabel, labels)
+	case fb == "error":
+		fail = r.pageFail(submitLabel)
+	}
+	fill := here && (r.doc.Sim.Fill || fb == "error")
+
+	sim := r.outcome(submitLabel, view)
+	if t := r.matchTransition(submitLabel); t != nil && sim.Feedback == "ok" {
+		sim.Status = t.T.To
+	}
+	// Signing in leads to the first page of the menu.
+	if home := r.homePage(); r.page.Pattern == "auth" && sim.Feedback == "ok" && r.doc.live() && home != "" && r.doc.Link != nil {
+		action, sim = r.doc.Link(home), r.doc.Sim.Nav()
+	}
+	r.f(`<form class="fk-form"%s method="get" action="%s" data-foundry-sim="form">`, formID, esc(action))
+	if in != nil || formID != "" {
+		r.hidden(sim)
+	}
+	// One alert per form: the page's spread over several sections says it
+	// in its main one.
+	if in != nil || s.ID == r.mainForm() {
+		switch fb {
+		case "invalid":
+			r.alert("invalid", "Data belum lengkap", "Lengkapi field bertanda * lalu kirim lagi.", "", "")
+		case "error":
+			// The field the failure names says it; the alert points there.
+			r.alert("error", fail.title, fail.body, fail.code, fail.spec)
+		}
+	}
 	lock := r.formLocked()
-	for i, it := range els {
-		l := strings.ToLower(it)
+	for i, f := range fs {
 		id := fmt.Sprintf("f-%s-%d", ident(s.ID), i)
-		req, dis := "", r.disabled()
-		if lock {
-			dis = " disabled"
-		}
-		if !has(l, "opsional", "optional") {
-			req = " required"
-		}
-		switch {
-		case has(l, "setuju", "ingat", "aktifkan", "centang"):
-			r.f(`<label class="fk-check"><span></span>%s</label>`, esc(it))
-		case has(l, "catatan", "deskripsi", "keterangan", "alamat", "pesan", "komentar", "note", "alasan"):
-			r.f(`<div class="fk-field fk-field-wide"><label for="%s">%s</label><textarea id="%s" name="%s" class="fk-input" placeholder="Tulis %s"%s%s></textarea></div>`, id, esc(it), id, id, esc(strings.ToLower(it)), dis, req)
-		case has(l, "status", "jenis", "kategori", "peran", "tipe", "role", "metode", "pilih", "zona", "cabang", "lokasi"):
-			r.f(`<div class="fk-field"><label for="%s">%s</label><div id="%s" class="fk-select" role="combobox">Pilih %s%s</div></div>`, id, esc(it), id, esc(strings.ToLower(it)), icon("chevron"))
-		case has(l, "tanggal", "berlaku", "jadwal", "date"):
-			r.f(`<div class="fk-field"><label for="%s">%s</label><div id="%s" class="fk-select" role="textbox">%s%s</div></div>`, id, esc(it), id, esc(sample("tanggal", i)), icon("calendar"))
-		default:
-			typ := "text"
-			switch {
-			case has(l, "sandi", "password"):
-				typ = "password"
-			case has(l, "email", "surel"):
-				typ = "email"
-			}
-			r.f(`<div class="fk-field"><label for="%s">%s</label><input id="%s" name="%s" type="%s" class="fk-input" placeholder="%s"%s%s></div>`, id, esc(it), id, id, typ, esc(placeholder(it)), dis, req)
-		}
+		r.field(f, id, formAttr, lock, fb, fail, fill)
 		if r.state == "error" && i == 0 {
 			r.f(`<p class="fk-help" style="color:var(--status-error)">%s</p>`, esc(r.stateText(&s, "error")))
 		}
 	}
-	if !r.hasActionsSlot() && s.ID == r.mainForm() {
-		label := r.page.PrimaryAction
-		if submit != "" {
-			label = submit
-		}
-		if label == "" {
-			label = "Simpan"
-		}
+	switch {
+	case in != nil:
+		r.dialogButtons(in.buttons, false, in.pop, in.open, true)
+	case sendHere && r.page.Pattern == "auth":
 		r.w(`<div class="fk-actions">`)
-		r.actionControl(label, "fk-btn fk-btn-primary", true)
-		if r.page.Pattern != "auth" {
-			r.w(`<button class="fk-btn fk-btn-ghost" type="button">Batal</button>`)
-		}
+		r.actionControl(submitLabel, "fk-btn fk-btn-primary", true)
+		r.w(`</div>`)
+	case sendHere:
+		r.w(`<div class="fk-actions fk-form-bar">`)
+		r.requiredNote()
+		r.back("Batal", "fk-btn")
+		r.actionControl(submitLabel, "fk-btn fk-btn-primary", true)
 		r.w(`</div>`)
 	}
 	r.w(`</form>`)
+}
+
+// barSections are the sections a form page's buttons may stand in: its
+// actions, and an aside beside the form.
+func (r *render) barSections() []core.Section {
+	var out []core.Section
+	pat, ok := r.kit.Pattern(r.page.Pattern)
+	for _, s := range r.kit.AssignSlots(r.page.Pattern, r.page.Sections) {
+		if core.DialogSection(r.page.Pattern, s) {
+			continue
+		}
+		if s.Slot == "actions" {
+			out = append(out, s)
+			continue
+		}
+		if sl, found := pat.Slot(s.Slot); ok && found && sl.Kind == "text" && r.page.Pattern == "form" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func (r *render) hasActionsSlot() bool {
@@ -1096,20 +1624,106 @@ func (r *render) hasActionsSlot() bool {
 	return false
 }
 
-// mainForm is the page's first form section: it carries the submit button
-// when no actions section does.
-func (r *render) mainForm() string {
+// formSections are the sections drawn as the page's own form, in order.
+func (r *render) formSections() []core.Section {
+	var out []core.Section
+	pat, hasPat := r.kit.Pattern(r.page.Pattern)
 	for _, s := range r.kit.AssignSlots(r.page.Pattern, r.page.Sections) {
-		if pat, ok := r.kit.Pattern(r.page.Pattern); ok {
-			if sl, ok := pat.Slot(s.Slot); ok && sl.Kind == "form" {
-				return s.ID
-			}
-		} else if guessKind(s) == "form" && !core.DialogSection(r.page.Pattern, s) {
-			return s.ID
+		form := guessKind(s) == "form" && !core.DialogSection(r.page.Pattern, s)
+		if hasPat {
+			sl, ok := pat.Slot(s.Slot)
+			form = ok && sl.Kind == "form"
 		}
+		if form && takesInput(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// mainForm is the page's first form section: it says what failed.
+func (r *render) mainForm() string {
+	if fs := r.formSections(); len(fs) > 0 {
+		return fs[0].ID
 	}
 	return ""
 }
+
+// pageSubmit is where the page's form is sent from and with what: the
+// form section naming its button, else the actions section's first
+// button (id ""), else the last form section with the primary action.
+// The page's form spans its sections: every field belongs to the form
+// with that button, so the browser checks them all.
+func (r *render) pageSubmit() (id, label string) {
+	fs := r.formSections()
+	if len(fs) == 0 {
+		return "", ""
+	}
+	for _, s := range fs {
+		for _, it := range items(s) {
+			if b, ok := buttonLabel(it); ok {
+				return s.ID, submitOf(b)
+			}
+		}
+	}
+	id = fs[len(fs)-1].ID
+	// The buttons of the actions or an aside of a form page send it.
+	for _, s := range r.barSections() {
+		for _, it := range items(core.Section{Content: s.Content}) {
+			if b, ok := buttonLabel(it); ok {
+				var all []string
+				for _, x := range items(core.Section{Content: s.Content}) {
+					if b, ok := buttonLabel(x); ok {
+						all = append(all, splitList(b)...)
+					}
+				}
+				if l := sendButton(all); l != "" {
+					return "", capital(l)
+				}
+				return "", submitOf(b)
+			}
+		}
+	}
+	if r.hasActionsSlot() {
+		id = ""
+	}
+	if label = r.page.PrimaryAction; label == "" {
+		label = "Simpan"
+	}
+	return id, label
+}
+
+// submitOf is the sending button a button line names: "Simpan mutasi dan
+// Batal" is Simpan mutasi.
+func submitOf(b string) string {
+	if l := sendButton(splitList(b)); l != "" {
+		return capital(l)
+	}
+	return capital(b)
+}
+
+// sendButton is the button of a list that sends the form: the first that
+// neither leaves it nor keeps a draft ("Simpan draf" is the other way to
+// send). "" when every button leaves.
+func sendButton(buttons []string) string {
+	first := ""
+	for _, l := range buttons {
+		low := strings.ToLower(l)
+		if has(low, "batal", "tutup", "kembali", "cancel", "close") {
+			continue
+		}
+		if !has(low, "draf", "draft") {
+			return l
+		}
+		if first == "" {
+			first = l
+		}
+	}
+	return first
+}
+
+// pageFormID is the id of the page's form element.
+func (r *render) pageFormID() string { return "pf-" + ident(r.page.ID) }
 
 // placeholder is the hint inside an empty input.
 func placeholder(label string) string {
@@ -1131,7 +1745,13 @@ func buttonLabel(it string) (string, bool) {
 	l := strings.ToLower(it)
 	for _, p := range []string{"tombol ", "button "} {
 		if strings.HasPrefix(l, p) {
-			return strings.TrimSpace(it[len(p):]), true
+			b := strings.TrimSpace(it[len(p):])
+			// "Tombol primer 'Kirim pengajuan' menempel di bawah" is Kirim
+			// pengajuan.
+			if m := quotedText.FindStringSubmatch(b); m != nil {
+				b = strings.TrimSpace(m[1])
+			}
+			return b, true
 		}
 	}
 	return it, false
@@ -1142,7 +1762,14 @@ func (r *render) actions(s core.Section) {
 	var buttons, facts []string
 	for _, it := range els {
 		if b, ok := buttonLabel(it); ok {
-			buttons = append(buttons, b)
+			// "Tombol Simpan draf dan Konfirmasi pesanan" names two; "sebagai
+			// aksi utama" says how it is drawn.
+			for _, x := range splitList(b) {
+				if i := strings.Index(strings.ToLower(x), " sebagai "); i > 0 {
+					x = x[:i]
+				}
+				buttons = append(buttons, x)
+			}
 		} else {
 			facts = append(facts, it)
 		}
@@ -1160,15 +1787,61 @@ func (r *render) actions(s core.Section) {
 		}
 		r.w(`</dl>`)
 	}
-	r.w(`<div class="fk-actions">`)
-	for i, it := range buttons {
-		cls := "fk-btn"
-		if i == 0 {
-			cls += " fk-btn-primary"
-		} else if has(strings.ToLower(it), "batal", "kembali", "cancel") {
-			cls += " fk-btn-ghost"
+	cancel := func(b string) bool { return has(strings.ToLower(b), "batal", "kembali", "cancel") }
+	primary := ""
+	if len(buttons) > 0 {
+		primary = buttons[0]
+	}
+	bar := ""
+	if r.formPage() {
+		// A form's bar: what leaves it first, what sends it last.
+		if b := sendButton(buttons); b != "" {
+			primary = b
 		}
-		r.f(`<button class="%s"%s>%s%s</button>`, cls, r.disabled(), actionIcon(it), esc(it))
+		var back, rest []string
+		for _, b := range buttons {
+			if cancel(b) {
+				back = append(back, b)
+			} else {
+				rest = append(rest, b)
+			}
+		}
+		buttons, bar = append(back, rest...), " fk-form-bar"
+	}
+	r.f(`<div class="fk-actions%s">`, bar)
+	if bar != "" {
+		r.requiredNote()
+	}
+	for _, it := range buttons {
+		cls := "fk-btn"
+		switch {
+		case it == primary && (bar == "" || !cancel(it)):
+			cls += " fk-btn-primary"
+		case cancel(it):
+			if bar == "" {
+				cls += " fk-btn-ghost"
+			}
+		case core.DangerAction(it):
+			cls += " fk-btn-danger"
+		}
+		opens := ""
+		if has(strings.ToLower(it), "batal", "kembali", "cancel") && r.disabled() == "" && r.parentHref() != "" {
+			r.back(it, cls)
+			continue
+		}
+		if r.disabled() == "" {
+			if t := r.dialogFor(it); t != "" {
+				opens = ` popovertarget="` + t + `"`
+			} else if at, _ := r.pageSubmit(); it == primary && at == "" && r.mainForm() != "" {
+				opens = ` type="submit" form="` + r.pageFormID() + `"`
+			}
+		}
+		// The button names the action; when it holds is its tooltip.
+		if text := capital(strings.TrimSpace(actionName(it))); text != "" && text != it && r.disabled() == "" {
+			opens += ` title="` + esc(it) + `"`
+			it = text
+		}
+		r.f(`<button class="%s"%s%s>%s%s</button>`, cls, r.disabled(), opens, actionIcon(it), esc(it))
 	}
 	r.w(`</div>`)
 }
@@ -1229,15 +1902,28 @@ func (r *render) steps(s core.Section) {
 		r.text(s)
 		return
 	}
+	cur, body := 0, r.page.Pattern == "wizard" && len(r.formSections()) == 0 && len(r.plan().unplaced) > 0
+	if body {
+		cur = r.wizardStep(len(els))
+	}
 	r.w(`<ol class="fk-steps">`)
 	for i, it := range els {
-		cls := ""
-		if i == 0 {
-			cls = ` class="on" aria-current="step"`
+		switch {
+		case i == cur:
+			r.f(`<li class="on" aria-current="step"><b>%d</b>%s</li>`, i+1, esc(it))
+		case i < cur:
+			// A step done is one to go back to.
+			sim := r.doc.Sim.Nav()
+			sim.View = stepView(i)
+			r.f(`<li class="done"><a href="%s"><b>%s</b>%s</a></li>`, esc(r.doc.hrefSim(r.page.ID, sim)), icon("check"), esc(it))
+		default:
+			r.f(`<li><b>%d</b>%s</li>`, i+1, esc(it))
 		}
-		r.f(`<li%s><b>%d</b>%s</li>`, cls, i+1, esc(it))
 	}
 	r.w(`</ol>`)
+	if body {
+		r.wizardBody(els, cur)
+	}
 }
 
 // notice is an inline message, such as the error a form shows.
@@ -1270,6 +1956,25 @@ func (r *render) facets(s core.Section) {
 }
 
 func (r *render) text(s core.Section) {
+	// On a form page the buttons a section names send the form.
+	var buttons []string
+	if r.formPage() {
+		var rest []string
+		for _, c := range s.Content {
+			if _, ok := buttonLabel(strings.TrimSpace(c)); ok {
+				buttons = append(buttons, c)
+			} else {
+				rest = append(rest, c)
+			}
+		}
+		s.Content = rest
+	}
+	if len(buttons) > 0 && slices.ContainsFunc(s.Components, displayComponent) {
+		// Beside a form, a summary of what it will send, then its buttons.
+		r.formSummary(s)
+		r.actions(core.Section{ID: s.ID, Content: buttons})
+		return
+	}
 	r.w(`<div class="fk-text">`)
 	if s.Purpose != "" {
 		r.w(`<p class="fk-meta">` + esc(s.Purpose) + `</p>`)
@@ -1282,6 +1987,9 @@ func (r *render) text(s core.Section) {
 		r.w(`</ul>`)
 	}
 	r.w(`</div>`)
+	if len(buttons) > 0 {
+		r.actions(core.Section{ID: s.ID, Content: buttons})
+	}
 }
 
 // Sample data.
@@ -1307,7 +2015,7 @@ func hasAny(xs []string, pred func(string) bool) bool {
 func status(l string) bool { return has(l, "status", "state", "kondisi") }
 
 func money(l string) bool {
-	return has(l, "total", "harga", "nominal", "biaya", "price", "amount", "saldo", "pendapatan", "tarif", "subtotal", "omzet", "rp", "bayar", "tagihan")
+	return has(l, "total", "harga", "nominal", "biaya", "price", "amount", "saldo", "pendapatan", "tarif", "subtotal", "omzet", "rp", "bayar", "tagihan", "pajak", "ppn", "tax")
 }
 
 func numeric(l string) bool {
@@ -1364,23 +2072,75 @@ func sample(label string, row int) string {
 		return pick("2 j 27 m", "45 m", "2 j 17 m", "2 j 38 m", "1 j 05 m", "3 j 12 m")
 	case has(l, "jenis", "tipe", "kategori", "kelas"):
 		return pick("Reguler", "Premium", "Reguler", "Khusus", "Reguler", "Premium")
+	case has(l, "zona waktu", "timezone", "time zone"):
+		return pick("WIB (UTC+7)", "WITA (UTC+8)", "WIT (UTC+9)")
+	case has(l, "prioritas", "priority"):
+		return pick("Tinggi", "Sedang", "Rendah")
 	case has(l, "waktu", "jam", "time"):
 		return pick("2 menit lalu", "15 menit lalu", "1 jam lalu", "Kemarin", "3 hari lalu", "Minggu lalu")
 	case money(l):
 		return pick("Rp 1.250.000", "Rp 485.000", "Rp 2.100.000", "Rp 96.000", "Rp 730.000", "Rp 3.400.000")
+	case l == "unit" || l == "satuan" || strings.HasPrefix(l, "satuan "):
+		return pick("pcs", "kg", "box", "liter", "pak", "rim")
 	case has(l, "jumlah", "qty", "stok", "kuantitas", "count"):
 		return pick("24", "8", "130", "3", "57", "12")
 	case has(l, "email", "surel"):
 		return pick("andi@contoh.id", "sari@contoh.id", "budi@contoh.id", "rina@contoh.id", "dewi@contoh.id", "eko@contoh.id")
 	case has(l, "telepon", "phone", "whatsapp", "no hp", "nomor hp", "ponsel"):
 		return pick("0812-3456-7890", "0813-2222-1010", "0857-1111-2020", "0819-8765-4321", "0821-5555-0101", "0878-9090-1212")
+	case strings.HasPrefix(l, "nama ") && !has(l[5:], "lengkap", "pelanggan", "customer", "pasien", "pengguna", "user", "penulis", "pemilik", "karyawan",
+		"siswa", "member", "anggota", "kontak", "pelapor", "wali", "admin", "guru", "pegawai", "petugas", "pengemudi", "staf", "penerima", "pengirim", "orang"):
+		// "Nama barang" names a thing, not a person.
+		return capital(l[5:]) + " " + pick("Alfa", "Beta", "Gamma", "Delta", "Prima", "Omega")
 	case has(l, "nama", "name", "pelanggan", "customer", "pasien", "pengguna", "user", "penulis", "pemilik", "karyawan", "siswa"):
 		return pick("Andi Pratama", "Sari Wulandari", "Budi Santoso", "Rina Kusuma", "Dewi Lestari", "Eko Saputra")
-	case l == "no" || has(l, "nomor", "kode", "id", "no.", "ref"):
+	case l == "no" || has(l, "nomor", "kode", "id", "no.", "ref", "sku"):
 		return fmt.Sprintf("#%04d", 1048-row*7)
 	case status(l):
 		w, _ := statusFor(label, row)
 		return w
 	}
 	return fmt.Sprintf("%s %d", capital(label), row+1)
+}
+
+// back is a control that leaves the page for the one it is entered from;
+// a plain button when there is none.
+func (r *render) back(label, cls string) {
+	// "Batal kembali ke daftar" is Batal; the rest is its tooltip.
+	text, title := capital(label), ""
+	if f := strings.Fields(label); len(f) > 1 && has(strings.ToLower(f[0]), "batal", "kembali", "cancel") {
+		text, title = capital(f[0]), ` title="`+esc(capital(label))+`"`
+	}
+	if h := r.parentHref(); h != "" && r.disabled() == "" {
+		r.f(`<a class="%s" href="%s" data-foundry-link="%s"%s>%s</a>`, cls, esc(h), esc(core.ParentPage(r.doc.Layout, r.page.ID)), title, esc(text))
+		return
+	}
+	r.f(`<button class="%s" type="button"%s%s>%s</button>`, cls, title, r.disabled(), esc(text))
+}
+
+// formPage reports whether the page makes or changes a record: its
+// actions are the form's bar.
+func (r *render) formPage() bool {
+	return (r.page.Pattern == "form" || r.page.Pattern == "wizard") && len(r.formSections()) > 0
+}
+
+// requiredNote says what the form's * means, when it marks any.
+func (r *render) requiredNote() {
+	var all []formField
+	for _, s := range r.formSections() {
+		all = append(all, r.plan().bySec[s.ID]...)
+	}
+	r.requiredNoteOf(all)
+}
+
+// homePage is the first page of the menu.
+func (r *render) homePage() string {
+	for _, g := range r.doc.Layout.Navigation {
+		for _, it := range g.Items {
+			if pg, _ := r.doc.page(strings.TrimSpace(it.Page)); pg != nil && pg.Pattern != "auth" {
+				return pg.ID
+			}
+		}
+	}
+	return ""
 }

@@ -2,6 +2,7 @@ package uikit
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -29,12 +30,29 @@ func (r *render) headActions() {
 	if pa == "" && !pg.Existing && slices.Contains(core.ActionPatterns, pg.Pattern) {
 		pa = core.FlowPrimaryAction(r.doc.Walks, pg.ID)
 	}
+	createForm, createLabel := "", ""
+	if pa == "" && !pg.Existing {
+		createForm, createLabel = r.createEntry()
+	}
 	next := r.nextSteps()
+	links, primary := r.declaredLinks(next, createForm)
+	if pa == "" && createLabel == "" && primary.page != "" {
+		createForm, createLabel = primary.page, primary.label
+	}
 	docActs := r.documentActions(pa)
-	if pa == "" && len(next) == 0 && len(docActs) == 0 {
+	if pa == "" && createLabel == "" && len(next) == 0 && len(links) == 0 && len(docActs) == 0 {
 		return
 	}
 	r.w(`<div class="fk-actions">`)
+	for _, ln := range links {
+		r.f(`<a class="fk-btn" href="%s" data-foundry-link="%s">%s%s</a>`, esc(r.doc.href(ln.page)), esc(ln.page), esc(ln.label), icon("right"))
+	}
+	switch {
+	case createForm != "":
+		r.f(`<a class="fk-btn fk-btn-primary" href="%s" data-foundry-link="%s">%s%s</a>`, esc(r.doc.href(createForm)), esc(createForm), icon("plus"), esc(createLabel))
+	case createLabel != "":
+		r.actionControl(createLabel, "fk-btn fk-btn-primary", true)
+	}
 	for _, n := range next {
 		// A next step that is a document transition follows its status:
 		// in a status it is not available in, it is no way forward.
@@ -284,4 +302,131 @@ func writeWalks(b *strings.Builder, d Doc) {
 		b.WriteString(`</article>`)
 	}
 	b.WriteString(`</div></section>`)
+}
+
+// createEntry is how a list page the design gives no primary action
+// creates its records: the form page of its feature that makes one
+// (formID), else, when a use case of the feature makes them, the page's
+// form dialog opened by the create button the page names ("tombol Tambah
+// pengguna"), else by "Tambah" and what the page lists. None when a
+// section of the page already offers a create button.
+func (r *render) createEntry() (formID, label string) {
+	pg := r.page
+	l := r.doc.Layout
+	if !slices.Contains(core.ListPatterns, pg.Pattern) || r.offersCreate() {
+		return "", ""
+	}
+	if id, lb := core.CreateForm(l, pg.ID); id != "" {
+		return id, lb
+	}
+	if !r.doc.Project.CreateIntent(pg) || !slices.ContainsFunc(r.dialogs, func(d *dialog) bool { return len(d.fields) > 0 }) {
+		return "", ""
+	}
+	if lb := namedCreate(pg); lb != "" {
+		return "", lb
+	}
+	noun := strings.ToLower(pg.Name)
+	for _, s := range pg.Sections {
+		if n := entityNoun(s); n != "" {
+			noun = n
+			break
+		}
+	}
+	return "", "Tambah " + noun
+}
+
+// namedButton is a button the page's text names: "tombol Tambah pengguna".
+var namedButton = regexp.MustCompile(`(?i)\b(?:tombol|button)\s+([^.,;:'"()]+)`)
+
+// namedCreate is the create button the page's states or sections name.
+func namedCreate(pg *core.LayoutPage) string {
+	texts := make([]string, 0, len(pg.States)+len(pg.Sections))
+	for _, k := range []string{"empty", "default", "success"} {
+		texts = append(texts, pg.States[k])
+	}
+	for _, s := range pg.Sections {
+		texts = append(texts, strings.Join(s.Content, ". "))
+	}
+	for _, t := range texts {
+		for _, m := range namedButton.FindAllStringSubmatch(t, -1) {
+			b := strings.TrimSpace(m[1])
+			for _, sep := range []string{" dan ", " atau ", " untuk ", " di "} {
+				if i := strings.Index(strings.ToLower(b), sep); i > 0 {
+					b = b[:i]
+				}
+			}
+			if core.StartsCreate(b) && len(strings.Fields(b)) >= 2 {
+				return capital(b)
+			}
+		}
+	}
+	return ""
+}
+
+// offersCreate reports whether a section of the page already has a create
+// button.
+func (r *render) offersCreate() bool {
+	for _, s := range r.page.Sections {
+		if core.DialogSection(r.page.Pattern, s) {
+			continue // a dialog's buttons act inside it
+		}
+		for _, c := range s.Content {
+			if b, ok := buttonLabel(strings.TrimSpace(c)); ok {
+				for _, x := range splitList(b) {
+					if core.StartsCreate(x) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// declaredLinks are the page's own links (core.PageLink) that name a
+// button: "tombol Catat aspirasi". A link that only says when it is taken
+// ("setelah simpan") or points from the content ("tautan aktor") is no
+// header control. The first button that creates is the page's create action
+// (primary); the rest, besides the next steps and the create form, are
+// drawn as links, at most MaxNextSteps of them.
+func (r *render) declaredLinks(next []nextStep, createForm string) (links []nextStep, primary nextStep) {
+	if r.state != "" {
+		return nil, nextStep{}
+	}
+	taken := func(id string) bool {
+		return id == createForm || slices.ContainsFunc(next, func(n nextStep) bool { return n.page == id }) ||
+			slices.ContainsFunc(links, func(n nextStep) bool { return n.page == id })
+	}
+	for _, ln := range r.page.Links {
+		to, err := r.doc.page(ln.To)
+		if err != nil || to.ID == r.page.ID {
+			continue
+		}
+		via := strings.TrimSpace(ln.Via)
+		kind, label := "", ""
+		// Only a button the design names belongs in the header; a link
+		// ("tautan aktor") sits in the content it points from.
+		for _, p := range []string{"tombol ", "button "} {
+			if len(via) > len(p) && strings.EqualFold(via[:len(p)], p) {
+				kind, label = strings.TrimSpace(p), strings.TrimSpace(via[len(p):])
+				break
+			}
+		}
+		if kind == "" {
+			continue
+		}
+		label = capital(actionName(label))
+		if strings.Contains(label, ",") {
+			label = to.Name // several actions done on that page
+		}
+		if core.StartsCreate(label) && primary.page == "" && createForm == "" {
+			primary = nextStep{page: to.ID, label: label}
+			continue
+		}
+		if taken(to.ID) || len(links) >= MaxNextSteps {
+			continue
+		}
+		links = append(links, nextStep{page: to.ID, label: label})
+	}
+	return links, primary
 }

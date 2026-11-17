@@ -369,6 +369,12 @@ export interface UIDesign {
 export type MockupApproval = "approved" | "changed" | "pending";
 export interface MockupStatus {
   page: string; name: string; platform: string; pattern: string; template: boolean; hash: string; status: MockupApproval; approved_at?: string;
+  frames?: MockupFrame[];
+}
+// A moment of a page: a dialog or confirmation open, a form sent
+// incomplete, an action failed or succeeded, a state. query draws it.
+export interface MockupFrame {
+  id: string; group: string; name: string; kind: "page" | "form" | "invalid" | "error" | "success" | "confirm" | "state"; query?: string;
 }
 // A use case as the user walks it through the screens: each step placed on
 // a page; system steps are feedback, unplaced steps have no screen yet.

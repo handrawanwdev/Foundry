@@ -144,6 +144,7 @@ func (p *Project) DesignGate() DesignGate {
 		responsiveCheck(d, issues),
 		visualCheck(issues),
 		prototypeCheck(p, l),
+		accountCheck(p, l),
 	}
 	for _, f := range gateChecks {
 		g.Checks = append(g.Checks, f(p))
@@ -622,14 +623,16 @@ func prototypeCheck(p *Project, l *LayoutSpec) GateCheck {
 	return c
 }
 
-// UnreachablePages are the signed-in pages no menu item or page link leads
-// to. Existing and public pages are left out (they are entered from the
-// shell or from outside). Without navigation nothing is reported.
+// UnreachablePages are the signed-in pages no menu item, page link or
+// entry of a list page (its create form, its rows' detail page) leads to.
+// Existing and public pages are left out (they are entered from the shell
+// or from outside). Without navigation nothing is reported.
 func UnreachablePages(l *LayoutSpec) []string {
 	if l == nil || len(l.Navigation) == 0 {
 		return nil
 	}
 	reach := map[string]bool{}
+	entries := entryEdges(l)
 	var walk func(string)
 	walk = func(id string) {
 		if reach[id] {
@@ -640,6 +643,9 @@ func UnreachablePages(l *LayoutSpec) []string {
 			for _, ln := range pg.Links {
 				walk(ln.To)
 			}
+		}
+		for _, to := range entries[id] {
+			walk(to)
 		}
 	}
 	for _, g := range l.Navigation {

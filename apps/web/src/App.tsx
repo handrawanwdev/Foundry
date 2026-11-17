@@ -7,6 +7,7 @@ import { BlueprintPage } from "./pages/Blueprint";
 import { ConnectPage } from "./pages/Connect";
 import { ExportPage } from "./pages/Export";
 import { FeaturesPage } from "./pages/Features";
+import { MockupsPage } from "./pages/Mockups";
 import { StartPage } from "./pages/Start";
 import { TellPage } from "./pages/Tell";
 import { WorkflowPage } from "./pages/Workflow";
@@ -86,6 +87,7 @@ export default function App() {
         <Route path="/simple/tell" element={guard(<TellPage />)} />
         <Route path="/features" element={guard(<FeaturesPage />)} />
         <Route path="/blueprint" element={guard(<BlueprintPage />)} />
+        <Route path="/mockups" element={guard(<MockupsPage />)} />
         <Route path="/workflow" element={guard(<WorkflowPage />)} />
         <Route path="/export" element={guard(<ExportPage />)} />
         <Route path="*" element={<Navigate to="/" replace />} />

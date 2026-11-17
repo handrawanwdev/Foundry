@@ -844,6 +844,20 @@ func RiskyStep(text string) bool {
 	return len(f) > 0 && hasStem(stems(f[0]), riskyStems...)
 }
 
+// SharesStem reports whether two texts share a word by its root: "Hapus"
+// and "konfirmasi hapus kategori" do.
+func SharesStem(a, b string) bool {
+	wb := stems(b)
+	return slices.ContainsFunc(stems(a), func(w string) bool { return hasStem(wb, strings.Split(w, "|")...) })
+}
+
+// StemsCovered reports whether every word of a is in b by its root:
+// "Catat mutasi" is in "Catat Mutasi Barang".
+func StemsCovered(a, b string) bool {
+	wa, wb := stems(a), stems(b)
+	return len(wa) > 0 && !slices.ContainsFunc(wa, func(w string) bool { return !hasStem(wb, strings.Split(w, "|")...) })
+}
+
 // DangerAction reports whether an action label rejects or cannot be
 // undone: it is shown as a destructive button with a confirmation.
 func DangerAction(label string) bool {

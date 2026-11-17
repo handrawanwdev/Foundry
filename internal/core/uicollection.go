@@ -23,17 +23,23 @@ const (
 // is not a control or tabs decides, else the section name; a section of
 // tabs only is "tabs".
 func ContentKind(s Section) string {
-	first, tabs := "", false
+	first, tabs, tabTable := "", false, false
 	for _, c := range s.Content {
 		switch {
 		case ControlEntry(c) != "":
 		case wordKind(c) == "tabs":
 			tabs = true
+			if _, _, ok := TabColumns(c); ok {
+				tabTable = true
+			}
 		default:
 			if first == "" {
 				first = c
 			}
 		}
+	}
+	if first == "" && tabTable {
+		return "table" // its tabs are views of one table
 	}
 	if first == "" && tabs {
 		return "tabs"
@@ -45,6 +51,22 @@ func ContentKind(s Section) string {
 		return k
 	}
 	return ""
+}
+
+// TabColumns splits a tab entry that lists the tab's columns ("Tab Mutasi:
+// Waktu, Barang, Qty") into the tab and its columns; ok is false for an
+// entry that lists the tabs themselves ("Tab: Aktif, Selesai").
+func TabColumns(c string) (tab, cols string, ok bool) {
+	c = strings.TrimSpace(c)
+	if wordKind(c) != "tabs" {
+		return "", "", false
+	}
+	if i := strings.IndexAny(c, ": "); i >= 0 {
+		c = c[i+1:]
+	}
+	tab, cols, ok = strings.Cut(c, ":")
+	tab, cols = strings.TrimSpace(tab), strings.TrimSpace(cols)
+	return tab, cols, ok && tab != "" && strings.Contains(cols, ",")
 }
 
 // wordKind is the block the first word of a text names.

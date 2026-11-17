@@ -1152,7 +1152,9 @@ func checkFieldEntity(_ *Project, entities map[string][]string, where, field str
 	if len(fields) == 0 {
 		return
 	}
-	if !slices.Contains(fields, strings.ToLower(strings.TrimSpace(name))) {
+	// The blueprint writes a field with its type and rules ("sku unique").
+	name = strings.ToLower(strings.TrimSpace(name))
+	if !slices.ContainsFunc(fields, func(f string) bool { return f == name || strings.ToLower(ParseDataField(entity, f).Name) == name }) {
 		add(IssueWarning, where, "field %q tidak tercatat pada entity %s", name, entity)
 	}
 }

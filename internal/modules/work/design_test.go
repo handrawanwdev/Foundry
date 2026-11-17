@@ -443,9 +443,10 @@ func TestDesignPromptStaysCompact(t *testing.T) {
 	// The cap leaves room for the use-case-to-screen contract (step and
 	// branch pages) and the primary action rule (live runs on
 	// Parking-System and distra wrote no primary_action without it); the
-	// quality of the mapping is worth those bytes.
-	if n := len(prompt); n > 19000 {
-		t.Errorf("clinic generate prompt is %d bytes; want ≤ 19000 so the LLM prefills less", n)
+	// quality of the mapping is worth those bytes. The report template
+	// (one line, ~80 bytes) lets report pages fill slots like table pages.
+	if n := len(prompt); n > 19100 {
+		t.Errorf("clinic generate prompt is %d bytes; want ≤ 19100 so the LLM prefills less", n)
 	}
 }
 

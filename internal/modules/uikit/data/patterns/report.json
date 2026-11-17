@@ -1,0 +1,159 @@
+{
+ "id": "report",
+ "name": "Laporan",
+ "use": "Rekap data per periode: ringkasan angka di atas, rincian record di tabel yang disaring dan dipaginasi seperti halaman tabel.",
+ "columns": "minmax(0,1fr)",
+ "areas": [
+  [
+   "toolbar"
+  ],
+  [
+   "summary"
+  ],
+  [
+   "chart"
+  ],
+  [
+   "table"
+  ],
+  [
+   "pagination"
+  ]
+ ],
+ "slots": [
+  {
+   "id": "toolbar",
+   "name": "Filter",
+   "kind": "toolbar",
+   "guide": "Wajib: periode dan filter segmen yang dipakai laporan; ekspor bila ada.",
+   "match": [
+    "toolbar",
+    "filter",
+    "saring",
+    "periode",
+    "rentang",
+    "cari",
+    "search"
+   ]
+  },
+  {
+   "id": "summary",
+   "name": "Ringkasan",
+   "kind": "metrics",
+   "guide": "2-4 angka total periode, berlabel dan bersatuan.",
+   "match": [
+    "ringkasan",
+    "summary",
+    "kpi",
+    "total",
+    "statistik",
+    "metrik"
+   ]
+  },
+  {
+   "id": "chart",
+   "name": "Grafik",
+   "kind": "chart",
+   "guide": "Grafik tren atau komposisi bila membantu membaca laporan.",
+   "match": [
+    "grafik",
+    "chart",
+    "tren",
+    "trend",
+    "komposisi"
+   ]
+  },
+  {
+   "id": "table",
+   "name": "Rincian",
+   "kind": "table",
+   "guide": "Tabel rincian; beberapa sudut pandang laporan sebagai tab di atas tabel.",
+   "required": true,
+   "match": [
+    "tabel",
+    "table",
+    "rincian",
+    "detail",
+    "daftar",
+    "data"
+   ]
+  },
+  {
+   "id": "pagination",
+   "name": "Paginasi",
+   "kind": "pagination",
+   "guide": "Wajib: paginasi (ukuran halaman, rentang, halaman).",
+   "match": [
+    "paginasi",
+    "pagination",
+    "halaman",
+    "page"
+   ]
+  }
+ ],
+ "panel": [
+  "toolbar",
+  "table",
+  "pagination"
+ ],
+ "rules": [
+  "Filter dan paginasi sama dengan halaman tabel",
+  "Periode laporan selalu terlihat",
+  "Angka rata kanan, bersatuan"
+ ],
+ "avoid": [
+  "Filter sebagai daftar label-nilai",
+  "Kolom tabel dijadikan tab"
+ ],
+ "example": {
+  "id": "laporan-penjualan",
+  "name": "Laporan penjualan",
+  "platform": "web",
+  "pattern": "report",
+  "purpose": "Merekap penjualan per periode dan cabang",
+  "sections": [
+   {
+    "id": "filter",
+    "name": "Filter laporan",
+    "slot": "toolbar",
+    "content": [
+     "Rentang tanggal",
+     "Cabang",
+     "Tombol Ekspor"
+    ]
+   },
+   {
+    "id": "ringkasan",
+    "name": "Ringkasan",
+    "slot": "summary",
+    "content": [
+     "Total penjualan",
+     "Jumlah transaksi",
+     "Rata-rata transaksi"
+    ]
+   },
+   {
+    "id": "rincian",
+    "name": "Rincian penjualan",
+    "slot": "table",
+    "content": [
+     "Tab Transaksi: Tanggal, No, Cabang, Total",
+     "Tab Per cabang: Cabang, Transaksi, Total"
+    ]
+   },
+   {
+    "id": "paginasi",
+    "name": "Paginasi",
+    "slot": "pagination",
+    "content": [
+     "50 per halaman"
+    ]
+   }
+  ],
+  "states": {
+   "loading": "Kerangka ringkasan dan tabel",
+   "empty": "Tidak ada data pada periode ini",
+   "error": "Laporan gagal dimuat; coba lagi"
+  }
+ }
+}

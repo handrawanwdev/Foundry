@@ -34,7 +34,7 @@ export function reachable(stage: Stage, step: number): boolean {
 
 export function stepOfPath(path: string): number {
   if (path.startsWith("/features")) return 1;
-  if (path.startsWith("/blueprint")) return 2;
+  if (path.startsWith("/blueprint") || path.startsWith("/mockups")) return 2;
   return STEPS.findIndex((s) => s.path === path);
 }
 

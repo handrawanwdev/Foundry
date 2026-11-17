@@ -140,6 +140,11 @@ func slotScore(sl Slot, s core.Section, taken bool) int {
 	} else if kind := core.ContentKind(s); kind != "" && (kind == sl.Kind || kind == "list" && sl.Kind == "activity") {
 		score += 4
 	}
+	// A section built from input components holds a form's fields, whatever
+	// its words say ("Tombol Terima undangan" under the fields).
+	if sl.Kind == "form" && slices.ContainsFunc(s.Components, inputComponent) {
+		score += 6
+	}
 	// Prefer an empty slot when the fit is otherwise equal.
 	if score > 0 && !taken {
 		score++
