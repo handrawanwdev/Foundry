@@ -1,12 +1,14 @@
 package work
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/handrawanwdev/foundry/internal/core"
+	"github.com/handrawanwdev/foundry/internal/modules/workflow"
 )
 
 // A large workflow keeps a focused revision small: the focus and its direct
@@ -61,6 +63,30 @@ func TestRevisionKeepsMustCoverage(t *testing.T) {
 	keep := `{"commands": [{"id": "CMD-001", "name": "a2", "objective": "o", "instructions": "i", "artifacts": ["requirements"], "covers": ["REQ-001"]}], "done": true}`
 	if err := ApplyWorkflow(p, keep, docs); err != nil {
 		t.Fatalf("REQ-002 was already uncovered, the round must pass: %v", err)
+	}
+}
+
+// A revision answer past the size limits of one command is refused before
+// it changes anything; within them it is saved.
+func TestRevisionRefusesOversizeCommand(t *testing.T) {
+	p, docs := revisionFixture()
+	acc := make([]string, workflow.MaxAcceptance+1)
+	for i := range acc {
+		acc[i] = fmt.Sprintf("kriteria %d", i)
+	}
+	answer := func(acc []string) string {
+		return mustJSON(map[string]any{"commands": []map[string]any{{"id": "CMD-001", "name": "a", "objective": "o", "instructions": "teks-a baru",
+			"artifacts": []string{"requirements"}, "covers": []string{"REQ-001"}, "acceptance_criteria": acc}}})
+	}
+	err := ApplyWorkflow(p, answer(acc), docs)
+	if err == nil || !strings.Contains(err.Error(), "terlalu besar") || !strings.Contains(err.Error(), fmt.Sprintf("maks %d", workflow.MaxAcceptance)) {
+		t.Fatalf("err = %v", err)
+	}
+	if p.Workflow.Version != 1 || p.Workflow.Command("CMD-001").Instructions != "teks-a" {
+		t.Fatal("refused round changed the workflow")
+	}
+	if err := ApplyWorkflow(p, answer(acc[:workflow.MaxAcceptance]), docs); err != nil {
+		t.Fatalf("command within the limits refused: %v", err)
 	}
 }
 

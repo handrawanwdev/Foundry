@@ -445,8 +445,10 @@ func TestDesignPromptStaysCompact(t *testing.T) {
 	// Parking-System and distra wrote no primary_action without it); the
 	// quality of the mapping is worth those bytes. The report template
 	// (one line, ~80 bytes) lets report pages fill slots like table pages.
-	if n := len(prompt); n > 19100 {
-		t.Errorf("clinic generate prompt is %d bytes; want ≤ 19100 so the LLM prefills less", n)
+	// The field examples rule (~130 bytes) makes mockup rows read as real
+	// data ("EURUSD", not "Instrumen 1") for users who do not know the domain.
+	if n := len(prompt); n > 19300 {
+		t.Errorf("clinic generate prompt is %d bytes; want ≤ 19300 so the LLM prefills less", n)
 	}
 }
 

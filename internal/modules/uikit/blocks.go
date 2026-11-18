@@ -34,7 +34,7 @@ func (r *render) kindOf(s core.Section, sl Slot) string {
 	fixed := bareKinds[kind] || kind == "steps" || kind == "tabs" || kind == "facets"
 	if k := sectionKinds[s.Pattern]; k != "" && !fixed {
 		kind = k
-	} else if k := core.ContentKind(s); k != "" && k != "metrics" && (!fixed || kind == "actions" && dataKinds[k]) && !(k == "list" && kind == "activity") {
+	} else if k := core.ContentKind(s); k != "" && k != "metrics" && (!fixed || kind == "actions" && dataKinds[k]) && !(k == "list" && kind == "activity") && !(k == "list" && tableSection(s, sl)) {
 		kind = k // the section names its block: "Tabel …" in a chart slot is a table
 	}
 	if kind == "" {
@@ -60,6 +60,15 @@ func (r *render) kindOf(s core.Section, sl Slot) string {
 		kind = "detail"
 	}
 	return kind
+}
+
+// tableSection reports a section drawn as a table: its slot is a table or
+// it names a table component. "Daftar item" in such a section is a table
+// of the items, not a list.
+func tableSection(s core.Section, sl Slot) bool {
+	return sl.Kind == "table" || slices.ContainsFunc(s.Components, func(c string) bool {
+		return has(strings.ToLower(c), "table", "tabel")
+	})
 }
 
 // takesInput reports whether a section takes input: it names no
@@ -90,7 +99,9 @@ func (r *render) collectionKind(kind string) bool {
 // section renders one section in its slot.
 func (r *render) section(s core.Section, sl Slot, slotted bool) {
 	s, r.secLinks = r.sectionLinks(s)
-	defer func() { r.secLinks = nil }()
+	prev := r.curSec
+	r.curSec = s.ID
+	defer func() { r.secLinks, r.curSec = nil, prev }()
 	kind := r.kindOf(s, sl)
 	if r.page.Pattern == "detail" && r.state == "" {
 		switch {
@@ -130,11 +141,11 @@ func (r *render) section(s core.Section, sl Slot, slotted bool) {
 		h2 = `<h2 class="fk-sr">`
 	}
 	if len(r.secLinks) > 0 && r.state != "loading" {
-		r.f(`<section class="%s" data-foundry-section="%s"%s aria-label="%s"><div class="fk-sec-top">%s%s</h2>`, cls, esc(s.ID), slot, esc(s.Name), h2, esc(s.Name))
+		r.f(`<section class="%s" id="sec-%s" data-foundry-section="%s"%s aria-label="%s"><div class="fk-sec-top">%s%s</h2>`, cls, ident(s.ID), esc(s.ID), slot, esc(s.Name), h2, esc(s.Name))
 		r.sectionMore()
 		r.w(`</div>`)
 	} else {
-		r.f(`<section class="%s" data-foundry-section="%s"%s aria-label="%s">%s%s</h2>`, cls, esc(s.ID), slot, esc(s.Name), h2, esc(s.Name))
+		r.f(`<section class="%s" id="sec-%s" data-foundry-section="%s"%s aria-label="%s">%s%s</h2>`, cls, ident(s.ID), esc(s.ID), slot, esc(s.Name), h2, esc(s.Name))
 	}
 	if dataKinds[kind] && r.dataState(s, sl.Required || !slotted, kind) {
 		r.w(`</section>`)
@@ -284,7 +295,7 @@ func (r *render) collection(s core.Section, kind, slot string, main bool) {
 		c = r.pageControls()
 	}
 	compact := kind == "list" && !r.panelOpen
-	r.f(`<section class="fk-sec fk-coll fk-k-%s" data-foundry-section="%s"%s aria-label="%s">`, ident(kind), esc(s.ID), slot, esc(s.Name))
+	r.f(`<section class="fk-sec fk-coll fk-k-%s" id="sec-%s" data-foundry-section="%s"%s aria-label="%s">`, ident(kind), ident(s.ID), esc(s.ID), slot, esc(s.Name))
 	if r.panelHead != s.ID {
 		r.collHead(s)
 	}
@@ -293,7 +304,7 @@ func (r *render) collection(s core.Section, kind, slot string, main bool) {
 		r.tools(filterElements(s, c.Filter == "", r.defaultFilters(s, kind)))
 		r.w(`</div>`)
 	}
-	data := dataContent(s)
+	data := r.dataContent(s)
 	if !r.dataState(s, main, kind) {
 		switch kind {
 		case "table":
@@ -330,30 +341,14 @@ func (r *render) tabBar(s core.Section) {
 	if len(tabs) == 0 {
 		tabs = items(s)
 	}
-	r.w(`<nav class="fk-tabs-line" aria-label="` + esc(s.Name) + `">`)
-	for i, t := range tabs {
-		cls := ""
-		if i == 0 {
-			cls = ` class="on" aria-current="page"`
-		}
-		r.f(`<a href="#"%s>%s</a>`, cls, esc(t))
-	}
-	r.w(`</nav>`)
+	r.tabNav("fk-tabs-line", s.Name, tabs)
 }
 
 // collHead is a collection's header: name, record count and its tabs.
 func (r *render) collHead(s core.Section) {
 	r.f(`<header class="fk-sec-head"><h2>%s</h2><span class="fk-count">%d</span>`, esc(s.Name), total(s))
 	if tabs := tabItems(s); len(tabs) > 0 {
-		r.w(`<nav class="fk-tabs-line" aria-label="` + esc(s.Name) + `">`)
-		for i, t := range tabs {
-			cls := ""
-			if i == 0 {
-				cls = ` class="on" aria-current="page"`
-			}
-			r.f(`<a href="#"%s>%s</a>`, cls, esc(t))
-		}
-		r.w(`</nav>`)
+		r.tabNav("fk-tabs-line", s.Name, tabs)
 	}
 	r.sectionMore()
 	r.w(`</header>`)
@@ -382,21 +377,44 @@ func entryKind(c string) string {
 
 // dataContent is the section with only the entries that describe its
 // records.
-func dataContent(s core.Section) core.Section {
+func (r *render) dataContent(s core.Section) core.Section {
 	out := s
 	out.Content = nil
-	cols := ""
+	var tabs []string
 	for _, c := range s.Content {
 		if entryKind(c) == "" {
 			out.Content = append(out.Content, c)
-		} else if _, tc, ok := core.TabColumns(c); ok && cols == "" {
-			cols = tc // the first tab is the one shown
+		} else if _, tc, ok := core.TabColumns(c); ok {
+			tabs = append(tabs, beforeNote(tc))
 		}
+	}
+	cols := ""
+	if len(tabs) > 0 {
+		cols = tabs[r.curTab(len(tabs))] // the open tab is the one shown
 	}
 	if cols != "" {
 		out.Content = append([]string{"Kolom: " + cols}, out.Content...)
 	}
 	return out
+}
+
+// beforeNote is a column list without the note after it: "No, Status;
+// urut terbaru" lists No and Status.
+func beforeNote(c string) string {
+	depth := 0
+	for i, r := range c {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ';':
+			if depth == 0 {
+				return strings.TrimSpace(c[:i])
+			}
+		}
+	}
+	return c
 }
 
 // tabItems are the tabs a section names: "Tab Aktif dan Selesai", or one
@@ -455,7 +473,7 @@ func capital(s string) string {
 func (r *render) defaultFilters(s core.Section, kind string) []string {
 	what, st := entityNoun(s), "Status"
 	if kind == "table" {
-		cols := r.tableColumns(dataContent(s))
+		cols := r.tableColumns(r.dataContent(s))
 		if what == "" && len(cols) > 0 && len(strings.Fields(cols[0])) <= 3 {
 			what = strings.ToLower(cols[0])
 		}
@@ -627,29 +645,61 @@ func (r *render) pager(s core.Section, compact bool) {
 	if compact {
 		size = 5
 	}
+	pages := max((all+size-1)/size, 1)
+	cur := min(max(r.doc.Sim.Page, 1), pages)
 	if more {
-		r.f(`<div class="fk-pager fk-pager-more"><button class="fk-btn">Muat lebih banyak</button><span>%d dari %d</span></div>`, size, all)
+		// Loading more shows the next batch below the ones shown.
+		shown := min(cur*size, all)
+		r.w(`<div class="fk-pager fk-pager-more">`)
+		if shown < all {
+			r.f(`<a class="fk-btn" href="%s">Muat lebih banyak</a>`, esc(r.pageHref(cur+1)))
+		}
+		r.f(`<span>%d dari %d</span></div>`, shown, all)
 		return
 	}
-	pages := (all + size - 1) / size
 	r.w(`<div class="fk-pager">`)
 	if !compact {
 		r.f(`<div class="fk-pager-size">Baris per halaman <span class="fk-chip fk-chip-solid">%d%s</span></div>`, size, icon("chevron"))
 	}
-	r.f(`<span>1–%d dari %d</span><nav class="fk-pages" aria-label="Paginasi"><button class="fk-pg fk-nav-pg" disabled aria-label="Sebelumnya">%s</button>`, size, all, icon("left"))
-	if !compact {
-		r.w(`<button class="fk-pg on" aria-current="page">1</button>`)
-		for p := 2; p <= pages && p <= 3; p++ {
-			r.f(`<button class="fk-pg">%d</button>`, p)
-		}
-		if pages > 4 {
-			r.w(`<span class="fk-gap">…</span>`)
-		}
-		if pages > 3 {
-			r.f(`<button class="fk-pg">%d</button>`, pages)
+	// Each page number opens that page; the current one is marked.
+	pg := func(p int, cls, label, inner string) {
+		switch {
+		case p < 1 || p > pages:
+			r.f(`<button class="%s" disabled%s>%s</button>`, cls, label, inner)
+		case p == cur && !strings.Contains(cls, "fk-nav-pg"):
+			r.f(`<a class="%s on" aria-current="page" href="%s"%s>%s</a>`, cls, esc(r.pageHref(p)), label, inner)
+		default:
+			r.f(`<a class="%s" href="%s"%s>%s</a>`, cls, esc(r.pageHref(p)), label, inner)
 		}
 	}
-	r.f(`<button class="fk-pg fk-nav-pg" aria-label="Berikutnya">%s</button></nav></div>`, icon("right"))
+	r.f(`<span>%d–%d dari %d</span><nav class="fk-pages" aria-label="Paginasi">`, (cur-1)*size+1, min(cur*size, all), all)
+	pg(cur-1, "fk-pg fk-nav-pg", ` aria-label="Sebelumnya"`, icon("left"))
+	if !compact {
+		shown := []int{1, 2, 3, pages}
+		if cur > 3 && cur < pages {
+			shown = []int{1, cur - 1, cur, cur + 1, pages}
+		}
+		last := 0
+		for _, p := range shown {
+			if p <= last || p > pages {
+				continue
+			}
+			if p > last+1 {
+				r.w(`<span class="fk-gap">…</span>`)
+			}
+			pg(p, "fk-pg", "", strconv.Itoa(p))
+			last = p
+		}
+	}
+	pg(cur+1, "fk-pg fk-nav-pg", ` aria-label="Berikutnya"`, icon("right"))
+	r.w(`</nav></div>`)
+}
+
+// pageHref opens page p of this page's collection.
+func (r *render) pageHref(p int) string {
+	sim := r.doc.Sim.Nav()
+	sim.Tab, sim.Page = r.doc.Sim.Tab, p
+	return r.doc.hrefSim(r.page.ID, sim)
 }
 
 func (r *render) stateText(s *core.Section, state string) string {
@@ -678,12 +728,17 @@ func (r *render) statePanel(state string, s *core.Section) {
 		ident(state), icon(ic), title, esc(r.stateText(s, state)))
 	switch state {
 	case "error":
-		r.w(`<button class="fk-btn">Coba lagi</button>`)
+		// Trying again loads the page with its data.
+		r.f(`<a class="fk-btn" href="%s">Coba lagi</a>`, esc(r.doc.hrefSim(r.page.ID, r.doc.Sim.Nav())))
 	case "empty":
 		// An empty list invites making its first record; any other main
 		// action is in the header already.
 		if a := r.page.PrimaryAction; a != "" && core.StartsCreate(a) {
-			r.w(`<button class="fk-btn fk-btn-primary">` + actionIcon(a) + esc(a) + `</button>`)
+			if pg := r.leadsTo(a, nil); pg != "" {
+				r.f(`<a class="fk-btn fk-btn-primary" href="%s" data-foundry-link="%s">%s%s</a>`, esc(r.doc.href(pg)), esc(pg), actionIcon(a), esc(a))
+			} else {
+				r.w(`<button class="fk-btn fk-btn-primary">` + actionIcon(a) + esc(a) + `</button>`)
+			}
 		}
 	}
 	r.w(`</div>`)
@@ -911,7 +966,7 @@ func metricValue(label string, i int) string {
 func columnList(s core.Section) []string {
 	var best []string
 	for _, c := range s.Content {
-		got := items(core.Section{Content: []string{c}})
+		got := items(core.Section{Content: []string{beforeNote(c)}})
 		if len(got) > len(best) {
 			best = got
 		}
@@ -970,6 +1025,11 @@ func (r *render) table(s core.Section) {
 		case numeric(l) && !status(l):
 			r.f(`<th scope="col" class="fk-num">%s</th>`, esc(c))
 		default:
+			if h := r.hintOf(c); h != "" {
+				// What the column means, for a reader who does not know the data.
+				r.f(`<th scope="col"><span class="fk-hint" title="%s">%s</span></th>`, esc(h), esc(c))
+				continue
+			}
 			r.f(`<th scope="col">%s</th>`, esc(c))
 		}
 	}
@@ -981,6 +1041,8 @@ func (r *render) table(s core.Section) {
 	if r.state != "" {
 		detail = ""
 	}
+	// Another page or tab of the collection shows other records.
+	base := (max(r.doc.Sim.Page, 1)-1)*5 + r.doc.Sim.Tab
 	for row := 0; row < 5; row++ {
 		r.w(`<tr>`)
 		for i, c := range cols {
@@ -989,7 +1051,7 @@ func (r *render) table(s core.Section) {
 				continue
 			}
 			if i == 0 && detail != "" {
-				r.w(r.rowLink(r.cell(c, row, true), detail))
+				r.w(r.rowLink(r.cell(c, row+base, true), detail))
 				continue
 			}
 			if r.isAction(c) && has(strings.ToLower(c), "aksi", "action", "opsi") {
@@ -1000,12 +1062,21 @@ func (r *render) table(s core.Section) {
 						ca = append(ca, capital(a))
 					}
 				}
+				if len(ca) == 0 {
+					ca = r.rowDefaults() // a bare "Aksi" opens and edits the row
+				}
 				if len(ca) > 0 {
 					r.rowMenu(s, c, row, ca)
-					continue
+				} else {
+					r.f(`<td data-label="%s" class="fk-act"></td>`, esc(c))
 				}
+				continue
 			}
-			r.w(r.cell(c, row, i == 0))
+			if r.isAction(c) && r.presentationOf(c) == "row-action" {
+				r.rowMenu(s, c, row, []string{c}) // the column is the action
+				continue
+			}
+			r.w(r.cell(c, row+base, i == 0))
 		}
 		r.w(`</tr>`)
 	}
@@ -1089,12 +1160,8 @@ func (r *render) rowMenu(s core.Section, label string, row int, acts []string) {
 		text := actionIcon(a) + esc(a)
 		target, action := r.dialogFor(a), "show"
 		if target == "" {
-			pg := r.actionPage(a, s)
-			if pg == "" {
-				pg = r.formPageFor(a)
-			}
-			if pg != "" {
-				r.f(`<a class="%s"%s href="%s" data-foundry-link="%s">%s</a>`, cls, role, esc(r.actionHref(pg, a)), esc(pg), text)
+			if pg := r.leadsTo(a, &s); pg != "" {
+				r.f(`<a class="%s"%s href="%s" data-foundry-link="%s">%s</a>`, cls, role, esc(r.rowHref(pg, a)), esc(pg), text)
 				return
 			}
 			target, action = "", ""
@@ -1109,6 +1176,13 @@ func (r *render) rowMenu(s core.Section, label string, row int, acts []string) {
 			if core.ConfirmAction(a, lt) {
 				target, action = fmt.Sprintf("c-%s-%s", ident(s.ID), ident(a)), "show"
 				confirms = append(confirms, [2]string{target, a})
+			}
+		}
+		if target == "" || action == "hide" {
+			// Nothing to open: the prototype answers the action itself.
+			if h := r.simHref(a); h != "" {
+				r.f(`<a class="%s"%s href="%s" data-foundry-sim="act">%s</a>`, cls, role, esc(h), text)
+				return
 			}
 		}
 		if target == "" {
@@ -1219,18 +1293,22 @@ func (r *render) cell(label string, row int, first bool) string {
 			return td + ` class="fk-act"><button class="fk-btn fk-btn-sm">` + esc(label) + `</button></td>`
 		}
 		return td + ` class="fk-act"><button class="fk-icon-btn" aria-label="` + esc(label) + `">` + icon("more") + `</button></td>`
+	}
+	v, tone := r.cellValue(label, row)
+	switch {
 	case pres == "badge" || status(l):
-		w, c := statusFor(label, row)
-		return fmt.Sprintf(`%s><span class="fk-badge fk-badge-%s">%s</span></td>`, td, c, w)
-	case numeric(l):
-		return td + ` class="fk-num">` + esc(sample(label, row)) + `</td>`
+		if tone == "" {
+			tone = "info"
+		}
+		return fmt.Sprintf(`%s><span class="fk-badge fk-badge-%s">%s</span></td>`, td, tone, esc(v))
+	case numeric(l) || digitsOnly(v):
+		return td + ` class="fk-num">` + esc(v) + `</td>`
 	case first && person(l):
-		v := sample(label, row)
 		return td + `><span class="fk-who"><span class="fk-avatar">` + esc(initials(v)) + `</span><span class="fk-strong">` + esc(v) + `</span></span></td>`
 	case first:
-		return td + `><span class="fk-strong">` + esc(sample(label, row)) + `</span></td>`
+		return td + `><span class="fk-strong">` + esc(v) + `</span></td>`
 	}
-	return td + `>` + esc(sample(label, row)) + `</td>`
+	return td + `>` + esc(v) + `</td>`
 }
 
 // list renders records as rows: icon or avatar, title, meta, status and
@@ -1271,7 +1349,7 @@ func (r *render) list(s core.Section, compact bool) {
 		if row == 0 && r.page.Pattern == "master-detail" {
 			cls = ` class="on"`
 		}
-		t := sample(title, row)
+		t, _ := r.cellValue(title, row)
 		if len(examples) > 0 {
 			t = capital(examples[row%len(examples)])
 		}
@@ -1284,11 +1362,18 @@ func (r *render) list(s core.Section, compact bool) {
 		r.f(`<li%s>%s<div class="fk-list-main"><span class="fk-list-title">%s</span>`, cls, lead, esc(t))
 		m := sample("waktu", row)
 		if meta != "" && !compact {
-			m = sample(meta, row) + " · " + m
+			mv, _ := r.cellValue(meta, row)
+			m = mv + " · " + m
 		}
 		r.w(`<span class="fk-meta">` + esc(m) + `</span></div>`)
 		if badge {
 			w, c := statusFor(s.Name+" "+badgeLabel, row)
+			if v, t, ok := r.valueOf(r.ruleFor(badgeLabel), badgeLabel, row); ok && badgeLabel != "" {
+				w, c = esc(v), t
+				if c == "" {
+					c = "info"
+				}
+			}
 			r.f(`<span class="fk-badge fk-badge-%s">%s</span>`, c, w)
 		}
 		r.w(icon("right") + `</li>`)
@@ -1330,12 +1415,12 @@ func (r *render) cards(s core.Section) {
 	badge := len(r.fields("badge")) > 0
 	r.w(`<div class="fk-cards">`)
 	for row := 0; row < 6; row++ {
-		r.f(`<article class="fk-card"><div class="fk-card-media"></div><div class="fk-card-body"><span class="fk-list-title">%s</span>`, esc(sample(title, row)))
+		r.f(`<article class="fk-card"><div class="fk-card-media"></div><div class="fk-card-body"><span class="fk-list-title">%s</span>`, esc(textOf(r.cellValue(title, row))))
 		if meta != "" {
-			r.w(`<span class="fk-meta">` + esc(sample(meta, row)) + `</span>`)
+			r.w(`<span class="fk-meta">` + esc(textOf(r.cellValue(meta, row))) + `</span>`)
 		}
 		if value != "" {
-			r.w(`<span class="fk-card-value">` + esc(sample(value, row)) + `</span>`)
+			r.w(`<span class="fk-card-value">` + esc(textOf(r.cellValue(value, row))) + `</span>`)
 		}
 		r.w(`</div><div class="fk-card-foot">`)
 		if badge {
@@ -1344,7 +1429,13 @@ func (r *render) cards(s core.Section) {
 		} else {
 			r.w(`<span class="fk-meta">` + esc(sample("tanggal", row)) + `</span>`)
 		}
-		r.w(`<button class="fk-icon-btn" aria-label="Aksi">` + icon("more") + `</button></div></article>`)
+		// The card's actions: open its record; none when it has nowhere to go.
+		if acts := r.rowDefaults(); len(acts) > 0 {
+			if pg := r.leadsTo(acts[0], &s); pg != "" {
+				r.f(`<a class="fk-icon-btn" href="%s" data-foundry-link="%s" aria-label="%s">%s</a>`, esc(r.actionHref(pg, acts[0])), esc(pg), esc(acts[0]), icon("more"))
+			}
+		}
+		r.w(`</div></article>`)
 	}
 	r.w(`</div>`)
 }
@@ -1409,12 +1500,14 @@ func (r *render) detail(s core.Section) {
 		if _, ok := actionEntry(it); ok {
 			continue
 		}
-		if status(strings.ToLower(it)) {
-			w, c := statusFor(it, i)
-			r.f(`<div><dt>%s</dt><dd><span class="fk-badge fk-badge-%s">%s</span></dd></div>`, esc(capital(it)), c, w)
-			continue
+		if v, c := r.cellValue(it, i); status(strings.ToLower(it)) || c != "" && r.presentationOf(it) == "badge" {
+			if c == "" {
+				c = "info"
+			}
+			r.f(`<div><dt>%s</dt><dd><span class="fk-badge fk-badge-%s">%s</span></dd></div>`, esc(capital(it)), c, esc(v))
+		} else {
+			r.f(`<div><dt>%s</dt><dd>%s</dd></div>`, esc(capital(it)), esc(v))
 		}
-		r.f(`<div><dt>%s</dt><dd>%s</dd></div>`, esc(capital(it)), esc(sample(it, i)))
 	}
 	if facts > 0 {
 		r.w(`</dl>`)
@@ -1493,12 +1586,15 @@ func (r *render) summary(s core.Section) {
 	els := r.labels(s, 5, "summary", "card-value", "badge")
 	r.w(`<div class="fk-summary">`)
 	for i, it := range els {
+		v, c := r.cellValue(it, i)
 		if status(strings.ToLower(it)) {
-			w, c := statusFor(it, i)
-			r.f(`<div><span class="fk-meta">%s</span><span class="fk-badge fk-badge-%s">%s</span></div>`, esc(it), c, w)
+			if c == "" {
+				c = "info"
+			}
+			r.f(`<div><span class="fk-meta">%s</span><span class="fk-badge fk-badge-%s">%s</span></div>`, esc(it), c, esc(v))
 			continue
 		}
-		r.f(`<div><span class="fk-meta">%s</span><strong>%s</strong></div>`, esc(it), esc(sample(it, i)))
+		r.f(`<div><span class="fk-meta">%s</span><strong>%s</strong></div>`, esc(it), esc(v))
 	}
 	r.w(`</div>`)
 }
@@ -1667,6 +1763,8 @@ func (r *render) formWith(s core.Section, fs []formField, in *dialog) {
 			r.f(`<p class="fk-help" style="color:var(--status-error)">%s</p>`, esc(r.stateText(&s, "error")))
 		}
 	}
+	r.inForm = true
+	defer func() { r.inForm = false }()
 	switch {
 	case in != nil:
 		r.dialogButtons(in.buttons, false, in.pop, in.open, true)
@@ -1927,7 +2025,7 @@ func (r *render) actions(s core.Section) {
 	if len(facts) > 0 {
 		r.w(`<dl class="fk-dl" style="margin-bottom:var(--space-md)">`)
 		for i, it := range facts {
-			r.f(`<div><dt>%s</dt><dd>%s</dd></div>`, esc(capital(it)), esc(sample(it, i)))
+			r.f(`<div><dt>%s</dt><dd>%s</dd></div>`, esc(capital(it)), esc(textOf(r.cellValue(it, i))))
 		}
 		r.w(`</dl>`)
 	}
@@ -1978,6 +2076,24 @@ func (r *render) actions(s core.Section) {
 				opens = ` popovertarget="` + t + `"`
 			} else if at, _ := r.pageSubmit(); it == primary && at == "" && r.mainForm() != "" {
 				opens = ` type="submit" form="` + r.pageFormID() + `"`
+			}
+		}
+		if opens == "" && r.disabled() == "" {
+			// An action no dialog or form takes leads where it says, or
+			// the prototype answers it.
+			text := capital(strings.TrimSpace(actionName(it)))
+			if f := strings.Fields(it); cancel(it) && len(f) > 1 {
+				text = capital(f[0])
+			}
+			if text == "" {
+				text = it
+			}
+			title := ""
+			if text != it {
+				title = ` title="` + esc(capital(it)) + `"`
+			}
+			if r.actionLink(it, nil, cls, title, actionIcon(text)+esc(text)) {
+				continue
 			}
 		}
 		if f := strings.Fields(it); cancel(it) && len(f) > 1 {
@@ -2085,15 +2201,7 @@ func (r *render) tabs(s core.Section) {
 	if len(tabs) == 0 {
 		tabs = items(s)
 	}
-	r.w(`<nav class="fk-tabs" aria-label="` + esc(s.Name) + `">`)
-	for i, it := range tabs {
-		cls := ""
-		if i == 0 {
-			cls = ` class="on" aria-current="page"`
-		}
-		r.f(`<a href="#"%s>%s</a>`, cls, esc(it))
-	}
-	r.w(`</nav>`)
+	r.tabNav("fk-tabs", s.Name, tabs)
 }
 
 func (r *render) facets(s core.Section) {
@@ -2168,7 +2276,7 @@ func money(l string) bool {
 }
 
 func numeric(l string) bool {
-	return money(l) || has(l, "jumlah", "qty", "stok", "kuantitas", "count", "skor", "nilai", "poin")
+	return money(l) || has(l, "jumlah", "qty", "stok", "kuantitas", "count", "skor", "nilai", "poin", "detik", "seconds")
 }
 
 // statusFor is a sample status of a field or section: payment, device and
@@ -2187,6 +2295,8 @@ func statusFor(context string, row int) (string, string) {
 		w = [][2]string{{"Online", "success"}, {"Online", "success"}, {"Offline", "error"}, {"Gangguan", "warning"}, {"Online", "success"}}
 	case has(l, "stok", "persediaan", "inventori"):
 		w = [][2]string{{"Tersedia", "success"}, {"Menipis", "warning"}, {"Tersedia", "success"}, {"Habis", "error"}, {"Tersedia", "success"}}
+	case has(l, "job", "eksekusi", "proses"):
+		w = [][2]string{{"Selesai", "success"}, {"Berjalan", "info"}, {"Antre", "warning"}, {"Gagal", "error"}, {"Selesai", "success"}}
 	case has(l, "persetujuan", "approval", "verifikasi"):
 		w = [][2]string{{"Disetujui", "success"}, {"Menunggu", "warning"}, {"Disetujui", "success"}, {"Ditolak", "error"}, {"Menunggu", "warning"}}
 	default:
@@ -2225,6 +2335,14 @@ func sample(label string, row int) string {
 		return pick("WIB (UTC+7)", "WITA (UTC+8)", "WIT (UTC+9)")
 	case has(l, "prioritas", "priority"):
 		return pick("Tinggi", "Sedang", "Rendah")
+	case has(l, "timeframe", "time frame", "kerangka waktu"):
+		return pick("H1", "M15", "H4", "D1", "M5", "W1")
+	case has(l, "simbol", "symbol", "ticker", "pair"):
+		return pick("EURUSD", "XAUUSD", "BTCUSD", "GBPJPY", "US500", "USDJPY")
+	case has(l, "detik", "seconds", "secs"):
+		return pick("60", "300", "900", "3600", "120", "1800")
+	case has(l, "menit", "minutes"):
+		return pick("5", "15", "30", "60", "10", "45")
 	case has(l, "waktu", "jam", "time"):
 		return pick("2 menit lalu", "15 menit lalu", "1 jam lalu", "Kemarin", "3 hari lalu", "Minggu lalu")
 	case money(l):
@@ -2267,7 +2385,38 @@ func (r *render) back(label, cls string) {
 		r.f(`<a class="%s" href="%s" data-foundry-link="%s"%s>%s</a>`, cls, esc(h), esc(core.ParentPage(r.doc.Layout, r.page.ID)), title, esc(text))
 		return
 	}
+	if r.disabled() == "" {
+		// Without a parent it goes where a link says, to the page that
+		// leads here, else it discards the changes: the page afresh.
+		if pg := r.linkFor(label); pg != "" {
+			r.f(`<a class="%s" href="%s" data-foundry-link="%s"%s>%s</a>`, cls, esc(r.doc.href(pg)), esc(pg), title, esc(text))
+			return
+		}
+		if pg := r.cameFrom(); pg != "" {
+			r.f(`<a class="%s" href="%s" data-foundry-link="%s"%s>%s</a>`, cls, esc(r.doc.href(pg)), esc(pg), title, esc(text))
+			return
+		}
+		if r.doc.Link != nil {
+			r.f(`<a class="%s" href="%s"%s>%s</a>`, cls, esc(r.doc.hrefSim(r.page.ID, r.doc.Sim.Nav())), title, esc(text))
+			return
+		}
+	}
 	r.f(`<button class="%s" type="button"%s%s>%s</button>`, cls, title, r.disabled(), esc(text))
+}
+
+// cameFrom is the one other page whose links lead here.
+func (r *render) cameFrom() string {
+	found := ""
+	for _, pg := range r.doc.Layout.Pages {
+		if pg.ID == r.page.ID || !slices.ContainsFunc(pg.Links, func(l core.PageLink) bool { return l.To == r.page.ID }) {
+			continue
+		}
+		if found != "" {
+			return ""
+		}
+		found = pg.ID
+	}
+	return found
 }
 
 // formPage reports whether the page makes or changes a record: its

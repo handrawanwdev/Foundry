@@ -236,6 +236,9 @@ type FieldRule struct {
 	Presentation string `json:"presentation"`
 	Format       string `json:"format,omitempty"`
 	Note         string `json:"note,omitempty"`
+	// Examples are realistic values of the field a layperson recognizes
+	// ("EURUSD", "XAUUSD"): the mockup shows them instead of placeholders.
+	Examples []string `json:"examples,omitempty"`
 }
 
 // LayoutShell is a layout pages share (app frame, auth frame, ...).

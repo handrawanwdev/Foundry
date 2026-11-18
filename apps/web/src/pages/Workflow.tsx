@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { commandState, commandText, coverageRequest, dependents, LEVEL_LABEL, lines, PHASE_CLASS, PHASE_LABEL, runOf, STATE_LABEL, waveOf } from "../blueprint";
 import { CommandReport, ExecutionOverview, ExecutionTimeline, WorkflowChanges } from "../components/CommandDashboard";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Elapsed } from "../components/Elapsed";
 import { Icon } from "../components/Icon";
 import { Markdown } from "../components/Markdown";
@@ -18,6 +19,10 @@ export function WorkflowPage() {
   const { project, run, pending } = useProject();
   const [view, setView] = useState<WorkflowView | null>(null);
   const [params, setParams] = useSearchParams();
+  const [confirmRegen, setConfirmRegen] = useState(false);
+  // Kept here: the advice box remounts when a revision round briefly
+  // clears the list, and an uncontrolled <details> would fold shut.
+  const [qualityOpen, setQualityOpen] = useState(false);
 
   useEffect(() => {
     if (!project?.discovery) return;
@@ -73,6 +78,7 @@ export function WorkflowPage() {
   const quality = r?.quality ?? [];
   const uncoveredFeatures = r?.uncovered_features ?? [];
   const uncovered = r?.uncovered ?? [];
+  const uncoveredPages = r?.uncovered_pages ?? [];
   const reviewIds = Object.keys(r?.review ?? {});
   const staleIds = Object.keys(r?.stale ?? {}).filter((k) => (r?.stale[k]?.length ?? 0) > 0);
   const byId = new Map(cmds.map((c) => [c.id, c]));
@@ -124,6 +130,14 @@ export function WorkflowPage() {
       </nav>
 
       <main className="ws-main">
+        {!locked && (
+          <div className="wf-toolbar">
+            <button disabled={working || pending === "regenerateWorkflow"} onClick={() => setConfirmRegen(true)}
+              title="Buang command yang ada dan susun ulang dari blueprint, desain, dan mockup halaman terbaru">
+              Generate Ulang Workflow
+            </button>
+          </div>
+        )}
         {prog && <ExecutionOverview progress={prog} onOpen={select} onReconcile={() => void run("reconcileProgress", () => api.reconcileProgress())} busy={pending === "reconcileProgress"} />}
         {filling && <FillProgress total={cmds.length} unfilled={unfilled} writing={writing} working={working} locked={locked} project={project} />}
         {!filling && !writing && (w!.request?.handled?.length ?? 0) > 0 && (
@@ -152,18 +166,19 @@ export function WorkflowPage() {
             <ul>{r.issues.slice(0, 6).map((is, i) => <li key={i}>{is.command && <button className="link" onClick={() => select(is.command!)}>{is.command}</button>} {is.message}</li>)}</ul>
           </div>
         )}
-        {!filling && (uncovered.length > 0 || uncoveredFeatures.length > 0) && !locked && (
+        {!filling && (uncovered.length > 0 || uncoveredFeatures.length > 0 || uncoveredPages.length > 0) && !locked && (
           <div className="notice warn">
             <span>
-              <strong>Belum dicakup command:</strong> {[...uncoveredFeatures, ...uncovered].join(", ")}.
+              <strong>Belum dicakup command:</strong> {[...uncoveredFeatures, ...uncovered].join(", ")}
+              {uncoveredPages.length > 0 && <>{uncoveredFeatures.length + uncovered.length > 0 ? " · " : ""}halaman mockup {uncoveredPages.join(", ")}</>}.
             </span>
-            <button disabled={working || pending === "reviseWorkflow"} onClick={() => void run("reviseWorkflow", () => api.reviseWorkflow(coverageRequest(uncovered, uncoveredFeatures)))}>
+            <button disabled={working || pending === "reviseWorkflow"} onClick={() => void run("reviseWorkflow", () => api.reviseWorkflow(coverageRequest(uncovered, uncoveredFeatures, uncoveredPages)))}>
               ✦ Buat command tambahan
             </button>
           </div>
         )}
         {!filling && quality.length > 0 && !locked && (
-          <details className="notice wf-quality">
+          <details className="notice wf-quality" open={qualityOpen} onToggle={(e) => setQualityOpen(e.currentTarget.open)}>
             <summary><strong>{quality.length} saran kualitas command</strong></summary>
             <ul>{quality.slice(0, 12).map((q, i) => <li key={i}>{q.command && <button className="link" onClick={() => select(q.command!)}>{q.command}</button>} {q.message}</li>)}</ul>
             <button disabled={working || pending === "reviseWorkflow"} onClick={() => void run("reviseWorkflow",
@@ -204,6 +219,18 @@ export function WorkflowPage() {
           disabled={working}
           busy={pending === "reviseWorkflow"}
           onSend={(text) => run("reviseWorkflow", () => api.reviseWorkflow(text, cmd ? [cmd.id] : []))}
+        />
+      )}
+      {confirmRegen && (
+        <ConfirmDialog
+          title="Generate ulang workflow?"
+          body={`${cmds.length} command yang ada diganti dengan workflow baru yang disusun dari blueprint, desain, dan mockup halaman terbaru. Command lama tetap tercatat di riwayat; command baru memakai nomor lanjutan. Progres coding agent pada command lama tidak dipindahkan ke command baru.`}
+          confirmLabel="Generate ulang"
+          danger
+          busy={pending === "regenerateWorkflow"}
+          busyLabel="Memulai…"
+          onCancel={() => setConfirmRegen(false)}
+          onConfirm={() => { setConfirmRegen(false); void run("regenerateWorkflow", api.regenerateWorkflow); }}
         />
       )}
     </div>
@@ -290,6 +317,12 @@ function CommandDoc({ project, cmd, report, run, locked, writing, onOpen }: {
             <span className="muted">Fitur:</span>
             {(run.feature_ids ?? []).map((id) => <span key={id} className="ref-chip">{id}</span>)}
             {(run.sub_feature_ids ?? []).map((id) => <span key={id} className="ref-chip">{id}</span>)}
+          </div>
+        )}
+        {(cmd.pages?.length ?? 0) > 0 && (
+          <div className="doc-meta small">
+            <span className="muted">Halaman mockup:</span>
+            {cmd.pages!.map((pg) => <Link key={pg} className="ref-chip" to={`/mockups?page=${encodeURIComponent(pg)}`}>{pg}</Link>)}
           </div>
         )}
         <div className="doc-actions">

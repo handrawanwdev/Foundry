@@ -30,6 +30,12 @@ func TestParseDataField(t *testing.T) {
 		{spec: "amount(integer rupiah)", name: "amount", kind: "money"},
 		{spec: "account_number", name: "account_number", kind: "text"},
 		{spec: "position", name: "position", kind: "text"},
+		{spec: "timeframe (M1, M5, H1)", name: "timeframe", kind: "enum", options: []string{"M1", "M5", "H1"}},
+		{spec: "market_category (forex, crypto, stocks)", name: "market_category", kind: "enum", options: []string{"forex", "crypto", "stocks"}},
+		{spec: "email (unik, huruf kecil)", name: "email", kind: "email", unique: true},
+		{spec: "starts (date, nullable)", name: "starts", kind: "date", optional: true},
+		{spec: "enabled", name: "enabled", kind: "bool"},
+		{spec: "interval_seconds", name: "interval_seconds", kind: "number"},
 	} {
 		f := ParseDataField("StockMovement", c.spec)
 		if f.Name != c.name || f.Kind != c.kind || f.Min != c.min || f.Ref != c.ref || f.Default != c.def ||

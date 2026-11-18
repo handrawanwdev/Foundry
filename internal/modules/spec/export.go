@@ -500,9 +500,17 @@ func commandMockups(p *core.Project, c core.Command) string {
 		!slices.ContainsFunc(c.Artifacts, func(r core.ArtifactRef) bool { return r.ID == core.ArtifactLayoutSpec }) {
 		return ""
 	}
+	// The pages recorded on the command are exact; an older command names
+	// them in its instructions only.
+	builds := func(id string) bool {
+		if len(c.Pages) > 0 {
+			return slices.Contains(c.Pages, id)
+		}
+		return namesPage(c.Instructions, id)
+	}
 	var b strings.Builder
 	for _, pg := range p.UI.Layout.Pages {
-		if pg.Existing || !safeName(pg.ID) || !namesPage(c.Instructions, pg.ID) {
+		if pg.Existing || !safeName(pg.ID) || !builds(pg.ID) {
 			continue
 		}
 		if b.Len() == 0 {

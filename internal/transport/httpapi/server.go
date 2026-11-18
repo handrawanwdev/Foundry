@@ -633,6 +633,7 @@ func (s *Server) Handler() http.Handler {
 			"progress": svc.ProgressOf(p)}, nil
 	}))
 	api("POST /api/v1/project/workflow/generate", s.action(func(svc *pipeline.Service) error { return svc.GenerateWorkflow() }))
+	api("POST /api/v1/project/workflow/regenerate", s.action(func(svc *pipeline.Service) error { return svc.RegenerateWorkflow() }))
 	api("POST /api/v1/project/workflow/continue", s.action(func(svc *pipeline.Service) error { return svc.ContinueWorkflow() }))
 	api("POST /api/v1/project/workflow/revision/cancel", s.action(func(svc *pipeline.Service) error { return svc.CancelWorkflowRevision() }))
 	api("POST /api/v1/project/workflow/revise", s.withSvc(func(svc *pipeline.Service, r *http.Request) (any, error) {

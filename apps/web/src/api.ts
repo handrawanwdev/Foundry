@@ -135,6 +135,7 @@ export const api = {
   // Command workflow: instructions for external coding agents, never run by Foundry.
   workflow: () => call<WorkflowView>("GET", "/project/workflow"),
   generateWorkflow: () => call("POST", "/project/workflow/generate", {}),
+  regenerateWorkflow: () => call("POST", "/project/workflow/regenerate", {}),
   continueWorkflow: () => call("POST", "/project/workflow/continue", {}),
   cancelWorkflowRevision: () => call("POST", "/project/workflow/revision/cancel", {}),
   reviseWorkflow: (text: string, focus: string[] = [], sync = false) => call("POST", "/project/workflow/revise", { text, focus, sync }),

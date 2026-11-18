@@ -158,8 +158,12 @@ export function changeSummary(c: { added?: string[]; modified?: unknown[]; remov
 }
 
 // The request behind "Buat command tambahan": only what is missing.
-export function coverageRequest(requirements: string[], features: string[]): string {
-  const parts = [features.length && `fitur ${features.join(", ")}`, requirements.length && `requirement MUST ${requirements.join(", ")}`].filter(Boolean);
+export function coverageRequest(requirements: string[], features: string[], pages: string[] = []): string {
+  const parts = [
+    features.length && `fitur ${features.join(", ")}`,
+    requirements.length && `requirement MUST ${requirements.join(", ")}`,
+    pages.length && `halaman mockup ${pages.join(", ")} (isi pages dan rujuk design-rules serta layout-spec)`,
+  ].filter(Boolean);
   return `Tambahkan command untuk ${parts.join(" dan ")} yang belum dicakup workflow. Biarkan command lain apa adanya, kecuali dependency yang memang perlu.`;
 }
 

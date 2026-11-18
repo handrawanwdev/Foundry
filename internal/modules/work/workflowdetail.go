@@ -90,6 +90,9 @@ The blueprint artifacts the command implements are cut to the sections about it;
 		writeDetailCommand(&b, cmd)
 		writeDependencyOutputs(&b, w.Commands, cmd)
 		writeLayoutPages(&b, p, w.Commands, cmd)
+		if listsLayout(cmd) {
+			writePageSpecs(&b, p, docs, cmd.Pages)
+		}
 	}
 	if !writeBatchRequirements(&b, p, batch) {
 		b.WriteString("REQUIREMENTS: this command covers none; its acceptance criteria carry no requirement or criterion id.\n\n")
@@ -115,10 +118,19 @@ The blueprint artifacts the command implements are cut to the sections about it;
 		}
 		fmt.Fprintf(&b, "=== %s (%s, %s%s) %s\n", d.ID, d.Title, d.Category, map[bool]string{true: ", builtin"}[d.Builtin], d.Summary)
 		var skip func(string) bool
-		if d.ID == core.ArtifactAcceptance {
+		switch d.ID {
+		case core.ArtifactAcceptance:
 			// Its sections per requirement: the covered ones are under
 			// REQUIREMENTS above, the rest belong to other commands.
 			skip = func(h string) bool { return requirementID.MatchString(h) }
+		case core.ArtifactLayoutSpec:
+			// The pages of this command are under MOCKUP SPECS above; the
+			// other pages are other commands' to build.
+			if shown := shownPages(p, batch); len(shown) > 0 {
+				skip = func(h string) bool {
+					return slices.ContainsFunc(layoutPages(p), func(pg core.LayoutPage) bool { return pageHeading(h, pg.ID) })
+				}
+			}
 		}
 		b.WriteString(strings.TrimRight(scopeArtifactSkip(d.Body, q, budget, skip), "\n") + "\n")
 	}

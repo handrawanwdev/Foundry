@@ -143,30 +143,18 @@ func matchShown(label string, shown []core.FieldRule, used []bool) int {
 // blueprint says, else by its label.
 func (r *render) factValue(f fact, row int) (text, badge string) {
 	l := strings.ToLower(f.label)
-	if f.rule != nil {
-		if df, ok := r.doc.Project.DataField(f.rule.Field); ok {
-			switch df.Kind {
-			case "bool":
-				return map[bool]string{true: "Aktif", false: "Nonaktif"}[row%4 != 3], map[bool]string{true: "success", false: "warning"}[row%4 != 3]
-			case "enum":
-				o := enumLabel(df.Options[row%len(df.Options)])
-				if words := r.choiceWords(f.rule.Field, len(df.Options)); words != nil {
-					o = words[row%len(words)]
-				}
-				return o, "info"
-			case "money":
-				return sample("nominal", row), ""
-			case "number":
-				return digits(sample(f.label, row), metricValue(f.label, row)), ""
-			case "date":
-				return sample("tanggal", row), ""
-			case "datetime":
-				return sample("tanggal", row) + ", " + sample("masuk", row), ""
-			case "email":
-				return sample("email", row), ""
-			case "phone":
-				return sample("telepon", row), ""
+	if status(l) {
+		// The record's status is the one the prototype simulates.
+		if lc, st := r.simLifecycle(), r.simState(); lc != nil && st != nil {
+			if entity, _, _ := strings.Cut(fieldOf(f.rule), "."); f.rule == nil || strings.EqualFold(entity, lc.Entity) {
+				v := lc.StateLabel(st.ID)
+				return v, toneOf(v)
 			}
+		}
+	}
+	if f.rule != nil {
+		if v, tone, ok := r.valueOf(f.rule, f.label, row); ok {
+			return v, tone
 		}
 		if f.rule.Presentation == "badge" {
 			w, c := statusFor(f.label, row)
@@ -184,6 +172,13 @@ func (r *render) factValue(f fact, row int) (text, badge string) {
 		return w, c
 	}
 	return sample(f.label, row), ""
+}
+
+func fieldOf(f *core.FieldRule) string {
+	if f == nil {
+		return ""
+	}
+	return f.Field
 }
 
 // heroSection is the section that names the record on a detail page: the

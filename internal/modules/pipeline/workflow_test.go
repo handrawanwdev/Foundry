@@ -555,3 +555,42 @@ func TestDismissKeepsStoppedRevision(t *testing.T) {
 		t.Fatalf("blockers = %v", pipeline.Blockers(p))
 	}
 }
+
+// Regenerating replaces every command with a workflow written again from
+// the blueprint and the mockups; the old commands stay in the history and
+// their ids are never reused.
+func TestRegenerateWorkflow(t *testing.T) {
+	s := newService(t, fakeAI{}, "")
+	designReady(t, s)
+	if err := workflowReady(s); err != nil {
+		t.Fatal(err)
+	}
+	before := load(t, s).Workflow
+	if err := s.RegenerateWorkflow(); err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	p := load(t, s)
+	mustJob(t, p, work.KindWorkflow, core.JobDone)
+	w := p.Workflow
+	var ids []string
+	for _, c := range w.Commands {
+		ids = append(ids, c.ID)
+		if strings.TrimSpace(c.Instructions) == "" {
+			t.Fatalf("%s left without details", c.ID)
+		}
+	}
+	if !slices.Equal(ids, []string{"CMD-004", "CMD-005", "CMD-006"}) || w.ID != before.ID || w.Version <= before.Version {
+		t.Fatalf("regenerated = %v (v%d, was v%d)", ids, w.Version, before.Version)
+	}
+	if !slices.ContainsFunc(w.Changes, func(ch core.WorkflowChange) bool { return ch.Kind == "regenerate" && len(ch.Removed) == 3 }) {
+		t.Fatalf("changes = %+v", w.Changes)
+	}
+	// Every page of the design is built by a command that records it.
+	if r := pipeline.CheckWorkflow(p); len(r.UncoveredPages) != 0 || !r.Ready {
+		t.Fatalf("report = %+v", r)
+	}
+	if !slices.ContainsFunc(w.Commands, func(c core.Command) bool { return len(c.Pages) > 0 }) {
+		t.Fatalf("no command records its pages: %+v", w.Commands)
+	}
+}

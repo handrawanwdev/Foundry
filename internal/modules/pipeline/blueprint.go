@@ -99,6 +99,35 @@ func (s *Service) GenerateWorkflow() error {
 	})
 }
 
+// RegenerateWorkflow throws the current commands away and writes the
+// workflow again from the current blueprint, design and mockups: outline
+// first, then every command in its own round. The old commands stay in the
+// history as removed and keep their last run; the new ones continue the
+// numbering, so an id never names two different commands.
+func (s *Service) RegenerateWorkflow() error {
+	// startAIIf runs the precondition again to record a runner failure; it
+	// must not throw the commands away for a job that never starts.
+	if _, _, err := s.AI.Runner(); err != nil {
+		return err
+	}
+	return s.startAIIf(work.KindWorkflow, func(p *core.Project) error {
+		if err := workflowIdle(p); err != nil {
+			return err
+		}
+		w := p.Workflow
+		if w == nil || len(w.Commands) == 0 {
+			p.Log("ui", "Susun command workflow")
+			return nil
+		}
+		before := slices.Clone(w.Commands)
+		w.Commands, w.Request, w.Status = nil, nil, core.CommandDraft
+		w.Version++
+		progress.Track(p, before, "regenerate", "Workflow disusun ulang dari blueprint", "ui", time.Now().UTC())
+		p.Log("ui", fmt.Sprintf("Susun ulang command workflow (%d command lama diganti)", len(before)))
+		return nil
+	})
+}
+
 // ContinueWorkflow resumes a workflow job whose rounds stopped (agent
 // killed, failure dismissed, server restarted): the filling of an outlined
 // workflow, or a revision with rounds already saved. Commands that already
@@ -261,6 +290,9 @@ func CheckWorkflow(p *core.Project) workflow.Report {
 		if issues := work.CheckUI(p, p.Workflow.Commands); len(issues) > 0 {
 			r.Issues = append(r.Issues, issues...)
 			r.Ready = false
+		}
+		if p.Workflow.Unfilled() == 0 {
+			r.UncoveredPages = work.UnbuiltPages(p, p.Workflow.Commands)
 		}
 	}
 	return r

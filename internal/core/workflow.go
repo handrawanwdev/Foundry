@@ -33,7 +33,7 @@ type Workflow struct {
 type WorkflowChange struct {
 	Version  int             `json:"version"`
 	At       time.Time       `json:"at"`
-	Kind     string          `json:"kind"` // generate | revise | edit | remove | visual
+	Kind     string          `json:"kind"` // generate | regenerate | revise | edit | remove | visual
 	Reason   string          `json:"reason,omitempty"`
 	Source   string          `json:"source,omitempty"`
 	Added    []string        `json:"added,omitempty"`
@@ -94,6 +94,11 @@ type Command struct {
 	// Files are the files, folders or modules the command touches, taken
 	// from the project structure; empty when the repository is unknown.
 	Files []string `json:"files,omitempty"`
+	// Pages are the layout-spec page ids the command builds or changes; the
+	// mockup of each page reaches the coding agent through them. Empty for
+	// a command that builds no screen (and for workflows written before
+	// pages were recorded, which name the pages in the instructions only).
+	Pages []string `json:"pages,omitempty"`
 	// Priority orders commands that are ready at the same time; Complexity
 	// is the planner's estimate. Both are high | medium | low.
 	Priority   string `json:"priority,omitempty"`
@@ -194,7 +199,7 @@ func CommandFields(c Command) map[string]string {
 		"instructions": c.Instructions, "depends_on": join(c.DependsOn), "artifacts": join(refs), "covers": join(c.Covers),
 		"feature_ids": join(c.FeatureIDs), "sub_feature_ids": join(c.SubFeatureIDs), "expected_outputs": join(c.Outputs),
 		"acceptance_criteria": join(c.Acceptance), "constraints": join(c.Constraints), "files": join(c.Files),
-		"priority": c.Priority, "complexity": c.Complexity,
+		"pages": join(c.Pages), "priority": c.Priority, "complexity": c.Complexity,
 	} {
 		h := sha256.Sum256([]byte(text))
 		out[name] = hex.EncodeToString(h[:6])

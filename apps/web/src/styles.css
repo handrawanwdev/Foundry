@@ -413,6 +413,7 @@ button.ref-chip:not(:disabled):hover, a.ref-chip:hover { border-color: var(--acc
 .wf-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .wf-live.on i { background: var(--ok); }
 .wf-back { max-width: 760px; margin: 0 auto .75rem; font-size: 13px; }
+.wf-toolbar { max-width: 760px; margin: 0 auto .75rem; display: flex; justify-content: flex-end; }
 .wf-quality { display: block; background: var(--surface-2); }
 .wf-quality summary { cursor: pointer; }
 .wf-quality > button { margin-top: .5rem; }

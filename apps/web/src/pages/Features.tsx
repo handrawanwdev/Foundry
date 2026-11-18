@@ -397,6 +397,9 @@ function FeatureDetail({ node, progress }: { node: FeatureNode; progress?: Progr
     ["Hasil", node.outcome ?? ""],
   ];
   const roll = featureProgressOf(progress, node.id) ?? subFeatureProgressOf(progress, node.id);
+  // The mockup pages of the blueprint feature this node is linked to.
+  const { project } = useProject();
+  const pages = node.feature_id ? (project?.ui?.layout?.pages ?? []).filter((pg) => pg.feature_id === node.feature_id) : [];
   return (
     <div className="feat-detail">
       <p className="feat-lead">
@@ -407,6 +410,12 @@ function FeatureDetail({ node, progress }: { node: FeatureNode; progress?: Progr
           ? `Terhubung ke blueprint ${node.feature_id}${node.sub_feature_id ? ` · ${node.sub_feature_id}` : ""}`
           : "Belum terhubung ke fitur blueprint; progress CMD belum bisa diatribusikan ke node ini."}
       </p>
+      {pages.length > 0 && (
+        <p className="small">
+          <span className="muted">Halaman mockup: </span>
+          {pages.map((pg) => <Link key={pg.id} className="ref-chip" to={`/mockups?page=${encodeURIComponent(pg.id)}`}>{pg.name || pg.id}</Link>)}
+        </p>
+      )}
       {roll && <RollupDetail roll={roll} />}
       <dl className="feat-facts">
         {facts.map(([k, v]) => (

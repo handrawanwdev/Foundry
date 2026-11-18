@@ -3,6 +3,7 @@ package uikit
 import (
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/handrawanwdev/foundry/internal/core"
@@ -26,6 +27,9 @@ type Sim struct {
 	View string
 	Act  string
 	Fill bool
+	// Tab is the open tab of the page's tab bar (1-based, 0 the first);
+	// Page the page of its collection shown (0 the first).
+	Tab, Page int
 }
 
 // Nav is Sim without the one-shot view: carried from page to page.
@@ -41,6 +45,8 @@ func ParseSim(q url.Values) Sim {
 	s := Sim{Role: strings.TrimSpace(q.Get("role")), Status: strings.TrimSpace(q.Get("status")),
 		Entity: strings.TrimSpace(q.Get("entity")), Feedback: strings.TrimSpace(q.Get("sim")),
 		View: strings.TrimSpace(q.Get("view")), Act: strings.TrimSpace(q.Get("act")), Fill: q.Get("fill") == "1"}
+	s.Tab, _ = strconv.Atoi(q.Get("tab"))
+	s.Page, _ = strconv.Atoi(q.Get("pg"))
 	if strings.TrimSpace(q.Get("outcome")) == OutcomeError {
 		s.Outcome = OutcomeError
 	}
@@ -72,6 +78,12 @@ func WithSim(href string, sim Sim) string {
 	}
 	if sim.Fill {
 		q.Set("fill", "1")
+	}
+	if sim.Tab > 1 {
+		q.Set("tab", strconv.Itoa(sim.Tab))
+	}
+	if sim.Page > 1 {
+		q.Set("pg", strconv.Itoa(sim.Page))
 	}
 	if len(q) == 0 {
 		return href
@@ -251,11 +263,19 @@ func (r *render) actionControl(label, cls string, withIcon bool) {
 	if withIcon {
 		iconHTML = actionIcon(label)
 	}
-	if opens == "" && pid == "" && !dis {
-		// An action another page's form does leads there.
-		if to := r.formPageFor(label); to != "" {
-			text := capital(strings.TrimSpace(actionName(label)))
-			r.f(`<a class="%s" href="%s" data-foundry-link="%s">%s%s</a>`, cls, esc(r.actionHref(to, label)), esc(to), iconHTML, esc(text))
+	if opens == "" && pid == "" && !dis && !r.inForm {
+		// An action leads to the page a link, its name, a form or what it
+		// opens says; else the prototype answers it (a transition moves
+		// the document on).
+		text := capital(strings.TrimSpace(actionName(label)))
+		if text == "" {
+			text = label
+		}
+		title := ""
+		if text != label {
+			title = ` title="` + esc(label) + `"`
+		}
+		if r.actionLink(label, nil, cls, title, iconHTML+esc(text)) {
 			return
 		}
 	}

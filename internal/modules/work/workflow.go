@@ -7,6 +7,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/handrawanwdev/foundry/internal/core"
@@ -78,7 +79,7 @@ type workflowOut struct {
 	Done bool `json:"done"`
 }
 
-const commandRules = `Command rules:
+var commandRules = `Command rules:
 - one command is one coherent unit of work an agent can finish and verify on its own.
 - derive the commands and their order from THIS blueprint and the real dependencies, not from a fixed list of phases.
 - depends_on lists only the commands whose result this one needs (a contract, schema, module, interface). Commands without such a need do not depend on each other, so they can be done in parallel. No cycles, no self dependency.
@@ -95,7 +96,7 @@ const commandRules = `Command rules:
 - tests and verification are part of the instructions and acceptance criteria (or own commands when they span several commands). Foundry never runs them; the agent does.
 - expected_outputs: what the agent hands back (code, migration, test, document, report). acceptance_criteria: checkable conditions.
 - constraints: limits that apply (technology given by the user, compatibility, performance, security).
-- every command has one main goal and does not repeat the instructions of another command; shared work gets its own command that the others depend on. A command with more than about 8 acceptance criteria is split into logical commands; work too small to verify on its own is merged into the command it belongs to.
+- every command has one main goal and does not repeat the instructions of another command; shared work gets its own command that the others depend on. A command has at most ` + strconv.Itoa(workflow.MaxAcceptance) + ` acceptance criteria and at most ` + strconv.Itoa(workflow.MaxInstructions) + ` characters of instructions; bigger work is split into logical commands, each within both limits (count them before answering). Work too small to verify on its own is merged into the command it belongs to.
 - acceptance_criteria are measurable: name the observable result, not "works well".
 - files lists the files, folders or modules the command touches, taken only from the project structure and repository plan above; leave it empty when they are unknown.
 - priority is high (others wait for it, or a core MUST flow), medium or low. complexity is the estimated effort: low, medium or high.
@@ -104,7 +105,7 @@ const commandRules = `Command rules:
 `
 
 const commandShape = `{"id": "C1", "name": "", "objective": "", "context": "", "inputs": [""], "instructions": "",
- "depends_on": ["C0"], "artifacts": ["requirements"], "covers": ["REQ-001"], "feature_ids": ["FEAT-001"], "sub_feature_ids": ["FEAT-001.1"], "expected_outputs": [""], "acceptance_criteria": [""], "constraints": [""], "files": [""], "priority": "high", "complexity": "medium"}`
+ "depends_on": ["C0"], "artifacts": ["requirements"], "covers": ["REQ-001"], "feature_ids": ["FEAT-001"], "sub_feature_ids": ["FEAT-001.1"], "expected_outputs": [""], "acceptance_criteria": [""], "constraints": [""], "files": [""], "pages": [], "priority": "high", "complexity": "medium"}`
 
 // writeFeatureCatalog lists the feature tree so every command can name the
 // feature and subfeature it implements instead of forcing Foundry to guess.
@@ -222,7 +223,7 @@ func workflowSketchPrompt(p *core.Project, docs []core.Artifact) string {
 	}
 	b.WriteString(`SKETCH PHASE - Generate command skeleton only:
 - Create 3-25 commands that cover all MUST requirements
-- For each command, provide ONLY: id, name, objective, depends_on, artifacts (IDs), covers (requirement IDs), feature_ids (FEAT ids), sub_feature_ids (FEAT-001.1 ids), priority, complexity
+- For each command, provide ONLY: id, name, objective, depends_on, artifacts (IDs), covers (requirement IDs), feature_ids (FEAT ids), sub_feature_ids (FEAT-001.1 ids), pages (layout-spec page ids the command builds; [] without screens), priority, complexity
 - DO NOT provide instructions, context, inputs, outputs, or acceptance_criteria yet
 - Use ids C1, C2, C3, etc.
 - depends_on lists only commands whose result this one needs (a contract, schema, module, interface)
@@ -234,6 +235,7 @@ func workflowSketchPrompt(p *core.Project, docs []core.Artifact) string {
 
 ` + commandRules)
 	if HasUI(p) {
+		writeSketchPages(&b, p)
 		b.WriteString(VisualVerificationRules)
 	}
 
@@ -242,8 +244,47 @@ func workflowSketchPrompt(p *core.Project, docs []core.Artifact) string {
 		b.WriteString("YOUR LAST ANSWER WAS REFUSED, fix this: " + w.Request.Rejected + "\n\n")
 		writeCoverageRepair(&b, p, uncoveredRequirements(p, w.Request.Rejected))
 	}
-	b.WriteString("Write the SKETCH PHASE outline now. Reply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"name\": \"\", \"objective\": \"\", \"depends_on\": [], \"artifacts\": [\"requirements\"], \"covers\": [\"REQ-001\"], \"feature_ids\": [\"FEAT-001\"], \"sub_feature_ids\": [\"FEAT-001.1\"], \"priority\": \"high\", \"complexity\": \"medium\"}]}")
+	b.WriteString("Write the SKETCH PHASE outline now. Reply with ONLY one JSON object in a ```json block:\n{\"commands\": [{\"id\": \"C1\", \"name\": \"\", \"objective\": \"\", \"depends_on\": [], \"artifacts\": [\"requirements\"], \"covers\": [\"REQ-001\"], \"feature_ids\": [\"FEAT-001\"], \"sub_feature_ids\": [\"FEAT-001.1\"], \"pages\": [], \"priority\": \"high\", \"complexity\": \"medium\"}]}")
 	return b.String()
+}
+
+// writeSketchPages lists the pages of the design (each one has an approved
+// mockup) and how the outline hands them to commands, so no page is left
+// out of the workflow.
+func writeSketchPages(b *strings.Builder, p *core.Project) {
+	pages := layoutPages(p)
+	if len(pages) == 0 {
+		return
+	}
+	feats := map[string]string{}
+	for _, f := range p.Features {
+		feats[f.ID] = f.Name
+	}
+	b.WriteString("PAGES OF layout-spec (every page has a mockup the coding agent must build):\n")
+	for _, pg := range pages {
+		fmt.Fprintf(b, "- %s: %s (pattern %s", pg.ID, oneLine(pg.Name), pg.Pattern)
+		if pg.FeatureID != "" {
+			fmt.Fprintf(b, ", feature %s %s", pg.FeatureID, feats[pg.FeatureID])
+		}
+		if pg.PrimaryAction != "" {
+			fmt.Fprintf(b, ", primary action %s", oneLine(pg.PrimaryAction))
+		}
+		b.WriteString(")")
+		if len(pg.Sections) > 0 {
+			names := make([]string, len(pg.Sections))
+			for i, s := range pg.Sections {
+				names[i] = oneLine(s.Name)
+			}
+			fmt.Fprintf(b, " sections: %s", strings.Join(names, "; "))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString(`Page rules:
+- pages lists the exact page ids above that the command builds or changes (its screens). A command with pages lists design-rules and layout-spec; a command without screens has "pages": [] and does not list them.
+- every page id above appears in the pages of at least one command. Group the pages of one feature in the command that builds that feature's screens, and keep a command to about 4 pages, so each detail round reads every page's mockup whole.
+- the command that builds a page links the page's feature in feature_ids.
+
+`)
 }
 
 // nextFillCommand is the command the next detail round writes: the first
@@ -348,6 +389,7 @@ func workflowRevisionPrompt(p *core.Project, docs []core.Artifact) string {
 		b.WriteString("CURRENT COMMANDS (full text: the commands this request is about, the commands earlier rounds changed, and the commands that depend on them):\n" + mustJSON(promptCommands(full)) + "\n\n")
 		writeOtherCommands(&b, outside(w.Commands, scope), full)
 	}
+	writeRevisionPages(&b, p, docs, w.Commands, full, scope != nil)
 	writeExecutionState(&b, p)
 	if len(stale) > 0 {
 		b.WriteString("Commands whose artifacts changed since they were written:\n")
@@ -701,6 +743,18 @@ func applyWorkflowRevisionFromParsed(p *core.Project, out workflowOut, docs []co
 		if err != nil {
 			return err
 		}
+		var prev *core.Command
+		if i := slices.IndexFunc(cmds, func(x core.Command) bool { return x.ID == c.ID }); i >= 0 {
+			prev = &cmds[i]
+		}
+		if err := settleRevisionPages(p, &c, prev, o.Pages, hashes); err != nil {
+			return err
+		}
+		// A revision answer must fit one command; a split sends the first
+		// part now and the rest as new commands in the next rounds.
+		if msg := workflow.Oversize(c); msg != "" {
+			return fmt.Errorf("command %s %s; kirim versi yang di bawah kedua batas: pindahkan sisa pekerjaan ke command baru di putaran berikutnya", c.ID, msg)
+		}
 		if i := slices.IndexFunc(cmds, func(x core.Command) bool { return x.ID == c.ID }); i >= 0 {
 			cmds[i] = c
 		} else {
@@ -830,7 +884,9 @@ func applyWorkflowSketchFromParsed(p *core.Project, out workflowOut, docs []core
 	hashes := workflow.Hashes(docs)
 	var cmds []core.Command
 	idMap := map[string]string{}
-	next := 1
+	// A regenerated workflow continues the numbering: the ids of the
+	// commands it replaced still name their runs and their history.
+	next := nextCommandNumber(p, nil)
 	for _, o := range out.Commands {
 		id := strings.TrimSpace(o.ID)
 		if _, dup := idMap[id]; dup || id == "" {
@@ -851,6 +907,9 @@ func applyWorkflowSketchFromParsed(p *core.Project, out workflowOut, docs []core
 	}
 	if len(cmds) > MaxCommands {
 		return fmt.Errorf("terlalu banyak command (%d, maks %d)", len(cmds), MaxCommands)
+	}
+	if err := settleSketchPages(p, cmds, hashes); err != nil {
+		return answerIDs(err, idMap)
 	}
 	// Validate sketch (structure only — no instructions required)
 	if err := checkSketchCommands(cmds, hashes, p.Requirements, p.Features); err != nil {
@@ -1026,6 +1085,9 @@ func commandFrom(o commandOut, idMap, hashes map[string]string) (core.Command, e
 		Outputs: nonEmpty(o.Outputs), Acceptance: nonEmpty(o.Acceptance), Constraints: nonEmpty(o.Constraints), Status: core.CommandDraft,
 		FeatureIDs: nonEmpty(o.FeatureIDs), SubFeatureIDs: nonEmpty(o.SubFeatureIDs),
 		Files: nonEmpty(o.Files), Priority: level(o.Priority), Complexity: level(o.Complexity)}
+	if o.Pages != nil {
+		c.Pages = nonEmpty(*o.Pages)
+	}
 	for _, d := range o.DependsOn {
 		id, ok := idMap[strings.TrimSpace(d)]
 		if !ok {

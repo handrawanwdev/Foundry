@@ -242,6 +242,11 @@ func esc(s string) string { return html.EscapeString(s) }
 
 // render is one page being rendered.
 type render struct {
+	// inForm is set while the controls of an open <form> are drawn: a
+	// button there submits it, it leads nowhere else.
+	inForm bool
+	// curSec is the id of the section being drawn.
+	curSec string
 	// cmdkItems are the pages the global search lists; set once the top
 	// bar drew its search.
 	cmdkItems []navItem

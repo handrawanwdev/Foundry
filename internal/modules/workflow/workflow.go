@@ -303,6 +303,9 @@ type Report struct {
 	// UncoveredFeatures are the features no command implements; shown, not
 	// blocking.
 	UncoveredFeatures []string `json:"uncovered_features"`
+	// UncoveredPages are the pages of the design (their mockups) no command
+	// builds; the UI check refuses them.
+	UncoveredPages []string `json:"uncovered_pages,omitempty"`
 	// Quality are the advice of Quality; shown, not blocking.
 	Quality []Issue `json:"quality"`
 }
@@ -351,10 +354,11 @@ func Check(w *core.Workflow, docs []core.Artifact, reqs []core.Requirement) Repo
 }
 
 // Limits of one command; past them it does more than one thing or it is
-// not worth a command of its own.
+// not worth a command of its own. The prompts state the first two, so a
+// split the AI writes lands within them.
 const (
-	maxAcceptance   = 10
-	maxInstructions = 8000
+	MaxAcceptance   = 10
+	MaxInstructions = 8000
 	minInstructions = 40
 	similarCommand  = 0.8
 )
@@ -387,8 +391,8 @@ func Quality(cmds []core.Command) []Issue {
 		if len(c.Outputs) == 0 {
 			add(c.ID, "belum menyebut output yang diharapkan")
 		}
-		if len(c.Acceptance) > maxAcceptance || len(text) > maxInstructions {
-			add(c.ID, "terlalu besar untuk satu command; pecah jadi beberapa command")
+		if msg := Oversize(c); msg != "" {
+			add(c.ID, "%s; pecah jadi beberapa command yang masing-masing di bawah batas itu", msg)
 		}
 		if len(text) < minInstructions {
 			add(c.ID, "instruksi terlalu singkat untuk dikerjakan tanpa konteks tambahan")
@@ -410,6 +414,17 @@ func Quality(cmds []core.Command) []Issue {
 		seen = append(seen, words{c.ID, set})
 	}
 	return out
+}
+
+// Oversize says how a command passes the size limits of one command, or
+// "" when it fits.
+func Oversize(c core.Command) string {
+	n := len(strings.TrimSpace(c.Instructions))
+	if len(c.Acceptance) <= MaxAcceptance && n <= MaxInstructions {
+		return ""
+	}
+	return fmt.Sprintf("terlalu besar untuk satu command (%d acceptance criteria, maks %d; instruksi %d karakter, maks %d)",
+		len(c.Acceptance), MaxAcceptance, n, MaxInstructions)
 }
 
 func wordSet(s string) map[string]bool {

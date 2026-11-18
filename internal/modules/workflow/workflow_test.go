@@ -178,7 +178,7 @@ func TestQualityAdvises(t *testing.T) {
 			t.Fatalf("C = %q, want %q", got["C"], want)
 		}
 	}
-	if !strings.Contains(got["D"], "terlalu besar") || !strings.Contains(got["D"], "acceptance") {
+	if !strings.Contains(got["D"], "terlalu besar") || !strings.Contains(got["D"], "acceptance") || !strings.Contains(got["D"], "maks 8000") {
 		t.Fatalf("D = %q", got["D"])
 	}
 	if _, ok := got["E"]; ok {

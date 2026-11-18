@@ -128,6 +128,12 @@ func layoutMarkdown(p *core.Project) string {
 			"Bangun layar mengikuti urutan section, slot, kepadatan, dan token mockup memakai komponen project; jangan menyalin nilai literal atau data contohnya. " +
 			"Tandai elemen akar setiap section dengan `data-foundry-section=\"<id section>\"` agar evaluasi visual dapat mencocokkannya.\n\n")
 	}
+	walks := core.FlowWalks(p, l)
+	trans := p.TransitionsByPage(l)
+	feats := map[string]string{}
+	for _, f := range p.Features {
+		feats[f.ID] = f.Name
+	}
 	b.WriteString("## Halaman\n\n")
 	for _, pg := range l.Pages {
 		fmt.Fprintf(&b, "### `%s` %s\n\n%s\n\n", pg.ID, pg.Name, pg.Purpose)
@@ -148,7 +154,7 @@ func layoutMarkdown(p *core.Project) string {
 			meta = append(meta, "peran "+pg.Role)
 		}
 		if pg.FeatureID != "" {
-			meta = append(meta, "fitur "+pg.FeatureID)
+			meta = append(meta, strings.TrimSpace("fitur "+pg.FeatureID+" "+feats[pg.FeatureID]))
 		}
 		b.WriteString(strings.Join(meta, " · ") + "\n\n")
 		if pg.Existing {
@@ -163,13 +169,15 @@ func layoutMarkdown(p *core.Project) string {
 			fmt.Fprintf(&b, "Hierarki: %s\n\n", strings.Join(pg.Hierarchy, " > "))
 		}
 		if len(pg.Fields) > 0 {
-			b.WriteString("**Pemetaan field ke tampilan**\n\n| Field | Label | Tampilan | Format | Catatan |\n|---|---|---|---|---|\n")
+			b.WriteString("**Pemetaan field ke tampilan**\n\n| Field | Label | Tampilan | Format | Catatan | Contoh data |\n|---|---|---|---|---|---|\n")
 			for _, f := range pg.Fields {
-				fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n", cell(f.Field), cell(f.Label), cell(f.Presentation), cell(f.Format), cell(f.Note))
+				fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s | %s |\n", cell(f.Field), cell(f.Label), cell(f.Presentation), cell(f.Format), cell(f.Note), cell(strings.Join(f.Examples, ", ")))
 			}
 			b.WriteString("\n")
 		}
 		sections(&b, pg.Sections)
+		pageActions(&b, trans[pg.ID])
+		pageSteps(&b, walks, pg.ID)
 		states(&b, pg.States)
 		bullets(&b, "**Responsif**", pg.Responsive)
 		if len(pg.Links) > 0 {
@@ -183,6 +191,74 @@ func layoutMarkdown(p *core.Project) string {
 	}
 	b.WriteString(uiAcceptanceMarkdown(l))
 	return b.String()
+}
+
+// pageActions are the document status changes a page offers: the mockup
+// shows each as an action button, enabled only in the statuses it leaves
+// from, with a confirmation for the ones that cannot be undone.
+func pageActions(b *strings.Builder, ts []core.PageTransition) {
+	if len(ts) == 0 {
+		return
+	}
+	b.WriteString("**Aksi status di halaman ini** (tombol di mockup; aktif hanya pada status asal)\n\n")
+	for _, t := range ts {
+		fmt.Fprintf(b, "- %s: %s %s → %s", t.T.Action, t.Entity, strings.Join(t.T.From, "/"), t.T.To)
+		var notes []string
+		if t.T.Actor != "" {
+			notes = append(notes, "oleh "+t.T.Actor)
+		}
+		if t.T.Guard != "" {
+			notes = append(notes, "syarat: "+t.T.Guard)
+		}
+		if t.T.Kind != "" {
+			notes = append(notes, "jenis "+t.T.Kind)
+		}
+		if t.Flow != "" {
+			notes = append(notes, t.Flow)
+		}
+		if len(notes) > 0 {
+			fmt.Fprintf(b, " (%s)", strings.Join(notes, "; "))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+}
+
+// pageSteps are the use case steps and branches that happen on a page, so
+// the section of the page is complete on its own.
+func pageSteps(b *strings.Builder, walks []core.FlowWalk, id string) {
+	var lines []string
+	for _, w := range walks {
+		if w.Inferred {
+			continue
+		}
+		for _, st := range w.Steps {
+			if st.Page != id {
+				continue
+			}
+			line := fmt.Sprintf("- %s langkah %d: %s", w.ID, st.N, st.Text)
+			switch {
+			case st.System:
+				line += " (otomatis; tampilkan umpan baliknya)"
+			case st.Decision:
+				line += " (keputusan: sediakan setujui dan tolak/kembalikan)"
+			case st.Risky:
+				line += " (tidak dapat dibatalkan: minta konfirmasi)"
+			}
+			lines = append(lines, line)
+		}
+		for _, br := range w.Branches {
+			if br.Page != id || br.System {
+				continue
+			}
+			kind := "alternatif"
+			if br.Kind == core.BranchFailure {
+				kind = "gagal"
+			}
+			lines = append(lines, fmt.Sprintf("- %s %s: %s", w.ID, kind, br.Text))
+		}
+	}
+	bullets(b, "**Langkah use case di halaman ini**", lines)
 }
 
 // uiAcceptanceMarkdown is the checkable acceptance of the UI design. It is

@@ -569,17 +569,28 @@ func promptPlatforms(prompt string) []string {
 }
 
 // detailFor matches the command a detail round asks for ("- CMD-002: ...").
+var anyCommandID = regexp.MustCompile(`CMD-(\d+)`)
+
 var detailFor = regexp.MustCompile(`DETAIL PHASE - Fill in details for these \d+ commands:\n- CMD-(\d+):`)
 
 // detailAnswer answers a detail round from a full workflow answer: the
 // outline numbered its commands CMD-001, CMD-002, ... in answer order, so
-// the requested command is the n-th one, sent back under its CMD id.
+// the requested command is the n-th one, sent back under its CMD id. A
+// regenerated outline continues the numbering: the lowest id in the prompt
+// is the first command.
 func detailAnswer(prompt, raw string) string {
 	m := detailFor.FindStringSubmatch(prompt)
 	if m == nil {
 		return `{"commands": []}`
 	}
-	n, _ := strconv.Atoi(m[1])
+	id, _ := strconv.Atoi(m[1])
+	first := id
+	for _, x := range anyCommandID.FindAllStringSubmatch(prompt, -1) {
+		if k, _ := strconv.Atoi(x[1]); k < first {
+			first = k
+		}
+	}
+	n := id - first + 1
 	var out struct {
 		Commands []map[string]any `json:"commands"`
 	}
@@ -587,7 +598,7 @@ func detailAnswer(prompt, raw string) string {
 		return `{"commands": []}`
 	}
 	c := out.Commands[n-1]
-	c["id"] = fmt.Sprintf("CMD-%03d", n)
+	c["id"] = fmt.Sprintf("CMD-%03d", id)
 	b, _ := json.Marshal(map[string]any{"commands": []any{c}})
 	return string(b)
 }
@@ -1357,7 +1368,9 @@ func TestDesignRevise(t *testing.T) {
 	if !slices.Equal(r.Stale["CMD-003"], []string{core.ArtifactLayoutSpec}) || len(r.Stale["CMD-001"]) != 0 || r.Ready {
 		t.Fatalf("report = %+v", r)
 	}
-	if b := pipeline.Blockers(p); !slices.Contains(b, "workflow: 1 masalah dependency/isi") {
+	// The new page has no command, and the screen command still builds the
+	// removed page: both are sync issues.
+	if b := pipeline.Blockers(p); !slices.Contains(b, "workflow: 2 masalah dependency/isi") {
 		t.Fatalf("blockers = %v", b)
 	}
 	// An outline still waiting for its details is not judged yet.

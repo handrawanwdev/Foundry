@@ -2,6 +2,7 @@ package core
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -40,7 +41,46 @@ var (
 	maxLenRe    = regexp.MustCompile(`(?:max|maks|maksimal|maximum)\s*(\d+)\s*(karakter|char|chars|characters|huruf)?`)
 	defaultRe   = regexp.MustCompile(`default\s*[:=]?\s*([A-Za-z0-9_.-]+)`)
 	fkRe        = regexp.MustCompile(`\bfk\b\s*([A-Za-z][A-Za-z0-9_]*)?`)
+	parenRe     = regexp.MustCompile(`\(([^()]*)\)`)
+	identRe     = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 )
+
+// specWords are the words a field spec uses to describe the field, never
+// a value of it: "(date, nullable)" lists no choices.
+var specWords = map[string]bool{
+	"unique": true, "unik": true, "nullable": true, "optional": true, "opsional": true, "wajib": true, "required": true,
+	"int": true, "integer": true, "bigint": true, "smallint": true, "number": true, "numeric": true, "decimal": true,
+	"float": true, "double": true, "text": true, "varchar": true, "string": true, "char": true, "date": true,
+	"datetime": true, "timestamp": true, "timestamptz": true, "time": true, "bool": true, "boolean": true,
+	"json": true, "jsonb": true, "fk": true, "pk": true, "index": true, "indexed": true, "default": true,
+	"uuid": true, "serial": true, "money": true, "currency": true, "rupiah": true, "idr": true, "angka": true,
+	"bilangan": true, "tanggal": true, "primary": true, "key": true, "null": true, "utc": true, "enum": true,
+	"array": true, "ref": true, "self": true, "hash": true, "encrypted": true, "unsigned": true,
+}
+
+// commaChoices are the values a field spec lists in parentheses, comma
+// separated: "timeframe (M1, M5, H1)", "kind (tradingview, alternatif)".
+func commaChoices(rest string) []string {
+	for _, m := range parenRe.FindAllStringSubmatch(rest, -1) {
+		parts := strings.Split(m[1], ",")
+		if len(parts) < 2 {
+			continue
+		}
+		var out []string
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if !identRe.MatchString(p) || specWords[strings.ToLower(p)] {
+				out = nil
+				break
+			}
+			out = append(out, p)
+		}
+		if len(out) >= 2 {
+			return out
+		}
+	}
+	return nil
+}
 
 // ParseDataField reads one field of entity as the blueprint writes it.
 func ParseDataField(entity, spec string) DataField {
@@ -75,6 +115,8 @@ func ParseDataField(entity, spec string) DataField {
 		for _, o := range strings.Split(m, "|") {
 			f.Options = append(f.Options, strings.TrimSpace(o))
 		}
+	} else {
+		f.Options = commaChoices(rest)
 	}
 	name := strings.ToLower(f.Name)
 	parts := nameParts(f.Name)
@@ -118,15 +160,16 @@ func ParseDataField(entity, spec string) DataField {
 	case word("json", "jsonb"):
 		f.Kind = "json"
 	case word("bool", "boolean") || strings.HasPrefix(name, "is_") || strings.HasPrefix(name, "has_") || strings.HasPrefix(name, "can_") ||
-		camel("Allowed") || camel("Enabled") || camel("Active"):
+		camel("Allowed") || camel("Enabled") || camel("Active") ||
+		slices.Contains([]string{"enabled", "disabled", "active", "aktif", "archived", "verified", "published", "visible"}, name):
 		f.Kind = "bool"
-	case word("timestamp", "datetime", "timestamptz") || strings.HasSuffix(name, "_at") || camel("At"):
+	case word("timestamp", "datetime", "timestamptz", "utc") || strings.HasSuffix(name, "_at") || camel("At"):
 		f.Kind = "datetime"
 	case word("date", "tanggal") || strings.HasSuffix(name, "_date") || name == "date" || name == "tanggal":
 		f.Kind = "date"
 	case word("rupiah", "currency", "money", "idr") || numeric && hasName("amount", "price", "harga", "cost", "biaya", "nominal", "idr", "fee", "tarif", "total", "salary", "gaji"):
 		f.Kind = "money"
-	case numeric || hasName("qty", "quantity", "count", "jumlah"):
+	case numeric || hasName("qty", "quantity", "count", "jumlah", "seconds", "secs", "minutes", "hours", "days", "detik", "menit", "attempts", "retries", "percent", "persen"):
 		f.Kind = "number"
 	case hasName("email", "surel"):
 		f.Kind = "email"

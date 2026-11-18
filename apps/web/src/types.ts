@@ -346,7 +346,7 @@ export interface DesignDecision {
 }
 export type FieldPresentation = "table-column" | "list-item" | "card-title" | "card-meta" | "card-value" |
   "delta" | "detail" | "form-input" | "filter" | "summary" | "chart" | "badge" | "row-action" | "hidden";
-export interface FieldRule { field: string; label?: string; presentation: FieldPresentation; format?: string; note?: string }
+export interface FieldRule { field: string; label?: string; presentation: FieldPresentation; format?: string; note?: string; examples?: string[] }
 export interface LayoutPage {
   id: string; name: string; platform: string; route?: string; role?: string; access?: "public" | "auth"; feature_id?: string;
   purpose: string; goal?: string; shell?: string; pattern: string; primary_action?: string; fields?: FieldRule[];
@@ -582,7 +582,7 @@ export interface Command {
   id: string; workflow_id?: string; name: string; objective: string; context?: string; inputs?: string[]; instructions: string;
   depends_on?: string[]; artifacts?: ArtifactRef[]; covers?: string[]; feature_ids?: string[]; sub_feature_ids?: string[];
   expected_outputs?: string[]; acceptance_criteria?: string[];
-  constraints?: string[]; files?: string[]; priority?: CommandLevel; complexity?: CommandLevel; revision?: number;
+  constraints?: string[]; files?: string[]; pages?: string[]; priority?: CommandLevel; complexity?: CommandLevel; revision?: number;
   status: CommandStatus; review?: string;
 }
 export type CommandLevel = "high" | "medium" | "low";
@@ -606,6 +606,8 @@ export interface WorkflowReport {
   feature_commands: Record<string, string[]>;
   // Features no command implements, and advice on the commands; neither blocks.
   uncovered_features: string[];
+  // Pages of the design (their mockups) no command builds.
+  uncovered_pages?: string[];
   quality: WorkflowIssue[];
 }
 export interface WorkflowView { workflow: Workflow | null; report: WorkflowReport; progress?: ProgressSnapshot }

@@ -152,6 +152,7 @@ button.fk-user:hover,.fk-user:has(+ :popover-open){border-color:var(--border-def
 .fk-table .fk-act{text-align:right;width:1%;position:sticky;right:0;z-index:1;background:var(--surface-card)}
 .fk-table-wrap{container-type:scroll-state}
 @container scroll-state(scrollable:inline-end){.fk-table .fk-act{box-shadow:inset 1px 0 0 var(--border-default),-8px 0 12px -8px color-mix(in srgb,var(--text-primary) 18%,transparent)}}
+.fk-hint{cursor:help;text-decoration:underline dotted;text-underline-offset:3px}
 .fk-table th.fk-act{z-index:2;background:var(--surface-muted)}
 .fk-table tbody tr:hover td.fk-act{background:color-mix(in srgb,var(--surface-muted) 60%,var(--surface-card))}
 .fk-strong{font-weight:600;color:var(--text-primary)}

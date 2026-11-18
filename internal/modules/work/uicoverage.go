@@ -25,10 +25,8 @@ func CheckUI(p *core.Project, cmds []core.Command) []workflow.Issue {
 	refs := func(c core.Command, id string) bool {
 		return slices.ContainsFunc(c.Artifacts, func(r core.ArtifactRef) bool { return r.ID == id })
 	}
-	pageIDs := make([]string, 0, len(p.UI.Layout.Pages))
-	for _, pg := range p.UI.Layout.Pages {
-		pageIDs = append(pageIDs, pg.ID)
-	}
+	pages := p.UI.Layout.Pages
+	ids := pageIDs(pages)
 	for _, c := range cmds {
 		layout := refs(c, core.ArtifactLayoutSpec)
 		rules := refs(c, core.ArtifactDesignRules)
@@ -36,19 +34,27 @@ func CheckUI(p *core.Project, cmds []core.Command) []workflow.Issue {
 			add(c.ID, "merujuk salah satu artefak desain tetapi tidak keduanya (%s dan %s)",
 				core.ArtifactDesignRules, core.ArtifactLayoutSpec)
 		}
+		for _, id := range c.Pages {
+			if !slices.Contains(ids, id) {
+				add(c.ID, "membangun halaman %s yang tidak ada lagi di %s; sinkronkan dengan mockup", id, core.ArtifactLayoutSpec)
+			}
+		}
 		if !layout {
+			if len(c.Pages) > 0 {
+				add(c.ID, "membangun halaman %s tetapi tidak merujuk %s dan %s",
+					strings.Join(c.Pages, ", "), core.ArtifactDesignRules, core.ArtifactLayoutSpec)
+			}
 			continue
 		}
-		named := slices.ContainsFunc(pageIDs, func(id string) bool { return mentionsPage(c.Instructions, id) })
-		if !named {
-			add(c.ID, "merujuk %s tetapi instruksi tidak menyebut satu pun id halaman (%s)",
-				core.ArtifactLayoutSpec, strings.Join(pageIDs, ", "))
+		if len(pagesOf(pages, c)) == 0 {
+			add(c.ID, "merujuk %s tetapi tidak menyebut satu pun id halaman (%s)",
+				core.ArtifactLayoutSpec, strings.Join(ids, ", "))
 		}
 	}
-	for _, pg := range p.UI.Layout.Pages {
+	for _, pg := range pages {
 		found := false
 		for _, c := range cmds {
-			if refs(c, core.ArtifactLayoutSpec) && mentionsPage(c.Instructions, pg.ID) {
+			if refs(c, core.ArtifactLayoutSpec) && slices.Contains(pagesOf(pages, c), pg.ID) {
 				found = true
 				break
 			}

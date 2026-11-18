@@ -53,7 +53,7 @@ const designShape = `{
    "regions": [{"id": "nav", "name": "Nav", "slot": "nav", "content": ["Menu"]}]}],
  "pages": [{"id": "antrean", "name": "Antrean", "platform": "web", "route": "/antrean", "access": "auth", "role": "Operator", "feature_id": "FEAT-001",
    "purpose": "Saring antrean", "goal": "GOAL-1", "shell": "app", "pattern": "table", "primary_action": "Panggil berikutnya",
-   "fields": [{"field": "Appointment.status", "label": "Status", "presentation": "badge"}],
+   "fields": [{"field": "Appointment.status", "label": "Status", "presentation": "badge", "examples": ["Menunggu", "Selesai"]}],
    "sections": [{"id": "filter", "name": "Filter", "slot": "toolbar", "content": ["Cari pasien, Status"]}, {"id": "tabel", "name": "Tabel", "slot": "table", "content": ["No, Pasien, Status, Aksi"], "components": ["Table", "Badge"]}],
    "states": {"loading": "", "empty": "", "error": ""}}],
  "users": [{"role": "Operator", "platform": "web", "context": "kerja harian", "tasks": ["saring antrean"]}],
@@ -97,7 +97,7 @@ const layoutRules = `LAYOUT SPECIFICATION (shells, pages)
 - Text and structured data only. No images, mockups, HTML, CSS or code.
 - shells: the layouts pages share (app frame with sidebar or navbar, auth frame, ...): id, name, platform, pattern, regions (sections), navigation, grid, responsive.
 - pages: every screen the user tasks need, per platform with screens. route: web starts with /, mobile/desktop is the screen name. access: public or auth. role: the users[].role(s) the page is for, comma-separated (the actors of its use cases); a page a permission limits says in permission_denied what the others see. shell: a shell id, or empty for a page with its own frame.
-- pages[].goal names the goal id the page serves; pages[].fields maps data fields to their presentation.
+- pages[].goal names the goal id the page serves; pages[].fields maps data fields to their presentation; examples: 3-5 real domain values a layperson knows ("EURUSD", "H1"), never "Item 1"; note: plain words for jargon.
 - primary_action: the page's main action, a verb phrase from the use case step done there (table, list, detail, dashboard, form, wizard). Never a reason to add a page. On a decision page it is the approval, with the rejection beside it.
 - pattern (page, shell and optional for a section) is one of: %s.
 - sections[].slot: the slot of the page pattern's template (UI KIT PAGE TEMPLATES) the section fills; every required slot gets a section; no header section (the page header comes from name, purpose and primary_action). Shell regions take the shell template's slots.
@@ -437,8 +437,38 @@ func SyncDesign(p *core.Project) error {
 	if !p.UI.Written() {
 		return errors.New("aturan desain dan layout belum disusun")
 	}
-	p.UI.Request = &core.ChangeRequest{Text: p.DesignDrift().SyncRequest(), Sync: true}
+	text := p.DesignDrift().SyncRequest()
+	if missing := fieldsWithoutExamples(p.UI.Layout); missing != "" {
+		text += "\nLengkapi examples (3-5 contoh data nyata dari domain ini yang dimengerti orang awam, bukan \"Item 1\") dan note berisi arti dengan kata sederhana untuk label istilah teknis, pada field: " + missing
+	}
+	p.UI.Request = &core.ChangeRequest{Text: text, Sync: true}
 	return nil
+}
+
+// fieldsWithoutExamples lists the shown page fields the mockup has no
+// example data for, by page: "pantau (Instrumen, Timeframe); log (Alasan)".
+func fieldsWithoutExamples(l *core.LayoutSpec) string {
+	if l == nil {
+		return ""
+	}
+	var pages []string
+	for _, pg := range l.Pages {
+		var labels []string
+		for _, f := range pg.Fields {
+			if f.Presentation == "row-action" || f.Presentation == "hidden" || len(f.Examples) > 0 {
+				continue
+			}
+			lb := f.Label
+			if lb == "" {
+				lb = f.Field
+			}
+			labels = append(labels, lb)
+		}
+		if len(labels) > 0 {
+			pages = append(pages, pg.ID+" ("+strings.Join(labels, ", ")+")")
+		}
+	}
+	return strings.Join(pages, "; ")
 }
 
 func applyDesign(p *core.Project, raw string) error {
@@ -965,7 +995,8 @@ func normPage(pg core.LayoutPage) core.LayoutPage {
 	var fields []core.FieldRule
 	for _, f := range pg.Fields {
 		f = core.FieldRule{Field: strings.TrimSpace(f.Field), Label: strings.TrimSpace(f.Label),
-			Presentation: normPresentation(f.Presentation), Format: strings.TrimSpace(f.Format), Note: strings.TrimSpace(f.Note)}
+			Presentation: normPresentation(f.Presentation), Format: strings.TrimSpace(f.Format), Note: strings.TrimSpace(f.Note),
+			Examples: nonEmpty(f.Examples)}
 		if f.Field != "" {
 			fields = append(fields, f)
 		}
